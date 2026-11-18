@@ -22,6 +22,7 @@ import com.mdmesh.agent.R
 import com.mdmesh.core.action.NotificationPermissionAccess
 import com.mdmesh.core.install.InstallManager
 import com.mdmesh.core.power.PowerModeStore
+import com.mdmesh.core.store.AgentDataStores
 import com.mdmesh.core.store.DeviceIdentity
 import com.mdmesh.core.sync.CheckInCoordinator
 import com.mdmesh.core.sync.CredentialsFollower
@@ -58,6 +59,7 @@ class CheckInService : LifecycleService() {
     @Inject lateinit var notificationPermission: NotificationPermissionAccess
     @Inject lateinit var installManager: InstallManager
     @Inject lateinit var syncStatus: SyncStatus
+    @Inject lateinit var dataStores: AgentDataStores
 
     @Volatile private var started = false
     @Volatile private var interactiveUntil = 0L
@@ -106,6 +108,9 @@ class CheckInService : LifecycleService() {
             .onFailure { Log.w(TAG, "network callback not registered", it) }
         // An APK a dead process left behind would otherwise wait for the next install.
         lifecycleScope.launch { installManager.sweepLeftoverDownloads() }
+        // Read every store now: a corrupt one is recovered (and reported) at start, not when a command needs it, and
+        // the mirrors of an agent upgraded from one without them are seeded (#220).
+        lifecycleScope.launch { dataStores.check() }
     }
 
     private val connectivity: ConnectivityManager

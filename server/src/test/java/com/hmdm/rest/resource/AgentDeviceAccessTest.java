@@ -477,6 +477,93 @@ public class AgentDeviceAccessTest {
     }
 
     @Test
+    public void everyRouteThatQueuesForADeviceRefusesAWipedOne() {
+        // The console greys these out for a wiped device, but a page opened before the wipe, or the API, still asks.
+        devices.get(VISIBLE).setWipedAt(1000L);
+        socketOpen = true;
+        Map<String, Supplier<Response>> routes = perDeviceRoutes(VISIBLE);
+        for (String name : new String[]{"queueCommand", "syncApps", "retryConfig"}) {
+            Response r = routes.get(name).get();
+            assertEquals(name, Response.ResponseStatus.ERROR, r.getStatus());
+            assertEquals(name, "error.agent.command.wiped", r.getMessage());
+        }
+        assertEquals("nothing queued or woken", Collections.emptyList(), sideEffects);
+        assertEquals("its history and state still read", Response.ResponseStatus.OK, routes.get("commands").get().getStatus());
+    }
+
+    @Test
+    public void aWipedDeviceTheUserCannotSeeIsRefusedForAccessNotAsWiped() {
+        devices.get(HIDDEN).setWipedAt(1000L);
+        AgentCommand cmd = new AgentCommand();
+        cmd.setType("device.lock");
+        Response r = resource.queueCommand(HIDDEN, cmd);
+        assertEquals("not a way to learn a hidden device was wiped", "error.permission.denied", r.getMessage());
+    }
+
+    @Test
+    public void aDeviceNoLongerMarkedWipedTakesCommandsAgain() {
+        // The mark is lifted when the wipe reports failed or the device checks in after it (AgentResource).
+        devices.get(VISIBLE).setWipedAt(1000L);
+        devices.get(VISIBLE).setWipedAt(null);
+        AgentCommand cmd = new AgentCommand();
+        cmd.setType("device.lock");
+        assertEquals(Response.ResponseStatus.OK, resource.queueCommand(VISIBLE, cmd).getStatus());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void bulkCommandsSkipWipedDevices() {
+        login(true);
+        devices.get(HIDDEN).setWipedAt(1000L);
+        AgentCommand cmd = new AgentCommand();
+        cmd.setType("device.lock");
+
+        Response r = bulk(cmd, VISIBLE_ID, HIDDEN_ID);
+
+        assertEquals(Response.ResponseStatus.OK, r.getStatus());
+        Map<String, Object> data = (Map<String, Object>) r.getData();
+        assertEquals(1, data.get("queued"));
+        assertEquals(Collections.singletonList(HIDDEN_ID), data.get("skipped"));
+        assertEquals(Arrays.asList("insert " + VISIBLE, "wake " + VISIBLE), sideEffects);
+    }
+
+    @Test
+    public void destructiveCommandsAreNeverQueuedInBulk() {
+        login(true);
+        for (String type : new String[]{"device.wipe", "device.passcodeReset", "app.uninstall", " App.Uninstall ",
+                "app.setHidden"}) {
+            AgentCommand cmd = new AgentCommand();
+            cmd.setType(type);
+            cmd.setPayload("{\"packageName\":\"com.example.pos\"}");
+            Response r = bulk(cmd, VISIBLE_ID, HIDDEN_ID);
+            assertEquals(type, Response.ResponseStatus.ERROR, r.getStatus());
+            assertEquals(type, "error.agent.command.bulkForbidden", r.getMessage());
+        }
+        assertEquals("nothing queued or woken", Collections.emptyList(), sideEffects);
+
+        // One device at a time, from its page, they still go through.
+        AgentCommand uninstall = new AgentCommand();
+        uninstall.setType("app.uninstall");
+        uninstall.setPayload("{\"packageName\":\"com.example.pos\"}");
+        assertEquals(Response.ResponseStatus.OK, resource.queueCommand(VISIBLE, uninstall).getStatus());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void theConsolesBulkActionsStillGoOut() {
+        login(true);
+        for (String type : new String[]{"device.lock", "device.reboot", "device.ring", "device.ringStop",
+                "device.alert", "device.lockscreenMessage", "device.powerMode", "device.locationMode", "kiosk.enter",
+                "kiosk.exit", "kiosk.clearPinLockout", "apps.scan"}) {
+            AgentCommand cmd = new AgentCommand();
+            cmd.setType(type);
+            Response r = bulk(cmd, VISIBLE_ID, HIDDEN_ID);
+            assertEquals(type, Response.ResponseStatus.OK, r.getStatus());
+            assertEquals(type, 2, ((Map<String, Object>) r.getData()).get("queued"));
+        }
+    }
+
+    @Test
     @SuppressWarnings("unchecked")
     public void devicesEnrolledSinceListOnlyTheUsersDevicesWithABoundedQuery() {
         Response r = resource.listEnrolledSince(1000L, 500);

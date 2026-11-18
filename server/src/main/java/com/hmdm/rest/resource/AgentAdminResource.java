@@ -37,6 +37,7 @@ import com.hmdm.rest.json.Response;
 import com.hmdm.rest.json.agent.CommandHistoryView;
 import com.hmdm.rest.json.agent.ConfigStatusView;
 import com.hmdm.rest.json.agent.ConfigSyncSummary;
+import com.hmdm.rest.resource.support.AdminCommandPolicy;
 import com.hmdm.rest.resource.support.InstallHashes;
 import com.hmdm.rest.resource.support.KioskCommandImages;
 import com.hmdm.rest.json.agent.DesiredConfig;
@@ -134,6 +135,19 @@ public class AgentAdminResource {
         logger.warn("Permission denied: {} requires edit_devices (user {})", action,
                 SecurityContext.get().getCurrentUser().map(u -> u.getLogin()).orElse("?"));
         return false;
+    }
+
+    /**
+     * Why this user may not queue anything for {@code device}, or null when they may: outside their devices, or refused
+     * by {@link AdminCommandPolicy#refusalFor} (marked wiped). Every route here that queues for a device asks; bulk skips
+     * such a device.
+     */
+    private Response queueRefusal(Device device) {
+        if (!deviceDAO.isAccessibleToUser(device)) {
+            return Response.PERMISSION_DENIED();
+        }
+        String refusal = AdminCommandPolicy.refusalFor(device);
+        return refusal == null ? null : Response.ERROR(refusal);
     }
 
     // =================================================================================================================
@@ -239,8 +253,9 @@ public class AgentAdminResource {
         if (device == null) {
             return Response.DEVICE_NOT_FOUND_ERROR();
         }
-        if (!deviceDAO.isAccessibleToUser(device)) {
-            return Response.PERMISSION_DENIED();
+        Response refused = queueRefusal(device);
+        if (refused != null) {
+            return refused;
         }
         int queued = configAppInstaller.enqueueConfigApps(device);
         logger.info("Sync apps for device {}: {} app.install queued", deviceId, queued);
@@ -248,7 +263,8 @@ public class AgentAdminResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(value = "Queue agent command", notes = "Queues an opaque command for a device.")
+    @ApiOperation(value = "Queue agent command", notes = "Queues an opaque command for a device. A device marked wiped is "
+            + "refused (error.agent.command.wiped).")
     @POST
     @Path("/devices/{deviceId}/commands")
     @Consumes(MediaType.APPLICATION_JSON)
@@ -260,8 +276,8 @@ public class AgentAdminResource {
         if (body == null || body.getType() == null || body.getType().trim().isEmpty()) {
             return Response.ERROR("error.agent.command.invalid");
         }
-        if (isServerOwned(body.getType())) {
-            return Response.ERROR("error.agent.command.serverOwned");
+        if (AdminCommandPolicy.isServerOwned(body.getType())) {
+            return Response.ERROR(AdminCommandPolicy.SERVER_OWNED);
         }
 
         Optional<Integer> customerId = SecurityContext.get().getCurrentCustomerId();
@@ -273,8 +289,9 @@ public class AgentAdminResource {
         if (device == null) {
             return Response.ERROR("error.agent.device.unknown");
         }
-        if (!deviceDAO.isAccessibleToUser(device)) {
-            return Response.PERMISSION_DENIED();
+        Response refused = queueRefusal(device);
+        if (refused != null) {
+            return refused;
         }
 
         final String payload;
@@ -291,18 +308,7 @@ public class AgentAdminResource {
             return Response.ERROR("error.agent.command.noConfiguration");
         }
 
-        AgentCommand command = new AgentCommand();
-        command.setDeviceNumber(deviceId);
-        command.setType(body.getType());
-        command.setPayload(devicePayload);
-        command.setRequiresCapability(body.getRequiresCapability());
-        command.setStatus("pending");
-        command.setCreatedAt(System.currentTimeMillis());
-        commandDAO.insert(command);
-
-        // Wake the device so it pulls the command immediately (best-effort; floor reconcile backs it up).
-        wakeHub.wake(deviceId, "commands");
-
+        AgentCommand command = enqueue(device, body.getType(), devicePayload, body.getRequiresCapability());
         logger.info("Agent command {} queued for device {}", command.getId(), deviceId);
         // Payload-free view (same shape as the history): never echo a payload back to the console.
         return Response.OK(CommandHistoryView.from(command));
@@ -363,22 +369,25 @@ public class AgentAdminResource {
     private static final class NoConfigurationException extends Exception {
     }
 
-    /**
-     * {@code config.apply} is queued only by the server, from the device's configuration (ConfigReconciler), and at most
-     * one is open per device: an admin one is refused before anything is queued. Case-insensitive, like the bulk guard.
-     */
-    private static boolean isServerOwned(String type) {
-        return DesiredConfigBuilder.COMMAND_TYPE.equalsIgnoreCase(type.trim());
+    /** Queue {@code payload} for {@code device}, already checked by {@link #queueRefusal}, and wake it to pull it. */
+    private AgentCommand enqueue(Device device, String type, String payload, String requiresCapability) {
+        AgentCommand command = new AgentCommand();
+        command.setDeviceNumber(device.getNumber());
+        command.setType(type);
+        command.setPayload(payload);
+        command.setRequiresCapability(requiresCapability);
+        command.setStatus("pending");
+        command.setCreatedAt(System.currentTimeMillis());
+        commandDAO.insert(command);
+        // Best effort: without a live connection it gets the command at its next check-in.
+        wakeHub.wake(device.getNumber(), "commands");
+        return command;
     }
-
-    /** Command types that must never be issued in bulk (destructive group). Lowercased — matched
-     *  case-insensitively so a mixed-case type can't slip past this destructive-action guard. */
-    private static final Set<String> BULK_FORBIDDEN_TYPES =
-            Set.of("device.wipe", "device.passcodereset");
 
     // =================================================================================================================
     @ApiOperation(value = "Queue agent command for many devices",
-            notes = "Fans one opaque command out to a list of device ids (destructive types rejected).")
+            notes = "Fans one opaque command out to a list of device ids. Destructive types are rejected; "
+                    + "devices the user can't reach, or marked wiped, are skipped.")
     @POST
     @Path("/bulk/commands")
     @Consumes(MediaType.APPLICATION_JSON)
@@ -395,11 +404,11 @@ public class AgentAdminResource {
             return Response.ERROR("error.agent.command.invalid");
         }
         final String type = req.getCommand().getType().trim();
-        if (BULK_FORBIDDEN_TYPES.contains(type.toLowerCase(java.util.Locale.ROOT))) {
-            return Response.ERROR("error.agent.command.bulkForbidden");
+        if (AdminCommandPolicy.isBulkForbidden(type)) {
+            return Response.ERROR(AdminCommandPolicy.BULK_FORBIDDEN);
         }
-        if (isServerOwned(type)) {
-            return Response.ERROR("error.agent.command.serverOwned");
+        if (AdminCommandPolicy.isServerOwned(type)) {
+            return Response.ERROR(AdminCommandPolicy.SERVER_OWNED);
         }
 
         Optional<Integer> customerId = SecurityContext.get().getCurrentCustomerId();
@@ -420,7 +429,7 @@ public class AgentAdminResource {
         for (Integer id : req.getDeviceIds()) {
             if (id == null) { continue; }
             Device device = unsecureDAO.getDeviceById(id);
-            if (device == null || !deviceDAO.isAccessibleToUser(device)) {
+            if (device == null || queueRefusal(device) != null) {
                 skipped.add(id);
                 continue;
             }
@@ -431,15 +440,7 @@ public class AgentAdminResource {
                 skipped.add(id); // asks for its configuration's kiosk PIN, and it has no configuration
                 continue;
             }
-            AgentCommand command = new AgentCommand();
-            command.setDeviceNumber(device.getNumber());
-            command.setType(type);
-            command.setPayload(devicePayload);
-            command.setRequiresCapability(req.getCommand().getRequiresCapability());
-            command.setStatus("pending");
-            command.setCreatedAt(System.currentTimeMillis());
-            commandDAO.insert(command);
-            wakeHub.wake(device.getNumber(), "commands");
+            enqueue(device, type, devicePayload, req.getCommand().getRequiresCapability());
             queued++;
         }
 
@@ -689,8 +690,9 @@ public class AgentAdminResource {
         if (device == null) {
             return Response.ERROR("error.agent.device.unknown");
         }
-        if (!deviceDAO.isAccessibleToUser(device)) {
-            return Response.PERMISSION_DENIED();
+        Response refused = queueRefusal(device);
+        if (refused != null) {
+            return refused;
         }
         ConfigReconciler.Retry result = configReconciler.retryNow(device, System.currentTimeMillis());
         boolean connected = wakeHub.isOnline(deviceId);

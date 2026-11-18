@@ -9,6 +9,12 @@ Unreleased.
 
 ## Unreleased
 
+Fixes
+- Commands: the server refuses a command, Install configuration apps and Retry apply for a device marked Wiped
+  (`error.agent.command.wiped`), and a bulk command skips it. Only the console's greyed-out buttons stopped them before.
+- Bulk commands refuse `app.uninstall` and `app.setHidden` as they refuse wipe and passcode reset: one device at a time,
+  from its page.
+
 ## v0.5.0 — 2026-11-17
 
 Upgrading

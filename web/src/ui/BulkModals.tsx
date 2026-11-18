@@ -53,7 +53,7 @@ const errText = (e: unknown) => (e instanceof Error ? e.message : '');
 // Run action
 // ---------------------------------------------------------------------------------------------------------------
 
-// Only safe + disruptive actions run in bulk: the server refuses the destructive ones (passcode-reset, wipe) there,
+// Only safe + disruptive actions run in bulk: the server refuses the destructive ones (isBulkForbidden) there,
 // and kiosk-enter has its own steps (Return to configured kiosk, and Custom kiosk's Library picker). Same rule as
 // the classic BulkActionModal.
 const BULK_GROUPS: Array<{ id: 'safe' | 'disruptive'; title: string }> = [

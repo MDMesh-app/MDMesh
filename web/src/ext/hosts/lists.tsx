@@ -2,7 +2,7 @@
 // from the registry (core's included, ext/core/lists.tsx), each behind `requires` and its own boundary, and the
 // helpers their actions get.
 import { isValidElement, useCallback, useMemo, useState, type ReactNode } from 'react';
-import { bulkQueueCommand, forceSync, isBulkForbidden, queueCommand } from '../../api/commands';
+import { bulkQueueCommand, commandErrorText, forceSync, isBulkForbidden, queueCommand } from '../../api/commands';
 import type { DeviceView } from '../../api/devices';
 import { notConnected } from '../../data/presence';
 import { Button } from '../../ui/Button';
@@ -242,7 +242,6 @@ export function BulkActions({
   return actions.map((entry) => <BulkButton key={entry.key} entry={entry} rows={rows} helpers={helpers} />);
 }
 
-const errText = (e: unknown) => (e instanceof Error ? e.message : '');
 const plural = (n: number) => `${n} device${n === 1 ? '' : 's'}`;
 
 /** The Devices list's helpers: `refresh` reloads the list, `sendCommand` queues and toasts. */
@@ -257,7 +256,7 @@ export function useDeviceActionHelpers(refresh: () => void): DeviceActionHelpers
         // The bulk endpoint refuses these; one device would go through the single-device one, which does not.
         // Core sends them only from the device page, behind its confirmation.
         if (isBulkForbidden(request.type)) {
-          toast.push('err', `${label} failed`, 'Wipe and passcode reset are sent from the device’s page only.');
+          toast.push('err', `${label} failed`, 'Wipe, passcode reset and app uninstall are sent from the device’s page only.');
           return false;
         }
         if (devices.length === 1) {
@@ -276,7 +275,7 @@ export function useDeviceActionHelpers(refresh: () => void): DeviceActionHelpers
         }
         return true;
       } catch (e) {
-        toast.push('err', `${label} failed`, errText(e));
+        toast.push('err', `${label} failed`, commandErrorText(e));
         return false;
       }
     }

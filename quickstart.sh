@@ -126,19 +126,6 @@ MDM_IMAGE_REF_ERE='[abcdefghijklmnopqrstuvwxyz0123456789._/-]+@sha256:[012345678
 # The files downloaded from the release's tag, as named in the manifest's "files" (release/build-manifest.sh).
 MDM_QUICKSTART_FILES="docker-compose.release.yml docker-compose.domain.yml install/sql/hmdm_init.en.sql install/sql/post_seed.sql install/lib/db.sh"
 
-# mdm_legacy_file_sha VERSION FILE: the SHA-256 of FILE at the tag of a release published before the manifest recorded
-# them (v0.4.0), taken from that tag in git. Fails for any other release. Remove once the latest release has "files".
-mdm_legacy_file_sha() {
-  case "$1 $2" in
-    "0.4.0 docker-compose.release.yml")   echo 855fcf6fcba18bacb135c8d8c5617ddeaf16f4127ff83c619d671083838d4122 ;;
-    "0.4.0 docker-compose.domain.yml")    echo 25f31714054e1adfcb7491c2dcce33398f40e4235b9ed0268797ebc460015b07 ;;
-    "0.4.0 install/sql/hmdm_init.en.sql") echo 25fd5c6b9ad6eedaf747548285070a24559adc2bf4d27da0e78f363d3834eba4 ;;
-    "0.4.0 install/sql/post_seed.sql")    echo fc25c4a5355d1114cd3fbc1c84d3ded147e86e647fbd288048af3bcb0fbc73fe ;;
-    "0.4.0 install/lib/db.sh")            echo 80c792957d6a8d5d31639344faee766bba1d0d965c7d1c29668884bbfa55a005 ;;
-    *) return 1 ;;
-  esac
-}
-
 # mdm_sha256 FILE: its SHA-256 in lowercase hex.
 mdm_sha256() { openssl dgst -sha256 -r "$1" | cut -d' ' -f1; }
 # <<< release verification <<<
@@ -561,9 +548,9 @@ IMAGE_OWNER="${IMAGE_OWNER:-$IMAGE_OWNER_DEFAULT}"
 if [ -n "${MDMESH_VERSION:-}" ]; then
   RELEASE=${MDMESH_VERSION#v}
   [[ "$RELEASE" =~ ^([0-9]+)\.([0-9]+)\.[0-9]+([-+][0-9A-Za-z.+-]+)?$ ]] || { err "MDMESH_VERSION=${MDMESH_VERSION} is not a release version (X.Y.Z)."; exit 1; }
-  if [ "$((10#${BASH_REMATCH[1]}))" -eq 0 ] && [ "$((10#${BASH_REMATCH[2]}))" -lt 4 ]; then
-    err "Releases before 0.4.0 can't be installed with this quick start: it verifies each download against the signed release,"
-    err "which those releases don't record. Run the quickstart.sh from that release's tag instead:"
+  if [ "$((10#${BASH_REMATCH[1]}))" -eq 0 ] && [ "$((10#${BASH_REMATCH[2]}))" -lt 5 ]; then
+    err "Releases before 0.5.0 can't be installed with this quick start: it pins the images and verifies each download"
+    err "against the signed release, which those releases don't record. Run the quickstart.sh from that release's tag instead:"
     err "  bash <(curl -fsSL https://raw.githubusercontent.com/${REPO}/refs/tags/v${RELEASE}/quickstart.sh)"
     exit 1
   fi
@@ -612,8 +599,7 @@ MANIFEST_VERSION=$(mdm_manifest_field "$MANIFEST" version '[0-9A-Za-z.+-]+' || t
 if [ "$MANIFEST_VERSION" != "$RELEASE" ]; then
   err "The signed manifest is for version ${MANIFEST_VERSION:-(none)}, not v${RELEASE}. Nothing was installed."; exit 1
 fi
-# The image digests: all three, under the owner chosen above. A release from before they were recorded (v0.4.0 only, see
-# mdm_legacy_file_sha) runs its :X.Y.Z tags and the :latest supervisor, as the quick start did before.
+# The image digests: all three, under the owner chosen above.
 SERVER_REF=$(mdm_manifest_field "$MANIFEST" server "$MDM_IMAGE_REF_ERE" || true)
 WEB_REF=$(mdm_manifest_field "$MANIFEST" web "$MDM_IMAGE_REF_ERE" || true)
 SUPERVISOR_REF=$(mdm_manifest_field "$MANIFEST" supervisor "$MDM_IMAGE_REF_ERE" || true)
@@ -627,9 +613,6 @@ if [ -n "$SERVER_REF" ] && [ -n "$WEB_REF" ] && [ -n "$SUPERVISOR_REF" ]; then
     fi
   done
   SERVER_TAG="${RELEASE}@${SERVER_REF#*@}"; WEB_TAG="${RELEASE}@${WEB_REF#*@}"; SUPERVISOR_TAG="${RELEASE}@${SUPERVISOR_REF#*@}"
-elif [ -z "$SERVER_REF$WEB_REF$SUPERVISOR_REF" ] && mdm_legacy_file_sha "$RELEASE" install/lib/db.sh >/dev/null; then
-  warn "Release v${RELEASE} predates image digests in its manifest: running its :${RELEASE} tags (the next update pins them)."
-  SERVER_TAG="$RELEASE"; WEB_TAG="$RELEASE"; SUPERVISOR_TAG="latest"
 else
   err "The signed manifest of v${RELEASE} does not pin the server, web and supervisor images by digest, so the quick start can't install it."
   err "(A fork publishing with an older release workflow: update its release/ scripts and .github/workflows/release.yml.)"
@@ -664,16 +647,12 @@ fi
 mdm_check_base_url BASE_URL || { err "Check the hostname you entered (the name only, e.g. mdm.example.com), then re-run."; exit 1; }
 
 say "Downloading the pull-only compose + seed…"
-# Every file is downloaded to a temporary name and checked against its SHA-256 in the signed manifest (or, for v0.4.0,
-# the hash recorded above); only when all of them match are they moved into place. db.sh is sourced below, so nothing
-# unverified ever runs.
-HAS_FILES=0
-grep -q '^  "files": {$' "$MANIFEST" && HAS_FILES=1
+# Every file is downloaded to a temporary name and checked against its SHA-256 in the signed manifest; only when all of
+# them match are they moved into place. db.sh is sourced below, so nothing unverified ever runs.
 n=0
 for f in $MDM_QUICKSTART_FILES; do
   n=$((n + 1))
-  if [ "$HAS_FILES" = 1 ]; then want=$(mdm_manifest_field "$MANIFEST" "$f" "$MDM_SHA256_ERE" || true)
-  else want=$(mdm_legacy_file_sha "$RELEASE" "$f" || true); fi
+  want=$(mdm_manifest_field "$MANIFEST" "$f" "$MDM_SHA256_ERE" || true)
   [ -n "$want" ] || { err "The signed manifest of v${RELEASE} has no SHA-256 for ${f}, so it can't be verified. Nothing was installed."; exit 1; }
   curl -fsSL -m 120 "${RAW}/${f}" -o "$VERIFY_DIR/dl.$n" || { err "Could not download ${RAW}/${f}. Nothing was installed."; exit 1; }
   got=$(mdm_sha256 "$VERIFY_DIR/dl.$n")

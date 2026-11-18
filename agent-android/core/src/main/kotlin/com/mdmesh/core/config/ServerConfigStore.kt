@@ -76,7 +76,7 @@ class ServerConfigStore @Inject constructor(@ApplicationContext private val cont
      * @return whether a valid address was saved
      */
     fun save(url: String?): Boolean {
-        val value = ServerUrls.toStore(url, prefs.getString(KEY, null)) ?: return false
+        val value = ServerUrls.toStore(url, saved()?.url) ?: return false
         val valid = ServerUrls.normalize(value) == value
         if (!valid) Log.w(TAG, "provisioned server address is not an http(s) address")
         // commit(): provisioning reads it back from another component right after (and the process may end).

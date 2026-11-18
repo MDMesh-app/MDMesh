@@ -74,6 +74,19 @@ class StoreFailureTest {
     }
 
     @Test
+    fun `a read that works starts the backoff over`() = runTest {
+        var collections = 0
+        val values = flow {
+            collections++
+            if (collections == 2) emit(1)
+            if (collections < 3) throw IOException("EIO")
+            emit(2)
+        }
+        assertEquals(listOf(1, 2), values.retryOnStorageError("test").take(2).toList())
+        assertEquals("1 s, a value, then 1 s again (not 2 s)", 2_000L, testScheduler.currentTime)
+    }
+
+    @Test
     fun `backoff doubles up to a minute`() {
         assertEquals(
             listOf(1_000L, 2_000L, 4_000L, 32_000L, 60_000L, 60_000L),

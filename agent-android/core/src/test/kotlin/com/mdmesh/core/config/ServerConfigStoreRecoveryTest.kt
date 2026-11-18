@@ -34,6 +34,17 @@ class ServerConfigStoreRecoveryTest {
     }
 
     @Test
+    fun `with the server file lost, an invalid address from provisioning can't replace the mirrored good one`() {
+        ServerConfigStore(context).save(provisioned)
+        primary.edit().clear().commit()
+
+        ServerConfigStore(context).save("not an address")
+
+        assertEquals(provisioned, ServerConfigStore(context).baseUrl())
+        assertEquals(provisioned, mirror.getString("base_url", null))
+    }
+
+    @Test
     fun `an install from before the mirror seeds it on its first read`() {
         primary.edit().putString("base_url", provisioned).putInt("base_url_rules", 1).commit()
 

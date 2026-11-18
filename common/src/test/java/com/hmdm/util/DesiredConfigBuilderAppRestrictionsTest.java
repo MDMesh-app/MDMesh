@@ -151,6 +151,20 @@ public class DesiredConfigBuilderAppRestrictionsTest {
     }
 
     @Test
+    public void aTypedVariableSettingGetsItsTypeOnTheDevicesField() {
+        ApplicationSetting poll = setting(1, TABLET, "pollSeconds", ApplicationSettingType.INTEGER, "%CUSTOM1%");
+        poll.setVariable(true);
+        Device number = device();
+        number.setCustom1("30");
+        assertEquals(Integer.valueOf(30),
+                values(build(configuration(poll), number), "hr.example.tablet").get("pollSeconds").getValue());
+        Device text = device();
+        text.setCustom1("abc");
+        assertNull("not a number on this device: the key is left out",
+                values(build(configuration(poll), text), "hr.example.tablet"));
+    }
+
+    @Test
     public void aValueThatIsNotItsTypeIsLeftOut() {
         Configuration c = configuration(
                 setting(1, TABLET, "a", ApplicationSettingType.BOOLEAN, "yes"),

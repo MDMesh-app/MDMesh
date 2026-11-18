@@ -417,7 +417,9 @@ public class ConfigurationResource {
      * {@code installedAppIds}. The rows of any other app are dropped first, unchecked: a malformed row stored for an
      * app the save no longer installs (a Headwind-era row, say) doesn't block the save. Each kept setting needs an
      * applicationId, a name, a type (STRING, INTEGER or BOOLEAN) and a value of that type
-     * ({@link DesiredConfigBuilder#restrictionValue}) of at most {@link #MAX_SETTING_VALUE_LENGTH} characters. The name
+     * ({@link DesiredConfigBuilder#restrictionValue}) of at most {@link #MAX_SETTING_VALUE_LENGTH} characters. A
+     * {@code variable} value with a placeholder ({@link ApplicationSetting#containsPlaceholder}) skips the type check:
+     * {@link DesiredConfigBuilder} checks it after the device's fields replace the placeholders. The name
      * is stored trimmed, and checked trimmed: not blank, at most {@link #MAX_SETTING_NAME_LENGTH} characters, unique for
      * its app. An app has at most {@link #MAX_SETTINGS_PER_APP}. A row with no applicationId belongs to no app, so it is
      * refused.
@@ -462,7 +464,9 @@ public class ConfigurationResource {
         if (setting.getValue().length() > MAX_SETTING_VALUE_LENGTH) {
             return label + "is longer than " + MAX_SETTING_VALUE_LENGTH + " characters";
         }
-        if (DesiredConfigBuilder.restrictionValue(setting.getType(), setting.getValue()) == null) {
+        // A variable value with a placeholder gets its type on each device: the builder checks it after the replace.
+        boolean typedOnDevice = setting.isVariable() && setting.containsPlaceholder();
+        if (!typedOnDevice && DesiredConfigBuilder.restrictionValue(setting.getType(), setting.getValue()) == null) {
             return label + (setting.getType() == ApplicationSettingType.BOOLEAN ? "must be true or false"
                     : "must be a whole number from " + Integer.MIN_VALUE + " to " + Integer.MAX_VALUE);
         }

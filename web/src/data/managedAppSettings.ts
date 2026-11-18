@@ -60,10 +60,22 @@ export function withType(row: AppSetting, type: AppSettingType): AppSetting {
   return { ...row, type, value };
 }
 
-/** Why one value does not fit its type, or null. Never quotes the value. */
-export function settingValueProblem(type: AppSettingType, value: string): string | null {
+/** The placeholders the server replaces with the device's own fields in a variable value (ApplicationSetting). */
+export const SETTING_PLACEHOLDERS = ['%NUMBER%', '%IMEI%', '%PHONE%', '%DESCRIPTION%', '%CUSTOM1%', '%CUSTOM2%', '%CUSTOM3%'] as const;
+
+/** Whether a value holds at least one of {@link SETTING_PLACEHOLDERS}. */
+export function containsPlaceholder(value: string): boolean {
+  return SETTING_PLACEHOLDERS.some((p) => (value ?? '').includes(p));
+}
+
+/**
+ * Why one value does not fit its type, or null. Never quotes the value. A variable value with a placeholder gets its
+ * type only on each device, so, as on the server, only its type and length are checked here.
+ */
+export function settingValueProblem(type: AppSettingType, value: string, variable = false): string | null {
   if (type !== 'STRING' && type !== 'INTEGER' && type !== 'BOOLEAN') return 'Choose a type.';
   if ((value ?? '').length > MAX_SETTING_VALUE) return `Use at most ${MAX_SETTING_VALUE} characters.`;
+  if (variable && containsPlaceholder(value)) return null;
   if (type === 'BOOLEAN' && value !== 'true' && value !== 'false') return 'Choose On or Off.';
   if (type === 'INTEGER') {
     // As the server: an optional minus and 1 to 10 digits, so 00000000030 (11 digits) is refused there and here.
@@ -83,8 +95,8 @@ export interface SettingProblem {
 
 /**
  * The problems the server would refuse a save for, per row (the configuration's rows, or a device's): a blank, long
- * or repeated key within an app, a value that does not fit its type, or more than 64 settings for one app. A key is
- * checked trimmed, as the server stores it.
+ * or repeated key within an app, a value that does not fit its type (not checked for a variable value with a
+ * placeholder), or more than 64 settings for one app. A key is checked trimmed, as the server stores it.
  */
 export function appSettingsProblems(rows: readonly AppSetting[]): SettingProblem[] {
   const out: SettingProblem[] = [];
@@ -101,7 +113,7 @@ export function appSettingsProblems(rows: readonly AppSetting[]): SettingProblem
     else if (names.has(name)) out.push({ index, field: 'name', message: 'This app already has a setting with this key.' });
     else if (n > MAX_SETTINGS_PER_APP) out.push({ index, field: 'name', message: `An app takes at most ${MAX_SETTINGS_PER_APP} settings.` });
     names.add(name);
-    const valueProblem = settingValueProblem(row.type, row.value);
+    const valueProblem = settingValueProblem(row.type, row.value, !!row.variable);
     if (valueProblem) out.push({ index, field: 'value', message: valueProblem });
   });
   return out;

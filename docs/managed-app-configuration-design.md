@@ -131,7 +131,9 @@ Configuration save validation (with `normalizeManagedAppPermissions`, in the sam
 3. reject a duplicate `(applicationId, name)`, a blank name, a name over 200 characters (the column), an unknown type,
    a missing value, a `bool` value other than `true`/`false`, an `int` value that is not an optional minus and 1 to 10
    digits (`-?[0-9]{1,10}`) within 32 bits (so `00000000030` is refused), a value over 4096 characters, and more than
-   64 settings for one app;
+   64 settings for one app. A `variable=true` value that holds at least one supported placeholder skips only the
+   `bool`/`int` check: it gets its type on each device, where the builder skips the key if the substituted value
+   does not parse (the console applies the same rule);
 4. keep the settings when a save leaves the list absent (unchanged, the existing rule).
 
 Device read and save (`GET`/`POST /private/devices/{id}/applicationSettings`): require Headwind's

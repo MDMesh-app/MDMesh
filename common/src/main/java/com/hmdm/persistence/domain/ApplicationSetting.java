@@ -119,6 +119,19 @@ public class ApplicationSetting implements Serializable {
     };
 
     /**
+     * Whether the value holds at least one of the placeholders {@link #getValueForDevice} replaces. Such a
+     * {@code variable} value gets its type only on the device's own fields, so its type is checked after the replace,
+     * not at save. Not a bean property, so it is never serialized.
+     */
+    public boolean containsPlaceholder() {
+        if (value == null) return false;
+        for (String p : PLACEHOLDERS) {
+            if (value.contains(p)) return true;
+        }
+        return false;
+    }
+
+    /**
      * <p>The value with its placeholders replaced by the device's fields (an absent field or device by nothing). The
      * replace is literal and in one pass: a device field holding {@code $}, {@code \} or a placeholder of its own is
      * put in as it is, never read as a pattern or replaced again.</p>

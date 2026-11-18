@@ -80,6 +80,13 @@ describe('application settings', () => {
     expect(withSettingValues(null)).toBeNull();
   });
 
+  it('checks the type of a variable value with a placeholder on the device, not here, as the server does', () => {
+    expect(appSettingsProblems([row(1, 'n', 'INTEGER', '%CUSTOM1%', { variable: true }), row(1, 'b', 'BOOLEAN', '%CUSTOM2%', { variable: true })])).toEqual([]);
+    expect(appSettingsProblems([row(1, 'n', 'INTEGER', '%CUSTOM1%')]).map((p) => p.field)).toEqual(['value']);
+    expect(appSettingsProblems([row(1, 'n', 'INTEGER', '%UNKNOWN%', { variable: true })]).map((p) => p.field)).toEqual(['value']);
+    expect(appSettingsProblems([row(1, ' ', 'INTEGER', '%CUSTOM1%', { variable: true })]).map((p) => p.field)).toEqual(['name']);
+  });
+
   it('never quotes a value in a problem', () => {
     const problems = appSettingsProblems([row(1, 'n', 'INTEGER', 'secret-token-123')]);
     expect(problems).toHaveLength(1);

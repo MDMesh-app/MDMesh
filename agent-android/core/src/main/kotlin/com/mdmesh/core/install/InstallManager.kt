@@ -70,8 +70,6 @@ data class InstallRequest(
     val versionCode: Long? = null,
     /** Hex SHA-256 of the APK; verified after download, and required when [InstallIntegrityPolicy.required]. */
     val sha256: String? = null,
-    /** When true and the install succeeds, launch the app's main activity. */
-    val runAfterInstall: Boolean = false,
     /**
      * Split-APK bundle parts (base + config/feature splits). When non-empty this is a multi-APK
      * install and [url]/[localPath]/[sha256] are ignored; every part is written into ONE
@@ -149,7 +147,8 @@ class InstallManager @Inject constructor(
 
     /**
      * Downloads (or reads) the APK, applies the version policy, then performs a silent
-     * install and awaits the platform's result. Returns the mapped [InstallOutcome].
+     * install and awaits the platform's result. Returns the mapped [InstallOutcome]. It never starts the app: the
+     * caller does that with [launch] once the app's settings are in place.
      */
     suspend fun install(req: InstallRequest): InstallOutcome {
         // 0. Integrity gate (when the server guarantees hashes) — refuse before any network or session work.
@@ -187,14 +186,8 @@ class InstallManager @Inject constructor(
             }
 
             // 3. Create + write EVERY part into ONE session + commit, awaiting the broadcast result.
-            val outcome = runCatching { commitInstall(req.packageName, fetched) }
-                .getOrElse { return InstallOutcome.Failure(null, "install session error: ${it.message}") }
-
-            // 4. Optionally launch the app on success.
-            if (outcome is InstallOutcome.Success && req.runAfterInstall) {
-                launchApp(req.packageName)
-            }
-            return outcome
+            return runCatching { commitInstall(req.packageName, fetched) }
+                .getOrElse { InstallOutcome.Failure(null, "install session error: ${it.message}") }
         } finally {
             synchronized(downloaded) { downloaded.forEach(downloads::release) }
         }
@@ -229,6 +222,16 @@ class InstallManager @Inject constructor(
                 ?: InstallOutcome.Failure(null, "uninstall result timed out")
         } catch (e: Exception) {
             InstallOutcome.Failure(null, "uninstall error: ${e.message}")
+        }
+    }
+
+    /** Starts [packageName]'s main activity, if it has one. Never throws. */
+    fun launch(packageName: String) {
+        runCatching {
+            context.packageManager.getLaunchIntentForPackage(packageName)?.let { intent ->
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(intent)
+            }
         }
     }
 
@@ -338,13 +341,6 @@ class InstallManager @Inject constructor(
             info.versionCode.toLong()
         }
     }.getOrNull()
-
-    private fun launchApp(packageName: String) {
-        context.packageManager.getLaunchIntentForPackage(packageName)?.let { intent ->
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            runCatching { context.startActivity(intent) }
-        }
-    }
 
     /** Reads the whole APK (can be hundreds of MB), so never on the caller's thread. */
     private suspend fun sha256Of(file: File): String = withContext(Dispatchers.IO) {

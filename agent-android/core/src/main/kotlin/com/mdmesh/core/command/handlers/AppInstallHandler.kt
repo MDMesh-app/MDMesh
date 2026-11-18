@@ -9,6 +9,7 @@ import com.mdmesh.core.install.InstallRequest
 import com.mdmesh.proto.CommandEnvelope
 import com.mdmesh.proto.CommandResult
 import com.mdmesh.proto.ProtocolJson
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.Serializable
 
 /**
@@ -19,14 +20,22 @@ import kotlinx.serialization.Serializable
  * every install ([com.mdmesh.core.install.InstallIntegrityPolicy]). Version gating, downgrade-blocking and the
  * install itself are delegated to [InstallManager].
  *
- * @param afterInstall called with the package after a successful install or update, before the result is reported:
- *   the configuration's permission rules and managed configuration for it are applied then
- *   (ConfigApplier.applyAfterInstall). Its failure never fails the install.
+ * After a successful install or update the order is: [afterInstall], then (with `runAfterInstall`) [launch], then the
+ * result. So an app that reads its managed configuration or permissions at startup finds them in place.
+ *
+ * @param install installs the request ([InstallManager.install]); it never starts the app.
+ * @param launch starts the app's main activity ([InstallManager.launch]); this handler is the one place that does.
+ * @param afterInstall applies the configuration's permission rules and managed configuration for the package
+ *   (ConfigApplier.applyAfterInstall). Its failure never fails the install nor stops the launch.
  */
 class AppInstallHandler(
-    private val installManager: InstallManager,
+    private val install: suspend (InstallRequest) -> InstallOutcome,
+    private val launch: (packageName: String) -> Unit,
     private val afterInstall: suspend (packageName: String) -> Unit = {},
 ) : CommandHandler {
+
+    constructor(installManager: InstallManager, afterInstall: suspend (packageName: String) -> Unit = {}) :
+        this(installManager::install, installManager::launch, afterInstall)
 
     override val type: String = "app.install"
 
@@ -55,14 +64,13 @@ class AppInstallHandler(
             ProtocolJson.json.decodeFromJsonElement(Payload.serializer(), payload)
         }.getOrElse { return CommandResults.failed(command, "bad payload: ${it.message}") }
 
-        val outcome = installManager.install(
+        val outcome = install(
             InstallRequest(
                 url = p.url,
                 localPath = p.localPath,
                 packageName = p.packageName,
                 versionCode = p.versionCode,
                 sha256 = p.sha256,
-                runAfterInstall = p.runAfterInstall,
                 parts = p.parts.map { ApkPart(url = it.url, localPath = it.localPath, sha256 = it.sha256) },
             ),
         )
@@ -70,7 +78,8 @@ class AppInstallHandler(
             InstallOutcome.Success -> {
                 // The install succeeded whatever the follow-up does; the server's re-send applies the rules later.
                 runCatching { afterInstall(p.packageName) }
-                    .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
+                    .onFailure { if (it is CancellationException) throw it }
+                if (p.runAfterInstall) launch(p.packageName)
                 CommandResults.done(command)
             }
             is InstallOutcome.Skipped -> CommandResults.done(command, "skipped: ${outcome.reason}")

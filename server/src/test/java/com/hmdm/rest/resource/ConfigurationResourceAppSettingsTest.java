@@ -145,6 +145,26 @@ public class ConfigurationResourceAppSettingsTest {
         assertEquals("serverUrl", c.getApplicationSettings().get(0).getName());
     }
 
+    private static ApplicationSetting variable(ApplicationSetting s) {
+        s.setVariable(true);
+        return s;
+    }
+
+    @Test
+    public void aVariableValueWithAPlaceholderGetsItsTypeOnTheDeviceNotAtSave() {
+        Configuration c = withSettings(variable(setting(1, "pollSeconds", ApplicationSettingType.INTEGER, "%CUSTOM1%")),
+                variable(setting(1, "kioskMode", ApplicationSettingType.BOOLEAN, "%CUSTOM2%")));
+        ConfigurationResource.normalizeApplicationSettings(c);
+        assertEquals(2, c.getApplicationSettings().size());
+
+        refused(withSettings(setting(1, "pollSeconds", ApplicationSettingType.INTEGER, "%CUSTOM1%")));
+        refused(withSettings(variable(setting(1, "pollSeconds", ApplicationSettingType.INTEGER, "%UNKNOWN%"))));
+        refused(withSettings(variable(setting(1, "pollSeconds", ApplicationSettingType.INTEGER, "thirty"))));
+        // Every other check still holds.
+        refused(withSettings(variable(setting(1, " ", ApplicationSettingType.INTEGER, "%CUSTOM1%"))));
+        refused(withSettings(variable(setting(1, "pollSeconds", null, "%CUSTOM1%"))));
+    }
+
     @Test
     public void aNameIsStoredAndCheckedTrimmed() {
         StringBuilder longName = new StringBuilder();

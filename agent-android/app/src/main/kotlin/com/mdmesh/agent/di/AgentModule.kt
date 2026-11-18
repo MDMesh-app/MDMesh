@@ -1,5 +1,6 @@
 package com.mdmesh.agent.di
 
+import android.app.KeyguardManager
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
@@ -320,8 +321,10 @@ object AgentModule {
 
     @Provides
     @IntoSet
-    fun provideDeviceLockHandler(handle: DpmHandle): CommandHandler =
-        DeviceLockHandler(handle)
+    fun provideDeviceLockHandler(@ApplicationContext context: Context, handle: DpmHandle): CommandHandler {
+        val keyguard = context.getSystemService(KeyguardManager::class.java)
+        return DeviceLockHandler(lockNow = { handle.dpm.lockNow() }, isDeviceSecure = { keyguard.isDeviceSecure })
+    }
 
     // --- Remote action handlers (multibound) ---
 

@@ -12,6 +12,8 @@ Unreleased.
 Fixes
 - Factory reset from the console lifts the configuration's Factory reset: Block for the wipe, and puts it back if the
   wipe can't start. Some vendor recoveries honour the block and stopped mid-wipe (HyperOS, #222).
+- Lock on a device with no screen lock set still turns the screen off, and its result now says the device isn't
+  protected.
 
 ## v0.5.0 — 2026-11-17
 

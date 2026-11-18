@@ -157,6 +157,21 @@ run_install() {
   return "$rc"
 }
 
+# run_update LABEL: the documented update in the guest (guest.sh update, with run.sh's SET_REPO, the updater setting the
+# install has); its output lands in $OUT/LABEL.out. Returns its exit code.
+run_update() {
+  local label=$1 rc=0 t0
+  t0=$(date +%s)
+  log "update [$label]: sudo ./setup.sh --update --native (no -y, stdin closed)"
+  timeout "${T2_STEP_TIMEOUT:-3600}" docker exec "$CTR" bash /t2/guest.sh update "/t2/out/$label.out" "$SET_REPO" \
+    > "$OUT/$label.result" 2>&1 || rc=$?
+  [ "$rc" -ne 124 ] || echo "T2 update timed out after ${T2_STEP_TIMEOUT:-3600}s" >> "$OUT/$label.result"
+  docker cp "$CTR:/t2/out/$label.out" "$OUT/$label.out" > /dev/null 2>&1 || true
+  while IFS= read -r l; do log "  $l"; done < "$OUT/$label.result"
+  log "update [$label] rc=$rc in $(( ($(date +%s) - t0) / 60 ))m$(( ($(date +%s) - t0) % 60 ))s"
+  return "$rc"
+}
+
 # --- API helpers (curl + python3 on the host, like scripts/agent-v1-e2e.sh) ------------------------------------------
 md5u() { printf '%s' "$1" | md5sum | awk '{print toupper($1)}'; }
 # api METHOD PATH [JSON] [extra curl args...]: the JSON reply (empty on a transport error).

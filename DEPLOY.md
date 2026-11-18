@@ -157,15 +157,16 @@ Both downloads cover x86_64 and arm64. On other architectures, install both runt
 Use PostgreSQL 15 or newer, as on the tested distros. With an older one already installed, the installer
 warns: the install works, but [restoring a backup](docs/OPERATIONS.md#backups-and-restore) needs 15 or newer.
 
-The installer asks you to type `yes`, then asks for the base URL and the HTTP port. `-y` skips these
-questions (and answers Keep on an upgrade), and `-v` shows the full output:
+The installer asks you to type `yes`, then asks for the base URL and the HTTP port. `-y` skips these questions (and
+answers Keep on an upgrade), and so does `--update` over an install. `-v` shows the full output:
 
 - **Base URL:** set `MDMESH_BASE_URL=https://mdm.example.com` to answer it in advance. `-y` requires it on a fresh
   install; re-runs keep the current one unless you set it ([Upgrading](docs/UPGRADING.md#native-installs)).
 - **Port:** set `MDMESH_HTTP_PORT=9090` to answer it in advance. The default is the port the install already uses
   (8080 on a fresh install), and `-y` takes that default.
 
-`--reset` and `--allow-downgrade` are Docker-only, and `--native` ignores them. To wipe a native install, choose
+`--reset` is Docker-only, and `--native` ignores it. So is `--allow-downgrade`, except with `--update`, where it lets
+the clone go back to the newest release ([Upgrading](docs/UPGRADING.md#from-source-docker-installs)). To wipe a native install, choose
 Erase or set `MDMESH_REPLACE_DATA=yes`. In Docker mode, setup.sh rejects options it doesn't know. The older names
 `BASE_URL`, `HTTP_PORT`, `REPLACE_DATA` and `ASSUME_YES` still work ([all the answers](#answering-the-questions-in-advance)).
 

@@ -283,10 +283,20 @@ upd capped ok
 { [ "$RC" != 0 ] && head_is capped "$c900" && grep -q 'None of the 5 newest release tags' "$WORK/out" && ! grep -q 'v9.1.0' "$WORK/out"; } \
   || { fail "--update does not stop after the 5 newest tags"; show; }
 ok
-# From a detached release checkout with an install: forward to the newest, no git pull involved.
+# From a detached release checkout with an install: forward to the newest, no git pull involved. The release's setup.sh
+# is told it runs an update, and from which release (MDMESH_UPDATING, MDMESH_UPDATE_FROM: the native installer then asks
+# nothing); a fresh clone's is not. (Seen in the environment of the docker stub, which that setup.sh runs.)
 clone detached v9.0.0; : > "$WORK/detached/.env"
 upd detached ok
 head_is detached "$c910" || { fail "--update from v9.0.0 (detached) did not move to v9.1.0"; show; }
+ok
+{ grep -qx 'MDMESH_UPDATING=1' "$WORK/env.log" && grep -qx 'MDMESH_UPDATE_FROM=9.0.0' "$WORK/env.log"; } \
+  || { fail "--update over an install does not tell the release's setup.sh it updates from 9.0.0"; show; }
+ok
+clone fresh2
+upd fresh2 ok
+{ head_is fresh2 "$c910" && grep -q '^PATH=' "$WORK/env.log" && ! grep -q '^MDMESH_UPDAT' "$WORK/env.log"; } \
+  || { fail "--update of a fresh clone tells its setup.sh it is an update"; show; }
 ok
 # Already on the newest release: says so and runs setup.sh.
 upd detached ok

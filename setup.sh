@@ -11,7 +11,8 @@
 #                              # `docker compose down -v` first if you really want a clean slate.
 #        ./setup.sh --native   # hand off to the native (non-Docker) installer
 #        ./setup.sh --allow-downgrade  # registry IMAGE_OWNER only: build and run a checkout older than the running
-#                              # release, or one with no readable release tag (both refused by default)
+#                              # release, or one with no readable release tag (both refused by default); with
+#                              # --update (also --native), go to the newest release from a newer clone
 #        ./setup.sh --update   # move this clone to the newest signed release (fetches the tags, verifies the
 #                              # release's signed manifest, checks out its tag), then run as usual; with
 #                              # --native, the native installer. Combine with the other options.
@@ -67,7 +68,9 @@ for a in "$@"; do
     --update) UPDATE=1 ;;
     --native) NATIVE=1 ;;
     --reset)  RESET=1 ;;
-    --allow-downgrade) ALLOW_DOWNGRADE=1 ;;   # Docker path only: the native installer has no apply to protect
+    # --update's check (both modes; the release's setup.sh gets it too) and the Docker build's. Never passed to the
+    # native installer, which has no apply to protect.
+    --allow-downgrade) ALLOW_DOWNGRADE=1 ;;
     *)        NATIVE_ARGS+=("$a") ;;   # forwarded to the native installer (-y, -v)
   esac
 done
@@ -87,7 +90,7 @@ mdm_answers_load
 # that is GitHub out of reach, not a release missing. A manifest that is there but does not verify stops it too.
 # MDMESH_DRY_RUN=1 does all the checking, then stops before anything is fetched or checked out. Updates come from
 # --update, never from `git pull`.
-_upd_dir=''; _upd_installed=''
+_upd_dir=''; _upd_installed=''; _upd_from=''
 _upd_clean() { [ -z "$_upd_dir" ] || { rm -f -- "$_upd_dir/manifest.json" "$_upd_dir/manifest.json.minisig"; rmdir -- "$_upd_dir" 2>/dev/null || true; }; }
 _upd_stop() {
   _upd_clean; err "$@"
@@ -200,6 +203,7 @@ update_to_release() {
   [ -n "$list" ] || _upd_stop "origin has no release tag (vX.Y.Z)."
   # With an install, the release this clone is on (or the nearest one before it); a fresh clone has nothing to protect.
   curver=''; if _upd_has_install; then curver=$(mdm_repo_version .); fi
+  _upd_from=$curver
   _upd_dir=$(mktemp -d) || _upd_stop "Could not make a temporary directory."
   while read -r ver t sha; do
     if [ -n "$skipped" ]; then
@@ -279,6 +283,10 @@ if [ "$UPDATE" = 1 ]; then
   # The release's own setup.sh, read afresh from the checked-out tag. The tunnel token, kept out of the environment of
   # everything --update ran, goes to it alone (it takes it out again at once).
   if [ -n "${MDMESH_TUNNEL_TOKEN+x}" ]; then export MDMESH_TUNNEL_TOKEN; fi
+  # Over an install it is told this is an update, and from which release (empty when the clone has none): the native
+  # installer then asks nothing and keeps the base URL, the port and the data (install-native.sh, MDMESH_UPDATING).
+  if _upd_has_install; then export MDMESH_UPDATING=1 MDMESH_UPDATE_FROM="$_upd_from"
+  else unset MDMESH_UPDATING MDMESH_UPDATE_FROM; fi
   exec ./setup.sh "${PASS_ARGS[@]}"
 fi
 

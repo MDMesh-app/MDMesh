@@ -10,6 +10,8 @@ Unreleased.
 ## Unreleased
 
 Fixes
+- Native: `sudo ./setup.sh --update --native` over an install asks nothing: it keeps the data, base URL and port, and
+  says `native update, <from> → <to>`. The update from 0.5.0 still asks once (add `-y` to skip).
 - `./setup.sh --update` no longer refuses a clone on a release branch (`release/vX.Y.Z`) as "ahead" of that release
   once it is squash-merged: a clone on an older release moves on; only one newer than the release needs `--allow-downgrade`.
 

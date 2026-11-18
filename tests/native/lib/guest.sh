@@ -9,6 +9,10 @@
 #                                  HTTP_PORT out; T2_GITHUB_REPO / T2_GITHUB_TOKEN, when set, add GITHUB_REPO= /
 #                                  GITHUB_TOKEN=), output to <out>. With a kill point,
 #                                  SIGKILLs the installer's process group when the point is reached (see KILL POINTS).
+#   update-release <sha> <version> a signed release v<version> of <sha> that `./setup.sh --update` finds (a local origin,
+#                                  a throwaway release key committed into the checkout, a curl stub for the manifest)
+#   update <out> <repo>            the documented update, as t2user: `sudo ./setup.sh --update --native`, without -y and
+#                                  with stdin closed, GITHUB_REPO=<repo>; output to <out>
 #   kill-points                    list the kill points, one per line
 #   admin-temp-password <out>      the temporary admin password a fresh install printed in <out>
 #   secrets                        a short fingerprint (sha256) of hash.secret / jwt.secretkey in ROOT.xml
@@ -179,6 +183,49 @@ cmd_install() {
   return 0
 }
 
+# cmd_update_release SHA VERSION: a signed release vVERSION of SHA for `./setup.sh --update` to find, with no GitHub
+# involved: a throwaway release key (minisign, which the install put in), committed as t2user into the checkout's
+# release/minisign.pub (the key --update checks with); origin a local bare repository with the tag vVERSION at SHA; and a
+# curl in /t2/stub that answers that release's manifest downloads from /t2/rel, passing every other call to the real one.
+cmd_update_release() {
+  local sha=$1 ver=$2
+  command -v minisign > /dev/null || { echo "no minisign in the guest (the install puts it in)" >&2; return 1; }
+  mkdir -p /t2/rel /t2/stub
+  minisign -G -W -p /t2/rig.pub -s /t2/rig.key > /dev/null
+  printf '{\n  "version": "%s",\n  "channel": "stable",\n  "commit": "%s"\n}\n' "$ver" "$sha" > /t2/rel/manifest.json
+  minisign -S -s /t2/rig.key -m /t2/rel/manifest.json > /dev/null
+  git clone -q --bare /t2/repo.bundle /t2/origin.git
+  git -C /t2/origin.git tag "v$ver" "$sha"
+  as_user git -C "$CHECKOUT" remote set-url origin /t2/origin.git
+  as_user cp /t2/rig.pub "$CHECKOUT/release/minisign.pub"
+  as_user git -C "$CHECKOUT" -c user.name=t2 -c user.email=t2@t2.test commit -q -m "t2: the rig's release key" release/minisign.pub
+  # shellcheck disable=SC2016  # the stub's own variables
+  printf '%s\n' '#!/bin/sh' \
+    "# The rig's release v$ver: its manifest files from /t2/rel; anything else goes to the real curl." \
+    'f=""; out=""; prev=""' \
+    'for a; do' \
+    "  case \"\$a\" in https://github.com/*/releases/download/v$ver/*) f=/t2/rel/\${a##*/} ;; esac" \
+    '  [ "$prev" != -o ] || out=$a; prev=$a' \
+    'done' \
+    '[ -n "$f" ] || exec /usr/bin/curl "$@"' \
+    '[ -f "$f" ] || { printf 404; exit 0; }' \
+    'cp "$f" "$out" && printf 200' > /t2/stub/curl
+  chmod 755 /t2/stub/curl
+  as_user git -C "$CHECKOUT" log -1 --format='checked out %h %s'
+}
+
+# cmd_update OUT REPO: the documented update, as t2user: `sudo ./setup.sh --update --native`, WITHOUT -y and with stdin
+# from /dev/null (any question reads end-of-file and stops it), with /t2/stub first on PATH and GITHUB_REPO=REPO (the
+# updater setting the install has; --update can't read a repo from the local origin). Output to OUT.
+cmd_update() {
+  local out=$1 repo=$2 rc=0
+  : > "$out"
+  setsid runuser -l t2user -c "cd MDMesh && exec sudo env PATH=/t2/stub:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin GITHUB_REPO='$repo' ./setup.sh --update --native" \
+    < /dev/null > "$out" 2>&1 || rc=$?
+  echo "T2 update rc=$rc"
+  return "$rc"
+}
+
 cmd_admin_temp_password() {
   sed -n 's/.*admin \/ \([0-9a-f]\{16,\}\).*/\1/p' "$1" | head -n 1
 }
@@ -288,7 +335,7 @@ cmd_collect() {
 
 cmd=${1:?usage: guest.sh <subcommand> ...}; shift
 case "$cmd" in
-  clone|checkout|install|admin-temp-password|secrets|settings|set-token|set-proxy|counts|deployed|port|initialized|units|state|collect) "cmd_${cmd//-/_}" "$@" ;;
+  clone|checkout|install|update-release|update|admin-temp-password|secrets|settings|set-token|set-proxy|counts|deployed|port|initialized|units|state|collect) "cmd_${cmd//-/_}" "$@" ;;
   kill-points) cmd_kill_points ;;
   *) echo "unknown subcommand: $cmd" >&2; exit 2 ;;
 esac

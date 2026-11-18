@@ -67,6 +67,12 @@ class ConfigApplier(
 
     suspend fun apply(doc: ConfigApplyPayload): ConfigApplyResult = mutex.withLock { applyDeliveredLocked(doc) }
 
+    /**
+     * Runs [block] with no apply in progress and none able to start. `device.wipe` lifts Factory reset: Block
+     * for the wipe; a boot re-apply must not put it back in between (#222).
+     */
+    suspend fun <T> exclusive(block: suspend () -> T): T = mutex.withLock { block() }
+
     private suspend fun applyDeliveredLocked(doc: ConfigApplyPayload): ConfigApplyResult {
         // What came before: the last saved document, and the last delivered one if a failed section kept it unsaved.
         val previous = listOfNotNull(store.load(), store.delivered)

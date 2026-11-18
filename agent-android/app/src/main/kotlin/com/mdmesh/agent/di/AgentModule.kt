@@ -4,6 +4,7 @@ import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
 import android.os.SystemClock
+import android.os.UserManager
 import com.mdmesh.agent.BuildConfig
 import com.mdmesh.agent.admin.AdminReceiver
 import com.mdmesh.core.capability.CapabilityCollector
@@ -29,6 +30,7 @@ import com.mdmesh.core.command.handlers.DeviceLocationModeHandler
 import com.mdmesh.core.command.handlers.DevicePowerModeHandler
 import com.mdmesh.core.command.handlers.DeviceRingStopHandler
 import com.mdmesh.core.command.handlers.DeviceWipeHandler
+import com.mdmesh.core.command.handlers.DpmWipeTarget
 import com.mdmesh.core.config.ConfigApplier
 import com.mdmesh.core.location.LocationModeStore
 import com.mdmesh.core.power.PowerModeStore
@@ -350,8 +352,14 @@ object AgentModule {
 
     @Provides
     @IntoSet
-    fun provideWipeHandler(handle: DpmHandle): CommandHandler =
-        DeviceWipeHandler(handle)
+    fun provideWipeHandler(
+        @ApplicationContext context: Context,
+        handle: DpmHandle,
+        applier: ConfigApplier,
+    ): CommandHandler =
+        DeviceWipeHandler(DpmWipeTarget(handle, context.getSystemService(UserManager::class.java))) { wipe ->
+            applier.exclusive(wipe)
+        }
 
     @Provides
     @IntoSet

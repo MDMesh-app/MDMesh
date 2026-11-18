@@ -13,6 +13,10 @@ Upgrading
 - Quick start: `MDMESH_VERSION` now takes 0.5.0 or later; for 0.4.0 it stops and names that release's own
   `quickstart.sh`, as it already did for earlier releases.
 
+Fixes
+- Agent: app installs and agent updates no longer fail with `apk fetch failed: timeout` on slow Wi-Fi. A download now
+  waits up to a minute for data, not 10 seconds, and has no limit on its total time (#174).
+
 ## v0.5.0 — 2026-11-17
 
 Upgrading

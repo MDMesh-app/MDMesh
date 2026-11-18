@@ -10,7 +10,7 @@
 - **Freeze about three days before a feature release.** Only fixes merge to `main` until the release PR lands.
 - **[CHANGELOG.md](CHANGELOG.md) is the release notes.** Each PR adds its line under Unreleased. A version's section
   is its tag annotation and its GitHub release notes, word for word; the workflow refuses a tag whose annotation
-  differs.
+  differs. Keep it short enough to read ([Writing the notes](#writing-the-notes)).
 - **A release that fixes a security issue has a Security section in its notes**, however the fix arrived: a public PR,
   a private advisory fork or a hardening follow-up. Its fix lines go under that heading, never under Fixes, and a
   release without a security fix has no such section. The heading is the one record the tools read: it puts the
@@ -25,8 +25,10 @@
    lands during the freeze.
 2. **Move Unreleased to `## vX.Y.Z — YYYY-MM-DD`** in CHANGELOG.md, with a new empty `## Unreleased` above it.
    Remove every `<!-- pending … -->` marker, and the whole line if its PR didn't merge; the script refuses a released
-   section with any HTML comment left. Sum up the Dependabot bumps in Under the hood. Preview it with
-   `release/changelog-section.sh X.Y.Z`.
+   section with any HTML comment left. Sum up the Dependabot bumps in Under the hood. Then trim it to
+   [Writing the notes](#writing-the-notes): merge the lines of one feature, drop fixes to things new in this release,
+   and move reference detail to the docs. Preview it with `release/changelog-section.sh X.Y.Z`, which warns past
+   120 lines.
    Check the Security section against the repository's advisories, published and draft. Every advisory patched in
    this version needs its line under Security:
 
@@ -68,6 +70,25 @@
 7. **Verify the published release** ([below](#verifying-a-published-release)): asset SHA-256 against the
    manifest, the minisign signature, the APK's signing certificate, its versionCode, `quickstart.sh`, and the GHCR
    images.
+
+### Writing the notes
+
+The notes are for the person running MDMesh. They read them to decide when to update and what to do. Aim for about
+100 lines; `release/changelog-section.sh` warns past 120. A big release can go over, but on purpose, not by piling up.
+
+- **A line goes in if an admin will notice it or has to act on it.** Leave out a fix to something new in the same
+  release, and refactors, tests and CI.
+- **One line per feature, not one per PR.** A feature built over several PRs gets one line, written when the
+  release PR is cut.
+- **About two lines each**: what changed, and who has to do what. The how and why belong in the PR and the docs.
+- **Reference detail goes in the docs, with one line that links to it.** Database columns and indexes go in
+  [UPGRADING](docs/UPGRADING.md); agent protocol changes in [proto/VERSIONING.md](proto/VERSIONING.md); console
+  extension props, tokens and deprecations in [web/EXTENDING.md](web/EXTENDING.md); new API endpoints in the
+  docs for that feature. Write links as full `https://github.com/MDMesh-app/MDMesh/blob/main/…` URLs: the GitHub
+  release page doesn't resolve relative ones.
+- **Under the hood is a few lines of links**, for example "Agent protocol 1.11 ([VERSIONING](…))" and one
+  Dependencies line naming the notable bumps.
+- **Upgrading and Security are never trimmed to fit.** Every step an admin must take stays, in full.
 
 ### Patch releases
 

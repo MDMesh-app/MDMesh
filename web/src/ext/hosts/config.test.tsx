@@ -46,6 +46,8 @@ function serve({ config = {}, onPut, plugins = [], devices = 2, currentUser }: S
       puts.push(body);
       return onPut ? onPut(body) : { ...stored, ...body };
     }
+    // Save and apply goes back to the list, which loads after the test: answer it as the server does.
+    if (p === '/private/configurations/search') return [stored];
     if (p === `/private/configurations/${stored.id}`) return stored;
     if (p === `/private/configurations/applications/${stored.id}`) return [];
     if (p.startsWith('/private/applications/search')) return [];
@@ -820,7 +822,7 @@ describe('configuration editor: the exit PIN', () => {
   });
 
   it('lets an old PIN be cleared (no exit on the device)', async () => {
-    const { puts } = open({ config: { kioskMode: true, password: 'let me out' } });
+    const { puts, fetch } = open({ config: { kioskMode: true, password: 'let me out' } });
     const field = await pinField();
     fireEvent.change(field, { target: { value: 'let me out!' } });
     expect(within(kioskCard()).getByText(/The exit PIN must be 6 to 12 digits/)).toBeTruthy();
@@ -830,5 +832,8 @@ describe('configuration editor: the exit PIN', () => {
     fireEvent.click(within(await screen.findByRole('dialog', { name: /Change kiosk/ })).getByRole('button', { name: 'Save and apply' }));
     await waitFor(() => expect(puts).toHaveLength(1));
     expect(puts[0].password ?? '').toBe('');
+    // The save goes back to the list: let its load finish inside the test.
+    await waitFor(() => expect(fetch.mock.calls.some(([u]) => String(u).includes('/configurations/search'))).toBe(true));
+    await screen.findByRole('link', { name: /Warehouse/ });
   });
 });

@@ -12,7 +12,9 @@ import java.io.File
  */
 class StoreFactoryOnlyTest {
 
-    private val forbidden = Regex("""\bPreferenceDataStoreFactory\b|\bDataStoreFactory\b|\bpreferencesDataStore\s*\(""")
+    private val forbidden = Regex(
+        """\b(Preference|MultiProcess)?DataStoreFactory\b|\b(preferencesDataStore|dataStore)\s*\(""",
+    )
 
     /** Where opening a DataStore is the point: the factory, and tests writing files as an older agent did. */
     private val allowed = setOf(
@@ -26,7 +28,7 @@ class StoreFactoryOnlyTest {
     fun `no DataStore is opened outside AgentDataStores`() {
         val root = File("..").canonicalFile // unit tests run in the module's directory
         val sources = root.listFiles().orEmpty().map { File(it, "src") }.filter { it.isDirectory }
-            .flatMap { src -> src.walk().filter { it.extension == "kt" }.toList() }
+            .flatMap { src -> src.walk().filter { it.extension == "kt" || it.extension == "java" }.toList() }
         assertTrue("found the agent's sources under $root", sources.size > 100)
         val offenders = sources.map { it.relativeTo(root).invariantSeparatorsPath }
             .filter { it !in allowed && forbidden.containsMatchIn(File(root, it).readText()) }

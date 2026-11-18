@@ -9,6 +9,10 @@ Unreleased.
 
 ## Unreleased
 
+Fixes
+- Agent: app installs and agent updates no longer fail with `apk fetch failed: timeout` on slow Wi-Fi. A download now
+  waits up to a minute for data, not 10 seconds, and has no limit on its total time (#174).
+
 ## v0.5.0 — 2026-11-17
 
 Upgrading

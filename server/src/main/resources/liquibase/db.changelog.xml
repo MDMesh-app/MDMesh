@@ -3202,8 +3202,8 @@
         <sql>
             CREATE TABLE remoteViewSession (
                 id UUID PRIMARY KEY,
-                deviceNumber VARCHAR(64) NOT NULL REFERENCES devices(number) ON UPDATE CASCADE ON DELETE CASCADE,
-                requesterUserId INT REFERENCES users(id) ON DELETE SET NULL,
+                deviceNumber VARCHAR(64) NOT NULL REFERENCES devices(number) ON DELETE CASCADE,
+                requesterUserId INT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
                 mode VARCHAR(16) NOT NULL CHECK (mode = 'view'),
                 state VARCHAR(32) NOT NULL,
                 agentJoinSecretHash VARCHAR(64) NOT NULL,
@@ -3238,6 +3238,29 @@
                 SELECT 1, id FROM permissions WHERE name = 'remote_view';
         </sql>
         <rollback>DELETE FROM permissions WHERE name = 'remote_view';</rollback>
+    </changeSet>
+
+    <changeSet id="26.11.17-remoteViewSession-fk-lifecycle" author="letter-number" context="common">
+        <comment>Foreign keys,change: remoteViewSession keeps its history through device renames and requester
+            deletion. The original creation changeSet is already applied on POC installations and must not change.</comment>
+        <sql>
+            ALTER TABLE remoteViewSession DROP CONSTRAINT remoteviewsession_devicenumber_fkey;
+            ALTER TABLE remoteViewSession ADD CONSTRAINT remoteviewsession_devicenumber_fkey
+                FOREIGN KEY (deviceNumber) REFERENCES devices(number) ON UPDATE CASCADE ON DELETE CASCADE;
+            ALTER TABLE remoteViewSession DROP CONSTRAINT remoteviewsession_requesteruserid_fkey;
+            ALTER TABLE remoteViewSession ALTER COLUMN requesterUserId DROP NOT NULL;
+            ALTER TABLE remoteViewSession ADD CONSTRAINT remoteviewsession_requesteruserid_fkey
+                FOREIGN KEY (requesterUserId) REFERENCES users(id) ON DELETE SET NULL;
+        </sql>
+        <rollback>
+            ALTER TABLE remoteViewSession DROP CONSTRAINT remoteviewsession_requesteruserid_fkey;
+            ALTER TABLE remoteViewSession ALTER COLUMN requesterUserId SET NOT NULL;
+            ALTER TABLE remoteViewSession ADD CONSTRAINT remoteviewsession_requesteruserid_fkey
+                FOREIGN KEY (requesterUserId) REFERENCES users(id) ON DELETE RESTRICT;
+            ALTER TABLE remoteViewSession DROP CONSTRAINT remoteviewsession_devicenumber_fkey;
+            ALTER TABLE remoteViewSession ADD CONSTRAINT remoteviewsession_devicenumber_fkey
+                FOREIGN KEY (deviceNumber) REFERENCES devices(number) ON DELETE CASCADE;
+        </rollback>
     </changeSet>
 
 </databaseChangeLog>

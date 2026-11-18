@@ -184,18 +184,23 @@ cmd_install() {
 }
 
 # cmd_update_release SHA VERSION: a signed release vVERSION of SHA for `./setup.sh --update` to find, with no GitHub
-# involved: a throwaway release key (minisign, which the install put in), committed as t2user into the checkout's
-# release/minisign.pub (the key --update checks with); origin a local bare repository with the tag vVERSION at SHA; and a
-# curl in /t2/stub that answers that release's manifest downloads from /t2/rel, passing every other call to the real one.
+# involved, shaped like a squash-merged release: origin a local bare repository whose tag vVERSION is a commit of its
+# own holding SHA's code (SHA's tree, on SHA's parent), so it is not an ancestor of the checkout; a throwaway release key
+# (minisign, which the install put in), committed as t2user into the checkout's release/minisign.pub (the key --update
+# checks with; the release keeps the real one, which its agent APK download needs), so the checkout is SHA plus a commit,
+# on SHA's release; and a curl in /t2/stub that answers the release's manifest downloads from /t2/rel, passing every
+# other call to the real one. Prints the release commit last ("release <commit>").
 cmd_update_release() {
-  local sha=$1 ver=$2
+  local sha=$1 ver=$2 rel
   command -v minisign > /dev/null || { echo "no minisign in the guest (the install puts it in)" >&2; return 1; }
   mkdir -p /t2/rel /t2/stub
-  minisign -G -W -p /t2/rig.pub -s /t2/rig.key > /dev/null
-  printf '{\n  "version": "%s",\n  "channel": "stable",\n  "commit": "%s"\n}\n' "$ver" "$sha" > /t2/rel/manifest.json
-  minisign -S -s /t2/rig.key -m /t2/rel/manifest.json > /dev/null
   git clone -q --bare /t2/repo.bundle /t2/origin.git
-  git -C /t2/origin.git tag "v$ver" "$sha"
+  rel=$(git -C /t2/origin.git -c user.name=t2 -c user.email=t2@t2.test \
+          commit-tree "$sha^{tree}" -p "$sha^" -m "v$ver (t2: the code under test, squash-merged)")
+  git -C /t2/origin.git tag "v$ver" "$rel"
+  minisign -G -W -p /t2/rig.pub -s /t2/rig.key > /dev/null
+  printf '{\n  "version": "%s",\n  "channel": "stable",\n  "commit": "%s"\n}\n' "$ver" "$rel" > /t2/rel/manifest.json
+  minisign -S -s /t2/rig.key -m /t2/rel/manifest.json > /dev/null
   as_user git -C "$CHECKOUT" remote set-url origin /t2/origin.git
   as_user cp /t2/rig.pub "$CHECKOUT/release/minisign.pub"
   as_user git -C "$CHECKOUT" -c user.name=t2 -c user.email=t2@t2.test commit -q -m "t2: the rig's release key" release/minisign.pub
@@ -212,6 +217,7 @@ cmd_update_release() {
     'cp "$f" "$out" && printf 200' > /t2/stub/curl
   chmod 755 /t2/stub/curl
   as_user git -C "$CHECKOUT" log -1 --format='checked out %h %s'
+  echo "release $rel"
 }
 
 # cmd_update OUT REPO: the documented update, as t2user: `sudo ./setup.sh --update --native`, WITHOUT -y and with stdin

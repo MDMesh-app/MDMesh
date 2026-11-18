@@ -319,6 +319,11 @@ ok
 # v9.1.0 plus a commit of its own, with an install: the release's own version, with code the release doesn't have.
 clone same v9.1.0; : > "$WORK/same/.env"; "${G[@]}" -C "$WORK/same" commit -q --allow-empty -m local
 expect_refused same ok "going back from v9.1.0 plus a commit over an install" "would run older code"
+# The same with stale local tags (v9.1.0 not fetched yet, so the clone's own tags say v9.0.0): its version is read once
+# the release's tag is fetched, and it is refused all the same.
+clone stale v9.1.0; : > "$WORK/stale/.env"; "${G[@]}" -C "$WORK/stale" commit -q --allow-empty -m local
+"${G[@]}" -C "$WORK/stale" tag -d v9.1.0 > "$WORK/tagd.out"
+expect_refused stale ok "going back from v9.1.0 plus a commit, with stale local tags, over an install" "would run older code"
 # Local changes: stop, change nothing.
 clone dirty; echo x >> "$WORK/dirty/note"
 expect_refused dirty ok "a clone with local changes" "commit or stash them"

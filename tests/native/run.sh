@@ -181,13 +181,16 @@ case "$SCENARIO" in
 
   update)
     # The clone ends one commit past the code under test (the rig's release key), on its release; --update moves it to
-    # v99.0.0, the code under test.
+    # v99.0.0, a separate commit holding the code under test, as a squash merge of it would be.
     start_container "$NAME" "$IMAGE"
     prepare_checkout "$TO_SHA"
     install_with_settings install "$TO_SHA"
     [ "$CHECK_FAILS" -eq 0 ] || die "the install failed its checks; not updating it"
     continuity_before
-    guest update-release "$TO_SHA" 99.0.0 | while IFS= read -r l; do log "$l"; done
+    guest update-release "$TO_SHA" 99.0.0 > "$OUT/update-release.out" 2>&1 \
+      || die "could not make the v99.0.0 release: $(tail -n 1 "$OUT/update-release.out")"
+    while IFS= read -r l; do log "$l"; done < "$OUT/update-release.out"
+    rel_sha=$(sed -n 's/^release //p' "$OUT/update-release.out")
     from=$(git -C "$REPO" describe --tags --abbrev=0 --match 'v[0-9]*' "$TO_SHA" 2>/dev/null | sed 's/^v//' || true)
     rc=0; run_update update || rc=$?
     check "the update exits 0" "$rc" 0
@@ -196,7 +199,9 @@ case "$SCENARIO" in
     check "the update says it is one, from ${from:-?} to 99.0.0" \
       "$(grep -cF "MDMesh · native update, ${from:-?} → 99.0.0" "$OUT/update.out" || true)" 1
     check "the update ends as one" "$(grep -cF '✓ MDMesh updated (native)' "$OUT/update.out" || true)" 1
-    check "the clone is on v99.0.0" "$(docker exec -u t2user "$CTR" git -C /home/t2user/MDMesh rev-parse HEAD)" "$TO_SHA"
+    check "the clone is on v99.0.0" "$(docker exec -u t2user "$CTR" git -C /home/t2user/MDMesh rev-parse HEAD)" "$rel_sha"
+    check "v99.0.0 holds the code under test" \
+      "$(docker exec -u t2user "$CTR" git -C /home/t2user/MDMesh rev-parse 'HEAD^{tree}')" "$(git -C "$REPO" rev-parse "$TO_SHA^{tree}")"
     settings_kept update
     continuity_after update
     check_install update "$TO_SHA"

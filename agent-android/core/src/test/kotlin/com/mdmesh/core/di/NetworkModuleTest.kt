@@ -78,6 +78,17 @@ class NetworkModuleTest {
     }
 
     @Test
+    fun `download client waits out a minute of silence, with no limit on the whole download`() {
+        val client = NetworkModule.provideDownloadOkHttp()
+
+        // OkHttp's default 10 s read timeout failed 125 MB APKs on slow, shared Wi-Fi (#174).
+        assertEquals(60_000, client.readTimeoutMillis)
+        assertEquals(30_000, client.connectTimeoutMillis)
+        // A read timeout bounds a stall; a call timeout would also fail a large APK on a slow but healthy link.
+        assertEquals(0, client.callTimeoutMillis)
+    }
+
+    @Test
     fun `API client is still rewritten to the provisioned server`() {
         val client = NetworkModule.provideApiOkHttp(serverConfig(provisioned))
 

@@ -14,6 +14,8 @@ Fixes
   (`error.agent.command.wiped`), and a bulk command skips it. Only the console's greyed-out buttons stopped them before.
 - Bulk commands refuse `app.uninstall` and `app.setHidden` as they refuse wipe and passcode reset: one device at a time,
   from its page.
+- Agent: app installs and agent updates no longer fail with `apk fetch failed: timeout` on slow Wi-Fi. A download now
+  waits up to a minute for data, not 10 seconds, and has no limit on its total time (#174).
 
 ## v0.5.0 — 2026-11-17
 

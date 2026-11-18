@@ -194,8 +194,12 @@ Secrets: values can carry tokens. They never go to a log line or the audit text.
 3. Console tests: the configuration editor disclosure inside the app row, the device page overrides, the outcome
    label. Typecheck and production build pass.
 4. `scripts/agent-v1-e2e.sh`: a capable agent gets the merged section, an incapable one doesn't.
-5. Live: on a test server, a configuration value and a per-device override reach a test app through
-   `RestrictionsManager` on a Device Owner tablet; a removed value disappears.
+5. Live, passed on a native test server and an Android tablet enrolled as Device Owner with this agent: a test
+   app that reads `RestrictionsManager` got the configuration's string, boolean and integer values with their types;
+   a per-device override and a device-only key reached it within a second of the save (the device is woken, and the
+   app gets `ACTION_APPLICATION_RESTRICTIONS_CHANGED`); removing the override brought back the configuration's value
+   and dropped the device-only key. The agent reported `appRestrictions.<package>: applied`. An agent 0.5.0 on the
+   same configuration got the document without the section. No value appeared in the server log or the audit log.
 
 ## Decision
 

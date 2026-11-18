@@ -3227,4 +3227,13 @@
         <rollback/>
     </changeSet>
 
+    <changeSet id="26.11.16-users-password-bcrypt" author="lunacy" context="common">
+        <comment>users#password: varchar(40) to varchar(100), for the bcrypt hashes passwords are now stored as
+            ("$2a$12$...", 60 characters, com.hmdm.util.PasswordUtil). Widening keeps every value: the 40-character
+            legacy hashes stay and keep working until each is replaced at its owner's next sign-in. No rollback: a
+            narrower column would not hold the bcrypt rows (going back to an older release restores its backup).</comment>
+        <sql>ALTER TABLE users ALTER COLUMN password TYPE varchar(100);</sql>
+        <rollback/>
+    </changeSet>
+
 </databaseChangeLog>

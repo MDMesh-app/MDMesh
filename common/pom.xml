@@ -57,6 +57,13 @@
             <version>1.23.0</version>
         </dependency>
 
+        <!-- bcrypt for stored password hashes (PasswordUtil). Apache-2.0, Java 7+, one small dependency (bytes) -->
+        <dependency>
+            <groupId>at.favre.lib</groupId>
+            <artifactId>bcrypt</artifactId>
+            <version>0.10.2</version>
+        </dependency>
+
         <!-- The formatting of this line must be kept as is - a single line -->
 
     </dependencies>

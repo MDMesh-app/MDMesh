@@ -142,8 +142,11 @@ public class JWTAuthResource {
                         .build();
             }
             if (user == null) {
+                // As long as a check for a real account (one bcrypt), so the time taken does not tell it is unknown
+                PasswordUtil.passwordMatch(credentials.getPassword(), null);
                 return Response.status(Response.Status.UNAUTHORIZED).build();
-            } else if (!PasswordUtil.passwordMatch(credentials.getPassword(), user.getPassword())) {
+            } else if (!userDAO.checkPasswordUnsecure(user, credentials.getPassword())) {
+                // A legacy hash that matches is stored as bcrypt there.
                 // No lastLoginFail write: it would make a failure for a real account measurably slower (LocalAuth)
                 return Response.status(Response.Status.UNAUTHORIZED).build();
             }

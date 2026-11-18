@@ -259,7 +259,7 @@ public class UserResource {
             }
             user.setLogin(user.getLogin().trim());
             if ((user.getId() == null || (user.getNewPassword() != null && !user.getNewPassword().isEmpty())) &&
-                    (user.getNewPassword() == null || !user.getNewPassword().matches("(?i)[0-9a-f]{32}"))) {
+                    !PasswordUtil.isMd5Hex(user.getNewPassword())) {
                 return Response.ERROR("error.password.empty");
             }
             try {
@@ -476,6 +476,9 @@ public class UserResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response updatePasswordBySuperAdmin(User user) {
         if (SecurityContext.get().isSuperAdmin()) {
+            if (!PasswordUtil.isMd5Hex(user.getNewPassword())) {
+                return Response.ERROR("error.password.empty");
+            }
             user.setNewPassword(PasswordUtil.getHashFromMd5(user.getNewPassword()));
             userDAO.updatePasswordBySuperAdmin(user);
             return Response.OK("success.operation.completed");
@@ -540,7 +543,7 @@ public class UserResource {
         if (!verdict.allowed()) {
             return Response.ERROR(AuthResource.TOO_MANY_ATTEMPTS);
         }
-        if (!PasswordUtil.passwordMatch(password, dbUser.getPassword())) {
+        if (!unsecureDAO.checkPasswordUnsecure(dbUser, password)) {
             return Response.ERROR("error.password.wrong");
         }
         loginThrottle.succeeded(verdict.attempt());
@@ -558,8 +561,9 @@ public class UserResource {
             return refused;
         }
 
-        if (user.getNewPassword() == null || user.getNewPassword().isEmpty()) {
-            logger.warn("Failed to update password for {}: new password is empty", user.getLogin());
+        if (!PasswordUtil.isMd5Hex(user.getNewPassword())) {
+            // The clients send the new password's MD5 in hex, as at sign-in; that is all a password is stored from
+            logger.warn("Failed to update password for {}: new password is empty or not an MD5", user.getLogin());
             return Response.ERROR("error.password.empty");
         }
 

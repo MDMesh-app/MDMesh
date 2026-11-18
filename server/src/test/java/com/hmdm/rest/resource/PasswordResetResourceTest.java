@@ -139,6 +139,22 @@ public class PasswordResetResourceTest {
     }
 
     @Test
+    public void aNewPasswordThatIsNoMd5IsRefusedAndTheLinkKept() {
+        issue(System.currentTimeMillis());
+        String token = stored.getPasswordResetToken();
+        for (String bad : new String[]{null, "", "plain text", NEW_MD5.substring(1)}) {
+            User request = reset(token);
+            request.setNewPassword(bad);
+
+            Response response = resource.updatePassword(request);
+
+            assertEquals(bad, "error.password.empty", response.getMessage());
+        }
+        assertTrue(users.callsTo("setNewPassword").isEmpty());
+        assertEquals(Response.ResponseStatus.OK, resource.updatePassword(reset(token)).getStatus());
+    }
+
+    @Test
     public void anUnknownTokenIsRefusedAndWritesNothing() {
         issue(System.currentTimeMillis());
 

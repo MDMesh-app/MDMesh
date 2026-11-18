@@ -132,6 +132,8 @@ public class AuthResource {
             return Response.ERROR(TOO_MANY_ATTEMPTS);
         }
         if (user == null) {
+            // As long as a check for a real account (one bcrypt), so the time taken does not tell it is unknown
+            PasswordUtil.passwordMatch(credentials.getPassword(), null);
             return Response.ERROR();
         }
 

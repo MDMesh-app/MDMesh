@@ -138,7 +138,8 @@ public class PasswordResetResource {
                 return Response.ERROR("error.user.not.found");
             }
 
-            if (newData.getNewPassword() == null || newData.getNewPassword().isEmpty()) {
+            if (!PasswordUtil.isMd5Hex(newData.getNewPassword())) {
+                // The new password's MD5 in hex, as the clients send it at sign-in
                 return Response.ERROR("error.password.empty");
             }
 

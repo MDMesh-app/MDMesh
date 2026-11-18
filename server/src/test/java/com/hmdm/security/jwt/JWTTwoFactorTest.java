@@ -34,6 +34,8 @@ import static org.junit.Assert.assertTrue;
 public class JWTTwoFactorTest {
 
     private static final String PASSWORD_MD5 = "5F4DCC3B5AA765D61D8327DEB882CF99";
+    /** Hashed once: bcrypt is slow on purpose, and every lookup builds the account anew. */
+    private static final String PASSWORD_HASH = PasswordUtil.getHashFromMd5(PASSWORD_MD5);
     private static final int PLAIN_CUSTOMER = 1;
     private static final int TWO_FACTOR_CUSTOMER = 2;
     private static final int OTHER_CUSTOMER = 5;
@@ -111,11 +113,15 @@ public class JWTTwoFactorTest {
 
     @Test
     public void tooManyFailedSignInsAnswer429WithRetryAfterAtOnce() {
+        // Each check is one bcrypt, slow on purpose; a sleep on failure would add to that
+        long check = System.nanoTime();
+        PasswordUtil.passwordMatch("0123456789ABCDEF0123456789ABCDEF", PASSWORD_HASH);
+        check = System.nanoTime() - check;
         long start = System.nanoTime();
         for (int i = 0; i < 10; i++) {
             assertEquals(401, login("plain", "0123456789ABCDEF0123456789ABCDEF", "203.0.113.7").getStatus());
         }
-        assertTrue("no failed sign-in sleeps", System.nanoTime() - start < 2_000_000_000L);
+        assertTrue("no failed sign-in sleeps", System.nanoTime() - start < 2 * 10 * check + 2_000_000_000L);
 
         Response refused = login("plain", PASSWORD_MD5, "203.0.113.7");
         assertEquals("the right password is refused too", 429, refused.getStatus());
@@ -301,7 +307,7 @@ public class JWTTwoFactorTest {
         user.setLogin(login);
         user.setCustomerId(customerId);
         user.setUserRole(role);
-        user.setPassword(PasswordUtil.getHashFromMd5(PASSWORD_MD5));
+        user.setPassword(PASSWORD_HASH);
         user.setAuthToken("token-" + id);
         return user;
     }

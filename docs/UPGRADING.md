@@ -212,8 +212,9 @@ none of these and ignores the attempt id: an enrollment there works as before, i
   `applicationVersions.requestedPermissions`; `maxUses`, `useCount` and `revokedAt` on enrollment tokens; the
   `configurationAppPermissions` and `agentEnrollmentKey` tables; and three indexes (on
   `devices.agentEnrollAttemptHash`, on each customer's devices by enrollment time, and on
-  `configurations.backgroundImageFileId`). Every new column is empty for existing configurations, so no device
-  re-applies its configuration until its agent is updated. Devices wiped before the update aren't marked Wiped.
+  `configurations.backgroundImageFileId`). It also widens `users.password` to 100 characters, for bcrypt. Every new
+  column is empty for existing configurations, so no device re-applies its configuration until its agent is updated.
+  Devices wiped before the update aren't marked Wiped.
 - **PostgreSQL older than 11: existing enrollment codes stop working.** The update hashes existing codes with a
   function PostgreSQL 11 added; on an older server it marks them used instead. Make a new code on the Enroll page.
 - **From source and native: move the clone to 0.5.0 once.** 0.4.x has no `./setup.sh --update`. Run
@@ -268,6 +269,12 @@ none of these and ignores the attempt id: an enrollment there works as before, i
   say), finds none of them: every code made before the downgrade is refused as unknown, including one already printed
   or in a QR. Make a new code on the Enroll page. If you then update that same database to 0.5.0 again, codes made
   while 0.4.0 ran don't work either: make new ones.
+- **Going back to 0.4.0: passwords.** 0.5.0 stores passwords as bcrypt; an existing password is converted at its
+  user's next sign-in, and 0.4.0 can't check a converted one. A one-click rollback, and the restores in
+  [Backups and restore](OPERATIONS.md#backups-and-restore), bring back the database from before the update, with every
+  password as it was then (one changed after the update is back to the old one). A 0.4.0 server started on the 0.5.0
+  database instead, without a restore, refuses every user who signed in or changed their password on 0.5.0: restore
+  the backup, or have those users reset their password (an admin who can still sign in sets a new one on Users).
 - **App permissions (agent 0.5.0):** a configuration can Grant or Deny an installed app's runtime permissions. Devices
   on an older agent, or not Device Owner, can't apply them: they get the rest of the configuration and show as out of
   sync while it has a rule, until their agent is updated. Configurations without rules stay in sync on every agent.

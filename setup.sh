@@ -253,10 +253,16 @@ update_to_release() {
   git -c advice.detachedHead=false checkout -q --detach "$tgt" || _upd_stop "git checkout ${tag} failed (above)."
   say "Checked out ${tag} (signed release, verified)."
 }
-# update_downgrade_check CUR TGT TAG: stop when CUR has commits TAG doesn't (main ahead of the release, or a newer local
-# tag) and this clone runs an install: checking out TAG would run older code over it. --allow-downgrade allows it.
+# update_downgrade_check CUR TGT TAG: stop when CUR has commits TAG doesn't and is not on an older release (main ahead
+# of the release, a commit on top of it, a newer local tag), and this clone runs an install: checking out TAG would run
+# older code over it. CUR's release is the nearest release tag (mdm_repo_version); one older than TAG is an upgrade even
+# when TAG doesn't hold CUR's commits: a release branch squash-merged into TAG holds them under other hashes. A clone
+# with no readable release counts as newer. --allow-downgrade allows it.
 update_downgrade_check() {
+  local v
   git merge-base --is-ancestor "$1" "$2" && return 0
+  v=$(mdm_repo_version .)
+  if [ -n "$v" ] && mdm_version_gt "${3#v}" "$v"; then return 0; fi
   [ "$ALLOW_DOWNGRADE" != 1 ] || return 0
   _upd_has_install || return 0
   _upd_stop "This clone is at $(git describe --tags --always 2>/dev/null || echo "$1"), which has commits the newest release $3 doesn't (for example main, ahead of the release). Checking out $3 would run older code over this install. Wait for the next release and run --update then, or re-run with --allow-downgrade to go to $3 now."

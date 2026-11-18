@@ -67,7 +67,8 @@ update ([v0.5.0](#v050)); every update from then on is pinned. If you set `SUPER
 `sudo apt-get install git curl openssl`); as root with `--native` it installs them itself. It comes with 0.5.0: a clone from 0.4.x moves to it once
 with `git fetch --tags && git checkout v0.5.0 && ./setup.sh --update` ([v0.5.0](#v050)). A clone that is on `main` and
 already has `--update` can be ahead of the newest release: over an install, `--update` then stops rather than run
-older code. Wait for the next release and run it then, or pass `--allow-downgrade` to go to the release now.
+older code. Wait for the next release and run it then, or pass `--allow-downgrade` to go to the release now. A clone
+still on a release branch (`release/vX.Y.Z`, squash-merged into the release) is not ahead: `--update` moves it on.
 
 setup.sh takes no backup, so dump the database first ([command](OPERATIONS.md#backups-and-restore)). Don't use
 `docker compose up -d --build` alone: only setup.sh updates `CURRENT_VERSION` and the image tags from the

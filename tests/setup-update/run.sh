@@ -7,7 +7,8 @@
 # Checks that --update checks out the newest signed stable release tag (a detached HEAD) and then runs that release's
 # setup.sh; skips a newest tag whose release has no published manifest, saying so; refuses a bad or foreign signature,
 # a replayed manifest, a manifest naming another commit or none; refuses local changes, and going back from a newer
-# checkout over an install unless --allow-downgrade; moves on from a detached release checkout (an annotated tag);
+# checkout over an install unless --allow-downgrade, but not from an older release's branch the release squashed;
+# moves on from a detached release checkout (an annotated tag);
 # that MDMESH_DRY_RUN=1 (also from an answers file) fetches and changes nothing; and that the tunnel token reaches no
 # program --update runs.
 #
@@ -209,6 +210,10 @@ expect_refused_env() {  # NAME RELEASES WHAT TEXT ENV...
   ok
 }
 expect_refused_env nat-ahead ok "going back from main over a native install" "would run older code"
+# --allow-downgrade counts with --native too (here in a dry run, which needs no root).
+upd nat-ahead ok MDMESH_DRY_RUN=1 -- --native --allow-downgrade
+{ [ "$RC" = 0 ] && grep -q 'v9.1.0 verifies' "$WORK/out"; } || { fail "--update --native --allow-downgrade does not go back"; show; }
+ok
 clone nat-older v9.1.0 "$WORK/origin2"
 expect_refused_env nat-older nosig "walking below the release of a native install" "No release newer than this clone"
 rmdir -- "$WORK/native-tc"
@@ -294,6 +299,16 @@ expect_refused ahead ok "going back from main over an install" "would run older 
 upd ahead ok -- --allow-downgrade
 head_is ahead "$c910" || { fail "--allow-downgrade does not go back to v9.1.0"; show; }
 ok
+# A clone on a release branch before its squash merge, with an install: v9.0.0 plus commits of its own, which the
+# release v9.1.0 holds under other hashes, so they are not its ancestors. Its version is older than v9.1.0: an upgrade.
+clone squash v9.0.0; : > "$WORK/squash/.env"; "${G[@]}" -C "$WORK/squash" commit -q --allow-empty -m pre-squash
+upd squash ok
+{ head_is squash "$c910" && grep -q 'Checked out v9.1.0' "$WORK/out"; } \
+  || { fail "a clone on a release branch before its squash merge is refused as going back"; show; }
+ok
+# v9.1.0 plus a commit of its own, with an install: the release's own version, with code the release doesn't have.
+clone same v9.1.0; : > "$WORK/same/.env"; "${G[@]}" -C "$WORK/same" commit -q --allow-empty -m local
+expect_refused same ok "going back from v9.1.0 plus a commit over an install" "would run older code"
 # Local changes: stop, change nothing.
 clone dirty; echo x >> "$WORK/dirty/note"
 expect_refused dirty ok "a clone with local changes" "commit or stash them"

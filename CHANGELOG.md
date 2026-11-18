@@ -9,6 +9,10 @@ Unreleased.
 
 ## Unreleased
 
+Fixes
+- `./setup.sh --update` no longer refuses a clone on a release branch (`release/vX.Y.Z`) as "ahead" of that release
+  once it is squash-merged: a clone on an older release moves on; only one newer than the release needs `--allow-downgrade`.
+
 ## v0.5.0 — 2026-11-17
 
 Upgrading

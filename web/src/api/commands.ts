@@ -63,7 +63,7 @@ export interface BulkCommandResult {
 }
 
 /**
- * What the bulk endpoint refuses (AgentAdminResource.BULK_FORBIDDEN_TYPES), lowercase: wipe, passcode reset, and an
+ * What the bulk endpoint refuses (AdminCommandPolicy.BULK_FORBIDDEN_TYPES), lowercase: wipe, passcode reset, and an
  * app's uninstall or hide (app.setHidden is reserved: no agent handles it yet).
  */
 const BULK_FORBIDDEN_TYPES: readonly string[] = ['device.wipe', 'device.passcodereset', 'app.uninstall', 'app.sethidden'];

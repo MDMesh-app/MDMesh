@@ -9,6 +9,7 @@ import {
   ACTION_TEMPLATES,
   buildInstallCommand,
   bulkQueueCommand,
+  commandErrorText,
   isBulkForbidden,
   type AppInstallSpec,
   type CommandTemplateExt,
@@ -53,7 +54,7 @@ const errText = (e: unknown) => (e instanceof Error ? e.message : '');
 // Run action
 // ---------------------------------------------------------------------------------------------------------------
 
-// Only safe + disruptive actions run in bulk: the server refuses the destructive ones (passcode-reset, wipe) there,
+// Only safe + disruptive actions run in bulk: the server refuses the destructive ones (isBulkForbidden) there,
 // and kiosk-enter has its own steps (Return to configured kiosk, and Custom kiosk's Library picker). Same rule as
 // the classic BulkActionModal.
 const BULK_GROUPS: Array<{ id: 'safe' | 'disruptive'; title: string }> = [
@@ -225,7 +226,7 @@ export function RunActionModal({
       );
       finish();
     } catch (e) {
-      toast.push('err', `${t.label} failed`, errText(e));
+      toast.push('err', `${t.label} failed`, commandErrorText(e));
     } finally {
       setBusy(false);
     }
@@ -244,7 +245,7 @@ export function RunActionModal({
       toast.push('ok', 'Install queued', `${app.name} → ${plural(res.queued)}` + (skipped ? ` (${skipped} skipped)` : '') + '.');
       finish();
     } catch (e) {
-      toast.push('err', 'Install failed', errText(e));
+      toast.push('err', 'Install failed', commandErrorText(e));
     } finally {
       setBusy(false);
     }
@@ -272,7 +273,7 @@ export function RunActionModal({
       toast.push('ok', 'Custom kiosk queued', `Queued for ${plural(queued)}` + (skipped ? ` (${skipped} skipped)` : '') + '.');
       finish();
     } catch (e) {
-      toast.push('err', 'Custom kiosk failed', errText(e));
+      toast.push('err', 'Custom kiosk failed', commandErrorText(e));
     } finally {
       setBusy(false);
     }

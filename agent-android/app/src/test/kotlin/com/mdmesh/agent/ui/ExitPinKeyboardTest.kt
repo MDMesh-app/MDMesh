@@ -28,7 +28,9 @@ class ExitPinKeyboardTest {
     private fun open(numeric: Boolean): EditText {
         DialogSlot("test").show(
             "pin",
-            ExitPinDialog.create(DialogHost.activity(), numeric = numeric) { entered, _ -> submitted += entered }.dialog,
+            ExitPinDialog.create(DialogHost.activity(), numeric = numeric) { entered, _ ->
+                submitted += entered
+            }.dialog,
         )
         DialogHost.idle()
         return DialogHost.field(DialogHost.showing()).also { it.requestFocus() }

@@ -80,8 +80,12 @@ class ExitPinGate(
     fun attempt(entered: String, pin: String?): Outcome {
         if (pin == null || !isAvailable(pin)) return Outcome.Unavailable
         val state = load(pin)
-        remaining(state)?.let { return Outcome.Locked(it, state.failures, started = false) }
-        return countThenCheck(entered, pin, state)
+        val locked = remaining(state)
+        return if (locked != null) {
+            Outcome.Locked(locked, state.failures, started = false)
+        } else {
+            countThenCheck(entered, pin, state)
+        }
     }
 
     /**
@@ -126,12 +130,13 @@ class ExitPinGate(
     private fun remaining(state: PinAttempts): Long? {
         if (!locksAt(state.failures)) return null
         val now = elapsedMs()
-        if (now < state.lastFailureAt) {
+        return if (now < state.lastFailureAt) {
             // The clock restarted (a reboot): the lockout starts again now, in full.
             store.write(state.copy(lastFailureAt = now))
-            return lockMsFor(state.failures)
+            lockMsFor(state.failures)
+        } else {
+            (state.lastFailureAt + lockMsFor(state.failures) - now).takeIf { it > 0L }
         }
-        return (state.lastFailureAt + lockMsFor(state.failures) - now).takeIf { it > 0L }
     }
 
     companion object {
@@ -195,7 +200,8 @@ class ExitPinGate(
             val failures = if (f < LEGACY_FREE_ATTEMPTS) {
                 f
             } else {
-                lockingCount(LEGACY_STEP_TO_ROUND[(f - LEGACY_FREE_ATTEMPTS).coerceAtMost(LEGACY_STEP_TO_ROUND.lastIndex)])
+                val step = (f - LEGACY_FREE_ATTEMPTS).coerceAtMost(LEGACY_STEP_TO_ROUND.lastIndex)
+                lockingCount(LEGACY_STEP_TO_ROUND[step])
             }
             return state.copy(failures = failures, schema = PinAttempts.SCHEMA)
         }

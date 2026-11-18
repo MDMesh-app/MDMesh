@@ -1,5 +1,3 @@
-@file:Suppress("ForbiddenImport") // The delegate an older agent used, on purpose: what it wrote must still be read.
-
 package com.mdmesh.core.store
 
 import android.content.Context

@@ -1,6 +1,6 @@
 # Managed App Configuration
 
-**Status**: Design, built on `feat/managed-config` (protocol 1.8)
+**Status**: Implemented (protocol 1.8), not released yet
 **Created**: 2026-11-18
 **Scope**: Android managed configurations ("app restrictions") for a configuration's managed apps, with a per-device
 override. Issue #96, point 3. It gives the inherited Headwind *application settings* a modern delivery path; it does
@@ -87,7 +87,10 @@ An optional `appRestrictions` section in `config.apply`:
   - `unsupported`: the agent is not Device Owner, or the entry has a value type it doesn't know (a newer server's).
     Final. Nothing is changed for that package: a partial bundle is never set.
   - A clear that fails is reported `failed` on the package's key and retried with the next document, like a failed
-    permission release.
+    permission release. Clearing an app that is no longer installed succeeds: Android dropped its bundle with it.
+  - The agent's durable record (`activeAppRestrictions`) is the packages the last document listed plus those whose
+    clear failed, written after every apply of the section. Unlike the permission record, it is written even when an
+    entry failed, so a package survives an older server's document in between and is still cleared later.
 - Capability token `app.managedConfig` (agent key `managedConfig` in `capabilities.appManagement`, advertised when
   Device Owner). The server sends the section only to agents advertising both `device.configApply` and
   `app.managedConfig`.
@@ -118,9 +121,14 @@ Configuration save validation (with `normalizeManagedAppPermissions`, in the sam
 2. drop the settings of an application the save leaves out or doesn't install (as for permission rules);
 3. keep the settings when a save leaves the list absent (unchanged, the existing rule).
 
-Device save (`POST /private/devices/{id}/applicationSettings`): require `edit_devices` and access to the device, the
-same validation per application, and only applications the device's configuration installs. Then wake the device, so
-it checks in and gets the new document.
+Device read and save (`GET`/`POST /private/devices/{id}/applicationSettings`): require Headwind's
+`edit_device_app_settings` permission (seeded for Admin and Super-admin; no code checked it before) and access to the
+device, because a value can be a secret. The save gets the same validation per application and keeps only
+applications the device's configuration installs (others are dropped, as on a configuration save). Then it wakes the
+device, so it checks in and gets the new document.
+
+The console's sync summary builds one document per configuration, and a device's own document only when it has
+settings of its own (or a variable setting needs its fields), so a large fleet without overrides costs what it did.
 
 Secrets: values can carry tokens. They never go to a log line or the audit text.
 
@@ -135,10 +143,12 @@ Secrets: values can carry tokens. They never go to a log line or the audit text.
 
 - **Configuration editor**: an "Application settings" disclosure in a managed app's row (an app the configuration
   installs), next to its permissions: key, type, value, remove, and Add setting. A save sends `applicationSettings`.
-- **Device page**: "Application settings" for each app the device's configuration installs: the configuration's
-  values (read only), the device's overrides (edit, remove, add). Saving replaces the device's rows and wakes the
-  device.
-- The config outcome view names `appRestrictions.<package>` by the app's name.
+- **Device page**: an "Application settings" card in the Apps tab, for each app the device's configuration installs:
+  the configuration's values (read only, struck through when overridden), the device's overrides (edit, remove, add a
+  device-only key). Saving replaces the device's rows and wakes the device. A role without `edit_device_app_settings`
+  doesn't see the card.
+- The config outcome view labels `appRestrictions.<package>` as "<package>: application settings", as it labels
+  permission outcomes by package.
 
 ## Deliberately Deferred
 

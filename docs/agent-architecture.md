@@ -72,6 +72,7 @@ finishes the entry even if the screen goes away (a rotation); once in kiosk it q
 | Location | `requestUpdates` (location capture mode) |
 | Connectivity | `connectivityMode` (live-connection mode, 1.5) |
 | App permissions | `managedAppPermissions` (per installed app: Grant or Deny a runtime permission, 1.7) |
+| App settings | `applicationSettings` (per installed app: managed configuration values, 1.8; a device's own rows override them) |
 
 **Kiosk colours on the device** (agent 0.5.0+, `KioskPalette`). A colour is `#RRGGBB`, `#AARRGGBB` or one of
 Android's colour names (any case, nothing around it), read the same way in the console's preview and on the device
@@ -118,6 +119,13 @@ agents use both colours as sent.
   agent applies its rules as soon as its `app.install` succeeds, also after an update. Only agents that advertise
   `app.runtimePermissions` get the section; the others get the document without it, under that document's revision,
   and show as out of sync while the configuration has a rule.
+- **1.8:** the `appRestrictions` section: per app the configuration installs, its managed configuration
+  (`DevicePolicyManager.setApplicationRestrictions`, Device Owner), typed `bool`, `string` or `int`. The server merges
+  the configuration's application settings with the device's own (the device's value wins), so the document is per
+  device. The agent sets each listed app's whole bundle and reads it back; an app left out is cleared, an empty list
+  clears every app the agent set, an absent section (an older server) changes nothing. An app that isn't installed yet
+  fails the document, and the agent applies it as soon as its `app.install` succeeds. Only agents that advertise
+  `app.managedConfig` get the section. Values can be secrets: they are never logged.
 
 **Kiosk background image.** A configuration's managed image is an uploaded file (`backgroundImageFileId`). On
 save the server refuses anything but a PNG, JPEG or WebP of at most 10 MB and 16 megapixels (read from the header),

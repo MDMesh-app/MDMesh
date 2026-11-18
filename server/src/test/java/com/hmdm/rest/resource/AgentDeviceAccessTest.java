@@ -492,6 +492,15 @@ public class AgentDeviceAccessTest {
     }
 
     @Test
+    public void everyRouteThatQueuesForADeviceAnswersAnUnknownOneAlike() {
+        Map<String, Supplier<Response>> routes = perDeviceRoutes("NO-SUCH-DEVICE");
+        for (String name : new String[]{"queueCommand", "syncApps", "retryConfig", "forceSync"}) {
+            assertEquals(name, "error.agent.device.unknown", routes.get(name).get().getMessage());
+        }
+        assertEquals(Collections.emptyList(), sideEffects);
+    }
+
+    @Test
     public void aWipedDeviceTheUserCannotSeeIsRefusedForAccessNotAsWiped() {
         devices.get(HIDDEN).setWipedAt(1000L);
         AgentCommand cmd = new AgentCommand();

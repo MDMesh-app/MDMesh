@@ -2,7 +2,7 @@
 // from the registry (core's included, ext/core/lists.tsx), each behind `requires` and its own boundary, and the
 // helpers their actions get.
 import { isValidElement, useCallback, useMemo, useState, type ReactNode } from 'react';
-import { bulkQueueCommand, commandErrorText, forceSync, isBulkForbidden, queueCommand } from '../../api/commands';
+import { BULK_FORBIDDEN_TEXT, bulkQueueCommand, commandErrorText, forceSync, isBulkForbidden, queueCommand } from '../../api/commands';
 import type { DeviceView } from '../../api/devices';
 import { notConnected } from '../../data/presence';
 import { Button } from '../../ui/Button';
@@ -256,7 +256,7 @@ export function useDeviceActionHelpers(refresh: () => void): DeviceActionHelpers
         // The bulk endpoint refuses these; one device would go through the single-device one, which does not.
         // Core sends them only from the device page, behind its confirmation.
         if (isBulkForbidden(request.type)) {
-          toast.push('err', `${label} failed`, 'Wipe, passcode reset and app uninstall are sent from the device’s page only.');
+          toast.push('err', `${label} failed`, BULK_FORBIDDEN_TEXT);
           return false;
         }
         if (devices.length === 1) {

@@ -29,8 +29,15 @@ export interface CommandTemplate {
   request: QueueCommandRequest;
 }
 
+/** Why a command type isn't sent to several devices at once (isBulkForbidden). */
+export const BULK_FORBIDDEN_TEXT = 'Wipe, passcode reset and app uninstall are sent from the device’s page only.';
+
 const commandMessages: Record<string, string> = {
   'error.agent.command.wiped': 'The device was wiped, so it takes no more commands.',
+  'error.agent.command.noConfiguration': 'The device has no configuration, so there is no configured kiosk to return to.',
+  'error.agent.command.serverOwned': 'The server sends the configuration itself. Use Retry apply on the device page.',
+  'error.agent.command.bulkForbidden': BULK_FORBIDDEN_TEXT,
+  'error.agent.device.unknown': 'The server has no device with this number. It may have been deleted.',
 };
 /** What a refused command (or Install configuration apps, or Retry apply) says, by the server's error key. */
 export function commandErrorText(e: unknown): string {

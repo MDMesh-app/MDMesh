@@ -251,7 +251,7 @@ public class AgentAdminResource {
         }
         Device device = unsecureDAO.getDeviceByNumber(deviceId);
         if (device == null) {
-            return Response.DEVICE_NOT_FOUND_ERROR();
+            return Response.ERROR("error.agent.device.unknown");
         }
         Response refused = queueRefusal(device);
         if (refused != null) {

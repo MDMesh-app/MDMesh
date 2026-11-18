@@ -23,6 +23,20 @@ describe('commandErrorText', () => {
     );
   });
 
+  it('says what each refusal means in plain words', () => {
+    const text = (key: string) => commandErrorText(new ApiError(key, 'ERROR', 200));
+    expect(text('error.agent.command.noConfiguration')).toBe(
+      'The device has no configuration, so there is no configured kiosk to return to.',
+    );
+    expect(text('error.agent.command.serverOwned')).toBe(
+      'The server sends the configuration itself. Use Retry apply on the device page.',
+    );
+    expect(text('error.agent.command.bulkForbidden')).toBe(
+      'Wipe, passcode reset and app uninstall are sent from the device’s page only.',
+    );
+    expect(text('error.agent.device.unknown')).toBe('The server has no device with this number. It may have been deleted.');
+  });
+
   it('passes other messages through', () => {
     expect(commandErrorText(new Error('Network error'))).toBe('Network error');
     expect(commandErrorText('nope')).toBe('');

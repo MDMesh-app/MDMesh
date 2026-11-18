@@ -87,6 +87,13 @@ Heads-up
   to come back (it was up to 1 minute), so Sync now may say the device isn't connected a little longer. The connection
   comes back right away when the device's network returns or its next check-in gets through, and devices retry at
   random times so they don't all reconnect at once after a server restart. Check-ins are not affected.
+- Kiosk exit PINs are now 6 to 12 digits. A configuration whose PIN doesn't follow that keeps working on its devices,
+  and still saves while its PIN stays as it is; the console marks it **Old PIN**. A new or changed PIN, and a custom
+  kiosk's PIN, must follow the rule. Devices on agent 0.5.0 ask for a PIN of digits on a number pad (an old PIN keeps
+  the full keyboard).
+- Kiosk: wrong exit PINs lock the exit later, in rounds: 5 wrong PINs lock it for 1 minute, then each further 3 for 5
+  minutes, then 15 minutes, then 1 hour; after that every wrong PIN locks it for another hour (it was 3, then every
+  wrong PIN, up to 1 hour). A new exit PIN starts the count again. A lockout under way when the device updates is kept. Needs agent 0.5.0.
 
 Security
 - Updates applied by a 0.5.0 supervisor, and the quick start, run the server, web and supervisor images by the digest
@@ -104,6 +111,9 @@ Security
   MD5 hex the console sends, as account creation already required.
 
 New
+- Kiosk: **Clear PIN lockout** on the device page lets staff try the exit PIN again right away after too many wrong
+  PINs. It needs permission to edit devices and is in the audit log; sent to an offline device, it runs at its next
+  check-in. Needs agent 0.5.0.
 - The console has a new look: calmer, with comfortable spacing, one type and spacing scale, one table, one set of
   controls, and menus, dialogs, tabs and pages that move instead of snapping. Lists show 48px rows with their actions
   on hover; Devices has one toolbar with a Filter menu; configurations show as cards; the Overview is laid out in two
@@ -201,6 +211,8 @@ New
   ([DEPLOY.md](https://github.com/MDMesh-app/MDMesh/blob/main/DEPLOY.md#option-a--quick-start-no-clone-published-images)).
 
 Fixes
+- Retry apply on the device page sends the configuration again right away. It used to only make the device check in,
+  and after a failed apply the server waited an hour before sending it again. The automatic retry still waits the hour.
 - Rollback and restore: the database is emptied before the backup is loaded, in the same transaction. The dump's own
   DROPs failed when the update had added a table that refers to an older one, so the rollback stopped (nothing
   changed). The by-hand restores in the docs, and the command the native installer prints next to each dump, do the

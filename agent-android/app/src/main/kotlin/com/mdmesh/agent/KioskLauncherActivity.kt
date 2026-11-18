@@ -38,6 +38,7 @@ import com.mdmesh.core.sync.CheckInWorker
 import com.mdmesh.core.telemetry.EventSink
 import com.mdmesh.kiosk.CrashLoopGuard
 import com.mdmesh.kiosk.Boot
+import com.mdmesh.kiosk.ExitPinFormat
 import com.mdmesh.kiosk.ExitPinGate
 import com.mdmesh.kiosk.HoldStore
 import com.mdmesh.kiosk.KioskController
@@ -344,7 +345,7 @@ class KioskLauncherActivity : ComponentActivity() {
     private fun reopenExitDialog(tag: String, p: KioskApplyPayload, typed: CharSequence? = null) {
         when (tag) {
             KioskExitDialogs.PIN -> promptExit(p, typed)
-            KioskExitDialogs.LOCKED -> pinGate.remainingLockMs()?.let(::showExitLocked)
+            KioskExitDialogs.LOCKED -> pinGate.remainingLockMs(KioskExitDialogs.onDevicePin(p))?.let(::showExitLocked)
             // Only on the kiosk it was shown for: another kiosk entered before a recreation doesn't get it.
             KioskExitDialogs.UNAVAILABLE -> if (unavailableFor == KioskExitDialogs.identityOf(p)) showExitUnavailable(p)
         }
@@ -459,12 +460,13 @@ class KioskLauncherActivity : ComponentActivity() {
     private fun promptExit(p: KioskApplyPayload, typed: CharSequence? = null) {
         // No on-device exit (no PIN, or exit mode "remote"; the affordance isn't shown either): kiosk then ends only
         // from the console. A prompt restored or rebuilt onto such a kiosk doesn't open either.
-        if (KioskExitDialogs.onDevicePin(p) == null) return
-        pinGate.remainingLockMs()?.let { showExitLocked(it); return }
-        val prompt = ExitPinDialog.create(this, typed, ::onPinEntered)
+        val pin = KioskExitDialogs.onDevicePin(p) ?: return
+        pinGate.remainingLockMs(pin)?.let { showExitLocked(it); return }
+        // A number pad for a PIN of digits; a PIN saved before the digits-only rule keeps the full keyboard.
+        val prompt = ExitPinDialog.create(this, typed, ExitPinFormat.numeric(pin), ::onPinEntered)
         // "N more wrong PINs lock the exit" comes from the gate's saved count, so a rebuilt or reopened prompt says
         // it too, not only the one the last wrong PIN was typed into.
-        pinGate.attemptsLeft()?.let { prompt.render(ExitPinUiState.triesLeft(it)) }
+        pinGate.attemptsLeft(pin)?.let { prompt.render(ExitPinUiState.triesLeft(it)) }
         dialogs.show(KioskExitDialogs.PIN, prompt.dialog)
     }
 
@@ -504,7 +506,8 @@ class KioskLauncherActivity : ComponentActivity() {
     /**
      * "Exit locked, try again in N": N counts down while it is shown, and the dialog closes when the lockout ends (the
      * exit can be tried again) or, for a long lockout, after the PIN prompt's idle time, so it never stays over the
-     * kiosk for good. Both from the gate's own clock, so a rebuilt or restored dialog says the same.
+     * kiosk for good. Both from the gate's own clock, so a rebuilt or restored dialog says the same. It also closes
+     * as soon as the lockout is gone for another reason: cleared from the console, or the kiosk's PIN changed.
      */
     private fun showExitLocked(remainingMs: Long) {
         fun message(ms: Long) = getString(R.string.kiosk_exit_locked_message, ExitPinGate.describe(ms))
@@ -517,7 +520,7 @@ class KioskLauncherActivity : ComponentActivity() {
         val dialog = MdmDialog.create(this, spec) { it.dismiss() }
         val closeAt = SystemClock.elapsedRealtime() + ExitPinDialog.idleTimeoutMs(this)
         dialog.everyWhileShown(LOCKED_TICK_MS) {
-            val left = pinGate.remainingLockMs()
+            val left = pinGate.remainingLockMs(KioskExitDialogs.onDevicePin(active))
             if (left == null || SystemClock.elapsedRealtime() >= closeAt) {
                 dialog.dismiss()
             } else {

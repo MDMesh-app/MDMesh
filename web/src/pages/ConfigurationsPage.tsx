@@ -4,7 +4,7 @@ import { getConfigurationApps, getConfigurations, type ConfigApp, type Configura
 import { listApplications, type Application } from '../api/applications';
 import { getSyncSummary, type ConfigSyncSummary } from '../api/configSync';
 import { searchDevices } from '../api/devices';
-import { appNameForVersionId, hasDefaultPin, hasNoPin, isLocked } from '../data/configurationRules';
+import { appNameForVersionId, hasDefaultPin, hasLegacyPin, hasNoPin, isLocked } from '../data/configurationRules';
 import {
   Badge,
   Button,
@@ -385,6 +385,13 @@ function ConfigIdentity({ c }: { c: Configuration }) {
           <Tooltip content="Kiosk mode has no exit PIN. Set one.">
             <Badge tone="warn" tabIndex={0}>
               No PIN
+            </Badge>
+          </Tooltip>
+        ) : null}
+        {hasLegacyPin(c) ? (
+          <Tooltip content="The kiosk exit PIN isn’t 6 to 12 digits (it was saved before that rule). Devices keep it. Set a new one.">
+            <Badge tone="warn" tabIndex={0}>
+              Old PIN
             </Badge>
           </Tooltip>
         ) : null}

@@ -5,6 +5,7 @@ import android.os.SystemClock
 import android.graphics.Typeface
 import android.text.Editable
 import android.text.InputFilter
+import android.text.InputType
 import android.text.Spanned
 import android.text.TextWatcher
 import android.text.method.PasswordTransformationMethod
@@ -251,6 +252,9 @@ class ExitPinDialog private constructor(
             return recommended.coerceAtLeast(IDLE_TIMEOUT_MS)
         }
 
+        /** The number pad's input type for a PIN of digits: still a password, so nothing suggests or keeps it. */
+        internal const val NUMERIC_PIN = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
+
         /** A hardware key in the field: Enter submits on its first press; its repeats and release do nothing. */
         internal fun keyAction(keyCode: Int, action: Int, repeatCount: Int): Input = when {
             keyCode != KeyEvent.KEYCODE_ENTER && keyCode != KeyEvent.KEYCODE_NUMPAD_ENTER -> Input.IGNORE
@@ -266,6 +270,8 @@ class ExitPinDialog private constructor(
             context: Context,
             /** Text typed into the dialog this one replaces after a config change (memory only). */
             typed: CharSequence? = null,
+            /** A number pad (the PIN is digits only); otherwise the full keyboard, for a PIN saved before that rule. */
+            numeric: Boolean = false,
             onSubmit: (entered: String, dialog: ExitPinDialog) -> Unit,
         ): ExitPinDialog {
             var pin: ExitPinDialog? = null
@@ -287,6 +293,8 @@ class ExitPinDialog private constructor(
                 body.findViewById(R.id.exit_pin_error),
             )
             pin = dialog
+            // Before wire(): a new input type resets the typeface and transformation that wire() and the toggle set.
+            if (numeric) dialog.field.inputType = NUMERIC_PIN
             dialog.wire(onSubmit)
             typed?.let {
                 dialog.field.setText(it)

@@ -91,28 +91,47 @@ Both are on the MDMesh kiosk screen, not inside the kiosk's apps. In a one-app k
 screen, so the exit shows only when the screen does, for example on the **App closed** screen. Plan to end a one-app
 kiosk from the console. The prompt asks for the **Exit PIN**. The right PIN ends kiosk on that device.
 
-Choose a PIN only your staff know. The console marks a configuration whose PIN is still the old well-known default
-with **Default PIN**, and one without a PIN with **No PIN**. There is no length rule: a longer PIN is harder to guess.
+Choose a PIN only your staff know: 6 to 12 digits. With agent 0.5.0 or later the device asks for it on a number pad.
+The console marks a configuration whose PIN is still the old well-known default with **Default PIN**, and one without
+a PIN with **No PIN**.
+
+**PINs from before 0.5.0.** Earlier versions took any text as the PIN. Such a PIN keeps working on devices (they show
+the full keyboard for it), and a configuration that has one still saves as long as the PIN stays as it is. The console
+marks it **Old PIN**: set a new one of 6 to 12 digits. A new configuration, a changed PIN and a custom kiosk's PIN must
+follow the rule.
 
 **No PIN.** With agent 0.3.6 or later, a kiosk without an exit PIN has no exit on the device at all: only the console
 can end it. Older agents let anyone leave a kiosk that has no PIN.
 
 ### Wrong PINs lock the exit
 
-With agent 0.3.6 or later, 3 wrong PINs lock the exit for 30 seconds. While it is locked, no PIN is checked, not even
-the right one. Each further wrong PIN locks it again for longer: 1 minute, 5 minutes, 15 minutes, then 1 hour. Only
-the right PIN resets the count; restarting the device starts the current lockout over. The device stays in kiosk
-throughout.
+With agent 0.5.0 or later, 5 wrong PINs in a row lock the exit for 1 minute. While it is locked, no PIN is checked,
+not even the right one. After each lockout staff get 3 more tries; the third wrong one locks the exit again for longer:
+5 minutes, then 15 minutes, then 1 hour. So it takes 14 wrong PINs, and 21 minutes of waiting, to reach the hour. From
+then on every wrong PIN locks the exit for another hour: one guess an hour, so a 6-digit PIN would take decades to
+guess. The right PIN resets the
+count, and so does a new PIN (a configuration change or a custom kiosk). Restarting the device starts the current
+lockout over, and changing the device's clock doesn't shorten it. The device stays in kiosk throughout.
+
+Agents 0.3.6 to 0.4.x lock after 3 wrong PINs, then for longer after each further wrong PIN (30 seconds, 1 minute, 5
+minutes, 15 minutes, then 1 hour). A device updated to 0.5.0 during a lockout keeps it, at least as long.
 
 Each lockout shows as **Exit PIN locked** in the device's **Activity**. If the server can send email, administrators
 who can edit the device also get an email, at most one per device per hour
-([kiosk alerts](OPERATIONS.md#server)). There is no console action to clear a lockout; to let someone out
-sooner, end kiosk from the console.
+([kiosk alerts](OPERATIONS.md#server)).
+
+To let staff try again now, select **Clear PIN lockout** on the device page (**Control → Remote actions → Kiosk &
+apps**; agent 0.5.0 or later). It ends the lockout and gives back the first 5 tries; the device stays in kiosk. It
+needs permission to edit devices and is in the audit log. Sent while the device is offline, it runs at the device's
+next check-in. To let someone out
+without the PIN, end kiosk from the console.
 
 ### From the console
 
 On a device page, open **Control → Remote actions → Kiosk & apps**:
 
+- **Clear PIN lockout** lets staff try the exit PIN again now, after too many wrong PINs
+  ([Wrong PINs lock the exit](#wrong-pins-lock-the-exit)).
 - **Exit kiosk** ends kiosk on the device and restores its normal home screen. The device must be online to receive
   it. Staff can still go back in with **Return to kiosk** on the device (agent 0.5.0 or later); to prevent that,
   turn kiosk off in the configuration.
@@ -149,5 +168,6 @@ admin ends it from the console.
 | Grid instead of the main app | The main app isn't installed yet, or more than one app is shown in kiosk. Use **Install configuration apps** on the device page. |
 | Home or notifications still available | Check **Home button** and **Notifications**. A custom kiosk always allows them. |
 | **App closed** on the device | The app closed more than 3 times in a minute. Fix the app, then tap **Open again**. |
-| Staff locked out by wrong PINs | Wait for the lockout to end, or select **Exit kiosk** on the device page. |
+| Staff locked out by wrong PINs | Select **Clear PIN lockout** on the device page (agent 0.5.0 or later), wait for the lockout to end, or select **Exit kiosk**. |
+| **Old PIN** on a configuration | Its exit PIN was saved before PINs had to be 6 to 12 digits. Devices keep using it; set a new PIN and save. |
 | No lockout email | The server needs `SMTP_HOST` ([configuration reference](OPERATIONS.md#server)); the recipient needs an email address, permission to edit devices, and access to the device. |

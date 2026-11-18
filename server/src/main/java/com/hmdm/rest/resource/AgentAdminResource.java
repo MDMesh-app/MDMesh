@@ -284,10 +284,17 @@ public class AgentAdminResource {
             return e.response;
         }
 
+        final String devicePayload;
+        try {
+            devicePayload = forDevice(body.getType(), payload, device);
+        } catch (NoConfigurationException e) {
+            return Response.ERROR("error.agent.command.noConfiguration");
+        }
+
         AgentCommand command = new AgentCommand();
         command.setDeviceNumber(deviceId);
         command.setType(body.getType());
-        command.setPayload(payload);
+        command.setPayload(devicePayload);
         command.setRequiresCapability(body.getRequiresCapability());
         command.setStatus("pending");
         command.setCreatedAt(System.currentTimeMillis());
@@ -313,10 +320,18 @@ public class AgentAdminResource {
 
     /**
      * The payload to queue: an {@code app.install} gets its APK's SHA-256 (see {@link InstallIntegrity}), and a
-     * {@code kiosk.enter} its managed background image's current URL (see {@link KioskCommandImages}). Single and bulk
-     * commands both come through here.
+     * {@code kiosk.enter} its managed background image's current URL (see {@link KioskCommandImages}), after its exit PIN
+     * is checked ({@link com.hmdm.util.KioskExitPin#enterCommandProblem}). Single and bulk commands both come through
+     * here.
      */
     private String payloadToQueue(String type, String payload, int customerId) throws CommandRejectedException {
+        // A kiosk PIN sent by the client follows the configurations' rule. The configured kiosk's PIN is never sent:
+        // the payload asks for it, and forDevice fills it in from each device's own configuration.
+        String pinProblem = com.hmdm.util.KioskExitPin.enterCommandProblem(type, payload);
+        if (pinProblem != null) {
+            logger.warn("Agent command {} rejected: exit PIN format", type);
+            throw new CommandRejectedException(Response.ERROR(pinProblem));
+        }
         if (kioskImages != null) payload = kioskImages.forCommand(type, payload, customerId);
         try {
             return InstallIntegrity.forCommand(type, payload, installHashes.forCustomer(customerId));
@@ -328,6 +343,24 @@ public class AgentAdminResource {
             logger.warn("Agent command {} rejected: {}", type, e.getMessage());
             throw new CommandRejectedException(Response.ERROR("Cannot install: " + e.getMessage()));
         }
+    }
+
+    /**
+     * The payload as {@code device} gets it: a {@code kiosk.enter} that asks for the configured PIN gets its own
+     * configuration's PIN (Return to configured kiosk).
+     *
+     * @throws NoConfigurationException when it asks for one and the device has no configuration
+     */
+    private String forDevice(String type, String payload, Device device) throws NoConfigurationException {
+        if (!com.hmdm.util.KioskExitPin.wantsConfiguredPin(type, payload)) return payload;
+        com.hmdm.persistence.domain.Configuration cfg = device.getConfigurationId() == null ? null
+                : unsecureDAO.getConfigurationById(device.getConfigurationId());
+        if (cfg == null) throw new NoConfigurationException();
+        return com.hmdm.util.KioskExitPin.withConfiguredPin(payload, cfg.getPassword());
+    }
+
+    /** A command asks for the device's configuration, and it has none. */
+    private static final class NoConfigurationException extends Exception {
     }
 
     /**
@@ -391,10 +424,17 @@ public class AgentAdminResource {
                 skipped.add(id);
                 continue;
             }
+            final String devicePayload;
+            try {
+                devicePayload = forDevice(type, payload, device);
+            } catch (NoConfigurationException e) {
+                skipped.add(id); // asks for its configuration's kiosk PIN, and it has no configuration
+                continue;
+            }
             AgentCommand command = new AgentCommand();
             command.setDeviceNumber(device.getNumber());
             command.setType(type);
-            command.setPayload(payload);
+            command.setPayload(devicePayload);
             command.setRequiresCapability(req.getCommand().getRequiresCapability());
             command.setStatus("pending");
             command.setCreatedAt(System.currentTimeMillis());
@@ -626,6 +666,54 @@ public class AgentAdminResource {
         }
         long sinceMillis = since == null ? 0L : since;
         return Response.OK(commandDAO.listLocations(deviceId, sinceMillis, 500));
+    }
+
+    // =================================================================================================================
+    @ApiOperation(value = "Retry configuration apply", notes = "Queues the device's configuration (config.apply) now, "
+            + "without the hour the server otherwise waits after a failed attempt, and wakes the device. Answers "
+            + "{result, connected}: result is queued, alreadyQueued (one is on its way: the device is woken for it), "
+            + "inSync, unsupported (the agent can't apply configurations) or noConfiguration; connected is false when "
+            + "the device has no live connection, so it gets the configuration at its next check-in.")
+    @POST
+    @Path("/devices/{deviceId}/retryConfig")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response retryConfig(@PathParam("deviceId") String deviceId) {
+        if (!canEditDevices("retry configuration apply")) {
+            return Response.PERMISSION_DENIED();
+        }
+        Optional<Integer> customerId = SecurityContext.get().getCurrentCustomerId();
+        if (!customerId.isPresent()) {
+            return Response.PERMISSION_DENIED();
+        }
+        Device device = unsecureDAO.getDeviceByNumber(deviceId);
+        if (device == null) {
+            return Response.ERROR("error.agent.device.unknown");
+        }
+        if (!deviceDAO.isAccessibleToUser(device)) {
+            return Response.PERMISSION_DENIED();
+        }
+        ConfigReconciler.Retry result = configReconciler.retryNow(device, System.currentTimeMillis());
+        boolean connected = wakeHub.isOnline(deviceId);
+        if (result == ConfigReconciler.Retry.QUEUED || result == ConfigReconciler.Retry.ALREADY_QUEUED) {
+            wakeHub.wake(deviceId, "commands");
+        }
+        logger.info("Retry apply for device {} by user {}: {}", deviceId,
+                SecurityContext.get().getCurrentUser().map(u -> u.getLogin()).orElse("?"), result);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("result", retryResultName(result));
+        body.put("connected", connected);
+        return Response.OK(body);
+    }
+
+    /** The API's name for a retry result: queued, alreadyQueued, inSync, unsupported, noConfiguration. */
+    static String retryResultName(ConfigReconciler.Retry result) {
+        switch (result) {
+            case QUEUED: return "queued";
+            case ALREADY_QUEUED: return "alreadyQueued";
+            case IN_SYNC: return "inSync";
+            case UNSUPPORTED: return "unsupported";
+            default: return "noConfiguration";
+        }
     }
 
     // =================================================================================================================

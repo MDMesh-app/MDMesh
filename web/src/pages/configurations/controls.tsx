@@ -277,6 +277,8 @@ function SecretInput({
         onChange={(e) => onChange(e.target.value)}
         autoComplete="new-password"
         spellCheck={false}
+        // The exit PIN is digits: a number pad on touch screens, any text still typeable (a PIN from before the rule).
+        inputMode={pin ? 'numeric' : undefined}
       />
       <Button
         size="md"

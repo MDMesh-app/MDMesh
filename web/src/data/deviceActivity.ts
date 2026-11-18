@@ -17,6 +17,7 @@ const COMMAND_NAMES: Record<string, string> = {
   'device.locationMode': 'Location mode',
   'kiosk.enter': 'Enter kiosk',
   'kiosk.exit': 'Exit kiosk',
+  'kiosk.clearPinLockout': 'Clear PIN lockout',
   'app.install': 'Install app',
   'app.uninstall': 'Uninstall app',
   'apps.scan': 'Scan apps',

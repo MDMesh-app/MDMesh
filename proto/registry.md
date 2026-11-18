@@ -62,7 +62,7 @@ advertises `tier: "none"` until the `:remote` module is implemented, so no `remo
 
 ### device
 Device actions (`DeviceAction.ADVERTISED_KEYS`). For each, the command type and the token are the same
-string, except `configApply`.
+string, except `configApply` and `kioskClearPinLockout`.
 
 | key | token | command |
 |-----|-------|---------|
@@ -78,6 +78,7 @@ string, except `configApply`.
 | `locationMode` | `device.locationMode` | `device.locationMode` |
 | `configApply` | `device.configApply` | `config.apply` |
 | `locationOff` | `device.locationOff` | `device.locationMode` with `mode: "off"` (1.4: the agent honours `off`; older agents read it as passive) |
+| `kioskClearPinLockout` | `device.kioskClearPinLockout` | `kiosk.clearPinLockout` (1.11, agent 0.5.0) |
 
 ## Command types
 
@@ -92,8 +93,9 @@ string, except `configApply`.
 | `app.uninstall` | — | `{ packageName }`; no console or server sender yet |
 | `apps.scan` | — | none; result detail is `{ apps: [...] }` |
 | `apps.icons` | — | `{ packages: [...] }`; result detail is `{ icons: [{ pkg, pngBase64 }] }` |
-| `kiosk.enter` | — | `{ mode, allowedPackages, pinPackage, features, exitMode, password, theme }` (`KioskApplyPayload`); `features.lockButtons` blocks the power menu, `features.lockVolume` (1.4) blocks volume changes and mutes while in kiosk; `theme.backgroundImage` `{ url, sha256 }` (agent 0.5.0) is an image the agent downloads only over HTTPS (an `http://` URL, which the server queues as-is on an HTTP-only install, is refused and the agent keeps `theme.backgroundColor`), checks by SHA-256 (at most 10 MB and 16 megapixels) and draws behind the launcher, keeping `theme.backgroundColor` on any failure; 1.10 adds optional `fit` (`fit`) and `focalX`/`focalY` (0..1), sent only when not the default (fill, centre) |
+| `kiosk.enter` | — | `{ mode, allowedPackages, pinPackage, features, exitMode, password, theme }` (`KioskApplyPayload`); `features.lockButtons` blocks the power menu, `features.lockVolume` (1.4) blocks volume changes and mutes while in kiosk; `theme.backgroundImage` `{ url, sha256 }` (agent 0.5.0) is an image the agent downloads only over HTTPS (an `http://` URL, which the server queues as-is on an HTTP-only install, is refused and the agent keeps `theme.backgroundColor`), checks by SHA-256 (at most 10 MB and 16 megapixels) and draws behind the launcher, keeping `theme.backgroundColor` on any failure; 1.10 adds optional `fit` (`fit`) and `focalX`/`focalY` (0..1), sent only when not the default (fill, centre); the server refuses a `password` that isn't 6 to 12 digits (or empty), and replaces `"configuredPin": true` (an admin request, never sent to the agent) with the target device's own configuration PIN |
 | `kiosk.exit` | — | none |
+| `kiosk.clearPinLockout` | `device.kioskClearPinLockout` | none (1.11): clears the exit PIN's wrong-PIN count and any lockout; the device stays in kiosk. Result `done` with a detail saying what it cleared (also when there was nothing), `failed` when the cleared count couldn't be saved |
 | `device.lock` | `device.lock` | none |
 | `device.reboot` | `device.reboot` | none (DO) |
 | `device.lockscreenMessage` | `device.lockscreenMessage` | `{ message }` (empty clears it) |

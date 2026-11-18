@@ -329,6 +329,17 @@ public class Configuration implements CustomerData, Serializable {
         return DEFAULT_KIOSK_PIN.equals(this.password);
     }
 
+    /**
+     * True when the kiosk exit PIN was saved before the 6-to-12-digit rule and doesn't follow it
+     * ({@link com.hmdm.util.KioskExitPin#legacy}). Devices keep taking it; the console asks for a new one. Derived and
+     * read-only, like {@link #isDefaultKioskPin()}.
+     */
+    @ApiModelProperty(value = "Whether the kiosk exit PIN doesn't follow the 6-to-12-digit rule (saved before it)",
+            readOnly = true)
+    public boolean isLegacyKioskPin() {
+        return com.hmdm.util.KioskExitPin.legacy(this.password);
+    }
+
     public boolean isSelected() {
         return selected;
     }

@@ -218,6 +218,7 @@ public class AgentCheckInConfigResyncTest {
 
     private FakeCommandDAO commandDAO;
     private FakeUnsecureDAO unsecureDAO;
+    private ConfigReconciler reconciler;
     private AgentResource resource;
     private String revision;
     /** Results the "agent" sends on its next check-in. */
@@ -242,8 +243,8 @@ public class AgentCheckInConfigResyncTest {
         RolloutRequeuer noRollout = new RolloutRequeuer(null) {
             @Override public boolean requeue(Device d, long now) { return false; }
         };
-        resource = new AgentResource(unsecureDAO, null, commandDAO, null,
-                new ConfigReconciler(unsecureDAO, commandDAO, Fakes.noExtensionPoints()),
+        reconciler = new ConfigReconciler(unsecureDAO, commandDAO, Fakes.noExtensionPoints());
+        resource = new AgentResource(unsecureDAO, null, commandDAO, null, reconciler,
                 new AppReconciler(null, null, null, null), noRollout,
                 new InstallHashes(null, unsecureDAO), new KioskLockoutAlert(null, null, null), null);
     }
@@ -375,6 +376,83 @@ public class AgentCheckInConfigResyncTest {
         assertEquals(DesiredConfigBuilder.COMMAND_TYPE, resent.get(0).getType());
         assertEquals(0, checkIn("0.3.4", revision).size());
         assertEquals(2, configApplies());
+    }
+
+    // --- Retry apply (the console) ------------------------------------------------------------------------------
+
+    /** The first config.apply comes back failed; returns it. */
+    private AgentCommand applyFails() throws Exception {
+        assertEquals(1, checkIn("0.5.0", null).size());
+        outbox.get(0).setStatus("failed");
+        assertEquals(0, checkIn("0.5.0", null).size()); // carries the failure
+        AgentCommand failed = commandDAO.commands.get(0);
+        assertEquals("failed", failed.getStatus());
+        return failed;
+    }
+
+    private ConfigReconciler.Retry retry() {
+        return reconciler.retryNow(unsecureDAO.device, System.currentTimeMillis());
+    }
+
+    @Test
+    public void retry_apply_sends_the_configuration_at_once_after_a_failure() throws Exception {
+        applyFails();
+        assertEquals("automatic: the hour's backoff", 0, checkIn("0.5.0", null).size());
+
+        assertEquals(ConfigReconciler.Retry.QUEUED, retry());
+        List<com.hmdm.rest.json.agent.AgentCommand> got = checkIn("0.5.0", null);
+        assertEquals("the next check-in (the wake) gets it", 1, got.size());
+        assertEquals(DesiredConfigBuilder.COMMAND_TYPE, got.get(0).getType());
+        checkIn("0.5.0", revision); // acked done
+        assertEquals(0, checkIn("0.5.0", revision).size());
+        assertEquals(2, configApplies());
+    }
+
+    @Test
+    public void a_retry_that_fails_again_keeps_the_automatic_backoff() throws Exception {
+        applyFails();
+        assertEquals(ConfigReconciler.Retry.QUEUED, retry());
+        assertEquals(1, checkIn("0.5.0", null).size());
+        outbox.get(0).setStatus("failed");
+        for (int i = 0; i < 3; i++) assertEquals(0, checkIn("0.5.0", null).size());
+        assertEquals(2, configApplies());
+    }
+
+    @Test
+    public void retrying_again_and_again_queues_one_at_a_time() throws Exception {
+        applyFails();
+        assertEquals(ConfigReconciler.Retry.QUEUED, retry());
+        for (int i = 0; i < 5; i++) assertEquals(ConfigReconciler.Retry.ALREADY_QUEUED, retry());
+        assertEquals(1, checkIn("0.5.0", null).size());
+        assertEquals("delivered, the device may be applying it: still not another", ConfigReconciler.Retry.ALREADY_QUEUED,
+                retry());
+        assertEquals(2, configApplies());
+    }
+
+    @Test
+    public void a_retry_racing_a_check_in_that_queued_first_queues_nothing_more() throws Exception {
+        applyFails();
+        commandDAO.nextInsertIsDuplicate = true; // the one-open-config.apply index refuses the second insert
+        assertEquals(ConfigReconciler.Retry.ALREADY_QUEUED, retry());
+        assertEquals(1, configApplies());
+    }
+
+    @Test
+    public void a_retry_on_a_device_in_sync_queues_nothing() throws Exception {
+        checkIn("0.5.0", null);
+        checkIn("0.5.0", revision);
+        assertEquals(ConfigReconciler.Retry.IN_SYNC, retry());
+        assertEquals(1, configApplies());
+    }
+
+    @Test
+    public void a_retry_for_an_agent_without_configurations_queues_nothing() {
+        commandDAO.caps = "{\"device\":[\"lock\"]}";
+        assertEquals(ConfigReconciler.Retry.UNSUPPORTED, retry());
+        unsecureDAO.device.setConfigurationId(null);
+        commandDAO.caps = CAPS;
+        assertEquals(ConfigReconciler.Retry.NO_CONFIGURATION, retry());
+        assertEquals(0, configApplies());
     }
 
     @Test

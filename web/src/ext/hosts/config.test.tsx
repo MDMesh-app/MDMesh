@@ -766,3 +766,69 @@ describe('configuration sections: who sees and edits them', () => {
     expect((await demoLabel()).disabled).toBe(true);
   });
 });
+
+describe('configuration editor: the exit PIN', () => {
+  const pinField = async () => (await screen.findByLabelText('Kiosk exit PIN')) as HTMLInputElement;
+  const kioskCard = () => document.getElementById('kiosk')!;
+
+  it('keeps a PIN saved before the digits rule saveable, and asks for a new one', async () => {
+    const { puts } = open({ config: { kioskMode: true, password: '4931' } });
+    expect((await pinField()).inputMode).toBe('numeric');
+    expect(within(kioskCard()).getByText(/saved before exit PINs had to be 6 to 12 digits/)).toBeTruthy();
+    expect(navEntry('Kiosk').textContent).toContain('Old PIN');
+    await typeDescription('Front desk');
+    await save();
+    await waitFor(() => expect(puts).toHaveLength(1));
+    expect(puts[0].password).toBe('4931');
+  });
+
+  it('refuses a changed PIN that is not 6 to 12 digits, before anything is sent, and says why at the field', async () => {
+    const { puts } = open({ config: { kioskMode: true, password: '482139' } });
+    const field = await pinField();
+    // Every invalid form is in configurationRules.test.ts; here, how the editor shows one.
+    fireEvent.change(field, { target: { value: '48213a' } });
+    expect(within(kioskCard()).getByText(/The exit PIN must be 6 to 12 digits/)).toBeTruthy();
+    expect(field.getAttribute('aria-invalid')).toBe('true');
+    expect(navEntry('Kiosk').textContent).toContain('Check PIN');
+    await save();
+    await waitFor(() => expect(toastText()).toContain('Check the exit PIN'));
+    expect(screen.queryByRole('dialog', { name: /Change kiosk/ })).toBeNull();
+    expect(puts).toHaveLength(0);
+    expect(document.activeElement).toBe(field);
+
+    // A valid PIN clears it, and the save goes on (a PIN change asks first: it changes the kiosk).
+    fireEvent.change(field, { target: { value: '905172' } });
+    expect(within(kioskCard()).queryByText(/The exit PIN must be/)).toBeNull();
+    await save();
+    const confirm = await screen.findByRole('dialog', { name: /Change kiosk/ });
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Save and apply' }));
+    await waitFor(() => expect(puts).toHaveLength(1));
+    expect(puts[0].password).toBe('905172');
+  });
+
+  it('keeps an old PIN editable on a copy with kiosk off, so the copy can be saved', async () => {
+    const { puts } = open({ config: { kioskMode: false, password: '4931' } }, { path: '/configurations/new?from=7' });
+    const field = await pinField();
+    const row = () => field.closest('fieldset')!;
+    expect(row().disabled).toBe(false);
+    expect(within(kioskCard()).getByText(/The exit PIN must be 6 to 12 digits/)).toBeTruthy();
+    fireEvent.change(field, { target: { value: '' } });
+    expect(row().disabled).toBe(true);
+    await save();
+    await waitFor(() => expect(puts).toHaveLength(1));
+    expect(puts[0].password ?? '').toBe('');
+  });
+
+  it('lets an old PIN be cleared (no exit on the device)', async () => {
+    const { puts } = open({ config: { kioskMode: true, password: 'let me out' } });
+    const field = await pinField();
+    fireEvent.change(field, { target: { value: 'let me out!' } });
+    expect(within(kioskCard()).getByText(/The exit PIN must be 6 to 12 digits/)).toBeTruthy();
+    fireEvent.change(field, { target: { value: '' } });
+    expect(within(kioskCard()).queryByText(/The exit PIN must be/)).toBeNull();
+    await save();
+    fireEvent.click(within(await screen.findByRole('dialog', { name: /Change kiosk/ })).getByRole('button', { name: 'Save and apply' }));
+    await waitFor(() => expect(puts).toHaveLength(1));
+    expect(puts[0].password ?? '').toBe('');
+  });
+});

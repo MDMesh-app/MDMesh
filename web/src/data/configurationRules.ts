@@ -25,6 +25,34 @@ export const hasDefaultPin = (c: Configuration) => c.defaultKioskPin === true;
  */
 export const hasNoPin = (c: Configuration) => c.kioskMode === true && !c.password;
 
+/** The exit PIN rule, as the server checks it (KioskExitPin): 6 to 12 digits, or no PIN. */
+export const EXIT_PIN_MIN = 6;
+export const EXIT_PIN_MAX = 12;
+export const EXIT_PIN_RULE = `The exit PIN must be ${EXIT_PIN_MIN} to ${EXIT_PIN_MAX} digits, or empty for no exit on the device.`;
+
+const pinText = (pin: unknown): string => (pin == null ? '' : String(pin));
+
+/** No PIN, or 6 to 12 ASCII digits. */
+export function exitPinValid(pin: unknown): boolean {
+  const p = pinText(pin);
+  return p === '' || new RegExp(`^[0-9]{${EXIT_PIN_MIN},${EXIT_PIN_MAX}}$`).test(p);
+}
+
+/**
+ * Kiosk on with a PIN saved before the digits rule that doesn't follow it. Devices keep taking it (on the full
+ * keyboard); the console asks for a new one.
+ */
+export const hasLegacyPin = (c: Configuration) => c.kioskMode === true && !exitPinValid(c.password);
+
+/**
+ * Why a configuration can't be saved with `pin`, or null: a new or changed PIN must follow the rule, while the PIN
+ * already saved (`stored`), kept as it is, may stay (the server checks the same).
+ */
+export function exitPinProblem(pin: unknown, stored: unknown): string | null {
+  if (exitPinValid(pin) || (stored != null && pinText(pin) === pinText(stored))) return null;
+  return EXIT_PIN_RULE;
+}
+
 /**
  * The API uses an explicit action for Location services so a console which predates the field cannot silently
  * change a saved policy to "Not managed" when it round-trips a configuration. The action is intentionally separate

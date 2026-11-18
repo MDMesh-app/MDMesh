@@ -2,10 +2,12 @@ package com.mdmesh.agent.stress
 
 import android.app.ActivityManager
 import android.content.res.Configuration
+import android.text.method.PasswordTransformationMethod
 import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
-import android.text.method.PasswordTransformationMethod
 import com.mdmesh.agent.R
+import com.mdmesh.kiosk.ExitPinGate
+import java.time.Duration
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -13,7 +15,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.robolectric.shadows.ShadowDialog
 import org.robolectric.shadows.ShadowLooper
-import java.time.Duration
 
 /**
  * The exit PIN on the real kiosk HOME (from the kiosk stress run): a typed PIN doesn't outlive the screen going off,
@@ -189,11 +190,11 @@ class ExitPinSafetyTest : KioskHarness() {
     @Test fun exitLockedCountsDownAndClosesWhenTheLockoutEnds() {
         launch(grid)
         tapExitKiosk()
-        repeat(3) { submitPin("0000") }
-        assertTrue(lockedMessage(), lockedMessage().endsWith("30 s."))
+        repeat(ExitPinGate.FIRST_ROUND_TRIES) { submitPin("0000") }
+        assertTrue(lockedMessage(), lockedMessage().endsWith("1 min."))
         idle(10)
-        assertTrue(lockedMessage(), lockedMessage().endsWith("20 s."))
-        idle(21)
+        assertTrue(lockedMessage(), lockedMessage().endsWith("50 s."))
+        idle(51)
         assertNull("closed once the exit can be tried again", lockedDialog())
     }
 
@@ -201,15 +202,11 @@ class ExitPinSafetyTest : KioskHarness() {
     @Test fun exitLockedClosesAfterAMinuteOfALongLockout() {
         launch(grid)
         tapExitKiosk()
-        repeat(3) { submitPin("0000") }
-        lockedDialog()!!.dismiss(); settle()
-        idle(31)
-        tapExitKiosk()
-        submitPin("0000") // the 4th: locked for a minute
+        repeat(ExitPinGate.FIRST_ROUND_TRIES) { submitPin("0000") } // the first round: locked for a minute
         lockedDialog()!!.dismiss(); settle()
         idle(61)
         tapExitKiosk()
-        submitPin("0000") // the 5th: locked for 5 minutes
+        repeat(ExitPinGate.ROUND_TRIES) { submitPin("0000") } // the next round: locked for 5 minutes
         assertTrue(lockedMessage(), lockedMessage().endsWith("5 min."))
         idle(IDLE_MS / 1000 + 1)
         assertNull(lockedDialog())
@@ -220,8 +217,7 @@ class ExitPinSafetyTest : KioskHarness() {
     @Test fun triesLeftWarningSurvivesRotation() {
         launch(grid)
         tapExitKiosk()
-        submitPin("0000")
-        submitPin("0000")
+        repeat(ExitPinGate.FIRST_ROUND_TRIES - 1) { submitPin("0000") }
         val warn = app.resources.getQuantityString(R.plurals.kiosk_exit_wrong_pin, 1, 1)
         assertNotNull(findText(pinDialog()!!.window!!.decorView, warn))
         rotate()
@@ -296,7 +292,8 @@ class ExitPinSafetyTest : KioskHarness() {
         pinDialog()!!.cancel()
         settle()
         tapExitKiosk()
-        val warn = app.resources.getQuantityString(R.plurals.kiosk_exit_wrong_pin, 2, 2)
+        val left = ExitPinGate.FIRST_ROUND_TRIES - 1
+        val warn = app.resources.getQuantityString(R.plurals.kiosk_exit_wrong_pin, left, left)
         assertNotNull(findText(pinDialog()!!.window!!.decorView, warn))
     }
 

@@ -50,13 +50,11 @@ class ExitPinUiStateTest {
 
     @Test fun `the gate's real outcomes walk the dialog from wrong to closed`() {
         val gate = ExitPinGate(InMemoryPinAttemptStore()) { 1_000L }
-        val states = List(ExitPinGate.FREE_ATTEMPTS) { ExitPinUiState.of(gate.attempt("0000", "1234")) }
+        val states = List(ExitPinGate.FIRST_ROUND_TRIES) { ExitPinUiState.of(gate.attempt("000000", "123456")) }
         assertEquals(
-            listOf(
-                ExitPinUiState.Error(UiText.Plural(R.plurals.kiosk_exit_wrong_pin, 2), clearField = true),
-                ExitPinUiState.Error(UiText.Plural(R.plurals.kiosk_exit_wrong_pin, 1), clearField = true),
-                ExitPinUiState.Close, // the third wrong PIN locks: Exit locked replaces the PIN dialog
-            ),
+            (ExitPinGate.FIRST_ROUND_TRIES - 1 downTo 1).map {
+                ExitPinUiState.Error(UiText.Plural(R.plurals.kiosk_exit_wrong_pin, it), clearField = true)
+            } + ExitPinUiState.Close, // the round's last wrong PIN locks: Exit locked replaces the PIN dialog
             states,
         )
     }

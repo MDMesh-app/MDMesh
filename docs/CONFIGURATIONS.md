@@ -142,10 +142,13 @@ Where to look:
 ## When a configuration doesn't apply
 
 - **Apply failed:** open the device's **Control** tab to see which setting failed and why, and fix the cause. If a
-  setting fails, the device doesn't record the configuration as applied. The server sends the same configuration
-  again after an hour, or right away when you save a change to the configuration.
-- **Retry apply** (or **Sync now**) makes the device check in now. That sends the configuration to a device that is
-  out of sync; within the hour after a failure, it doesn't send it again.
+  setting fails, the device doesn't record the configuration as applied. On its own, the server sends the same
+  configuration again an hour after the failure, so a device that can't apply it isn't sent it at every check-in, or
+  right away when you save a change to the configuration.
+- **Retry apply** sends the configuration again now, without waiting for that hour, and wakes the device to get it.
+  A device without a live connection gets it at its next check-in. If it fails again, the hour starts over.
+- **Sync now** only makes the device check in. That sends the configuration to a device that is out of sync, but
+  within the hour after a failure it doesn't send it again: use Retry apply.
 - **Not supported:** the device's agent or Android version can't apply that setting. Update the agent, or leave the
   setting Not managed for those devices.
 - **Applying… for a long time:** the device is probably offline. It gets the configuration when it checks in.

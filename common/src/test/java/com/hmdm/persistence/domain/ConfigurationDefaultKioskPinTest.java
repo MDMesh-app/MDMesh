@@ -41,6 +41,22 @@ public class ConfigurationDefaultKioskPinTest {
     }
 
     @Test
+    public void aPinFromBeforeTheDigitsRuleIsFlaggedLegacy() throws Exception {
+        Configuration c = new Configuration();
+        assertFalse("no PIN", c.isLegacyKioskPin());
+        c.setPassword("482139");
+        assertFalse(c.isLegacyKioskPin());
+        c.setPassword("1234");
+        assertTrue(c.isLegacyKioskPin());
+        c.setPassword("let me out");
+        assertTrue(c.isLegacyKioskPin());
+        assertTrue(JSON.valueToTree(c).get("legacyKioskPin").asBoolean());
+        // Read-only: a client sending the flag back changes nothing.
+        Configuration read = JSON.readValue("{\"password\":\"482139\",\"legacyKioskPin\":true}", Configuration.class);
+        assertFalse(read.isLegacyKioskPin());
+    }
+
+    @Test
     public void aSavedConfigurationThatCarriesTheFlagStillReads() throws Exception {
         Configuration c = JSON.readValue("{\"name\":\"Kiosk\",\"password\":\"40917253\",\"defaultKioskPin\":true}",
                 Configuration.class);

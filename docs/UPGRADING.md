@@ -181,11 +181,12 @@ available).
 Agent 0.4.0 speaks protocol 1.5: it applies a configuration's connectivity mode, which older agents ignore. It also
 works with a 0.3.9 server.
 
-Agent 0.5.0 speaks protocol 1.10: it applies a configuration's Location services setting (1.6) and app permissions
+Agent 0.5.0 speaks protocol 1.11: it applies a configuration's Location services setting (1.6) and app permissions
 (1.7), resumes an enrollment whose answer was lost (1.9: it sends an enroll attempt id, and gets back the device
-it already created instead of a used-up code), and draws a kiosk background image with its fit and focal point (1.10).
-Older agents report Location services unsupported, can't apply app permissions (their devices show as out of sync
-while a configuration has a rule), and ignore the background image. It also works with a 0.4.0 server, which sends
+it already created instead of a used-up code), draws a kiosk background image with its fit and focal point (1.10),
+and takes **Clear PIN lockout** (1.11). Older agents report Location services unsupported, can't apply app
+permissions (their devices show as out of sync while a configuration has a rule), ignore the background image, and
+don't get Clear PIN lockout (the console offers it only for 0.5.0 and later; the server holds it from older agents). It also works with a 0.4.0 server, which sends
 none of these and ignores the attempt id: an enrollment there works as before, it just can't be resumed.
 
 ## Version notes
@@ -293,6 +294,19 @@ none of these and ignores the attempt id: an enrollment there works as before, i
 - **The agent is called MDMesh on devices (agent 0.5.0):** it was MDM Agent, and its icon is a white square on dark
   (was a white shield on blue). It's the same app, so it updates in place and keeps Device Owner. Update staff
   instructions that name it or show its icon.
+- **Kiosk exit PINs are 6 to 12 digits:** the console and the API (`PUT /rest/private/configurations`) refuse a new or
+  changed PIN that isn't, with HTTP 400. A `kiosk.enter` command whose `password` isn't is refused too (an ERROR).
+  Return to configured kiosk sends no PIN: its payload has `"configuredPin": true`, and the server puts in each
+  device's own configuration PIN as stored (refused, or skipped in bulk, for a device without a configuration), so it
+  keeps working on configurations with an older PIN, and agents of any version get an ordinary `kiosk.enter`. A PIN saved before keeps working on devices and keeps its configuration
+  saveable while it stays as it is; the console marks it **Old PIN** and `legacyKioskPin` is true in the API. Set new
+  PINs before staff need them: a device on agent 0.5.0 shows a number pad for a PIN of digits.
+- **Wrong exit PINs (agent 0.5.0):** 5 wrong PINs lock the exit for 1 minute, then each further 3 for 5 minutes, then
+  15 minutes, then 1 hour; after that every wrong PIN locks it for another hour (agents 0.3.6 to 0.4.x: 3 wrong PINs,
+  then every one, up to 1 hour). A new PIN, or **Clear PIN
+  lockout** on the device page, ends a lockout. A lockout under way when the agent updates is kept.
+- **Retry apply** sends the configuration again right away (`POST /rest/private/agent/v1/devices/{number}/retryConfig`,
+  in the audit log), instead of making the device check in, which after a failed apply waited an hour.
 - **Kiosk text colour (agent 0.5.0):** a kiosk text colour with less than 4.5:1 contrast on its background is
   replaced on the device by a readable one, so some brand pairs show dark text (white on a bright red, for example).
   The kiosk background is always drawn solid; its transparency is ignored. Check kiosk configurations whose text and

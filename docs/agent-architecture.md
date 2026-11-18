@@ -66,7 +66,7 @@ finishes the entry even if the screen goes away (a rotation); once in kiosk it q
 
 | Area | Fields |
 |------|--------|
-| Kiosk | `mainAppId`, `kioskMode`, `kioskExit`, `kioskHome`, `kioskRecents`, `kioskNotifications`, `kioskSystemInfo`, `kioskKeyguard`, `kioskLockButtons`, `kioskLockVolume`, `password` (exit PIN, stored as entered) |
+| Kiosk | `mainAppId`, `kioskMode`, `kioskExit`, `kioskHome`, `kioskRecents`, `kioskNotifications`, `kioskSystemInfo`, `kioskKeyguard`, `kioskLockButtons`, `kioskLockVolume`, `password` (exit PIN: 6 to 12 digits; one saved before 0.5.0 may be any text and is applied as stored) |
 | Launcher look | `backgroundColor`, `textColor`, `iconSize` (colours: see below); also the kiosk background image (`backgroundImageFileId`, set in the Kiosk section, agent 0.5.0; see below) |
 | Device policy | `wifi`, `wifiRadio`, `locationServices`, `bluetooth`, `camera`, `usbStorage`, `disableScreenshots`, `disableFactoryReset`, `disableSafeBoot` |
 | Location | `requestUpdates` (location capture mode) |

@@ -9,7 +9,7 @@ Unreleased.
 
 ## Unreleased
 
-## v0.5.0 — 2026-11-13
+## v0.5.0 — 2026-11-17
 
 Upgrading
 - On its first start, 0.5.0's server adds to the database:

@@ -186,8 +186,9 @@ Agent 0.5.0 speaks protocol 1.11: it applies a configuration's Location services
 it already created instead of a used-up code), draws a kiosk background image with its fit and focal point (1.10),
 and takes **Clear PIN lockout** (1.11). Older agents report Location services unsupported, can't apply app
 permissions (their devices show as out of sync while a configuration has a rule), ignore the background image, and
-don't get Clear PIN lockout (the console offers it only for 0.5.0 and later; the server holds it from older agents). It also works with a 0.4.0 server, which sends
-none of these and ignores the attempt id: an enrollment there works as before, it just can't be resumed.
+don't get Clear PIN lockout (the console disables it for a device on an older agent, and the server holds it from
+older agents). It also works with a 0.4.0 server, which sends none of these and ignores the attempt id: an
+enrollment there works as before, it just can't be resumed.
 
 ## Version notes
 
@@ -199,13 +200,16 @@ none of these and ignores the attempt id: an enrollment there works as before, i
   docker compose pull supervisor && docker compose up -d supervisor
   ```
 
-  then apply 0.5.0 from **Settings → Updates** (**Update server and console**). The quick start set
-  `SUPERVISOR_VERSION=latest`, so this starts the 0.5.0 supervisor (if you set a version in `.env` yourself, change it
+  when no update or rollback is running (Settings → Updates, or `/recovery`), then apply 0.5.0 from **Settings →
+  Updates** (**Update server and console**). The quick start set `SUPERVISOR_VERSION=latest`, so this starts the 0.5.0 supervisor (if you set a version in `.env` yourself, change it
   to `0.5.0` first). It works with your 0.4.x server and console as before, and it is the one that then applies 0.5.0,
   pinned by digest, and rolls it back if needed: by itself if 0.5.0 fails its health check, or from **Roll back** on
   `/recovery`. A supervisor from before 0.5.0 can't roll 0.5.0 back (see *Going back to 0.4.0, if an old supervisor
   applied 0.5.0* below). With automatic updates on, run the command as soon as you can: until then the old supervisor
   may apply 0.5.0 itself.
+- **From source with a registry `IMAGE_OWNER`: don't apply 0.5.0 from the console.** Your supervisor is tied to
+  your checkout, so the command above keeps the old one. Move the clone to 0.5.0 instead (below), which updates the
+  supervisor and the server together. Turn automatic updates off until you have.
 - **The database update is automatic.** On start, the server adds `devices.wipedAt` and
   `devices.agentEnrollAttemptHash`; `configurations.camera`, `configurations.locationServices` and the kiosk background
   image columns (`backgroundImageFileId`, `backgroundImageSha256`, `backgroundImageFit`, `backgroundImageFocalX`,
@@ -218,6 +222,9 @@ none of these and ignores the attempt id: an enrollment there works as before, i
   Devices wiped before the update aren't marked Wiped.
 - **PostgreSQL older than 11: existing enrollment codes stop working.** The update hashes existing codes with a
   function PostgreSQL 11 added; on an older server it marks them used instead. Make a new code on the Enroll page.
+- **Native on PostgreSQL older than 15: there is no way back to 0.4.0.** Native has no one-click rollback, and the
+  [restore by hand](OPERATIONS.md#backups-and-restore) needs PostgreSQL 15 or newer. If you may need to go back, move
+  to PostgreSQL 15 or newer before you update.
 - **From source and native: move the clone to 0.5.0 once.** 0.4.x has no `./setup.sh --update`. Run
   `git fetch --tags && git checkout v0.5.0 && ./setup.sh --update` (native:
   `git fetch --tags && git checkout v0.5.0 && sudo ./setup.sh --update --native`). It works on a clone of `main` and on one checked
@@ -274,8 +281,12 @@ none of these and ignores the attempt id: an enrollment there works as before, i
   user's next sign-in, and 0.4.0 can't check a converted one. A one-click rollback, and the restores in
   [Backups and restore](OPERATIONS.md#backups-and-restore), bring back the database from before the update, with every
   password as it was then (one changed after the update is back to the old one). A 0.4.0 server started on the 0.5.0
-  database instead, without a restore, refuses every user who signed in or changed their password on 0.5.0: restore
-  the backup, or have those users reset their password (an admin who can still sign in sets a new one on Users).
+  database instead, without a restore, refuses every user who signed in or changed their password on 0.5.0, the admin
+  who applied the update included. Restore the backup. If you can't, set a password 0.4.0 can check for each of those
+  users, then sign in and change it (the 0.4.0 console has no page for setting another user's password). From the
+  clone, `. install/lib/db.sh; mdm_pwhash 'NEW-PASSWORD'` prints the hash; then run
+  `UPDATE users SET password = '<the hash>' WHERE login = '<login>';` in psql
+  (`docker compose exec -T postgres psql -U mdmesh -d mdmesh`, native: `sudo -u postgres psql -d mdmesh`).
 - **App permissions (agent 0.5.0):** a configuration can Grant or Deny an installed app's runtime permissions. Devices
   on an older agent, or not Device Owner, can't apply them: they get the rest of the configuration and show as out of
   sync while it has a rule, until their agent is updated. Configurations without rules stay in sync on every agent.

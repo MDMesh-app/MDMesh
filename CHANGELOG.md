@@ -12,6 +12,17 @@ Unreleased.
 ## v0.5.0 — 2026-11-17
 
 Upgrading
+- Quick start: before you apply 0.5.0 (**Update server and console** in Settings → Updates, or an automatic update),
+  run `docker compose pull supervisor && docker compose up -d supervisor` in the install directory, when no update or
+  rollback is running (Settings → Updates, or `/recovery`). The 0.5.0 supervisor then applies this update, pinned by
+  digest, and can roll it back. A supervisor from before 0.5.0 can't restore over 0.5.0's new tables: its rollback,
+  automatic or from Roll back, stops with the database unchanged and the server stopped. Old supervisor already
+  applied 0.5.0 and you want 0.4.0 back? Run the same command, then Roll back on `/recovery` ([UPGRADING,
+  v0.5.0](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v050)).
+- Quick start, if the old supervisor already applied 0.5.0 and you keep 0.5.0: run
+  `docker compose pull && docker compose up -d` once. Server updates never replace the supervisor, so one from before
+  0.5.0 keeps applying every later update by tag, unpinned. From source, or with `SUPERVISOR_VERSION` set by hand, see
+  [UPGRADING, v0.5.0](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v050).
 - On its first start, 0.5.0's server adds to the database:
   - columns: `devices.wipedAt` and `devices.agentEnrollAttemptHash`; `configurations.camera`,
     `configurations.locationServices`, `configurations.backgroundImageFileId`, `configurations.backgroundImageSha256`,
@@ -22,7 +33,8 @@ Upgrading
     `configurations.backgroundImageFileId`;
   - tables: `configurationAppPermissions`, and `agentEnrollmentKey`, whose one row the server fills with a random key
     on first use.
-  - Devices wiped before the update aren't marked Wiped.
+
+  Devices wiped before the update aren't marked Wiped.
 - On the same start, the server adds three columns to enrollment tokens (`maxUses`, `useCount`, `revokedAt`) and
   stores the tokens hashed. Existing codes stay single-use and keep working, except on PostgreSQL older than 11, where
   they stop: make a new code on the Enroll page. A 0.4.0 server started on the upgraded database, without restoring
@@ -31,30 +43,24 @@ Upgrading
 - Passwords are now stored as bcrypt. Existing ones keep working and are converted at each user's next sign-in; the
   server widens `users.password` to 100 characters for them. A rollback restores the pre-update backup, so passwords
   work on 0.4.0 as they did before the update (a password changed since then is back to the old one). A 0.4.0 server
-  started on the 0.5.0 database without restoring the backup can't check a converted password: those users need a
-  password reset ([UPGRADING, v0.5.0](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v050)).
-- Quick start: before you apply 0.5.0 (**Update server and console** in Settings → Updates, or an automatic update),
-  run `docker compose pull supervisor && docker compose up -d supervisor` in the install directory. The 0.5.0
-  supervisor then applies this update, pinned by digest, and can roll it back. A supervisor from before 0.5.0 can't
-  restore over 0.5.0's new tables: its rollback, automatic or from Roll back, stops with the database unchanged and the
-  server stopped. Old supervisor already applied 0.5.0 and you want 0.4.0 back? Run the same command, then Roll back
-  on `/recovery` ([UPGRADING, v0.5.0](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v050)).
-- Quick start, if the old supervisor already applied 0.5.0 and you keep 0.5.0: run
-  `docker compose pull && docker compose up -d` once. Server updates never replace the supervisor, so one from before
-  0.5.0 keeps applying every later update by tag, unpinned. From source, or with `SUPERVISOR_VERSION` set by hand, see
-  [UPGRADING, v0.5.0](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v050).
+  started on the 0.5.0 database without restoring the backup can't check a converted password, an admin's included,
+  so restore the backup instead ([UPGRADING, v0.5.0](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v050)).
 - From source and native: 0.4.x has no `--update`, so move the clone to 0.5.0 once with
   `git fetch --tags && git checkout v0.5.0 && ./setup.sh --update` (native:
-  `git fetch --tags && git checkout v0.5.0 && sudo ./setup.sh --update --native`). From then on, update with `./setup.sh --update`
-  (native: `sudo ./setup.sh --update --native`).
+  `git fetch --tags && git checkout v0.5.0 && sudo ./setup.sh --update --native`). From then on, update with
+  `./setup.sh --update` (native: `sudo ./setup.sh --update --native`).
 - There is a new agent, 0.5.0: roll it out from Settings → Agent rollout. Much of this release needs it; devices
   on older agents keep working ([UPGRADING, v0.5.0](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v050)).
 - When a device first checks in with agent 0.5.0, it gets one config.apply: its configuration now includes app
   permission rules (`appPermissions`, `[]` when there are none), so its revision changes once. This is harmless:
   without rules, nothing changes on the device.
-- Native: the installer now stops on a command-line option it doesn't take, instead of ignoring it.
-- Answers files (`MDMESH_ANSWERS`) must be owned by you or root and give no access to group or others (for example
-  `chmod 600`), or they are refused.
+- Native: the installer now stops, before it changes anything, on a command-line option it doesn't take, and on a
+  `REPLACE_DATA` other than `yes` or `no` or an `ASSUME_YES` other than `1` or `0` (empty means not set). Before 0.5.0
+  it ignored the option, read another `REPLACE_DATA` as Keep and another `ASSUME_YES` as ask. Check scripts that run
+  it unattended.
+- Native: restoring a backup with the documented command needs PostgreSQL 15 or newer, and the installer now warns
+  on an older one. Native has no one-click rollback, so move to PostgreSQL 15 first if you may need to go back
+  ([OPERATIONS](https://github.com/MDMesh-app/MDMesh/blob/main/docs/OPERATIONS.md#backups-and-restore)).
 
 Heads-up
 - Console extensions: `Select` is now a listbox button, not a native `<select>`. It takes a single select's props
@@ -63,7 +69,7 @@ Heads-up
   an object with `target.value`, `target.name`, `preventDefault()` and `stopPropagation()`, not a native event. Its
   `ref` is a `SelectHandle` (`value`, `name`, `disabled`, `required`, `focus()`, `blur()`); in 0.6.0 `ref` becomes the
   button, which the new `triggerRef` gives now. Until 0.6.0, `native` (or `multiple`, which implies it) draws the old
-  native select, with a native change event and the element as `ref` ([EXTENDING](web/EXTENDING.md)).
+  native select, with a native change event and the element as `ref` ([EXTENDING](https://github.com/MDMesh-app/MDMesh/blob/main/web/EXTENDING.md)).
 - Console extensions: the Overview's `main` and `aside` cards now stack in two independent columns (all `main` cards
   in the wide one, all `aside` cards in the narrow one), so an `aside` no longer joins the row of the `main` card
   before it. On the first-run Overview, extensions' `stat` tiles still show.
@@ -73,9 +79,6 @@ Heads-up
   `--page-pad`, `--main-max`), whose values now come from the new scale; and, ignored from now on, `Button` `strong`,
   `IconButton` `tone`, `Card` `radius`, `CardHeader` `size`, `PageHeader` `subtitleMaxCh` and `actionsGap`, and
   `Checkbox` `size`. `Card` `gap` now rounds to 8, 12, 16 or 24 and is no longer set as an inline `style`.
-- Native installs: `REPLACE_DATA` must be `yes` or `no`, and `ASSUME_YES` `1` or `0`; empty means not set (the
-  default). Any other value now stops the installer before it changes anything; before 0.5.0, another `REPLACE_DATA`
-  meant Keep and another `ASSUME_YES` meant ask.
 - The agent is now called **MDMesh** on the device (was MDM Agent): in the app drawer, Settings → Apps, the
   device admin list and the device's Apps tab in the console. Its icon is new too: a white square on dark (was a white
   shield on blue). It's the same app, so it updates in place. Needs agent 0.5.0.
@@ -90,10 +93,12 @@ Heads-up
 - Kiosk exit PINs are now 6 to 12 digits. A configuration whose PIN doesn't follow that keeps working on its devices,
   and still saves while its PIN stays as it is; the console marks it **Old PIN**. A new or changed PIN, and a custom
   kiosk's PIN, must follow the rule. Devices on agent 0.5.0 ask for a PIN of digits on a number pad (an old PIN keeps
-  the full keyboard).
-- Kiosk: wrong exit PINs lock the exit later, in rounds: 5 wrong PINs lock it for 1 minute, then each further 3 for 5
-  minutes, then 15 minutes, then 1 hour; after that every wrong PIN locks it for another hour (it was 3, then every
-  wrong PIN, up to 1 hour). A new exit PIN starts the count again. A lockout under way when the device updates is kept. Needs agent 0.5.0.
+  the full keyboard). API: a `kiosk.enter` whose `password` isn't 6 to 12 digits is refused; send
+  `"configuredPin": true` to use each device's configuration PIN, as the console's Return to configured kiosk does.
+- Kiosk: wrong exit PINs now lock the exit in rounds. The 5th wrong PIN locks it for 1 minute; each 3 more lock it
+  for 5 minutes, then 15 minutes, then 1 hour; after that every wrong PIN locks it for another hour (it was: from the
+  3rd wrong PIN, every one, up to 1 hour). A new exit PIN or **Clear PIN lockout** ends a lockout. A lockout under
+  way when the device updates is kept. Needs agent 0.5.0.
 
 Security
 - Updates applied by a 0.5.0 supervisor, and the quick start, run the server, web and supervisor images by the digest
@@ -106,11 +111,13 @@ Security
 - setup.sh re-runs read `.env` without running it as a script, so `bash -x ./setup.sh` no longer prints its
   passwords and secrets. Values are read as before, quotes and escapes included; a line whose value the shell would
   compute (a `$` or backquote) stops setup.sh, naming the line.
-- Passwords are stored as bcrypt, each with its own salt, instead of a fast hash with one salt shared by every
-  account. Sign-in is unchanged for the console and API clients. A new password sent through the API must be the
-  MD5 hex the console sends, as account creation already required.
+- Passwords are stored as bcrypt. Each is converted at its user's next sign-in. Sign-in is unchanged for the console
+  and API clients; a new password sent through the API must be the MD5 hex the console sends, as account creation
+  already required.
 
 New
+- Docs: new guides to [Kiosk mode](https://github.com/MDMesh-app/MDMesh/blob/main/docs/KIOSK.md) and
+  [Configurations](https://github.com/MDMesh-app/MDMesh/blob/main/docs/CONFIGURATIONS.md).
 - Kiosk: **Clear PIN lockout** on the device page lets staff try the exit PIN again right away after too many wrong
   PINs. It needs permission to edit devices and is in the audit log; sent to an offline device, it runs at its next
   check-in. Needs agent 0.5.0.
@@ -121,7 +128,7 @@ New
   "Loading…" and never show 0 for a number they don't know yet. Button and menu labels no longer end in "…". An
   unknown address says "Page not found" instead of opening the Overview. The browser tab has an MDMesh icon.
 - Devices: once a device is selected, a click on a row or card selects or clears that device (its name still opens
-  it), and Shift-click, or Shift+Space on a checkbox, selects every device on the page from the one you picked last,
+  it), and Shift-click, or Shift+Space on a checkbox, selects every device between it and the one you picked last,
   or clears them if that one is cleared.
 - Settings shows a ready update's release notes by version: a one-line summary, the items grouped, and a "Security
   fixes" label on a release that has a Security section.
@@ -133,7 +140,7 @@ New
   name everywhere ("Lock", "Ring", "Sync now", "Needs attention").
 - From source and native: `./setup.sh --update` moves the clone to the newest release, checked against its signed
   manifest like the quick start, then runs that release's setup.sh. It stops on a manifest that doesn't verify or
-  names no commit, and on local changes; a release that isn't published yet is skipped. New installs (DEPLOY) clone
+  names no commit, and on local changes; a tag without a published release is skipped. New installs (DEPLOY) clone
   and run `./setup.sh --update` too. It needs `git`, `curl` and `openssl` 3.0+ (or an older `openssl` and `minisign`),
   and says which are missing first; as root with `--native` it installs them, waiting up to 5 minutes if another apt
   run holds apt's lock.
@@ -142,7 +149,8 @@ New
 - The console's update steps for source and native installs show `./setup.sh --update`.
 - Installers: every question can be answered in advance, with `MDMESH_*` variables or an answers file, and
   `MDMESH_NONINTERACTIVE=1` runs with no questions at all. `MDMESH_DRY_RUN=1` checks the answers and shows what a run
-  would do. See [DEPLOY](https://github.com/MDMesh-app/MDMesh/blob/main/DEPLOY.md#answering-the-questions-in-advance).
+  would do. An answers file must be owned by you or root and give no access to group or others (for example
+  `chmod 600`). See [DEPLOY](https://github.com/MDMesh-app/MDMesh/blob/main/DEPLOY.md#answering-the-questions-in-advance).
 - Enroll: devices that enroll while the page is open show under the code, with a link, first as "Enrolled, getting
   its configuration…", then Online, or "Enrolled, hasn't checked in yet" when they haven't checked in after 10
   minutes, so you see the device you just set up arrive without going to Devices. After 30 minutes the page stops
@@ -151,7 +159,9 @@ New
   managed gives the camera back on agent 0.5.0; on older agents, choose Allow to lift a block (thanks @letternumber).
 - Kiosk: staff can tap Return to kiosk in the MDMesh app after leaving with the exit PIN, even offline. It shows
   only when the device's configuration enables kiosk, asks first (and warns when that kiosk has no exit on the
-  device), and tells the server at once when online. Needs agent 0.5.0; no server update needed (thanks @tisign).
+  device), and tells the server at once when online. Once staff use it, the console stops offering Return to configured
+  kiosk for that device until a later kiosk exit, custom kiosk or configuration apply. Needs agent 0.5.0; no server
+  update needed (thanks @tisign).
 - Enroll: one code can set up a batch. Choose Devices (one, or up to 10, 25 or 100) and Valid for (24 hours to 30
   days); a code for several devices works for anyone who has it until it expires or its devices are used up. The
   default is still one device for 24 hours, the code to send to one person. **Stop all codes** ends every code that
@@ -201,10 +211,10 @@ New
   short-lived message). Needs agent 0.5.0.
 - Kiosk: the launcher grid has pressed highlights, two-line app names (three with a larger font) and as many
   columns as fit, also after rotating; its empty, loading, "App closed" and idle screens and the Exit kiosk button
-  use the kiosk's own colours and stay readable on any background. Needs agent 0.5.0.
+  use the kiosk's own colors and stay readable on any background. Needs agent 0.5.0.
 - Agent: the status screen, dialogs and kiosk launcher are easier to read and use: darker secondary and status text,
   no text under 13sp, a visible focus ring for keyboards and D-pads, full-size copy buttons, and TalkBack reads
-  headings, each fact with its label, and a failed return or stuck enrolment as it appears. Needs agent 0.5.0.
+  headings, each fact with its label, and a failed return or stuck enrollment as it appears. Needs agent 0.5.0.
 - Each release now publishes `quickstart.sh`, with its SHA-256 in the signed manifest. The README's install command
   runs the latest release's copy instead of `main`'s; DEPLOY.md has one that checks it against the signed release
   first and installs exactly the release it checked
@@ -213,12 +223,11 @@ New
 Fixes
 - Retry apply on the device page sends the configuration again right away. It used to only make the device check in,
   and after a failed apply the server waited an hour before sending it again. The automatic retry still waits the hour.
+  API: `POST /rest/private/agent/v1/devices/{deviceId}/retryConfig`.
 - Rollback and restore: the database is emptied before the backup is loaded, in the same transaction. The dump's own
   DROPs failed when the update had added a table that refers to an older one, so the rollback stopped (nothing
   changed). The by-hand restores in the docs, and the command the native installer prints next to each dump, do the
   same.
-- Once staff tap Return to kiosk on the device, the console stops offering its own Return to kiosk for that device;
-  a later kiosk exit, custom kiosk, or configuration apply offers it again.
 - Files: uploading a file again with the same name and the same content returns the file already there instead of an
   error.
 - Apps: an .xapk or other split-APK bundle whose APKs are stored uncompressed now uploads instead of failing to
@@ -303,7 +312,7 @@ Fixes
   existing server the database updates its description on start, unless you have changed it.
 
 Under the hood
-- Console: menus, dialogs, selects, popovers and tooltips are built on Radix Primitives. Every colour, size, space,
+- Console: menus, dialogs, selects, popovers and tooltips are built on Radix Primitives. Every color, size, space,
   radius, shadow and timing comes from `web/src/tokens.css`, and `npm run lint:css` (stylelint, in CI) rejects any
   other value. New for extensions: `Grid`/`GridCell`, `Skeleton`, `ErrorState`, `Tooltip`, `Popover` and `useStickyValue`,
   and the role tokens (`--text-ui`, `--control-md`, `--radius-control`, `--space-*` and the rest).
@@ -317,7 +326,7 @@ Under the hood
   `docs/kiosk-background-scrim.md`, with test vectors (`proto/vectors/kiosk-scrim.json`) the console and the agent
   both pass. `GET /rest/private/configurations/backgroundImage/{fileId}` describes an image as devices will get it.
 - NOTICE now says which parts of the agent are ported from Headwind MDM, and those files carry its license header.
-- Console: a new colour token for extensions, `--control-border`, the 3:1 edge for icon buttons and selected
+- Console: a new color token for extensions, `--control-border`, the 3:1 edge for icon buttons and selected
   items. `npm test` checks every token pair's contrast, which component edges must be 3:1, and runs axe on each page;
   `scripts/shots/a11y.mjs` runs axe, a keyboard walk and reflow checks on the built console in both themes at 1280,
   640 and 320px, and CI runs its quick pass.
@@ -332,6 +341,8 @@ Under the hood
 - Agent protocol 1.10 (additive): `theme.backgroundImage` may carry `fit` and `focalX`/`focalY`, sent only when not
   the default. `GET /rest/private/configurations/backgroundImages` lists a customer's kiosk images and
   `POST /rest/private/configurations/backgroundImages/{fileId}/delete` deletes an unused one.
+- Agent protocol 1.11 (additive): the `kiosk.clearPinLockout` command and the `kioskClearPinLockout` device
+  capability. The server holds the command from agents that don't advertise it.
 - Dependencies: Room 2.8.5, WorkManager 2.12.0, Retrofit 3.0.0, AppCompat 1.8.0, desugar_jdk_libs 2.1.5 (agent);
   Jackson 2.22.4, Guava 33.8.0, commons-codec 1.23.0, ActiveMQ 5.19.12, classgraph 4.8.200 (server); vite 8.3.6,
   @vitejs/plugin-react 6.2.1, vitest 5.1.0, jsdom 31.0.0 (console); Caddy 2.11.9; docker/login-action 4.8.0,

@@ -98,7 +98,7 @@ const TILES = [
     imgs: [{ k: 'cfg', z: 1.12, x: 56, y: 222, cy: 84, ch: 280, fadeT: true }, { k: 'cfgbar', z: 1.12, x: 56, yb: 40, float: true }] },
   { x: 1188, y: R2, w: 560, eyebrow: 'Device', title: 'Remote actions',
     line: 'Lock or reboot a device. Passcode reset and factory reset ask you to confirm.',
-    imgs: [{ k: 'remote', z: 1.12, x: 40, y: 222, cy: 222, fadeR: true, fadeT: true }] },
+    imgs: [{ k: 'remote', z: 1.12, x: 40, y: 222, cy: 244, fadeR: true, fadeT: true }] },
   { x: 1772, y: R2, w: 564, eyebrow: 'Settings', title: 'Staged agent rollout',
     line: 'A new agent version goes to canary devices first, then to all other devices when you promote it.',
     imgs: [{ k: 'rollout', z: 1.2, x: 40, y: 236, fadeR: true }] },

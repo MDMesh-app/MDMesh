@@ -536,7 +536,7 @@ public class AgentAdminResource {
     public Response getSyncSummary() {
         Optional<Integer> customerId = SecurityContext.get().getCurrentCustomerId();
         if (!customerId.isPresent()) return Response.PERMISSION_DENIED();
-        Map<Integer, DesiredConfig> documentByConfig = new HashMap<>();
+        ConfigReconciler.StatusDocuments documents = configReconciler.statusDocuments(customerId.get());
         Map<Integer, ConfigSyncSummary> out = new LinkedHashMap<>();
         Set<String> accessible = deviceDAO.getDeviceNumbersAccessibleToUser();
         for (DeviceSyncRow row : commandDAO.listDevicesForSync(customerId.get())) {
@@ -548,15 +548,10 @@ public class AgentAdminResource {
                 continue;
             }
             s.setTotal(s.getTotal() + 1);
-            // containsKey/put, not computeIfAbsent: a configuration whose plugin fails has a null document, which
-            // computeIfAbsent wouldn't keep, so the document would be rebuilt (and fail again) for every device on it.
-            if (!documentByConfig.containsKey(cfgId)) {
-                Device probe = new Device(); probe.setConfigurationId(cfgId); probe.setCustomerId(customerId.get());
-                documentByConfig.put(cfgId, configReconciler.statusDocument(probe));
-            }
             Set<String> tokens = AgentCapabilityTokens.flatten(row.getCapabilitiesJson());
-            // Per device: an agent without app permission support is compared with what it can apply.
-            String current = ConfigReconciler.statusRevision(documentByConfig.get(cfgId), tokens);
+            // Per device: an agent without an optional section's capability is compared with what it can apply, and a
+            // device with settings of its own with its own document.
+            String current = ConfigReconciler.statusRevision(documents.of(row), tokens);
             boolean supported = AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, tokens);
             if (!supported) {
                 s.setUnsupported(s.getUnsupported() + 1);

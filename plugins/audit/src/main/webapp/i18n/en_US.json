@@ -33,6 +33,7 @@
   "plugin.audit.action.device.bulk.command": "Device command sent to many devices",
   "plugin.audit.action.device.sync.apps": "Configuration apps sent to device",
   "plugin.audit.action.device.retry.config": "Configuration sent to device again (Retry apply)",
+  "plugin.audit.action.update.device.app.settings": "Device application settings updated",
   "plugin.audit.action.enroll.token.mint": "Enrollment code made",
   "plugin.audit.action.enroll.token.revoke.all": "All enrollment codes stopped",
   "plugin.audit.error": " - Error",

@@ -113,15 +113,55 @@ public class ApplicationSetting implements Serializable {
         this.value = value;
     }
 
+    /** The placeholders a {@code variable} value may hold, each replaced by the device's own field. */
+    private static final String[] PLACEHOLDERS = {
+            "%NUMBER%", "%IMEI%", "%PHONE%", "%DESCRIPTION%", "%CUSTOM1%", "%CUSTOM2%", "%CUSTOM3%"
+    };
+
+    /**
+     * <p>The value with its placeholders replaced by the device's fields (an absent field or device by nothing). The
+     * replace is literal and in one pass: a device field holding {@code $}, {@code \} or a placeholder of its own is
+     * put in as it is, never read as a pattern or replaced again.</p>
+     *
+     * @return null for a null value.
+     */
     public String getValueForDevice(Device device) {
-        return value
-                .replaceAll("%NUMBER%", device.getNumber() != null ? device.getNumber() : "")
-                .replaceAll("%IMEI%", device.getImei() != null ? device.getImei() : "")
-                .replaceAll("%PHONE%", device.getPhone() != null ? device.getPhone() : "")
-                .replaceAll("%DESCRIPTION%", device.getDescription() != null ? device.getDescription() : "")
-                .replaceAll("%CUSTOM1%", device.getCustom1() != null ? device.getCustom1() : "")
-                .replaceAll("%CUSTOM2%", device.getCustom2() != null ? device.getCustom2() : "")
-                .replaceAll("%CUSTOM3%", device.getCustom3() != null ? device.getCustom3() : "");
+        if (value == null) {
+            return null;
+        }
+        StringBuilder out = new StringBuilder(value.length());
+        int i = 0;
+        while (i < value.length()) {
+            String placeholder = null;
+            if (value.charAt(i) == '%') {
+                for (String p : PLACEHOLDERS) {
+                    if (value.startsWith(p, i)) {
+                        placeholder = p;
+                        break;
+                    }
+                }
+            }
+            if (placeholder == null) {
+                out.append(value.charAt(i++));
+            } else {
+                String field = device == null ? null : deviceField(device, placeholder);
+                out.append(field == null ? "" : field);
+                i += placeholder.length();
+            }
+        }
+        return out.toString();
+    }
+
+    private static String deviceField(Device device, String placeholder) {
+        switch (placeholder) {
+            case "%NUMBER%": return device.getNumber();
+            case "%IMEI%": return device.getImei();
+            case "%PHONE%": return device.getPhone();
+            case "%DESCRIPTION%": return device.getDescription();
+            case "%CUSTOM1%": return device.getCustom1();
+            case "%CUSTOM2%": return device.getCustom2();
+            default: return device.getCustom3();
+        }
     }
 
     public String getComment() {
@@ -196,13 +236,13 @@ public class ApplicationSetting implements Serializable {
         this.applicationName = applicationName;
     }
 
+    /** Leaves the value out: it can be a secret (a token), and a log line must never hold it. */
     @Override
     public String toString() {
         return "ApplicationSetting{" +
                 "id=" + id +
                 ", applicationId=" + applicationId +
                 ", name='" + name + '\'' +
-                ", value='" + value + '\'' +
                 ", comment='" + comment + '\'' +
                 ", readonly=" + readonly +
                 ", extRefId=" + extRefId +

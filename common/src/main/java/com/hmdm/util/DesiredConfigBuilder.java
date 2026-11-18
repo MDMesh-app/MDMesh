@@ -4,7 +4,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hmdm.extension.ConfigurationExtensions;
 import com.hmdm.extension.DesiredConfigContributor;
 import com.hmdm.persistence.domain.Application;
+import com.hmdm.persistence.domain.ApplicationSetting;
+import com.hmdm.persistence.domain.ApplicationSettingType;
 import com.hmdm.persistence.domain.Configuration;
+import com.hmdm.persistence.domain.Device;
 import com.hmdm.persistence.domain.RequestUpdatesType;
 import com.hmdm.rest.json.agent.DesiredConfig;
 import com.hmdm.rest.json.agent.DesiredConnectivity;
@@ -14,6 +17,8 @@ import com.hmdm.rest.json.agent.DesiredKioskFeatures;
 import com.hmdm.rest.json.agent.DesiredKioskTheme;
 import com.hmdm.rest.json.agent.DesiredLocation;
 import com.hmdm.rest.json.agent.DesiredAppPermissions;
+import com.hmdm.rest.json.agent.DesiredAppRestrictionValue;
+import com.hmdm.rest.json.agent.DesiredAppRestrictions;
 import com.hmdm.persistence.domain.ManagedAppPermission;
 
 import java.nio.charset.StandardCharsets;
@@ -22,6 +27,7 @@ import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -44,6 +50,8 @@ public final class DesiredConfigBuilder {
     public static final String CAPABILITY = "device.configApply";
     /** Agent support token for the optional per-app runtime permission document section. */
     public static final String APP_PERMISSIONS_CAPABILITY = "app.runtimePermissions";
+    /** Agent support token for the optional managed app configuration section, appRestrictions (protocol 1.8). */
+    public static final String APP_RESTRICTIONS_CAPABILITY = "app.managedConfig";
     public static final String POLICY_PREFIX = "policies.";
     public static final String KEY_KIOSK = "kiosk";
     public static final String KEY_LOCATION = "location";
@@ -57,6 +65,7 @@ public final class DesiredConfigBuilder {
     private static final Pattern CONTRIBUTED_KEY = Pattern.compile("[a-z][A-Za-z0-9]{0,63}");
 
     private static final ObjectMapper PLAIN = new ObjectMapper();
+    private static final Pattern INT_VALUE = Pattern.compile("-?[0-9]{1,10}");
 
     private DesiredConfigBuilder() {}
 
@@ -67,6 +76,20 @@ public final class DesiredConfigBuilder {
      */
     public static DesiredConfig build(Configuration cfg, List<Application> apps,
                                       Collection<DesiredConfigContributor> contributors) {
+        return build(cfg, apps, contributors, null, null);
+    }
+
+    /**
+     * The document for one device: its own application settings override the configuration's.
+     *
+     * @param device         its fields fill the placeholders of a {@code variable} setting; null fills them with nothing
+     * @param deviceSettings the device's application settings (null = none). Like the configuration's
+     *                       ({@link Configuration#getApplicationSettings()}, whose null leaves the appRestrictions
+     *                       section out), they count only for the apps the configuration installs.
+     */
+    public static DesiredConfig build(Configuration cfg, List<Application> apps,
+                                      Collection<DesiredConfigContributor> contributors,
+                                      Device device, List<ApplicationSetting> deviceSettings) {
         DesiredConfig d = new DesiredConfig();
         d.setConfigurationId(cfg.getId());
         List<Application> appList = apps == null ? Collections.<Application>emptyList() : apps;
@@ -83,17 +106,24 @@ public final class DesiredConfigBuilder {
             d.setConnectivity(c);
         }
         d.setAppPermissions(appPermissions(cfg, appList));
+        d.setAppRestrictions(appRestrictions(cfg, appList, device, deviceSettings));
         // Last, once core's sections are built from cfg, so a contributor can't change them.
         contribute(policies, cfg, Collections.unmodifiableList(appList), contributors);
         d.setRevision(revision(d));
         return d;
     }
 
-    private static List<DesiredAppPermissions> appPermissions(Configuration cfg, List<Application> apps) {
-        if (cfg.getManagedAppPermissions() == null) return null;
+    /** The apps the configuration installs, with a package, by application id. */
+    private static Map<Integer, Application> installedApps(List<Application> apps) {
         Map<Integer, Application> installed = new TreeMap<Integer, Application>();
         for (Application app : apps) if (app != null && app.getId() != null && app.getAction() == ACTION_INSTALL
                 && app.getPkg() != null && !app.getPkg().trim().isEmpty()) installed.put(app.getId(), app);
+        return installed;
+    }
+
+    private static List<DesiredAppPermissions> appPermissions(Configuration cfg, List<Application> apps) {
+        if (cfg.getManagedAppPermissions() == null) return null;
+        Map<Integer, Application> installed = installedApps(apps);
         Map<String, Map<String, String>> byPackage = new TreeMap<String, Map<String, String>>();
         for (ManagedAppPermission rule : cfg.getManagedAppPermissions()) {
             if (rule == null || !("grant".equals(rule.getState()) || "deny".equals(rule.getState()))
@@ -108,6 +138,95 @@ public final class DesiredConfigBuilder {
             value.setPackageName(entry.getKey()); value.setPermissions(entry.getValue()); result.add(value);
         }
         return result;
+    }
+
+    /**
+     * Managed app configuration (protocol 1.8). For each app the configuration installs: its settings, then the
+     * device's, a device setting replacing the configuration's of the same name (and the device may add names). A
+     * {@code variable} setting gets the device's fields for its placeholders; a setting whose value doesn't parse as
+     * its type ({@link #restrictionValue}) is left out. A package gets an entry when it has at least one value.
+     */
+    private static List<DesiredAppRestrictions> appRestrictions(Configuration cfg, List<Application> apps, Device device,
+                                                                List<ApplicationSetting> deviceSettings) {
+        if (cfg.getApplicationSettings() == null) return null;
+        Map<Integer, Application> installed = installedApps(apps);
+        Map<Integer, Map<String, ApplicationSetting>> byApp = new TreeMap<Integer, Map<String, ApplicationSetting>>();
+        mergeSettings(byApp, installed, cfg.getApplicationSettings());
+        mergeSettings(byApp, installed, deviceSettings);
+        Map<String, Map<String, DesiredAppRestrictionValue>> byPackage =
+                new TreeMap<String, Map<String, DesiredAppRestrictionValue>>();
+        for (Map.Entry<Integer, Map<String, ApplicationSetting>> app : byApp.entrySet()) {
+            String pkg = installed.get(app.getKey()).getPkg().trim();
+            for (ApplicationSetting setting : app.getValue().values()) {
+                String raw = setting.isVariable() ? setting.getValueForDevice(device) : setting.getValue();
+                DesiredAppRestrictionValue value = restrictionValue(setting.getType(), raw);
+                if (value != null) byPackage.computeIfAbsent(pkg, k -> new TreeMap<String, DesiredAppRestrictionValue>())
+                        .put(setting.getName(), value);
+            }
+        }
+        List<DesiredAppRestrictions> result = new ArrayList<DesiredAppRestrictions>();
+        for (Map.Entry<String, Map<String, DesiredAppRestrictionValue>> entry : byPackage.entrySet()) {
+            DesiredAppRestrictions value = new DesiredAppRestrictions();
+            value.setPackageName(entry.getKey()); value.setValues(entry.getValue()); result.add(value);
+        }
+        return result;
+    }
+
+    /**
+     * Puts each setting of an installed app under its app and name, replacing one already there. Taken in id order,
+     * so of two rows with the same app and name (a legacy table has no unique key) the newer one wins, on every node.
+     */
+    private static void mergeSettings(Map<Integer, Map<String, ApplicationSetting>> byApp,
+                                      Map<Integer, Application> installed, List<ApplicationSetting> settings) {
+        if (settings == null) return;
+        List<ApplicationSetting> ordered = new ArrayList<ApplicationSetting>();
+        for (ApplicationSetting s : settings) {
+            if (s != null && s.getApplicationId() != null && installed.containsKey(s.getApplicationId())
+                    && s.getName() != null && !s.getName().trim().isEmpty()) ordered.add(s);
+        }
+        ordered.sort(Comparator.comparing(ApplicationSetting::getId, Comparator.nullsFirst(Comparator.naturalOrder())));
+        for (ApplicationSetting s : ordered) {
+            byApp.computeIfAbsent(s.getApplicationId(), k -> new TreeMap<String, ApplicationSetting>()).put(s.getName(), s);
+        }
+    }
+
+    /**
+     * The wire form of an application setting's value, or null when it doesn't parse as its type: BOOLEAN is exactly
+     * {@code true} or {@code false}, INTEGER a 32-bit integer in ASCII digits with an optional minus sign (no plus, no
+     * spaces), STRING anything. A missing type or value is null too.
+     * The configuration and device saves refuse what this refuses.
+     */
+    public static DesiredAppRestrictionValue restrictionValue(ApplicationSettingType type, String value) {
+        if (type == null || value == null) return null;
+        switch (type) {
+            case BOOLEAN:
+                if ("true".equals(value)) return new DesiredAppRestrictionValue(DesiredAppRestrictionValue.BOOL, Boolean.TRUE);
+                if ("false".equals(value)) return new DesiredAppRestrictionValue(DesiredAppRestrictionValue.BOOL, Boolean.FALSE);
+                return null;
+            case INTEGER:
+                if (!INT_VALUE.matcher(value).matches()) return null;
+                try {
+                    return new DesiredAppRestrictionValue(DesiredAppRestrictionValue.INT, Integer.valueOf(Integer.parseInt(value)));
+                } catch (NumberFormatException e) {
+                    return null;
+                }
+            case STRING:
+                return new DesiredAppRestrictionValue(DesiredAppRestrictionValue.STRING, value);
+            default:
+                return null;
+        }
+    }
+
+    /**
+     * True when a device's document can differ from its configuration's for its fields alone: a {@code variable}
+     * setting that may hold a placeholder. (A device's own settings make it differ too.)
+     */
+    public static boolean variesByDevice(List<ApplicationSetting> configurationSettings) {
+        if (configurationSettings == null) return false;
+        for (ApplicationSetting s : configurationSettings) {
+            if (s != null && s.isVariable() && s.getValue() != null && s.getValue().indexOf('%') >= 0) return true;
+        }
+        return false;
     }
 
     /**

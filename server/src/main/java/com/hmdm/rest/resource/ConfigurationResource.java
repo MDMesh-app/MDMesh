@@ -217,7 +217,10 @@ public class ConfigurationResource {
                     "An update replaces the configuration: every column, and the applications list, are written " +
                     "as sent, so a column left out becomes null and a missing applications list removes every app. " +
                     "Only files, applicationSettings, extensions and managedAppPermissions left out (null) are kept; " +
-                    "an empty list (or object) clears them. managedAppPermissions ({applicationId, permission, state}, " +
+                    "an empty list (or object) clears them. applicationSettings ({applicationId, name, type, value, " +
+                    "variable}; type STRING, INTEGER or BOOLEAN, value the text of a string, a 32-bit integer, or true " +
+                    "or false) are an app's managed configuration; only those of apps the save installs are kept, and " +
+                    "a malformed, duplicated or excess setting is refused with HTTP 400 and an ERROR naming it. managedAppPermissions ({applicationId, permission, state}, " +
                     "state grant or deny; absent = Default) keeps only the rules for apps the save installs; a " +
                     "malformed, duplicated or excess rule is refused with HTTP 400. extensions are checked once the user may save (com.hmdm.extension.ConfigurationExtensions), " +
                     "the plugins' validators on the namespaces the save changes: " +
@@ -259,6 +262,7 @@ public class ConfigurationResource {
             throw new BadRequestException("connectivityMode must be adaptive, alwaysOn or null");
         }
         normalizeManagedAppPermissions(configuration);
+        normalizeApplicationSettings(configuration);
         validateBackgroundImageFit(configuration);
         // A cleaned copy of the background image this save hosted: taken back if the save then fails.
         KioskBackgroundImageAssets.Applied imageApplied = null;
@@ -376,6 +380,90 @@ public class ConfigurationResource {
         configuration.setManagedAppPermissions(kept);
     }
 
+    /** The longest application setting name (the name column). */
+    static final int MAX_SETTING_NAME_LENGTH = 200;
+    /** The longest application setting value: room for a URL or a token, not a document. */
+    static final int MAX_SETTING_VALUE_LENGTH = 4096;
+    /** Application settings per app, for a configuration or a device. */
+    static final int MAX_SETTINGS_PER_APP = 64;
+
+    /**
+     * Checks a save's applicationSettings (an app's managed configuration) and keeps only those of the apps the save
+     * installs, for the reason {@link #normalizeManagedAppPermissions} gives. Null (an older console or API client)
+     * keeps what is stored.
+     *
+     * @throws BadRequestException as {@link #checkedApplicationSettings}
+     */
+    static void normalizeApplicationSettings(Configuration configuration) {
+        if (configuration.getApplicationSettings() == null) return;
+        configuration.setApplicationSettings(checkedApplicationSettings(configuration.getApplicationSettings(),
+                installedAppIds(configuration.getApplications())));
+    }
+
+    /** The ids of the apps the list installs (action install). */
+    static Set<Integer> installedAppIds(List<Application> apps) {
+        Set<Integer> ids = new HashSet<Integer>();
+        if (apps == null) return ids;
+        for (Application app : apps) {
+            if (app != null && app.getId() != null && app.getAction() == DesiredConfigBuilder.ACTION_INSTALL) {
+                ids.add(app.getId());
+            }
+        }
+        return ids;
+    }
+
+    /**
+     * Checks application settings, a configuration's or a device's, and returns those of the apps in
+     * {@code installedAppIds}; the others are dropped, not refused. A malformed setting is refused even for an app it
+     * drops. Each setting needs an applicationId, a name of at most {@link #MAX_SETTING_NAME_LENGTH} characters, unique
+     * for its app, a type (STRING, INTEGER or BOOLEAN) and a value of that type
+     * ({@link DesiredConfigBuilder#restrictionValue}) of at most {@link #MAX_SETTING_VALUE_LENGTH} characters; an app
+     * has at most {@link #MAX_SETTINGS_PER_APP}.
+     *
+     * @throws BadRequestException HTTP 400 with an ERROR whose message names the first problem and the setting's name,
+     *                             never its value
+     */
+    static List<ApplicationSetting> checkedApplicationSettings(List<ApplicationSetting> settings,
+                                                               Set<Integer> installedAppIds) {
+        Set<String> seen = new HashSet<String>();
+        Map<Integer, Integer> perApp = new HashMap<Integer, Integer>();
+        List<ApplicationSetting> kept = new ArrayList<ApplicationSetting>();
+        for (ApplicationSetting setting : settings) {
+            String problem = settingProblem(setting);
+            if (problem == null && !seen.add(setting.getApplicationId() + "\n" + setting.getName())) {
+                problem = "applicationSettings: \"" + setting.getName() + "\" is set twice for one app";
+            }
+            if (problem == null && perApp.merge(setting.getApplicationId(), 1, Integer::sum) > MAX_SETTINGS_PER_APP) {
+                problem = "applicationSettings: at most " + MAX_SETTINGS_PER_APP + " settings per app";
+            }
+            if (problem != null) throw badRequest(problem);
+            if (installedAppIds.contains(setting.getApplicationId())) kept.add(setting);
+        }
+        return kept;
+    }
+
+    private static String settingProblem(ApplicationSetting setting) {
+        if (setting == null || setting.getApplicationId() == null) {
+            return "applicationSettings: every setting needs an applicationId";
+        }
+        String name = setting.getName();
+        if (name == null || name.trim().isEmpty()) return "applicationSettings: every setting needs a name";
+        if (name.length() > MAX_SETTING_NAME_LENGTH) {
+            return "applicationSettings: a name is at most " + MAX_SETTING_NAME_LENGTH + " characters";
+        }
+        String label = "applicationSettings: \"" + name + "\" ";
+        if (setting.getType() == null) return label + "needs a type: STRING, INTEGER or BOOLEAN";
+        if (setting.getValue() == null) return label + "needs a value";
+        if (setting.getValue().length() > MAX_SETTING_VALUE_LENGTH) {
+            return label + "is longer than " + MAX_SETTING_VALUE_LENGTH + " characters";
+        }
+        if (DesiredConfigBuilder.restrictionValue(setting.getType(), setting.getValue()) == null) {
+            return label + (setting.getType() == ApplicationSettingType.BOOLEAN ? "must be true or false"
+                    : "must be a whole number from " + Integer.MIN_VALUE + " to " + Integer.MAX_VALUE);
+        }
+        return null;
+    }
+
     private void undo(KioskBackgroundImageAssets.Applied applied) {
         if (applied == null) return;
         try {
@@ -433,7 +521,8 @@ public class ConfigurationResource {
         if (c.getBackgroundImageFocalY() == null) c.setBackgroundImageFocalY(stored.getBackgroundImageFocalY());
     }
 
-    private static BadRequestException badRequest(String message) {
+    /** HTTP 400 with the usual ERROR envelope, so the console can show the message. */
+    static BadRequestException badRequest(String message) {
         return new BadRequestException(javax.ws.rs.core.Response.status(javax.ws.rs.core.Response.Status.BAD_REQUEST)
                 .type(MediaType.APPLICATION_JSON)
                 .entity(Response.ERROR(message))

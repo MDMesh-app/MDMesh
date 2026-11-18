@@ -381,7 +381,10 @@ public class DeviceDAO extends AbstractDAO<Device> {
         final Device dbDevice = requireAccessible(getDeviceById(deviceId));
         if (dbDevice != null) {
             this.mapper.deleteDeviceApplicationSettings(dbDevice.getId());
-            this.mapper.insertDeviceApplicationSettings(dbDevice.getId(), applicationSettings);
+            // An empty list clears them: an INSERT with no rows is not valid SQL.
+            if (applicationSettings != null && !applicationSettings.isEmpty()) {
+                this.mapper.insertDeviceApplicationSettings(dbDevice.getId(), applicationSettings);
+            }
         }
     }
 

@@ -626,7 +626,9 @@ public class SyncResource {
                                                 @ApiParam("An identifier of device within MDM server")
                                                         String deviceNumber,
                                             List<SyncApplicationSetting> applicationSettings) {
-        logger.debug("/public/sync/applicationSettings/{} --> {}", deviceNumber, applicationSettings);
+        // The count only: a setting's value can be a secret, and SyncApplicationSetting.toString() leaves it out anyway.
+        logger.debug("/public/sync/applicationSettings/{} --> {} settings", deviceNumber,
+                applicationSettings == null ? 0 : applicationSettings.size());
 
         try {
             Device dbDevice = this.unsecureDAO.getDeviceByNumber(deviceNumber);

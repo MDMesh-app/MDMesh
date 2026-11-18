@@ -184,7 +184,8 @@ public interface AgentDeviceMapper {
     /**
      * One row per device of the customer with its configuration + last applied revision (LEFT JOIN: never-reported
      * devices included), and whether its latest config.apply result has a deferred outcome (one lookup per device on
-     * the agentCommand (deviceNumber, type, id) index). A wiped device stays in, marked: it can never report a new
+     * the agentCommand (deviceNumber, type, id) index), and whether it has application settings of its own (its
+     * config.apply document is then its own). A wiped device stays in, marked: it can never report a new
      * revision, but it still blocks deleting its configuration (ConfigurationMapper.countDevices), so the summary counts
      * it apart.
      */
@@ -192,7 +193,8 @@ public interface AgentDeviceMapper {
             "s.appliedConfigRevision AS appliedConfigRevision, d.wipedAt IS NOT NULL AS wiped, " +
             "COALESCE((SELECT c.detail LIKE '%\"deferred:%' FROM agentCommand c " +
             "          WHERE c.deviceNumber = d.number AND c.type = 'config.apply' ORDER BY c.id DESC LIMIT 1), false) " +
-            "AS lastApplyDeferred " +
+            "AS lastApplyDeferred, " +
+            "EXISTS (SELECT 1 FROM deviceApplicationSettings x WHERE x.extRefId = d.id) AS ownAppSettings " +
             "FROM devices d LEFT JOIN device_state s ON s.deviceNumber = d.number " +
             "WHERE d.customerId = #{customerId} AND d.configurationId IS NOT NULL"})
     List<DeviceSyncRow> listDevicesForSync(@Param("customerId") int customerId);

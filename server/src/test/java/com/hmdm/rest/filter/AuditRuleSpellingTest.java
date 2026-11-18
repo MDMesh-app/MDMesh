@@ -89,6 +89,7 @@ public class AuditRuleSpellingTest {
         sample(ResourceAuditInfo.BULK_DEVICE_COMMAND, "POST", "/rest/private/agent/v1/bulk/commands");
         sample(ResourceAuditInfo.SYNC_DEVICE_APPS, "POST", "/rest/private/agent/v1/devices/h0001/syncApps");
         sample(ResourceAuditInfo.RETRY_DEVICE_CONFIG, "POST", "/rest/private/agent/v1/devices/h0001/retryConfig");
+        sample(ResourceAuditInfo.UPDATE_DEVICE_APP_SETTINGS, "POST", "/rest/private/devices/1/applicationSettings");
         sample(ResourceAuditInfo.MINT_ENROLL_TOKEN, "POST", "/rest/private/agent/v1/token");
         sample(ResourceAuditInfo.REVOKE_ENROLL_TOKENS, "POST", "/rest/private/agent/v1/token/revoke-all");
     }

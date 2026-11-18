@@ -18,4 +18,6 @@ public class DeviceSyncRow {
     private boolean lastApplyDeferred;
     /** devices.wipedAt is set: the device erased itself and can't report a new revision. */
     private boolean wiped;
+    /** The device has application settings of its own: its config.apply document is its own, not its configuration's. */
+    private boolean ownAppSettings;
 }

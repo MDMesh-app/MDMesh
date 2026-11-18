@@ -44,6 +44,8 @@ public class ConfigReconcilerBackgroundUrlTest {
             return Collections.emptyList();
         }
         @Override public List<ManagedAppPermission> getManagedAppPermissions(Integer id) { return null; }
+        @Override public List<com.hmdm.persistence.domain.ApplicationSetting> getConfigurationAppSettings(Integer id) { return null; }
+        @Override public List<com.hmdm.persistence.domain.ApplicationSetting> getDeviceAppSettings(int id) { return null; }
         @Override public UploadedFile getUploadedFileById(Integer id) {
             fileReads++;
             return file != null && id.equals(file.getId()) ? file : null;

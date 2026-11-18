@@ -203,6 +203,54 @@ chk "restore kioskMode=false" "$(curl -s -b "$CJ" -X PUT -H 'Content-Type: appli
 chk "device restored to its configuration" "$(curl -s -b "$CJ" -X PUT -H 'Content-Type: application/json' -d "{\"ids\":[$KDEV],\"configurationId\":$CFG_ID}" "$BASE/rest/private/devices" | field "d['status']")" "OK"
 chk "kiosk scenario configuration deleted" "$(curl -s -b "$CJ" -X DELETE "$BASE/rest/private/configurations/$KCFG" | field "d['status']")" "OK"
 
+echo "== managed app configuration: the configuration's values with a device override, only for a capable agent =="
+# A temporary configuration with the kiosk scenario's install app, a value set on the configuration and one the device
+# overrides; the device also adds a key of its own.
+MNAME="e2e-mcfg-$(date +%s)-$$"
+mcfg_body(){ # $1 = id or ""
+  KCFG_SRC="$KCFG_SRC" MID="$1" MNAME="$MNAME" KAPP_ID="$KAPP_ID" KVID="$KVID" python3 -c '
+import json,os
+c=json.loads(os.environ["KCFG_SRC"])["data"]
+for k in ("id","qrCodeKey","selected"): c.pop(k,None)
+if os.environ["MID"]: c["id"]=int(os.environ["MID"])
+app=int(os.environ["KAPP_ID"])
+c["name"]=os.environ["MNAME"]; c["description"]="agent-v1-e2e managed app configuration (temporary)"
+c["applications"]=[{"id":app,"usedVersionId":int(os.environ["KVID"]),"action":1,"showIcon":True,"remove":False}]
+c["kioskMode"]=False; c["mainAppId"]=None; c["contentAppId"]=None; c["managedAppPermissions"]=[]
+c["applicationSettings"]=[{"applicationId":app,"name":"serverUrl","type":"STRING","value":"https://cfg.example"},
+                          {"applicationId":app,"name":"pollSeconds","type":"INTEGER","value":"30"}]
+print(json.dumps(c))'; }
+MNEW=$(curl -s -b "$CJ" -X PUT -H 'Content-Type: application/json' -d "$(mcfg_body "")" "$BASE/rest/private/configurations")
+MCFG=$(echo "$MNEW" | field "d['data']['id']")
+chk "managed configuration scenario configuration created" "$(echo "$MNEW" | field "d['status']+':'+str(len(d['data']['applicationSettings']))")" "OK:2"
+chk "device moved to the managed configuration scenario" "$(curl -s -b "$CJ" -X PUT -H 'Content-Type: application/json' -d "{\"ids\":[$KDEV],\"configurationId\":$MCFG}" "$BASE/rest/private/devices" | field "d['status']")" "OK"
+mset(){ curl -s -b "$CJ" -X POST -H 'Content-Type: application/json' -d "$1" "$BASE/rest/private/devices/$KDEV/applicationSettings"; }
+chk "device override saved" \
+  "$(mset "[{\"applicationId\":$KAPP_ID,\"name\":\"serverUrl\",\"type\":\"STRING\",\"value\":\"https://device.example\"},{\"applicationId\":$KAPP_ID,\"name\":\"kioskMode\",\"type\":\"BOOLEAN\",\"value\":\"true\"}]" | field "d['status']+':'+str(len(d['data']))")" "OK:2"
+chk "a value that is not its type is refused with HTTP 400" \
+  "$(curl -s -o /dev/null -w '%{http_code}' -b "$CJ" -X POST -H 'Content-Type: application/json' -d "[{\"applicationId\":$KAPP_ID,\"name\":\"pollSeconds\",\"type\":\"INTEGER\",\"value\":\"thirty\"}]" "$BASE/rest/private/devices/$KDEV/applicationSettings")" "400"
+C_M=$(curl -s -X POST -H "Authorization: Bearer $SEC" -H 'Content-Type: application/json' \
+  -d "{\"deviceId\":\"$DID\",\"capabilities\":{\"policy\":[\"wifi\"],\"device\":[\"configApply\"],\"appManagement\":[\"runtimePermissions\",\"managedConfig\"]},\"state\":{\"battery\":77,\"charging\":true,\"locked\":false,\"kioskActive\":false,\"androidRelease\":\"14\",\"lastBootAt\":1000,\"appliedConfigRevision\":\"$CUR_REV\"}}" \
+  "$BASE/rest/public/agent/v1/checkin")
+MPAY="[c['payload'] for c in d['data']['commands'] if c['type']=='config.apply'][0]"
+chk "a capable agent gets the merged section (device wins, device-only key)" \
+  "$(echo "$C_M" | field "'|'.join(e['packageName']+'='+json.dumps(e['values'],sort_keys=True,separators=(',',':')) for e in ${MPAY}['appRestrictions'])")" \
+  "$KPKG={\"kioskMode\":{\"type\":\"bool\",\"value\":true},\"pollSeconds\":{\"type\":\"int\",\"value\":30},\"serverUrl\":{\"type\":\"string\",\"value\":\"https://device.example\"}}"
+# The same device as an agent without app.managedConfig: the delivered document is ended (no result), and the one it
+# can apply, without the section, is sent under its own revision.
+C_MO=$(curl -s -X POST -H "Authorization: Bearer $SEC" -H 'Content-Type: application/json' \
+  -d "{\"deviceId\":\"$DID\",\"capabilities\":{\"policy\":[\"wifi\"],\"device\":[\"configApply\"],\"appManagement\":[\"runtimePermissions\"]},\"state\":{\"battery\":77,\"charging\":true,\"locked\":false,\"kioskActive\":false,\"androidRelease\":\"14\",\"lastBootAt\":1000,\"appliedConfigRevision\":\"$CUR_REV\"}}" \
+  "$BASE/rest/public/agent/v1/checkin")
+chk "an agent without app.managedConfig gets the document without the section" \
+  "$(echo "$C_MO" | field "[('appRestrictions' in c['payload']) for c in d['data']['commands'] if c['type']=='config.apply']")" "[False]"
+MO_REV=$(echo "$C_MO" | field "${MPAY}['revision']")
+chk "it never shows in sync while the app has values" \
+  "$(curl -s -b "$CJ" "$BASE/rest/private/agent/v1/devices/$DID/configStatus" | field "str(d['data']['currentRevision']!='$MO_REV')")" "True"
+# Restore: no device settings (the app is on the shared configuration too), device back, configuration deleted.
+chk "device settings cleared" "$(mset "[]" | field "d['status']+':'+str(len(d['data']))")" "OK:0"
+chk "device restored to its configuration" "$(curl -s -b "$CJ" -X PUT -H 'Content-Type: application/json' -d "{\"ids\":[$KDEV],\"configurationId\":$CFG_ID}" "$BASE/rest/private/devices" | field "d['status']")" "OK"
+chk "managed configuration scenario configuration deleted" "$(curl -s -b "$CJ" -X DELETE "$BASE/rest/private/configurations/$MCFG" | field "d['status']")" "OK"
+
 echo "== configuration extensions: a save without them keeps them, with them replaces them, a copy copies them =="
 # A temporary configuration with no apps, made from the shared one's columns.
 XNAME="e2e-ext-$(date +%s)-$$"

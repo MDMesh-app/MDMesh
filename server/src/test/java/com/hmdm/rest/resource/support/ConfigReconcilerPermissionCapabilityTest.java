@@ -36,6 +36,9 @@ public class ConfigReconcilerPermissionCapabilityTest {
         @Override public Configuration getConfigurationById(Integer id) { return configuration; }
         @Override public List<Application> getPlainConfigurationAppsOptimized(Integer id) { return apps; }
         @Override public List<ManagedAppPermission> getManagedAppPermissions(Integer id) { return permissions; }
+        @Override public List<com.hmdm.persistence.domain.ApplicationSetting> getConfigurationAppSettings(Integer id) {
+            return Collections.emptyList();
+        }
     }
 
     private static ConfigReconciler reconciler(List<ManagedAppPermission> rules) {

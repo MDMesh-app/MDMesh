@@ -23,7 +23,9 @@ package com.hmdm.plugins.audit.rest.filter;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.node.TextNode;
 import com.hmdm.persistence.domain.User;
 import com.hmdm.plugins.audit.persistence.domain.AuditLogRecord;
 import com.hmdm.plugins.audit.rest.AuditResource;
@@ -70,6 +72,8 @@ class ResourceAuditor {
     private static final ObjectMapper COMMAND_MAPPER = new ObjectMapper();
 
     private static final String NOT_STORED = "(not valid JSON, not stored)";
+
+    private static final String MASK = "******";
 
     /**
      * <p>A key in message resource bundle referring to description of action mapped to audited request.</p>
@@ -203,6 +207,9 @@ class ResourceAuditor {
                     body = response.result;
                     requestedLogin = response.login;
                 }
+                if (needMaskSettingValues(action)) {
+                    body = maskApplicationSettingValues(body);
+                }
                 payloadString += "\nBody: " + body;
             }
             payloadString += "\nUser-Agent: " + httpRequest.getHeader("User-Agent");
@@ -278,6 +285,62 @@ class ResourceAuditor {
     }
 
     /**
+     * <p>The actions whose body holds application settings, an app's managed configuration: a value can be a secret
+     * (a token), so it is masked.</p>
+     */
+    private static boolean needMaskSettingValues(String action) {
+        return "plugin.audit.action.update.configuration".equals(action) ||
+               "plugin.audit.action.copy.configuration".equals(action) ||
+               "plugin.audit.action.update.device.app.settings".equals(action);
+    }
+
+    /**
+     * <p>Masks the values of application settings: a configuration's ({"applicationSettings": [{"name", "value",
+     * ...}]}) or a device's (a list of settings). The names, types and apps are kept. A body that is not JSON is not
+     * stored, and neither is a list item that is not a setting.</p>
+     *
+     * @param body a request body.
+     * @return the request body to store in the audit log.
+     */
+    static String maskApplicationSettingValues(String body) {
+        try {
+            JsonNode root = COMMAND_MAPPER.readTree(body);
+            if (root == null) {
+                return NOT_STORED;
+            }
+            if (root.isArray()) {
+                maskSettingValues((ArrayNode) root);
+            } else if (root.isObject()) {
+                JsonNode settings = root.get("applicationSettings");
+                if (settings != null && settings.isArray()) {
+                    maskSettingValues((ArrayNode) settings);
+                } else if (settings != null && !settings.isNull()) {
+                    ((ObjectNode) root).put("applicationSettings", MASK);
+                }
+            } else {
+                return NOT_STORED;
+            }
+            return COMMAND_MAPPER.writeValueAsString(root);
+        } catch (IOException e) {
+            return NOT_STORED;
+        }
+    }
+
+    private static void maskSettingValues(ArrayNode settings) {
+        for (int i = 0; i < settings.size(); i++) {
+            JsonNode setting = settings.get(i);
+            if (setting.isObject()) {
+                JsonNode value = setting.get("value");
+                if (value != null && !value.isNull()) {
+                    ((ObjectNode) setting).put("value", MASK);
+                }
+            } else if (!setting.isNull()) {
+                settings.set(i, TextNode.valueOf(MASK));
+            }
+        }
+    }
+
+    /**
      * <p>Masks the payload of an agent command request, for one device ({"type", "payload", ...}) or many
      * ({"deviceIds", "command": {"type", "payload", ...}}). A payload can carry a secret (a kiosk exit password, a
      * new screen lock PIN), so it is never stored; the command type, the device IDs and the capability are kept.
@@ -310,7 +373,7 @@ class ResourceAuditor {
     private static void maskCommandPayload(ObjectNode command) {
         JsonNode payload = command.get("payload");
         if (payload != null && !payload.isNull()) {
-            command.put("payload", "******");
+            command.put("payload", MASK);
         }
     }
 

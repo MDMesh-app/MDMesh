@@ -8,6 +8,6 @@
   "properties": {
     "revision": { "type": "string" },
     "outcomes": { "type": "object", "additionalProperties": { "type": "string", "pattern": "^(applied|unsupported|not-requested|deferred: .*|failed(: .*)?)$" },
-                  "description": "keys: policies.<key>, kiosk, location, connectivity (1.5; unsupported for a mode the agent doesn't know), appPermissions.<package>.<permission> (1.7)" }
+                  "description": "keys: policies.<key>, kiosk, location, connectivity (1.5; unsupported for a mode the agent doesn't know), appPermissions.<package>.<permission> (1.7), appRestrictions.<package> (1.8: applied = set and read back; failed: app not installed, retried after app.install installs it; failed: <reason> when Android refuses, the read-back differs or a clear fails, retried; unsupported when the agent is not Device Owner or an entry has a value type it doesn't know, final, the package left alone). Outcome strings never carry a value." }
   }
 }

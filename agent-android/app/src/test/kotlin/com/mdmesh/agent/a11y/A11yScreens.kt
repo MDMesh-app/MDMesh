@@ -32,8 +32,7 @@ import com.mdmesh.agent.ui.StatusCopy
 import com.mdmesh.agent.ui.StatusScreen
 import com.mdmesh.agent.ui.StatusUiState
 import com.mdmesh.core.config.ServerConfigStore
-import com.mdmesh.core.store.DataStoreKioskStateStore
-import com.mdmesh.core.store.DeviceIdStore
+import com.mdmesh.core.store.AgentDataStores
 import com.mdmesh.core.store.SharedPrefsConfigStateStore
 import com.mdmesh.proto.ConfigApplyPayload
 import com.mdmesh.proto.KioskApplyPayload
@@ -78,7 +77,7 @@ class A11yScreens {
         val dpm = app.getSystemService(DevicePolicyManager::class.java)
         shadowOf(dpm).setDeviceOwner(ComponentName(app, AdminReceiver::class.java))
         ServerConfigStore(app).save("https://mdm.example.com")
-        runBlocking { DeviceIdStore(app).saveCredentials("dev_7f3a9c21e4b84d0e", "secret") }
+        runBlocking { AgentDataStores.stores(app).deviceIdStore().saveCredentials("dev_7f3a9c21e4b84d0e", "secret") }
         val pm = shadowOf(app.packageManager)
         for ((pkg, label) in apps) {
             val ai = ApplicationInfo().apply { packageName = pkg; nonLocalizedLabel = label }
@@ -194,7 +193,7 @@ class A11yScreens {
     fun kioskApps(): List<KioskApp> = apps.map { (pkg, label) -> KioskApp(pkg, label, ColorDrawable(Color.GRAY)) }
 
     fun launcher(k: KioskApplyPayload?): KioskLauncherActivity {
-        runBlocking { DataStoreKioskStateStore(app).save(k) }
+        runBlocking { AgentDataStores.stores(app).kioskStateStore().save(k) }
         return start(Robolectric.buildActivity(KioskLauncherActivity::class.java))
     }
 

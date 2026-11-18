@@ -19,6 +19,7 @@ detekt {
     buildUponDefaultConfig = true
     parallel = true
     baseline = file("config/detekt/baseline.xml")
+    config.setFrom(file("config/detekt/detekt.yml"))
     source.setFrom(files(subprojects.map { "${it.projectDir}/src" }))
 }
 

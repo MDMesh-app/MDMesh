@@ -46,6 +46,7 @@ import {
   appSettingsSignature,
   dropAppSettings,
   newAppSetting,
+  withTrimmedNames,
   type AppSetting,
 } from '../data/managedAppSettings';
 import { AppSettingRows } from './configurations/AppSettingRows';
@@ -634,7 +635,8 @@ function Editor({
       // The whole configuration goes back (the server replaces every column and list), with the name as validated.
       // Its `extensions` are the loaded ones, with the namespaces the sections changed on top (saveConfiguration).
       const name = String(draft.name ?? '').trim();
-      await saveConfiguration({ ...draft, name, extensions: baseline.extensions }, host.changed);
+      const applicationSettings = withTrimmedNames(draft.applicationSettings);
+      await saveConfiguration({ ...draft, name, applicationSettings, extensions: baseline.extensions }, host.changed);
       toast.push('ok', isNew ? 'Configuration created' : 'Configuration saved', name);
       const watch: ConfigWatch | undefined =
         initial.id != null ? { id: initial.id, until: Date.now() + WATCH_MS } : undefined;

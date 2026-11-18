@@ -47,6 +47,7 @@ import com.hmdm.event.DeviceBatteryLevelUpdatedEvent;
 import com.hmdm.event.DeviceInfoUpdatedEvent;
 import com.hmdm.event.DeviceLocationUpdatedEvent;
 import com.hmdm.event.EventService;
+import com.hmdm.persistence.AgentCommandDAO;
 import com.hmdm.persistence.CustomerDAO;
 import com.hmdm.persistence.DeviceDAO;
 import com.hmdm.persistence.domain.ApplicationSetting;
@@ -91,6 +92,9 @@ public class SyncResource {
 
     private CustomerDAO customerDAO;
 
+    /** Tells a device the MDMesh agent enrolled (it has an agent secret) from a Headwind launcher's. */
+    private AgentCommandDAO agentCommandDAO;
+
     /**
      * <p>A service used for sending notifications on battery level update for device</p>
      */
@@ -132,6 +136,7 @@ public class SyncResource {
                         Injector injector,
                         CustomerDAO customerDAO,
                         DeviceDAO deviceDAO,
+                        AgentCommandDAO agentCommandDAO,
                         @Named("base.url") String baseUrl,
                         @Named("secure.enrollment") boolean secureEnrollment,
                         @Named("hash.secret") String hashSecret,
@@ -144,6 +149,7 @@ public class SyncResource {
         this.eventService = eventService;
         this.customerDAO = customerDAO;
         this.deviceDAO = deviceDAO;
+        this.agentCommandDAO = agentCommandDAO;
         this.baseUrl = baseUrl;
         this.secureEnrollment = secureEnrollment;
         this.hashSecret = hashSecret;
@@ -615,7 +621,9 @@ public class SyncResource {
     // =================================================================================================================
     @ApiOperation(
             value = "Save application settings",
-            notes = "Saves the application settings for the device on the MDM server.",
+            notes = "Saves the application settings for the device on the MDM server. A Headwind launcher route " +
+                    "(LEGACY_DEVICE_API=1), without authentication: a device the MDMesh agent enrolled is answered as " +
+                    "unknown and nothing is written, as its settings are its managed app configuration.",
             response = Response.class
     )
     @POST
@@ -632,13 +640,21 @@ public class SyncResource {
 
         try {
             Device dbDevice = this.unsecureDAO.getDeviceByNumber(deviceNumber);
+            if (dbDevice != null && this.agentCommandDAO.getDeviceSecretHash(deviceNumber) != null) {
+                // The MDMesh agent reads these rows as its apps' managed configuration (appRestrictions): this
+                // unauthenticated route must not write them. The agent never calls it.
+                logger.warn("Refused application settings for device {} from the legacy sync route: it is enrolled by "
+                        + "the MDMesh agent", deviceNumber);
+                return Response.DEVICE_NOT_FOUND_ERROR();
+            }
             if (dbDevice != null) {
                 this.unsecureDAO.saveDeviceApplicationSettings(dbDevice, applicationSettings.stream().map(s -> {
                     ApplicationSetting applicationSetting = new ApplicationSetting();
                     applicationSetting.setApplicationPkg(s.getPackageId());
                     applicationSetting.setName(s.getName());
                     applicationSetting.setType(ApplicationSettingType.byId(s.getType()).orElse(ApplicationSettingType.STRING));
-                    applicationSetting.setReadonly(s.isReadonly());
+                    // isReadonly() answers null for false (the launcher's JSON shape): unboxing it failed the save.
+                    applicationSetting.setReadonly(Boolean.TRUE.equals(s.isReadonly()));
                     applicationSetting.setValue(s.getValue());
                     applicationSetting.setLastUpdate(s.getLastUpdate());
 

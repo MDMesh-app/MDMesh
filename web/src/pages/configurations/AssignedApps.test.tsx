@@ -37,6 +37,8 @@ function open(apps = assigned(), configuration: Record<string, unknown> = {}) {
       puts.push(body);
       return body;
     }
+    // The configurations list a save goes back to: an empty list, not null (the page maps it).
+    if (p === '/private/configurations/search' || p === '/private/configurations/list') return [];
     if (p === '/private/configurations/7') return { id: 7, name: 'Warehouse', kioskMode: false, extensions: {}, ...configuration };
     if (p === '/private/configurations/applications/7') return apps.map((a) => ({ ...a, selected: true }));
     if (p.startsWith('/private/applications/search')) {

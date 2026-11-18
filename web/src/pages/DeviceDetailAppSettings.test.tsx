@@ -25,7 +25,7 @@ const APPS = [
   { id: 2, name: 'Old tool', pkg: 'hr.example.old', action: 0, selected: true },
 ];
 
-function openSettings({ device = [] as unknown[], user = ROLES.superAdmin } = {}) {
+function openSettings({ device = [] as unknown[], user = ROLES.superAdmin, config = CONFIG_SETTINGS as unknown[] } = {}) {
   const posts: unknown[] = [];
   let settingsReads = 0;
   let stored = device;
@@ -33,7 +33,7 @@ function openSettings({ device = [] as unknown[], user = ROLES.superAdmin } = {}
     const p = new URL(path, 'http://console').pathname.replace('/rest/private', '');
     if (p === '/devices/search') return { devices: { items: [DEVICE], totalItemsCount: 1 }, configurations: {} };
     if (p === `/devices/number/${DEVICE.number}`) return DEVICE;
-    if (p === '/configurations/3') return { id: 3, name: 'Warehouse', applicationSettings: CONFIG_SETTINGS };
+    if (p === '/configurations/3') return { id: 3, name: 'Warehouse', applicationSettings: config };
     if (p === '/configurations/applications/3') return APPS;
     if (p === `/devices/${DEVICE.id}/applicationSettings`) {
       if (init?.method === 'POST') {
@@ -106,6 +106,45 @@ describe('device application settings', () => {
     await screen.findByText('Application settings saved');
     expect(document.body.textContent).not.toMatch(/tok-123.*saved|saved.*tok-123/);
     await waitFor(() => expect(within(screen.getByRole('tabpanel')).queryByText(/unsaved change/)).toBeNull());
+  });
+
+  it('an override keeps the configuration row’s type and variable flag, so a placeholder still fills in', async () => {
+    const imei = setting(1, 'deviceId', '%IMEI%', { type: 'STRING', variable: true });
+    const { posts } = openSettings({ config: [imei] });
+    const tablet = await app('Tablet');
+    fireEvent.click(within(tablet).getByRole('button', { name: 'Override deviceId' }));
+    fireEvent.click(within(await card()).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(posts).toHaveLength(1));
+    expect(posts[0]).toEqual([expect.objectContaining({ applicationId: 1, name: 'deviceId', type: 'STRING', value: '%IMEI%', variable: true })]);
+  });
+
+  it('reads a legacy row stored with no value as empty: fine for Text, a problem on the row for Number', async () => {
+    const { value: _t, ...text } = setting(1, 'note', '', { id: 5 });
+    const { value: _n, ...number } = setting(1, 'retries', '', { id: 6, type: 'INTEGER' });
+    const { posts } = openSettings({ device: [text, number] });
+    const tablet = await app('Tablet');
+    const retries = within(tablet).getByRole('group', { name: 'Setting retries' });
+    expect(within(retries).getByText(/Enter a whole number/)).toBeTruthy();
+    expect(within(tablet).queryAllByText(/Enter a whole number/)).toHaveLength(1);
+    fireEvent.change(within(retries).getByRole('textbox', { name: 'Value' }), { target: { value: '3' } });
+    fireEvent.click(within(await card()).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(posts).toHaveLength(1));
+    expect(posts[0]).toEqual([
+      expect.objectContaining({ name: 'note', type: 'STRING', value: '' }),
+      expect.objectContaining({ name: 'retries', type: 'INTEGER', value: '3' }),
+    ]);
+  });
+
+  it('sends a key trimmed, as the server stores it', async () => {
+    const { posts } = openSettings();
+    const tablet = await app('Tablet');
+    fireEvent.click(within(tablet).getByRole('button', { name: 'Add device setting' }));
+    fireEvent.change(within(within(tablet).getByRole('group', { name: 'Setting new setting' })).getByRole('textbox', { name: 'Key' }), {
+      target: { value: '  pin ' },
+    });
+    fireEvent.click(within(await card()).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(posts).toHaveLength(1));
+    expect(posts[0]).toEqual([expect.objectContaining({ applicationId: 1, name: 'pin' })]);
   });
 
   it('Discard goes back to the loaded rows, and an edit set back is no change', async () => {

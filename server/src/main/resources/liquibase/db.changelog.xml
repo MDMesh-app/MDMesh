@@ -3236,4 +3236,16 @@
         <rollback/>
     </changeSet>
 
+    <changeSet id="26.11.18-applicationSettings-extRefId-idx" author="contrib" context="common">
+        <comment>Index,new: deviceApplicationSettings (extRefId) and configurationApplicationSettings (extRefId). The
+            agent's managed app configuration reads a device's and its configuration's application settings on each
+            check-in that builds its document, and the configurations' sync summary asks, per device, whether it has
+            its own settings. One index lookup each instead of a scan of every device's or configuration's settings.
+            IF NOT EXISTS: safe on fresh and upgraded databases.</comment>
+        <sql>CREATE INDEX IF NOT EXISTS deviceApplicationSettings_extRefId_idx ON deviceApplicationSettings (extRefId);
+            CREATE INDEX IF NOT EXISTS configurationApplicationSettings_extRefId_idx ON configurationApplicationSettings (extRefId);</sql>
+        <rollback>DROP INDEX IF EXISTS configurationApplicationSettings_extRefId_idx;
+            DROP INDEX IF EXISTS deviceApplicationSettings_extRefId_idx;</rollback>
+    </changeSet>
+
 </databaseChangeLog>

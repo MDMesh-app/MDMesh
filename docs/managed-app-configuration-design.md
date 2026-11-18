@@ -38,6 +38,12 @@ must be able to override a key.
 - The audit plugin stores the body of a configuration save (`PUT /private/configurations`, and `/copy`). Without a
   change, every setting value would land in the audit log.
 - `ApplicationSetting.toString()` prints the value, and the legacy `/public/sync/applicationSettings` logs it at debug.
+- `POST /public/sync/applicationSettings/{number}` (the Headwind launcher's, served with `LEGACY_DEVICE_API=1`) writes
+  `deviceApplicationSettings` without authentication. Once the rows reach the agent as `appRestrictions`, anyone who
+  knows a device number could set an app's managed configuration through it.
+- No index covers `extRefId` on either settings table. The PostgreSQL foreign key doesn't add one.
+- A Headwind-era database can hold rows the new checks refuse: an `INTEGER` row with the value `""`, a name set twice
+  for one app, a row with a null `value`. The `GET` leaves a null value out of the JSON.
 - `setApplicationRestrictions` needs a Device Owner or Profile Owner (API 21+; the agent's minimum is 24). It
   *replaces* the package's whole bundle; an empty bundle clears it. `getApplicationRestrictions(admin, pkg)` reads it
   back. Android drops a package's restrictions when the package is uninstalled.
@@ -103,7 +109,9 @@ field (they never receive it anyway); an old server never sends it, and a new ag
 
 ## Persistence And Server Shape
 
-No new table. The configuration's values are `configurationApplicationSettings` rows, a device's overrides are
+No new table, one changeset: an index on `extRefId` of each settings table (`26.11.18-applicationSettings-extRefId-idx`),
+because a capable agent's check-in reads both tables and the sync summary asks per device whether it has rows. The
+configuration's values are `configurationApplicationSettings` rows, a device's overrides are
 `deviceApplicationSettings` rows, both keyed by the application assignment (`applicationId`), not by a free package
 name, so a value can't name an app outside the configuration.
 
@@ -115,17 +123,26 @@ configuration doesn't install are not sent.
 
 Configuration save validation (with `normalizeManagedAppPermissions`, in the same place):
 
-1. reject a duplicate `(applicationId, name)`, a blank name, a name over 200 characters (the column), an unknown type,
-   a `bool` value other than `true`/`false`, an `int` value outside 32-bit, a value over 4096 characters, and more than
+1. drop the settings of an application the save leaves out or doesn't install (as for permission rules). This comes
+   first, and the dropped rows are not checked: a malformed Headwind-era row of an app the configuration doesn't
+   install doesn't block the save. A row without an `applicationId` belongs to no app and is refused;
+2. trim each kept name, and store it trimmed. The checks below see the trimmed name, so `" token "` and `"token"` are
+   the same key;
+3. reject a duplicate `(applicationId, name)`, a blank name, a name over 200 characters (the column), an unknown type,
+   a missing value, a `bool` value other than `true`/`false`, an `int` value that is not an optional minus and 1 to 10
+   digits (`-?[0-9]{1,10}`) within 32 bits (so `00000000030` is refused), a value over 4096 characters, and more than
    64 settings for one app;
-2. drop the settings of an application the save leaves out or doesn't install (as for permission rules);
-3. keep the settings when a save leaves the list absent (unchanged, the existing rule).
+4. keep the settings when a save leaves the list absent (unchanged, the existing rule).
 
 Device read and save (`GET`/`POST /private/devices/{id}/applicationSettings`): require Headwind's
 `edit_device_app_settings` permission (seeded for Admin and Super-admin; no code checked it before) and access to the
-device, because a value can be a secret. The save gets the same validation per application and keeps only
-applications the device's configuration installs (others are dropped, as on a configuration save). Then it wakes the
-device, so it checks in and gets the new document.
+device, because a value can be a secret. The save keeps only applications the device's configuration installs and
+drops the others unchecked, then checks and trims the rest, as a configuration save does. Then it wakes the device,
+so it checks in and gets the new document.
+
+The legacy launcher route `POST /public/sync/applicationSettings/{number}` refuses a device the MDMesh agent enrolled
+(it has an agent secret): it answers as for an unknown device, writes nothing, and logs a WARN that names the device
+number. A Headwind launcher device (no agent secret) keeps working.
 
 The console's sync summary builds one document per configuration, and a device's own document only when it has
 settings of its own (or a variable setting needs its fields), so a large fleet without overrides costs what it did.
@@ -147,6 +164,11 @@ Secrets: values can carry tokens. They never go to a log line or the audit text.
   the configuration's values (read only, struck through when overridden), the device's overrides (edit, remove, add a
   device-only key). Saving replaces the device's rows and wakes the device. A role without `edit_device_app_settings`
   doesn't see the card.
+- The console checks the rows of the apps it shows exactly as the server does: the trimmed name, and a number as
+  `-?[0-9]{1,10}` within 32 bits. It sends names trimmed. A row loaded without a value gets `""`: a text row is
+  fine, and a number or on/off row shows its problem on the row.
+- An Override on the device page copies the configuration row's type and `variable` flag, so a placeholder such as
+  `%IMEI%` is still filled in for the device.
 - The config outcome view labels `appRestrictions.<package>` as "<package>: application settings", as it labels
   permission outcomes by package.
 

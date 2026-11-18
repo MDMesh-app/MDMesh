@@ -127,8 +127,44 @@ public class ConfigurationResourceAppSettingsTest {
         StringBuilder longValue = new StringBuilder();
         while (longValue.length() <= ConfigurationResource.MAX_SETTING_VALUE_LENGTH) longValue.append('v');
         refused(withSettings(setting(1, "token", ApplicationSettingType.STRING, longValue.toString())));
-        // Malformed is refused even for an app the save drops.
-        refused(withSettings(setting(3, "pollSeconds", ApplicationSettingType.INTEGER, "thirty")));
+        refused(withSettings(setting(1, "pollSeconds", ApplicationSettingType.INTEGER, "00000000030")));
+        refused(withSettings(setting(1, "serverUrl", ApplicationSettingType.STRING, "a"),
+                setting(1, " serverUrl ", ApplicationSettingType.STRING, "b")));
+    }
+
+    @Test
+    public void malformedRowsOfAnAppTheSaveDropsAreDroppedUnchecked() {
+        // Headwind-era rows of apps 2 (not installed) and 3 (gone): a value that fits no type, a duplicate, no value.
+        Configuration c = withSettings(setting(1, "serverUrl", ApplicationSettingType.STRING, "https://a"),
+                setting(2, "pollSeconds", ApplicationSettingType.INTEGER, ""),
+                setting(3, "pollSeconds", ApplicationSettingType.INTEGER, "thirty"),
+                setting(3, "pollSeconds", ApplicationSettingType.INTEGER, "thirty"),
+                setting(3, "token", ApplicationSettingType.STRING, null));
+        ConfigurationResource.normalizeApplicationSettings(c);
+        assertEquals(1, c.getApplicationSettings().size());
+        assertEquals("serverUrl", c.getApplicationSettings().get(0).getName());
+    }
+
+    @Test
+    public void aNameIsStoredAndCheckedTrimmed() {
+        StringBuilder longName = new StringBuilder();
+        while (longName.length() < ConfigurationResource.MAX_SETTING_NAME_LENGTH) longName.append('k');
+        Configuration c = withSettings(setting(1, "  serverUrl ", ApplicationSettingType.STRING, "https://a"),
+                setting(1, " " + longName + " ", ApplicationSettingType.STRING, "b"));
+        ConfigurationResource.normalizeApplicationSettings(c);
+        assertEquals("serverUrl", c.getApplicationSettings().get(0).getName());
+        assertEquals(longName.toString(), c.getApplicationSettings().get(1).getName());
+    }
+
+    @Test
+    public void aNumberIsAMinusAndOneToTenDigitsWithin32Bits() {
+        Configuration c = withSettings(setting(1, "a", ApplicationSettingType.INTEGER, "0000000030"),
+                setting(1, "b", ApplicationSettingType.INTEGER, "-0"),
+                setting(1, "c", ApplicationSettingType.INTEGER, "2147483647"));
+        ConfigurationResource.normalizeApplicationSettings(c);
+        assertEquals(3, c.getApplicationSettings().size());
+        refused(withSettings(setting(1, "d", ApplicationSettingType.INTEGER, " 5")));
+        refused(withSettings(setting(1, "e", ApplicationSettingType.INTEGER, "")));
     }
 
     @Test

@@ -5,6 +5,8 @@ import {
   dropAppSettings,
   MAX_SETTINGS_PER_APP,
   newAppSetting,
+  withSettingValues,
+  withTrimmedNames,
   withType,
   type AppSetting,
 } from './managedAppSettings';
@@ -49,6 +51,33 @@ describe('application settings', () => {
       [6, 'value'],
       [7, 'value'],
     ]);
+  });
+
+  it('takes a number as the server does: a minus and 1 to 10 digits, within 32 bits', () => {
+    const values = ['0', '-0', '0000000030', '00000000030', '2147483647', '-2147483648', '+5', ' 5', '5 ', '', '-'];
+    const problems = appSettingsProblems(values.map((v, i) => row(1, `n${i}`, 'INTEGER', v)));
+    expect(problems.map((p) => values[p.index])).toEqual(['00000000030', '+5', ' 5', '5 ', '', '-']);
+  });
+
+  it('checks a key trimmed: spaces around it are no key of their own', () => {
+    const problems = appSettingsProblems([row(1, 'token', 'STRING', ''), row(1, ' token ', 'STRING', ''), row(1, ` ${'a'.repeat(200)} `, 'STRING', '')]);
+    expect(problems.map((p) => [p.index, p.message])).toEqual([[1, 'This app already has a setting with this key.']]);
+  });
+
+  it('trims each key to send, and leaves a row with a clean key as it is', () => {
+    const clean = row(1, 'a', 'STRING', '');
+    const sent = withTrimmedNames([clean, row(1, '  b ', 'STRING', '')]);
+    expect(sent[0]).toBe(clean);
+    expect(sent[1].name).toBe('b');
+    expect(withTrimmedNames(undefined)).toBeUndefined();
+  });
+
+  it('reads a row stored with no value as an empty value', () => {
+    const { value: _v, ...noValue } = row(1, 'a', 'INTEGER', '');
+    const [loaded] = withSettingValues([noValue]) as AppSetting[];
+    expect(loaded.value).toBe('');
+    expect(appSettingsProblems([loaded]).map((p) => p.field)).toEqual(['value']);
+    expect(withSettingValues(null)).toBeNull();
   });
 
   it('never quotes a value in a problem', () => {

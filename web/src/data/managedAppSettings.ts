@@ -26,6 +26,29 @@ export function appSettingsOf(list: unknown): AppSetting[] {
   return Array.isArray(list) ? (list.filter((r) => !!r && typeof r === 'object') as AppSetting[]) : [];
 }
 
+/**
+ * The rows as loaded, each with a value: a legacy row stored with no value (the server omits a null) gets `''`. A Text
+ * row is then fine as it is, and a Number or On/off row shows its problem on the row instead of failing the save.
+ * Anything not a list stays as it is.
+ */
+export function withSettingValues<T>(list: T): T {
+  if (!Array.isArray(list)) return list;
+  return appSettingsOf(list).map((r) => (r.value == null ? { ...r, value: '' } : r)) as T;
+}
+
+/**
+ * The rows to send: each key trimmed, as the server stores it (it trims too), so the saved list reads back the same.
+ * A row whose key has no surrounding spaces is sent as it is. Anything not a list stays as it is.
+ */
+export function withTrimmedNames<T>(list: T): T {
+  if (!Array.isArray(list)) return list;
+  return (list as unknown[]).map((r) => {
+    if (!r || typeof r !== 'object') return r;
+    const row = r as AppSetting;
+    return typeof row.name === 'string' && row.name.trim() !== row.name ? { ...row, name: row.name.trim() } : row;
+  }) as T;
+}
+
 /** A new row: a free key, Text, empty. Not readonly or variable (the Headwind flags the console does not edit). */
 export function newAppSetting(applicationId: number): AppSetting {
   return { applicationId, name: '', type: 'STRING', value: '', readonly: false, variable: false, lastUpdate: Date.now() };
@@ -43,7 +66,8 @@ export function settingValueProblem(type: AppSettingType, value: string): string
   if ((value ?? '').length > MAX_SETTING_VALUE) return `Use at most ${MAX_SETTING_VALUE} characters.`;
   if (type === 'BOOLEAN' && value !== 'true' && value !== 'false') return 'Choose On or Off.';
   if (type === 'INTEGER') {
-    if (!/^-?\d+$/.test(value ?? '')) return 'Enter a whole number.';
+    // As the server: an optional minus and 1 to 10 digits, so 00000000030 (11 digits) is refused there and here.
+    if (!/^-?[0-9]{1,10}$/.test(value ?? '')) return 'Enter a whole number of at most 10 digits.';
     const n = Number(value);
     if (n < INT_MIN || n > INT_MAX) return `Enter a number from ${INT_MIN} to ${INT_MAX}.`;
   }
@@ -59,7 +83,8 @@ export interface SettingProblem {
 
 /**
  * The problems the server would refuse a save for, per row (the configuration's rows, or a device's): a blank, long
- * or repeated key within an app, a value that does not fit its type, or more than 64 settings for one app.
+ * or repeated key within an app, a value that does not fit its type, or more than 64 settings for one app. A key is
+ * checked trimmed, as the server stores it.
  */
 export function appSettingsProblems(rows: readonly AppSetting[]): SettingProblem[] {
   const out: SettingProblem[] = [];

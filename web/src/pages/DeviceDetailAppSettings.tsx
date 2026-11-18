@@ -185,7 +185,7 @@ export function DeviceAppSettings({
                                 <LinkButton
                                   tone="quiet"
                                   aria-label={`Override ${r.name}`}
-                                  onClick={() => addRow({ ...newAppSetting(app.id), name: r.name, type: r.type, value: r.value })}
+                                  onClick={() => addRow({ ...newAppSetting(app.id), name: r.name, type: r.type, value: r.value, variable: !!r.variable })}
                                 >
                                   Override
                                 </LinkButton>

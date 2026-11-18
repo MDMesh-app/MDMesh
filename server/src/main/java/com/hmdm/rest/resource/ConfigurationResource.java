@@ -414,11 +414,13 @@ public class ConfigurationResource {
 
     /**
      * Checks application settings, a configuration's or a device's, and returns those of the apps in
-     * {@code installedAppIds}; the others are dropped, not refused. A malformed setting is refused even for an app it
-     * drops. Each setting needs an applicationId, a name of at most {@link #MAX_SETTING_NAME_LENGTH} characters, unique
-     * for its app, a type (STRING, INTEGER or BOOLEAN) and a value of that type
-     * ({@link DesiredConfigBuilder#restrictionValue}) of at most {@link #MAX_SETTING_VALUE_LENGTH} characters; an app
-     * has at most {@link #MAX_SETTINGS_PER_APP}.
+     * {@code installedAppIds}. The rows of any other app are dropped first, unchecked: a malformed row stored for an
+     * app the save no longer installs (a Headwind-era row, say) doesn't block the save. Each kept setting needs an
+     * applicationId, a name, a type (STRING, INTEGER or BOOLEAN) and a value of that type
+     * ({@link DesiredConfigBuilder#restrictionValue}) of at most {@link #MAX_SETTING_VALUE_LENGTH} characters. The name
+     * is stored trimmed, and checked trimmed: not blank, at most {@link #MAX_SETTING_NAME_LENGTH} characters, unique for
+     * its app. An app has at most {@link #MAX_SETTINGS_PER_APP}. A row with no applicationId belongs to no app, so it is
+     * refused.
      *
      * @throws BadRequestException HTTP 400 with an ERROR whose message names the first problem and the setting's name,
      *                             never its value
@@ -429,6 +431,11 @@ public class ConfigurationResource {
         Map<Integer, Integer> perApp = new HashMap<Integer, Integer>();
         List<ApplicationSetting> kept = new ArrayList<ApplicationSetting>();
         for (ApplicationSetting setting : settings) {
+            if (setting == null || setting.getApplicationId() == null) {
+                throw badRequest("applicationSettings: every setting needs an applicationId");
+            }
+            if (!installedAppIds.contains(setting.getApplicationId())) continue;
+            if (setting.getName() != null) setting.setName(setting.getName().trim());
             String problem = settingProblem(setting);
             if (problem == null && !seen.add(setting.getApplicationId() + "\n" + setting.getName())) {
                 problem = "applicationSettings: \"" + setting.getName() + "\" is set twice for one app";
@@ -437,17 +444,15 @@ public class ConfigurationResource {
                 problem = "applicationSettings: at most " + MAX_SETTINGS_PER_APP + " settings per app";
             }
             if (problem != null) throw badRequest(problem);
-            if (installedAppIds.contains(setting.getApplicationId())) kept.add(setting);
+            kept.add(setting);
         }
         return kept;
     }
 
+    /** The problem of one row of an installed app, its name already trimmed; null if none. */
     private static String settingProblem(ApplicationSetting setting) {
-        if (setting == null || setting.getApplicationId() == null) {
-            return "applicationSettings: every setting needs an applicationId";
-        }
         String name = setting.getName();
-        if (name == null || name.trim().isEmpty()) return "applicationSettings: every setting needs a name";
+        if (name == null || name.isEmpty()) return "applicationSettings: every setting needs a name";
         if (name.length() > MAX_SETTING_NAME_LENGTH) {
             return "applicationSettings: a name is at most " + MAX_SETTING_NAME_LENGTH + " characters";
         }

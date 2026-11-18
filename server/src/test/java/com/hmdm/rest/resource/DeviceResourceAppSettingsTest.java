@@ -161,13 +161,29 @@ public class DeviceResourceAppSettingsTest {
     }
 
     @Test
+    public void malformedRowsOfAnAppTheConfigurationDoesNotInstallAreDroppedUnchecked() {
+        signIn("devices", "edit_device_app_settings");
+        ApplicationSetting noValue = setting(NOT_INSTALLED, "token", ApplicationSettingType.STRING, null);
+        Response r = resource().saveDeviceApplicationSettings(DEVICE_ID, body(
+                setting(INSTALLED, " serverUrl  ", ApplicationSettingType.STRING, "https://device.example"),
+                setting(NOT_INSTALLED, "pollSeconds", ApplicationSettingType.INTEGER, ""),
+                setting(NOT_INSTALLED, "pollSeconds", ApplicationSettingType.INTEGER, ""),
+                noValue));
+        assertEquals(Response.ResponseStatus.OK, r.getStatus());
+        assertEquals(1, saved.size());
+        assertEquals("stored trimmed", "serverUrl", saved.get(0).getName());
+        assertTrue(calls.contains("wake tab-31 commands"));
+    }
+
+    @Test
     public void aMalformedSettingIsABadRequestAndNothingIsSavedOrWoken() {
         signIn("devices", "edit_device_app_settings");
         for (List<ApplicationSetting> bad : Arrays.asList(
                 body(setting(INSTALLED, "pollSeconds", ApplicationSettingType.INTEGER, "thirty")),
                 body(setting(INSTALLED, "a", ApplicationSettingType.STRING, "x"),
                         setting(INSTALLED, "a", ApplicationSettingType.STRING, "y")),
-                body(setting(NOT_INSTALLED, "kioskMode", ApplicationSettingType.BOOLEAN, "on")),
+                body(setting(INSTALLED, "a", ApplicationSettingType.STRING, "x"),
+                        setting(INSTALLED, "a ", ApplicationSettingType.STRING, "y")),
                 null)) {
             try {
                 resource().saveDeviceApplicationSettings(DEVICE_ID, bad);

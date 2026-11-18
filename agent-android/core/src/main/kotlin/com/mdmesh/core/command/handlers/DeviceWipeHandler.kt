@@ -31,37 +31,44 @@ class DeviceWipeHandler(
         if (!target.isDeviceOwner()) {
             return CommandResults.unsupported(command, "wipe requires Device Owner")
         }
-        return exclusive {
-            runCatching { wipe(command) }.getOrElse { CommandResults.failed(command, it.message ?: "wipe failed") }
-        }
+        return exclusive { wipe(command) }
     }
 
     private fun wipe(command: CommandEnvelope): CommandResult {
-        val lifted = when (val lift = WipeRestrictions.lift(target)) {
-            is WipeRestrictions.Lift.StillSet -> return CommandResults.failed(
+        return when (val lift = WipeRestrictions.lift(target)) {
+            is WipeRestrictions.Lift.Ready -> wipeLifted(command, lift.lifted)
+            is WipeRestrictions.Lift.StillSet -> failed(
                 command,
-                "The device still blocks factory reset (${lift.key}) after MDMesh lifted its own block, " +
+                "Another admin or source blocks factory reset on the device (${lift.key}), " +
                     "so the wipe was not started",
+                lift.notRestored,
             )
-            is WipeRestrictions.Lift.Ready -> lift.lifted
+            is WipeRestrictions.Lift.Error -> failed(command, lift.cause.message, lift.notRestored)
         }
-        return runCatching {
+    }
+
+    private fun wipeLifted(command: CommandEnvelope, lifted: List<String>): CommandResult =
+        runCatching {
             target.wipe()
             CommandResults.done(command)
-        }.getOrElse { error ->
-            val detail = error.message ?: "wipe failed"
-            val notRestored = WipeRestrictions.restore(target, lifted)
-            CommandResults.failed(
-                command,
-                if (notRestored.isEmpty()) detail else "$detail; could not restore ${notRestored.joinToString()}",
-            )
-        }
+        }.getOrElse { failed(command, it.message, WipeRestrictions.restore(target, lifted)) }
+
+    private fun failed(command: CommandEnvelope, detail: String?, notRestored: List<String>): CommandResult {
+        val reason = detail ?: "wipe failed"
+        return CommandResults.failed(
+            command,
+            if (notRestored.isEmpty()) reason else "$reason; could not restore ${notRestored.joinToString()}",
+        )
     }
 }
 
 /** The device calls a wipe makes; [DpmWipeTarget] on a device, a fake in tests. */
 interface WipeTarget {
     fun isDeviceOwner(): Boolean
+    /** Whether our admin sets [key]. */
+    fun holdsRestriction(key: String): Boolean
+
+    /** Whether [key] is in force from any source (another admin, the system), ours included. */
     fun hasRestriction(key: String): Boolean
     fun addRestriction(key: String)
     fun clearRestriction(key: String)
@@ -72,13 +79,15 @@ interface WipeTarget {
  * On API 34+ a Device Owner must use [android.app.admin.DevicePolicyManager.wipeDevice] for a
  * full factory reset; the legacy [android.app.admin.DevicePolicyManager.wipeData] is treated as
  * "remove the calling user", which fails on the system user ("User 0 ... cannot be removed").
- * [hasRestriction] asks [UserManager], which sees the restriction from every source, not just ours.
+ * [holdsRestriction] reads our admin's own restrictions; [hasRestriction] asks [UserManager], which
+ * sees every source.
  */
 class DpmWipeTarget(
     private val handle: DpmHandle,
     private val users: UserManager,
 ) : WipeTarget {
     override fun isDeviceOwner() = handle.dpm.isDeviceOwnerApp(handle.admin.packageName)
+    override fun holdsRestriction(key: String) = handle.dpm.getUserRestrictions(handle.admin).getBoolean(key)
     override fun hasRestriction(key: String) = users.hasUserRestriction(key)
     override fun addRestriction(key: String) = handle.dpm.addUserRestriction(handle.admin, key)
     override fun clearRestriction(key: String) = handle.dpm.clearUserRestriction(handle.admin, key)

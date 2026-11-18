@@ -10,39 +10,42 @@ import com.mdmesh.policy.UserRestrictions
  * to format, leaving the device stuck in recovery (HyperOS, #222). The others the agent sets (the
  * kiosk's `DISALLOW_SAFE_BOOT`, USB, Bluetooth, ...) don't concern formatting, so they stay: a wipe
  * that fails to start leaves the device as locked down as before.
+ *
+ * Only what our admin holds is cleared and restored, so a restore never adds a block the
+ * configuration didn't set. One that stays in force from another source refuses the wipe.
  */
 internal object WipeRestrictions {
 
     val keys: List<String> = listOf(UserRestrictions.DISALLOW_FACTORY_RESET)
 
     sealed interface Lift {
-        /** Every restriction in [keys] is off now; [lifted] were on and must be restored if the wipe fails. */
+        /** Every restriction in [keys] is off now; [lifted] were ours and must be restored if the wipe fails. */
         data class Ready(val lifted: List<String>) : Lift
 
-        /** [key] stays in force after clearing ours (another source sets it); nothing is left lifted. */
-        data class StillSet(val key: String) : Lift
+        /** [key] stays in force from another admin or source. Ours are restored, except [notRestored]. */
+        data class StillSet(val key: String, val notRestored: List<String>) : Lift
+
+        /** A restriction call threw. Ours are restored, except [notRestored]. */
+        data class Error(val cause: Throwable, val notRestored: List<String>) : Lift
     }
 
-    /** Lifts [keys]. On [Lift.StillSet] or a throw, whatever it lifted is already restored. */
     fun lift(target: WipeTarget): Lift {
         val lifted = mutableListOf<String>()
-        var outcome: Lift? = null
-        try {
-            outcome = liftEach(target, lifted)
-            return outcome
-        } finally {
-            if (outcome !is Lift.Ready) restore(target, lifted)
-        }
+        val stillSet = runCatching { liftEach(target, lifted) }
+            .getOrElse { return Lift.Error(it, restore(target, lifted)) }
+        return if (stillSet == null) Lift.Ready(lifted) else Lift.StillSet(stillSet, restore(target, lifted))
     }
 
-    private fun liftEach(target: WipeTarget, lifted: MutableList<String>): Lift {
+    /** Clears ours among [keys] into [lifted]; returns the first key still in force afterwards, if any. */
+    private fun liftEach(target: WipeTarget, lifted: MutableList<String>): String? {
         for (key in keys) {
-            if (!target.hasRestriction(key)) continue
-            target.clearRestriction(key)
-            lifted += key
-            if (target.hasRestriction(key)) return Lift.StillSet(key)
+            if (target.holdsRestriction(key)) {
+                target.clearRestriction(key)
+                lifted += key
+            }
+            if (target.hasRestriction(key)) return key
         }
-        return Lift.Ready(lifted)
+        return null
     }
 
     /** Puts [lifted] back; returns the keys that could not be restored. */

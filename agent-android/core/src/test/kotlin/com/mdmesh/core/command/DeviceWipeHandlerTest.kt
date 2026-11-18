@@ -21,23 +21,29 @@ class DeviceWipeHandlerTest {
 
     private class FakeDevice(
         var deviceOwner: Boolean = true,
+        /** Our admin sets the block. */
         blocked: Boolean = false,
-        /** Another source (another admin, a vendor default) also sets the block, so clearing ours doesn't lift it. */
+        /** Another source (another admin, a vendor default) sets the block, so clearing ours doesn't lift it. */
         private val blockedElsewhere: Boolean = false,
         private val wipeError: Exception? = null,
         /** The restriction check throws once something was cleared (a dying system service). */
         private val checkFailsAfterClear: Boolean = false,
+        /** Putting a restriction back throws. */
+        private val addFails: Boolean = false,
     ) : WipeTarget {
+        /** Ours only. */
         val restrictions = if (blocked) mutableSetOf(KEY) else mutableSetOf()
         val calls = mutableListOf<String>()
 
         override fun isDeviceOwner() = deviceOwner
+        override fun holdsRestriction(key: String) = key in restrictions
         override fun hasRestriction(key: String): Boolean {
             check(!(checkFailsAfterClear && calls.any { it.startsWith("clear") })) { "user manager gone" }
             return key in restrictions || (blockedElsewhere && key == KEY)
         }
         override fun addRestriction(key: String) {
             calls += "add $key"
+            check(!addFails) { "add refused" }
             restrictions += key
         }
         override fun clearRestriction(key: String) {
@@ -91,16 +97,51 @@ class DeviceWipeHandlerTest {
     }
 
     @Test
-    fun `does not wipe and fails clearly when the block can't be lifted`() = runTest {
+    fun `does not wipe and fails clearly when ours and another source both block`() = runTest {
         val device = FakeDevice(blocked = true, blockedElsewhere = true)
 
         val result = wipe(device)
 
         assertEquals(CommandStatus.FAILED, result.status)
-        assertTrue(result.detail.orEmpty().contains("the wipe was not started"))
+        assertEquals(
+            "Another admin or source blocks factory reset on the device ($KEY), so the wipe was not started",
+            result.detail,
+        )
         // Ours is put back, so the device ends up exactly as configured; no wipe was started.
         assertEquals(listOf("clear $KEY", "add $KEY"), device.calls)
         assertTrue(KEY in device.restrictions)
+    }
+
+    @Test
+    fun `touches nothing and fails clearly when only another source blocks`() = runTest {
+        val device = FakeDevice(blocked = false, blockedElsewhere = true)
+
+        val result = wipe(device)
+
+        assertEquals(CommandStatus.FAILED, result.status)
+        assertTrue(result.detail.orEmpty().contains("Another admin or source blocks factory reset"))
+        // Never cleared, so never restored: no block of ours is added that the configuration didn't set.
+        assertTrue(device.calls.isEmpty())
+        assertFalse(KEY in device.restrictions)
+    }
+
+    @Test
+    fun `says so when our block can't be put back after another source refuses the wipe`() = runTest {
+        val device = FakeDevice(blocked = true, blockedElsewhere = true, addFails = true)
+
+        val result = wipe(device)
+
+        assertEquals(CommandStatus.FAILED, result.status)
+        assertTrue(result.detail.orEmpty().endsWith("so the wipe was not started; could not restore $KEY"))
+    }
+
+    @Test
+    fun `says so when our block can't be put back after the wipe call throws`() = runTest {
+        val device = FakeDevice(blocked = true, wipeError = SecurityException("wipe refused"), addFails = true)
+
+        val result = wipe(device)
+
+        assertEquals("wipe refused; could not restore $KEY", result.detail)
     }
 
     @Test
@@ -110,6 +151,7 @@ class DeviceWipeHandlerTest {
         val result = wipe(device)
 
         assertEquals(CommandStatus.FAILED, result.status)
+        assertEquals("user manager gone", result.detail)
         assertEquals(listOf("clear $KEY", "add $KEY"), device.calls)
     }
 

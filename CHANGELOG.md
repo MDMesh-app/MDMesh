@@ -9,6 +9,12 @@ Unreleased.
 
 ## Unreleased
 
+Fixes
+- Agent: a settings file damaged by the device's storage (after a power loss) no longer makes every kiosk and
+  configuration command fail with "Unable to parse preferences proto." or crash the kiosk screen. The agent keeps a
+  copy of each file and restores it, or the configured kiosk, and the device page shows a `storageRecovered` event
+  (#220).
+
 ## v0.5.0 — 2026-11-17
 
 Upgrading

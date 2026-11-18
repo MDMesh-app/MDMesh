@@ -1,5 +1,3 @@
-@file:Suppress("ForbiddenImport") // The one place DataStore files are opened (config/detekt/detekt.yml).
-
 package com.mdmesh.core.store
 
 import android.content.Context
@@ -9,6 +7,7 @@ import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.preferencesDataStoreFile
 import com.mdmesh.core.telemetry.EventLog
 import com.mdmesh.core.telemetry.EventSink
@@ -22,7 +21,10 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -32,19 +34,20 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * The agent's DataStore files, each opened once for the process (DataStore refuses a second instance on a file) and
- * each with a corruption handler, so a file the storage damaged (#220: a brownout on budget eMMC) is recovered on
- * its next read instead of failing every read with "Unable to parse preferences proto.".
+ * The agent's DataStore files, each opened once for the process (DataStore refuses a second instance on a file), so
+ * a file the storage damaged (#220: a brownout on budget eMMC) is recovered on its next read instead of failing every
+ * read with "Unable to parse preferences proto.". The only place DataStore files are opened (StoreFactoryOnlyTest).
  *
- * Each store is written to its file and then copied to `<name>_mirror` next to it ([MirroredDataStore]). A primary
- * that can't be parsed is replaced by its mirror; with no usable mirror the kiosk store falls back to the kiosk the
- * configuration sets (fail closed: a kiosk device stays a kiosk), and anything else starts empty. Every recovery is
- * recorded as a [EventType.STORAGE_RECOVERED] event and marks the configuration stale, so the server re-sends it and
- * the device converges on what the server holds.
+ * Each store is written to its file and then copied to `<name>_mirror` next to it ([MirroredDataStore]), and every
+ * write records how many entries it holds ([Integrity]). A primary is damaged when it can't be parsed (DataStore's
+ * corruption handler), or when it parses but is short (an empty or cut-off file parses as fewer entries): it is then
+ * restored from its mirror, or failing that from the store's own rule below. Every restore is recorded as a
+ * [EventType.STORAGE_RECOVERED] event and marks the configuration stale, so the server re-sends it and the device
+ * converges on what the server holds. A damaged mirror is copied again from its primary, quietly.
  *
  * The files are the ones the `preferencesDataStore` delegates used ([preferencesDataStoreFile]), so an upgrade reads
- * what an older agent wrote. The stores over it come from Hilt ([com.mdmesh.core.di.StoreModule]), or from
- * [stores] where there is no injection (the admin receiver).
+ * what an older agent wrote; [check] then seals and mirrors it. The stores over it come from Hilt
+ * ([com.mdmesh.core.di.StoreModule]), or from [stores] where there is no injection (the admin receiver).
  */
 @Singleton
 class AgentDataStores(
@@ -59,7 +62,7 @@ class AgentDataStores(
         events: EventLog,
     ) : this({ name -> context.preferencesDataStoreFile(name) }, configStore, events)
 
-    // Recovery rule per store, applied when its file can't be parsed (the first that has something wins):
+    // Recovery rule per store, applied to a damaged primary (the first that has something wins):
 
     /** The server-issued device id and secret ([DeviceIdStore]). Recovery: mirror, else empty (re-enrollment). */
     val identity: MirroredDataStore = mirrored(IDENTITY)
@@ -68,9 +71,9 @@ class AgentDataStores(
     val enroll: MirroredDataStore = mirrored(ENROLL)
 
     /**
-     * The kiosk the device is in ([DataStoreKioskStateStore]). Recovery: mirror, else the kiosk the configuration
-     * sets ([configuredKiosk]), else empty (no kiosk). An empty mirror counts as no mirror, so a device whose
-     * configuration sets a kiosk fails closed into it; the re-sent configuration settles the rest.
+     * The kiosk the device is in ([DataStoreKioskStateStore]). Recovery: mirror (also when it says "no kiosk": an
+     * exit, on-device or remote, is kept), else the kiosk the configuration sets ([configuredKiosk]), so a device
+     * whose configuration sets a kiosk fails closed into it, else no kiosk. The re-sent configuration settles the rest.
      */
     val kiosk: MirroredDataStore = mirrored(KIOSK) {
         configStore.configuredKiosk()?.let { DataStoreKioskStateStore.prefsOf(it) to FROM_CONFIGURATION }
@@ -79,15 +82,14 @@ class AgentDataStores(
     private val all = listOf(IDENTITY to identity, ENROLL to enroll, KIOSK to kiosk)
 
     /**
-     * Reads every store now (one that is corrupt is recovered here, at start, rather than when a command needs it)
-     * and brings each mirror up to date, which also seeds the mirrors of an agent upgraded from one without them.
+     * Reads every store now (one that is damaged is recovered here, at start, rather than when a command needs it),
+     * seals it and brings its mirror up to date: an agent upgraded from one without mirrors gets them here.
      *
      * @return the stores that could not be read (a storage error, logged); their reads retry on their own.
      */
     suspend fun check(): List<String> = all.mapNotNull { (name, store) ->
         try {
-            store.data.first()
-            store.syncMirror()
+            store.updateData { it }
             null
         } catch (e: IOException) {
             warn("$name unreadable at start", e)
@@ -99,24 +101,34 @@ class AgentDataStores(
         name: String,
         fallback: () -> Pair<Preferences, String>? = { null },
     ): MirroredDataStore {
-        val mirrorName = name + MIRROR_SUFFIX
-        val mirror = open(mirrorName) {
-            recovered(mirrorName, FROM_EMPTY)
+        lateinit var store: MirroredDataStore
+        val mirror = open(name + MIRROR_SUFFIX) {
+            // The primary is the truth: nothing is lost, the mirror is copied again from it once it's read.
+            warn("$name mirror is corrupt; copied again from the primary")
+            scope.launch { store.syncMirror() }
             emptyPreferences()
         }
-        val primary = open(name) {
-            val (prefs, source) = readMirror(mirror, name)?.let { it to FROM_MIRROR }
-                ?: runCatching(fallback).onFailure { warn("$name fallback failed", it) }.getOrNull()
-                ?: (emptyPreferences() to FROM_EMPTY)
-            recovered(name, source)
-            prefs
-        }
-        return MirroredDataStore(primary, mirror, name)
+        val restore: suspend () -> Preferences = { restore(name, mirror, fallback) }
+        store = MirroredDataStore(open(name, restore), mirror, name, restore)
+        return store
     }
 
-    /** The mirror's contents, or null when it is empty or can't be read (the primary then falls back further). */
+    /** What a damaged primary [name] is replaced by, recorded. */
+    private suspend fun restore(
+        name: String,
+        mirror: DataStore<Preferences>,
+        fallback: () -> Pair<Preferences, String>?,
+    ): Preferences {
+        val (prefs, source) = readMirror(mirror, name)?.let { it to FROM_MIRROR }
+            ?: runCatching(fallback).onFailure { warn("$name fallback failed", it) }.getOrNull()
+            ?: (emptyPreferences() to FROM_EMPTY)
+        recovered(name, source)
+        return Integrity.sealed(prefs)
+    }
+
+    /** The mirror's contents when it was written by this agent ([Integrity.isWhole]); null otherwise. */
     private suspend fun readMirror(mirror: DataStore<Preferences>, name: String): Preferences? = try {
-        mirror.data.first().takeIf { it.asMap().isNotEmpty() }
+        mirror.data.first().takeIf(Integrity::isWhole)
     } catch (e: IOException) {
         warn("$name mirror unreadable while recovering", e)
         null
@@ -124,8 +136,8 @@ class AgentDataStores(
 
     private fun open(name: String, recover: suspend () -> Preferences): DataStore<Preferences> =
         PreferenceDataStoreFactory.create(
-            // DataStore's handler isn't suspending, so the mirror's read (another file, another DataStore, whose own
-            // work runs on its own scope) blocks the reading thread for that one small read, once per corruption.
+            // DataStore's handler isn't suspending, so the mirror's read (another file, another DataStore) blocks
+            // the reading thread for that one small read, once per corruption.
             corruptionHandler = ReplaceFileCorruptionHandler { e ->
                 warn("$name is corrupt, recovering", e)
                 runBlocking { recover() }
@@ -168,28 +180,68 @@ class AgentDataStores(
 }
 
 /**
- * A DataStore whose every write is then copied to a mirror file, so a primary the storage corrupted can be restored
- * ([AgentDataStores]). The mirror always gets the primary's latest value (read under one lock), so two writes racing
- * can't leave it with the older one. Copying is best effort: a failed copy is logged and repeated by the next write
- * or [AgentDataStores.check]; the primary stays the truth.
+ * Each store's record of how many entries it holds, written with every write. A file cut short parses (protobuf has
+ * no end marker): cut at zero it is empty, cut between entries it holds fewer. Either way the count is gone or no
+ * longer matches, whichever entries were lost, so the file is known to be damaged.
+ */
+internal object Integrity {
+    val ENTRIES = intPreferencesKey("__mdmesh_entries")
+
+    /** [p] with its count. */
+    fun sealed(p: Preferences): Preferences {
+        val m = p.toMutablePreferences()
+        m.remove(ENTRIES)
+        m[ENTRIES] = m.asMap().size
+        return m.toPreferences()
+    }
+
+    /** Written by this agent, and every entry it wrote is there. */
+    fun isWhole(p: Preferences): Boolean = p[ENTRIES] == p.asMap().size - 1
+
+    /** Counted, but entries are missing: cut short. */
+    fun isShort(p: Preferences): Boolean = p[ENTRIES] != null && !isWhole(p)
+}
+
+/**
+ * A DataStore whose every write is sealed ([Integrity]) and then copied to a mirror file, so a damaged primary can
+ * be restored ([AgentDataStores]). The mirror always gets the primary's latest value (read under one lock), so two
+ * writes racing can't leave it with the older one. Copying is best effort: a failed copy is logged and repeated by
+ * the next write or [AgentDataStores.check]; the primary stays the truth.
+ *
+ * A primary that reads short, or uncounted while its mirror is counted (cut before its count), is damaged: reads and
+ * writes see it [restore]d first, inside the primary's own update, so it is restored once however many read it.
+ * Uncounted with no counted mirror is an install from before counts (0.5.0), kept as it is.
  */
 class MirroredDataStore internal constructor(
     private val primary: DataStore<Preferences>,
     private val mirror: DataStore<Preferences>,
     private val name: String,
+    private val restore: suspend () -> Preferences,
 ) : DataStore<Preferences> {
     private val mirrorLock = Mutex()
 
-    override val data = primary.data
+    override val data: Flow<Preferences> = primary.data.map { if (damaged(it)) primary.updateData(::intact) else it }
 
     override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences =
-        primary.updateData(transform).also { syncMirror() }
+        primary.updateData { Integrity.sealed(transform(intact(it))) }.also { syncMirror() }
 
-    /** Copies the primary's current value to the mirror. */
+    private suspend fun intact(current: Preferences): Preferences = if (damaged(current)) restore() else current
+
+    private suspend fun damaged(p: Preferences): Boolean = when {
+        p[Integrity.ENTRIES] != null -> Integrity.isShort(p)
+        else -> try {
+            Integrity.isWhole(mirror.data.first())
+        } catch (e: IOException) {
+            warn("$name mirror unreadable; the primary is taken as it is", e)
+            false
+        }
+    }
+
+    /** Copies the primary's current value to the mirror (a damaged primary is restored first, never copied). */
     suspend fun syncMirror() {
         try {
             mirrorLock.withLock {
-                val now = primary.data.first()
+                val now = data.first()
                 mirror.updateData { now }
             }
         } catch (e: CancellationException) {

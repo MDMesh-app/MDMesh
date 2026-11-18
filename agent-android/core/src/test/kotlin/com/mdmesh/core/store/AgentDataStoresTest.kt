@@ -1,5 +1,3 @@
-@file:Suppress("ForbiddenImport") // Writes a file as an agent before mirrors did.
-
 package com.mdmesh.core.store
 
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
@@ -93,17 +91,66 @@ class AgentDataStoresTest {
     }
 
     @Test
-    fun `a primary truncated at any offset never fails a read and never yields a value it did not hold`() {
+    fun `a primary cut short at any offset, empty or between entries, is restored whole from the mirror`() {
         val original = enrolled()
         val whole = file("mdm_identity").readBytes()
         for (cut in whole.indices) {
             file("mdm_identity").writeBytes(whole.copyOf(cut))
             val read = runBlocking { open().identity.data.first().asMap() }
             close()
-            // Restored from the mirror, or (cut at an entry boundary, which parses) a subset of what was there.
-            assertTrue("cut at $cut read $read", read == original || original.entries.containsAll(read.entries))
-            file("mdm_identity_mirror").writeBytes(whole) // a recovery rewrites the primary only; keep the mirror
+            assertEquals("cut at $cut", original, read)
         }
+        assertEquals(List(whole.size) { "mdm_identity from mirror" }, events.recovered())
+    }
+
+    @Test
+    fun `an empty primary file (a brownout) reads as the mirror, not as un-enrolled`() {
+        enrolled()
+        file("mdm_identity").writeBytes(ByteArray(0))
+        assertEquals("dev_1" to "secret-1", identityAfterReopen())
+        assertEquals(listOf("mdm_identity from mirror"), events.recovered())
+        assertEquals(ConfigStateStore.STALE_REVISION, config.revision())
+    }
+
+    @Test
+    fun `a write to a damaged primary builds on the restored contents`() = runBlocking {
+        enrolled()
+        file("mdm_identity").writeBytes(ByteArray(0))
+        val stores = open()
+        EnrollTokenStore(stores.enroll).save("tok") // another store: untouched
+        DeviceIdStore(stores.identity).saveCredentials("dev_1", "secret-2")
+        close()
+        assertEquals("dev_1" to "secret-2", identityAfterReopen())
+    }
+
+    @Test
+    fun `a corrupt mirror alone is copied again from the primary, quietly`() {
+        enrolled()
+        config.save(ConfigApplyPayload(revision = "r1"))
+        file("mdm_identity_mirror").writeBytes(ByteArray(32) { 0xFF.toByte() })
+        runBlocking { open().check() }
+        close()
+        assertEquals(emptyList<String>(), events.recovered())
+        assertEquals("r1", config.revision())
+        assertTrue(file("mdm_identity_mirror").readBytes().contentEquals(file("mdm_identity").readBytes()))
+    }
+
+    @Test
+    fun `an install from before counts (0_5_0, no mirror) is read as it is, then sealed and mirrored`() = runBlocking {
+        val job = Job()
+        val legacy = PreferenceDataStoreFactory.create(scope = CoroutineScope(Dispatchers.IO + job)) {
+            file("mdm_identity")
+        }
+        legacy.edit { it[stringPreferencesKey("server_device_id")] = "dev_old" }
+        job.cancelAndJoin()
+
+        val stores = open()
+        assertEquals("dev_old", DeviceIdStore(stores.identity).current())
+        assertEquals(emptyList<String>(), stores.check())
+        close()
+        assertEquals(emptyList<String>(), events.recovered())
+        file("mdm_identity").writeBytes(ByteArray(0))
+        assertEquals("dev_old" to null, identityAfterReopen())
     }
 
     @Test
@@ -112,7 +159,7 @@ class AgentDataStoresTest {
         file("mdm_identity").writeBytes(ByteArray(16))
         file("mdm_identity_mirror").writeBytes(ByteArray(16) { 0xFF.toByte() })
         assertEquals(null to null, identityAfterReopen())
-        assertEquals(listOf("mdm_identity_mirror from empty", "mdm_identity from empty"), events.recovered())
+        assertEquals(listOf("mdm_identity from empty"), events.recovered())
     }
 
     @Test
@@ -133,6 +180,19 @@ class AgentDataStoresTest {
         config.save(ConfigApplyPayload(revision = "r1", kiosk = entered.copy(pinPackage = "com.example.other")))
         file("mdm_kiosk").writeBytes(ByteArray(32) { 0x7F })
         assertEquals(entered, DataStoreKioskStateStore(open().kiosk).load())
+        assertEquals(listOf("mdm_kiosk from mirror"), events.recovered())
+    }
+
+    @Test
+    fun `a kiosk exit is kept, the empty mirror wins over the configured kiosk`() = runBlocking {
+        val kiosk = KioskApplyPayload(mode = "single", pinPackage = "com.example.pos")
+        val store = DataStoreKioskStateStore(open().kiosk)
+        store.save(kiosk)
+        store.save(null) // staff exited on the device
+        close()
+        config.save(ConfigApplyPayload(revision = "r1", kiosk = kiosk))
+        file("mdm_kiosk").writeBytes(ByteArray(0))
+        assertNull(DataStoreKioskStateStore(open().kiosk).load())
         assertEquals(listOf("mdm_kiosk from mirror"), events.recovered())
     }
 

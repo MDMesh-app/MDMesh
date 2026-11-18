@@ -52,7 +52,7 @@ as_mdmesh_role() {
 # The restore empties the schema and loads the dump in ONE transaction (not `pg_restore -c`, whose DROPs fail when a
 # later upgrade added a table that refers to the dump's, and which has no transaction). The COMMIT follows only a
 # pg_restore that succeeded, so a damaged dump changes nothing; it prints Restored. once committed. The schema is
-# made again as PostgreSQL 15+ makes it (owner pg_database_owner, USAGE for PUBLIC); every supported distro ships 15+.
+# made again as PostgreSQL 15+ makes it (owner pg_database_owner, USAGE for PUBLIC), so it needs 15+; the installer warns on older.
 mdm_restore_hint() {
   local root="$CATALINA/conf/Catalina/localhost/ROOT.xml"
   printf 'restore AS the mdmesh role (never as postgres), with the install present (docs/OPERATIONS.md):\n'

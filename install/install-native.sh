@@ -689,6 +689,13 @@ role_password_sql() { printf '%s\n' "\\set pw $(_mdm_psql_arg "$DB_PASSWORD")" "
     as_postgres psql -X -c "CREATE DATABASE mdmesh OWNER mdmesh;"
 } >> "$LOGFILE" 2>&1
 ok "PostgreSQL role + database 'mdmesh' ready"
+# The restore command (mdm_restore_hint, docs/OPERATIONS.md) recreates the public schema as the mdmesh role, which
+# needs PostgreSQL 15+ (before 15, postgres owns that schema). Warn, don't refuse: the rest of the install works.
+_pg_ver=$(as_postgres psql -X -tAc 'SHOW server_version_num' 2>>"$LOGFILE" | tr -dc '0-9') || _pg_ver=
+if [ -n "$_pg_ver" ] && [ "$_pg_ver" -lt 150000 ]; then
+  printf '  %s!%s PostgreSQL %s is older than 15: restoring a backup with the documented command needs 15 or newer\n' \
+    "$c_yel" "$c_reset" "$(( _pg_ver / 10000 ))"
+fi
 
 # Data safety: the seed (hmdm_init.en.sql) is FRESH-DB-ONLY — it DELETEs configurations and re-inserts a
 # demo device. So decide now whether to seed. If the DB already holds data (an existing install), default

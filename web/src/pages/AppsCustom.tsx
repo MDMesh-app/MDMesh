@@ -1,5 +1,6 @@
 import { useId, useState, type ReactNode } from 'react';
 import {
+  bundleErrorText,
   commitUpload,
   listApplications,
   saveAndroidApplication,
@@ -262,8 +263,7 @@ export function AppsCustom({
       const splits = `${b.parts.length} split${b.parts.length === 1 ? '' : 's'} hosted`;
       toast.push('ok', 'Bundle ready', canAdd ? `${splits} — added to your Library.` : `${splits}.`);
     } catch (e) {
-      // The server returns a clear message for encrypted .apkm / no-apks bundles.
-      toast.push('err', 'Bundle upload failed', errorText(e));
+      toast.push('err', 'Bundle upload failed', bundleErrorText(e));
       setFile(null);
     } finally {
       setUploading(false);

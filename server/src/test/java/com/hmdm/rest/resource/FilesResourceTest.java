@@ -187,6 +187,54 @@ public class FilesResourceTest {
         Assert.assertEquals(before, bundlePartCount(customer));
     }
 
+    @Test
+    public void testExtractRefusesBundleOverTotalUnpackedLimit() throws IOException {
+        File zipFile = temporaryFolder.newFile("too_large_total.xapk");
+        try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(zipFile))) {
+            for (String name : new String[] {"base.apk", "split_config.arm64_v8a.apk", "obb/main.obb"}) {
+                zos.putNextEntry(new ZipEntry(name));
+                zos.write(new byte[1000]); // each entry is within its declared size; only the total is too large
+                zos.closeEntry();
+            }
+        }
+
+        Customer customer = customer(920004);
+        int before = bundlePartCount(customer);
+        try {
+            new FilesResource().extractApkParts(zipFile, customer, 1999);
+            Assert.fail("Expected a BundleTooLargeException for APK entries over the total limit");
+        } catch (FilesResource.BundleTooLargeException expected) {
+            // Refused before any part was written.
+        }
+        Assert.assertEquals(before, bundlePartCount(customer));
+
+        // Only the APK entries count: the 1000-byte .obb does not push 2000 bytes of APKs over a 2000-byte limit.
+        List<File> parts = new FilesResource().extractApkParts(zipFile, customer, 2000);
+        try {
+            Assert.assertEquals(2, parts.size());
+        } finally {
+            for (File part : parts) part.delete();
+        }
+        Assert.assertEquals(4L * 1024 * 1024 * 1024, FilesResource.MAX_BUNDLE_UNPACKED_BYTES);
+    }
+
+    @Test
+    public void testUnpackedSizeCheckDoesNotOverflow() throws IOException {
+        // A small APK, then a ZIP64 entry declaring a size near Long.MAX_VALUE: the sum would wrap negative.
+        ZipEntry small = new ZipEntry("base.apk");
+        small.setSize(1000);
+        ZipEntry huge = new ZipEntry("split.apk");
+        huge.setSize(Long.MAX_VALUE - 10);
+        try {
+            FilesResource.checkUnpackedSize(java.util.Arrays.asList(small, huge),
+                    FilesResource.MAX_BUNDLE_UNPACKED_BYTES);
+            Assert.fail("Expected a BundleTooLargeException for an entry declaring a size near Long.MAX_VALUE");
+        } catch (FilesResource.BundleTooLargeException expected) {
+            // Refused, not wrapped around.
+        }
+        FilesResource.checkUnpackedSize(java.util.Arrays.asList(small, small), 2000); // exactly the limit passes
+    }
+
     private Customer customer(int id) {
         Customer customer = new Customer();
         customer.setId(id);

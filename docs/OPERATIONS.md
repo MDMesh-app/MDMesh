@@ -384,7 +384,8 @@ With a registry `IMAGE_OWNER`, add `--allow-downgrade` to that `./setup.sh`.
 
 **Native.** The installer writes a dump to `/opt/mdmesh/backups/` before each upgrade. The uninstaller writes one to
 `/root`. Restore **as the `mdmesh` role, never as `postgres`**: a superuser restore runs any function defined in the
-dump, so a tampered database could gain superuser rights. With the install present, as root:
+dump, so a tampered database could gain superuser rights. This needs PostgreSQL 15 or newer (before 15, `postgres`
+owns the `public` schema). With the install present, as root:
 
 ```bash
 systemctl stop mdmesh-server

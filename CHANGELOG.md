@@ -44,6 +44,9 @@ Upgrading
   (native: `sudo ./setup.sh --update --native`).
 - There is a new agent, 0.5.0: roll it out from Settings → Agent rollout. Much of this release needs it; devices
   on older agents keep working ([UPGRADING, v0.5.0](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v050)).
+- When a device first checks in with agent 0.5.0, it gets one config.apply: its configuration now includes app
+  permission rules (`appPermissions`, `[]` when there are none), so its revision changes once. This is harmless:
+  without rules, nothing changes on the device.
 - Native: the installer now stops on a command-line option it doesn't take, instead of ignoring it.
 - Answers files (`MDMESH_ANSWERS`) must be owned by you or root and give no access to group or others (for example
   `chmod 600`), or they are refused.
@@ -200,6 +203,8 @@ Fixes
   error.
 - Apps: an .xapk or other split-APK bundle whose APKs are stored uncompressed now uploads instead of failing to
   unpack, and a damaged APK inside a bundle is refused (thanks @detobel36).
+- Apps: a bundle whose APKs unpack to more than 4 GB in total is refused before anything is written, and a refused
+  bundle upload says why in plain words.
 - Enroll: the page warns before you hand out a QR code devices can't use: the console is open at localhost, over
   `http://`, at a local address, or at another address than the server's `BASE_URL` (devices keep the address in the
   code until a factory reset). Wi-Fi a device can't join from a QR code (a secured network entered without its

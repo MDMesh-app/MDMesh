@@ -1,5 +1,7 @@
 package com.mdmesh.core.store
 
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
 import com.mdmesh.proto.ConfigApplyPayload
 import com.mdmesh.proto.ConfigAppPermissions
 import com.mdmesh.proto.ConfigConnectivity
@@ -9,7 +11,12 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class ConfigStateStoreTest {
     @Test
     fun `configured kiosk flow follows delivered documents including kiosk-off and legacy saved fallback`() = runTest {
@@ -38,7 +45,25 @@ class ConfigStateStoreTest {
         assertNull(s.revision())
         assertNull(s.delivered)
         assertEquals(emptyList<ConfigAppPermissions>(), s.activeAppPermissions)
+        assertEquals(emptySet<String>(), s.activeAppRestrictions)
         assertEquals(emptySet<String>(), s.unreleased)
+    }
+
+    @Test
+    fun `app restriction packages persist across instances and reset on clear`() {
+        val context: Context = ApplicationProvider.getApplicationContext()
+        for (s in listOf(InMemoryConfigStateStore(), SharedPrefsConfigStateStore(context))) {
+            assertEquals(emptySet<String>(), s.activeAppRestrictions)
+            s.activeAppRestrictions = setOf("hr.example.tablet", "org.example")
+            s.activeAppPermissions =
+                listOf(ConfigAppPermissions("org.example", mapOf("android.permission.CAMERA" to "deny")))
+            assertEquals(setOf("hr.example.tablet", "org.example"), s.activeAppRestrictions)
+            s.clear()
+            assertEquals(emptySet<String>(), s.activeAppRestrictions)
+            assertEquals(emptyList<ConfigAppPermissions>(), s.activeAppPermissions)
+        }
+        SharedPrefsConfigStateStore(context).activeAppRestrictions = setOf("hr.example.tablet")
+        assertEquals(setOf("hr.example.tablet"), SharedPrefsConfigStateStore(context).activeAppRestrictions)
     }
 
     @Test

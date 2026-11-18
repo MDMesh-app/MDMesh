@@ -40,10 +40,19 @@ interface ConfigStateStore {
      */
     var delivered: ConfigApplyPayload?
 
-    /** Result keys (`policies.<key>`, `kiosk`) whose release or kiosk exit failed: the next document retries them. */
+    /**
+     * Result keys (`policies.<key>`, `kiosk`, `appPermissions.<package>.<permission>`, `appRestrictions.<package>`)
+     * whose release, kiosk exit or clear failed: the next document retries them.
+     */
     var unreleased: Set<String>
     /** Active app-permission rules survive documents from an older server that omit the optional section. */
     var activeAppPermissions: List<ConfigAppPermissions>
+    /**
+     * Packages whose managed configuration MDMesh may have set (listed by a document, or whose clear failed). It
+     * survives documents from an older server that omit the optional section; a later document clears the ones it
+     * leaves out. Package names only, never a value.
+     */
+    var activeAppRestrictions: Set<String>
 
     /**
      * The revision for which a Wi-Fi radio self-heal hold was last ended (a changed configuration ends it). Kept apart
@@ -90,6 +99,7 @@ class SharedPrefsConfigStateStore(context: Context) : ConfigStateStore {
             .remove(KEY_DELIVERED)
             .remove(KEY_UNRELEASED)
             .remove(KEY_APP_PERMISSIONS)
+            .remove(KEY_APP_RESTRICTIONS)
             .remove(KEY_HOLD_ENDED)
             .apply()
     }
@@ -106,6 +116,9 @@ class SharedPrefsConfigStateStore(context: Context) : ConfigStateStore {
             val state = ConfigApplyPayload(revision = "", appPermissions = v)
             prefs.edit().putString(KEY_APP_PERMISSIONS, ConfigStateCodec.encode(state)).commit()
         }
+    override var activeAppRestrictions: Set<String>
+        get() = prefs.getStringSet(KEY_APP_RESTRICTIONS, null)?.toSet().orEmpty()
+        set(v) { prefs.edit().putStringSet(KEY_APP_RESTRICTIONS, v.toSet()).commit() }
     override var holdEndedFor: String?
         get() = prefs.getString(KEY_HOLD_ENDED, null)
         set(v) { prefs.edit().putString(KEY_HOLD_ENDED, v).commit() }
@@ -113,6 +126,7 @@ class SharedPrefsConfigStateStore(context: Context) : ConfigStateStore {
         const val KEY_DOC = "doc"; const val KEY_REV = "revision"; const val KEY_DELIVERED = "deliveredDoc"
         const val KEY_UNRELEASED = "unreleased"
         const val KEY_APP_PERMISSIONS = "appPermissions"
+        const val KEY_APP_RESTRICTIONS = "appRestrictions"
         const val KEY_HOLD_ENDED = "holdEndedFor"
     }
 }
@@ -133,6 +147,7 @@ class InMemoryConfigStateStore : ConfigStateStore {
         delivered = null
         unreleased = emptySet()
         activeAppPermissions = emptyList()
+        activeAppRestrictions = emptySet()
         holdEndedFor = null
         configuredKioskState.value = configuredKiosk()
     }
@@ -141,5 +156,6 @@ class InMemoryConfigStateStore : ConfigStateStore {
         set(value) { field = value; configuredKioskState.value = configuredKiosk() }
     override var unreleased: Set<String> = emptySet()
     override var activeAppPermissions: List<ConfigAppPermissions> = emptyList()
+    override var activeAppRestrictions: Set<String> = emptySet()
     override var holdEndedFor: String? = null
 }

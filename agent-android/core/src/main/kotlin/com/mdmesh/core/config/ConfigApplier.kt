@@ -9,6 +9,8 @@ import com.mdmesh.policy.ReleasablePolicy
 import com.mdmesh.policy.ResolvedToggles
 import com.mdmesh.policy.AppRuntimePermissions
 import com.mdmesh.policy.AppPermissionOutcome
+import com.mdmesh.policy.AppRestrictions
+import com.mdmesh.policy.UnsupportedAppRestrictions
 import com.mdmesh.policy.UnsupportedAppRuntimePermissions
 import com.mdmesh.policy.safeboot.SafeBootPolicy
 import com.mdmesh.policy.wifi.WifiRadioPolicy
@@ -39,7 +41,8 @@ import kotlinx.coroutines.sync.withLock
  * @param setPowerMode sets the live-connection mode for the `connectivity` section (1.5), as `device.powerMode` does.
  *   Only called with a mode this agent knows; another one is reported unsupported.
  */
-@Suppress("TooManyFunctions") // Coordinator for independently releasable desired-state sections.
+// Coordinator for independently releasable desired-state sections; each parameter is one section's collaborator.
+@Suppress("TooManyFunctions", "LongParameterList")
 class ConfigApplier(
     private val toggles: () -> ResolvedToggles,
     private val kiosk: KioskApplier,
@@ -47,8 +50,10 @@ class ConfigApplier(
     private val store: ConfigStateStore,
     private val setPowerMode: (String) -> Unit,
     private val appPermissions: AppRuntimePermissions = UnsupportedAppRuntimePermissions,
+    appRestrictions: AppRestrictions = UnsupportedAppRestrictions,
 ) {
     private val mutex = Mutex()
+    private val restrictions = AppRestrictionsSection(appRestrictions, store)
 
     /**
      * Staff can restore the assigned kiosk locally, including offline. Read the current document under the same
@@ -80,26 +85,27 @@ class ConfigApplier(
     }
 
     /**
-     * `app.install` just installed or updated [packageName]: apply the configuration's permission rules for it now.
-     * The server queues `config.apply` before the configuration's `app.install`s, so a new app's rules first fail as
-     * not installed; without this they would wait for the server's re-send, an hour later, while the app ran under
-     * the device-wide auto-grant. An update may also request a configured permission the old version didn't.
+     * `app.install` just installed or updated [packageName]: apply the configuration's permission rules and managed
+     * configuration for it now. The server queues `config.apply` before the configuration's `app.install`s, so a new
+     * app's entries first fail as not installed; without this they would wait for the server's re-send, an hour
+     * later, while the app ran under the device-wide auto-grant and without its configuration at first launch. An
+     * update may also request a configured permission the old version didn't.
      *
      * A delivered document that is not applied yet is applied whole, exactly as the server's re-send would, so it is
-     * saved (and reported in sync) when nothing else fails. An applied one gets only this app's rules again; if one
-     * fails, the revision is marked stale so the server re-sends the document. Null when no rule names the app.
+     * saved (and reported in sync) when nothing else fails. An applied one gets only this app's entries again; if one
+     * fails, the revision is marked stale so the server re-sends the document. Null when no entry names the app.
      */
     suspend fun applyAfterInstall(packageName: String): ConfigApplyResult? = mutex.withLock {
         val doc = store.delivered ?: store.load() ?: return@withLock null
         val rules = doc.appPermissions.orEmpty().filter { it.packageName == packageName }.flatMap { entry ->
             entry.permissions.map { (permission, state) -> AppPermissionRule(packageName, permission, state) }
         }
-        if (rules.isEmpty()) return@withLock null
+        if (rules.isEmpty() && !restrictions.lists(doc, packageName)) return@withLock null
         val applied = store.revision()
         if (applied != doc.revision && applied != ConfigStateStore.STALE_REVISION) {
             return@withLock applyDeliveredLocked(doc)
         }
-        val outcomes = rules.associate { it.key to setRule(it) }
+        val outcomes = rules.associate { it.key to setRule(it) } + restrictions.applyPackage(doc, packageName)
         if (outcomes.values.any(ConfigOutcome::isFailed)) store.markStale()
         ConfigApplyResult(doc.revision, outcomes)
     }
@@ -128,6 +134,7 @@ class ConfigApplier(
         outcomeKey == KIOSK -> doc.kiosk != null
         outcomeKey.startsWith(POLICIES) -> outcomeKey.removePrefix(POLICIES) in doc.policies
         outcomeKey.startsWith(APP_PERMISSIONS) -> appPermissionKeys(doc).contains(outcomeKey)
+        AppRestrictionsSection.isKey(outcomeKey) -> restrictions.manages(doc, outcomeKey)
         else -> true
     }
 
@@ -181,6 +188,7 @@ class ConfigApplier(
             }
         }
         applyAppPermissions(doc, previous, unreleased, outcomes)
+        restrictions.apply(doc, previous, unreleased, outcomes)
         val result = ConfigApplyResult(doc.revision, outcomes)
         if (persist && succeeded(result)) store.save(doc)
         return result

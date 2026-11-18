@@ -1,7 +1,9 @@
 package com.mdmesh.proto
 
 import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -72,5 +74,43 @@ class ConfigCommandTest {
             ).appPermissions,
         )
         assertEquals("1.11", ProtocolJson.PROTOCOL_VERSION)
+    }
+
+    @Test
+    fun `app restrictions decode every type and keep an unknown one (protocol 1_8)`() {
+        val json = """{"revision":"r","appRestrictions":[{"packageName":"hr.example.tablet","future":1,"values":{""" +
+            """"kioskMode":{"type":"bool","value":true},"pollSeconds":{"type":"int","value":30},""" +
+            """"serverUrl":{"type":"string","value":"https://vhp.example.hr","future":true},""" +
+            """"nested":{"type":"bundle","value":{"a":1}}}}]}"""
+        val entry = ProtocolJson.json.decodeFromString(ConfigApplyPayload.serializer(), json).appRestrictions!!.single()
+        assertEquals("hr.example.tablet", entry.packageName)
+        assertEquals(
+            ConfigRestrictionValue(ConfigRestrictionValue.BOOL, JsonPrimitive(true)),
+            entry.values["kioskMode"],
+        )
+        assertEquals(ConfigRestrictionValue(ConfigRestrictionValue.INT, JsonPrimitive(30)), entry.values["pollSeconds"])
+        assertEquals(
+            ConfigRestrictionValue(ConfigRestrictionValue.STRING, JsonPrimitive("https://vhp.example.hr")),
+            entry.values["serverUrl"],
+        )
+        assertEquals("bundle", entry.values["nested"]?.type)
+    }
+
+    @Test
+    fun `app restrictions distinguish an old server omission from an explicit clear (protocol 1_8)`() {
+        val omitted = ProtocolJson.json.decodeFromString(ConfigApplyPayload.serializer(), """{"revision":"r"}""")
+        assertNull(omitted.appRestrictions)
+        val cleared = ProtocolJson.json.decodeFromString(
+            ConfigApplyPayload.serializer(),
+            """{"revision":"r","appRestrictions":[]}""",
+        )
+        assertEquals(emptyList<ConfigAppRestrictions>(), cleared.appRestrictions)
+        assertTrue(AppManagement.DEVICE_OWNER_KEYS.contains(AppManagement.MANAGED_CONFIG))
+    }
+
+    @Test
+    fun `a restriction value never prints its value`() {
+        val secret = ConfigRestrictionValue(ConfigRestrictionValue.STRING, JsonPrimitive("device-token-123"))
+        assertFalse(ConfigAppRestrictions("p", mapOf("deviceToken" to secret)).toString().contains("device-token-123"))
     }
 }

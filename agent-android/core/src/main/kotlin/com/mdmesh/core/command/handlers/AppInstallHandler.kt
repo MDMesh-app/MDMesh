@@ -20,8 +20,8 @@ import kotlinx.serialization.Serializable
  * install itself are delegated to [InstallManager].
  *
  * @param afterInstall called with the package after a successful install or update, before the result is reported:
- *   the configuration's permission rules for it are applied then (ConfigApplier.applyAfterInstall). Its failure never
- *   fails the install.
+ *   the configuration's permission rules and managed configuration for it are applied then
+ *   (ConfigApplier.applyAfterInstall). Its failure never fails the install.
  */
 class AppInstallHandler(
     private val installManager: InstallManager,

@@ -79,7 +79,9 @@ import com.mdmesh.oem.GenericOemAdapter
 import com.mdmesh.oem.KnoxAdapter
 import com.mdmesh.oem.OemAdapter
 import com.mdmesh.policy.CapabilityRegistry
+import com.mdmesh.policy.AppRestrictions
 import com.mdmesh.policy.AppRuntimePermissions
+import com.mdmesh.policy.DeviceOwnerAppRestrictions
 import com.mdmesh.policy.DeviceOwnerAppRuntimePermissions
 import com.mdmesh.policy.wifi.AndroidWifiRadio
 import com.mdmesh.policy.wifi.DpmHandle
@@ -384,13 +386,19 @@ object AgentModule {
         store: ConfigStateStore,
         power: PowerModeStore,
         appPermissions: AppRuntimePermissions,
+        appRestrictions: AppRestrictions,
     ): ConfigApplier = ConfigApplier(registry::togglePolicies, kiosk, location::set, store,
-        setPowerMode = power::set, appPermissions = appPermissions)
+        setPowerMode = power::set, appPermissions = appPermissions, appRestrictions = appRestrictions)
 
     @Provides
     @Singleton
     fun provideAppRuntimePermissions(@ApplicationContext context: Context, handle: DpmHandle): AppRuntimePermissions =
         DeviceOwnerAppRuntimePermissions(context, handle)
+
+    @Provides
+    @Singleton
+    fun provideAppRestrictions(@ApplicationContext context: Context, handle: DpmHandle): AppRestrictions =
+        DeviceOwnerAppRestrictions(context, handle)
 
     @Provides
     @IntoSet

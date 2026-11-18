@@ -443,6 +443,15 @@ mkdir -p "$WORK/qs2"
   && grep -qF 'Could not resolve the latest release of me/fork' "$WORK/out/e"; } \
   || { fail "quickstart.sh does not refuse a wrong repo or image owner and ask again"; show; }
 ok
+# A release whose signed manifest has no image digests or file hashes (before 0.5.0) is sent to its own tag's
+# quickstart.sh before anything is downloaded.
+mkdir -p "$WORK/qs3"; : > "$WORK/children3.log"
+(cd "$WORK/qs3" && printf '%s\n' 1 '' '' | env -i PATH="$WORK/stubs:$PATH" HOME="$WORK" MDMESH_VERSION=0.4.0 \
+  STUB_LOG="$WORK/children3.log" STUB_DOCKER_OK=1 bash "$REPO/quickstart.sh" > "$WORK/out/o" 2> "$WORK/out/e") || true
+{ grep -qF "Releases before 0.5.0 can't be installed with this quick start" "$WORK/out/e" \
+  && grep -qF '/refs/tags/v0.4.0/quickstart.sh' "$WORK/out/e" && ! grep -q 'curl' "$WORK/children3.log"; } \
+  || { fail "quickstart.sh does not send MDMESH_VERSION=0.4.0 to that release's own quickstart.sh"; show; }
+ok
 
 # A re-run whose .env this user can't read says what to do, instead of a bare "Permission denied": its own .env (mode
 # 000) → chmod 600 .env; another user's (here a link to /proc/1/environ: root's, mode 400) → run as them.

@@ -2,7 +2,9 @@
 <!--
     Exit kiosk dialog body (ExitPinDialog), under the title and message of mdm_dialog.xml, which supplies the 24dp
     side insets. Inflated from the dialog's themed context, so the field takes the v2 field style. Full text
-    keyboard: the console stores the PIN as entered (D6). The error starts where the typed text starts.
+    keyboard here; ExitPinDialog switches to a number pad when the kiosk's PIN is digits only (every PIN set since
+    0.5.0), so a PIN saved as any text before that rule can still be typed. The error starts where the typed text
+    starts.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"

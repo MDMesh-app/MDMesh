@@ -4,9 +4,14 @@ import { AuthProvider } from './auth/AuthContext';
 import { ProtectedRoute } from './auth/ProtectedRoute';
 import { ThemeProvider } from './ui/theme';
 import { ToastProvider } from './ui/toast';
+import { TooltipProvider } from './ui/Tooltip';
 import { AppErrorBoundary } from './ui/AppErrorBoundary';
 import { legacyRedirect, paths } from './routes';
 import { AppShell } from './ui/AppShell';
+import { ButtonLink } from './ui/Button';
+import { Card } from './ui/Card';
+import { EmptyState } from './ui/EmptyState';
+import { PageHeader } from './ui/PageHeader';
 import { RoutePage } from './ext/hosts/RoutePage';
 import { registry } from './ext/load';
 import { RegistryProvider, useRegistry } from './ext/RegistryContext';
@@ -16,11 +21,29 @@ import { lazyComponent } from './ext/types';
 const LoginPage = lazyComponent(() => import('./pages/LoginPage'), 'LoginPage');
 const SetPasswordPage = lazyComponent(() => import('./pages/SetPasswordPage'), 'SetPasswordPage');
 
-/** Unknown paths: an old bookmark (`/v2/...`, `/dashboard`, `/configs`) goes to its page now, anything else home. */
+/**
+ * Unknown paths (old bookmarks were moved on in AppRoutes): the page doesn't exist, said inside the shell (a mistyped
+ * device link no longer lands on the Overview without a word).
+ */
 function Fallback() {
-  const { pathname, search, hash } = useLocation();
-  const to = legacyRedirect(pathname);
-  return <Navigate to={to ? to + search + hash : paths.overview} replace />;
+  const { pathname } = useLocation();
+  return (
+    <>
+      <PageHeader title="Page not found" subtitle="There is nothing at this address. Check the link, or start from the Overview." />
+      <Card>
+        <EmptyState
+          title="No page here"
+          action={
+            <ButtonLink to={paths.overview} variant="primary">
+              Go to the Overview
+            </ButtonLink>
+          }
+        >
+          <span className="v2-mono">{pathname}</span>
+        </EmptyState>
+      </Card>
+    </>
+  );
 }
 
 /**
@@ -31,6 +54,10 @@ function Fallback() {
  */
 export function AppRoutes() {
   const pages = useRegistry().entries('route.page');
+  const { pathname, search, hash } = useLocation();
+  // Old bookmarks move to their page before anything else, signed in or not (so sign-in returns to the new path).
+  const legacy = legacyRedirect(pathname);
+  if (legacy) return <Navigate to={legacy + search + hash} replace />;
   return (
     <Routes>
       <Route
@@ -54,9 +81,9 @@ export function AppRoutes() {
           {pages.map((entry) => (
             <Route key={entry.key} path={entry.contribution.path} element={<RoutePage entry={entry} />} />
           ))}
+          <Route path="*" element={<Fallback />} />
         </Route>
       </Route>
-      <Route path="*" element={<Fallback />} />
     </Routes>
   );
 }
@@ -79,9 +106,11 @@ export default function App() {
     <AuthProvider>
       <ThemeProvider>
         <ToastProvider>
-          <RegistryProvider registry={registry}>
-            <RouterProvider router={router} />
-          </RegistryProvider>
+          <TooltipProvider>
+            <RegistryProvider registry={registry}>
+              <RouterProvider router={router} />
+            </RegistryProvider>
+          </TooltipProvider>
         </ToastProvider>
       </ThemeProvider>
     </AuthProvider>

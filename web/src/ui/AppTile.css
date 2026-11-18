@@ -1,3 +1,4 @@
+/* Letter tile for an app: neutral (surface-2, text-2) whatever the source; the source has its own column. */
 .v2 .v2-apptile {
   flex: 0 0 auto;
   box-sizing: border-box;
@@ -5,17 +6,10 @@
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  border: 1px solid var(--border);
-  font-weight: 600;
-  line-height: 1;
-}
-.v2 .v2-apptile.is-neutral {
+  border: var(--hairline) solid var(--border);
   background: var(--surface-2);
   color: var(--text-2);
-}
-.v2 .v2-apptile.is-ink {
-  background: var(--ink);
-  color: var(--on-ink);
+  font-weight: var(--weight-medium);
 }
 .v2 .v2-apptile img {
   width: 100%;
@@ -25,18 +19,18 @@
 .v2 .v2-apptile--32 {
   width: 32px;
   height: 32px;
-  border-radius: var(--radius-tile);
-  font-size: var(--fs-sm);
+  border-radius: var(--radius-chip);
+  font-size: var(--text-meta);
 }
 .v2 .v2-apptile--38 {
   width: 38px;
   height: 38px;
-  border-radius: var(--radius-sm);
-  font-size: var(--fs-lead);
+  border-radius: var(--radius-control);
+  font-size: var(--text-ui);
 }
 .v2 .v2-apptile--44 {
   width: 44px;
   height: 44px;
-  border-radius: var(--radius-md);
-  font-size: var(--fs-h2);
+  border-radius: var(--radius-control);
+  font-size: var(--text-title);
 }

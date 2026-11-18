@@ -6,10 +6,13 @@
 //   node capture.mjs --check    # runtime smoke for dependency bumps instead; writes nothing
 //
 // --check visits, against the same fixtures:
-//   * signed in: / /devices /devices/WH-SCAN-07 /configurations /configurations/1 /apps /enroll /settings — each
+//   * signed in: / /devices /devices/WH-SCAN-07 /configurations /configurations/4 /apps /enroll /settings — each
 //     must render the app shell (.v2-shell .v2-sidebar .v2-wordmark) and end on the requested path; /devices/101
-//     (an old id link) must move to the device's number, /devices/WH-SCAN-07; /no-such-page (catch-all) and the old
-//     bookmarks /dashboard, /configs and /v2/devices must land on /, /configurations and /devices;
+//     (an old id link) must move to the device's number, /devices/WH-SCAN-07; /no-such-page (catch-all) must stay put
+//     inside the shell ("Page not found"); the old bookmarks /dashboard, /configs and /v2/devices must land on /,
+//     /configurations and /devices;
+//   * signed in, the offered update skipping a security release (fixtures.mjs updateScenarios): /settings must show
+//     the missing-security-fixes notice;
 //   * signed out: /login — the sign-in form must render and the page must stay on /login;
 //   * flagged first-login session (passwordReset + token in storage, as an older console stored it; the console
 //     itself keeps the token in memory, which v2-parity/auth.mjs covers): /set-password — the set-password form
@@ -25,6 +28,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { roundCorners } from './round.mjs';
 import { DIST, fx, serve, newContext } from './harness.mjs';
+import { updateScenarios } from './fixtures.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OUT = path.resolve(__dirname, '../../docs/screenshots');
@@ -40,7 +44,7 @@ if (THEME !== 'light' && THEME !== 'dark') {
 
 // ---- --check: runtime smoke over every route (see header) ----
 const SHELL = '.v2-shell .v2-sidebar .v2-wordmark';
-const SIGNED_IN = ['/', '/devices', '/devices/WH-SCAN-07', '/configurations', '/configurations/1', '/apps', '/enroll', '/settings'];
+const SIGNED_IN = ['/', '/devices', '/devices/WH-SCAN-07', '/configurations', '/configurations/4', '/apps', '/enroll', '/settings'];
 const CHECK_GROUPS = [
   {
     user: fx.user,
@@ -49,12 +53,19 @@ const CHECK_GROUPS = [
       // An old link by database id (no device has the number 101): the device page finds it by id and moves to
       // the device's number.
       { route: '/devices/101', expect: '/devices/WH-SCAN-07', selector: SHELL },
-      { route: '/no-such-page', expect: '/', selector: SHELL },
+      // An unknown path stays where it is and says so, inside the shell.
+      { route: '/no-such-page', expect: '/no-such-page', selector: SHELL },
       // Old bookmarks: the v0.3 console's paths and the redesign preview's /v2/*.
       { route: '/dashboard', expect: '/', selector: SHELL },
       { route: '/configs', expect: '/configurations', selector: SHELL },
       { route: '/v2/devices', expect: '/devices', selector: SHELL },
     ],
+  },
+  // The offered update skips a security release (fixtures.mjs updateScenarios): Settings shows the notice.
+  {
+    user: fx.user,
+    updateStatus: updateScenarios(fx).missedSecurity,
+    routes: [{ route: '/settings', expect: '/settings', selector: '.v2-settings-secnotice .v2-notice__title' }],
   },
   {
     user: null,
@@ -69,7 +80,7 @@ const CHECK_GROUPS = [
 async function runCheck(browser, base) {
   const problems = [];
   for (const group of CHECK_GROUPS) {
-    const context = await newContext(browser, group.user, { theme: THEME });
+    const context = await newContext(browser, group.user, { theme: THEME, ...(group.updateStatus ? { updateStatus: group.updateStatus } : {}) });
     const page = await context.newPage();
     page.on('pageerror', (e) => problems.push(`pageerror on ${page.url()}: ${e.message}`));
     page.on('console', (m) => { if (m.type() === 'error') problems.push(`console.error on ${page.url()}: ${m.text()}`); });

@@ -14,6 +14,9 @@ import {
   CardHeader,
   CopyField,
   Field,
+  Grid,
+  GridCell,
+  IconAlert,
   IconSync,
   IconWarning,
   Input,
@@ -22,6 +25,7 @@ import {
   NumberedSteps,
   PageHeader,
   Select,
+  Skeleton,
   TabPanel,
   Tabs,
   Toggle,
@@ -44,7 +48,7 @@ const SECURITY_VALUES: WifiSecurity[] = ['WPA', 'WEP', 'NONE', 'EAP'];
  * falls back to the debug agent's package and checksum (we only read the flag here; the payload is built there).
  */
 const RELEASE_BUILD = !!(import.meta.env as Record<string, string | undefined>).VITE_AGENT_CHECKSUM;
-const SERVER_SETTING = 'Server setting for new devices';
+const SERVER_SETTING = 'Use the server default';
 const METHOD_TABS = 'v2-enroll-method';
 
 type Method = 'qr' | 'token';
@@ -120,9 +124,9 @@ function tokenError(err: unknown): string {
       return "Your account can't enroll devices: it needs permission to edit devices.";
     if (err.message === 'error.agent.token.maxUses') return 'A code can enroll 1 to 1000 devices.';
     if (err.message === 'error.agent.token.validHours') return 'A code can be valid for 1 hour to 30 days.';
-    return err.message || 'Failed to generate a token.';
+    return err.message || 'Couldn’t make a code.';
   }
-  return 'Failed to generate a token.';
+  return 'Couldn’t make a code.';
 }
 
 /** Token expiry, short enough for the summary box: a token lives 30 days at most, so no year ("Oct 16, 1:54 PM"). */
@@ -419,7 +423,7 @@ export function EnrollPage() {
     setStopOpen(true);
   };
 
-  const givesName = selected?.name ?? (cfgId ? `Configuration #${cfgId}` : SERVER_SETTING);
+  const givesName = selected?.name ?? (cfgId ? `Configuration #${cfgId}` : 'Server default');
   // What the code does, not what was asked: an older server ignores both choices and makes a single-use 24 h code.
   const limitsIgnored = !!token && !token.limitsApplied && (uses !== 1 || validHours !== 24);
   let devicesHelp: string;
@@ -453,7 +457,14 @@ export function EnrollPage() {
     [token, wifiInCode, wifiSsid, wifiPass, wifiSec],
   );
 
-  let expiresValue: ReactNode = busy ? 'Making a code…' : '—';
+  let expiresValue: ReactNode = busy ? (
+    <>
+      <Skeleton width="12em" />
+      <span className="v2-visually-hidden">Making a code…</span>
+    </>
+  ) : (
+    '—'
+  );
   if (token?.expiresAt) {
     expiresValue = expired ? (
       <span className="v2-enroll__expired">Expired {fmtExpiry(token.expiresAt)}</span>
@@ -462,7 +473,8 @@ export function EnrollPage() {
     );
   }
   const facts = (withWifi: boolean): KeyValueItem[] => [
-    { key: 'gives', label: 'Gives', value: <span className="v2-enroll__gives">{givesName}</span> },
+    // What the code carries, named plainly (the picker's "Use the server default" is an instruction, not a name).
+    { key: 'configuration', label: 'Configuration', value: givesName },
     ...(withWifi && wifiOn
       ? [{ key: 'wifi', label: 'Joins Wi-Fi', value: wifiIssue ? 'Not in the code (see Wi-Fi above)' : ssid || 'No network name yet' }]
       : []),
@@ -474,20 +486,20 @@ export function EnrollPage() {
 
   const configHelp = configsFailed ? (
     <>
-      Couldn&rsquo;t load the configurations, so the code uses the server&rsquo;s setting for new devices.{' '}
+      Couldn&rsquo;t load configurations, so the code uses the server default.{' '}
       <LinkButton tone="inline" onClick={loadConfigs}>
         Retry
       </LinkButton>
     </>
   ) : (
-    'New devices start with this configuration. The code and token are tied to it, so pick before you share them.'
+    'New devices start with it. The code is tied to it, so pick before you share it.'
   );
 
   const chooseCard = (
-    <Card key="choose" padding="roomy" gap={16} aria-labelledby="v2-enroll-choose" className="v2-enroll__choose">
-      <CardHeader number={1} size={17} title="Choose what the device gets" titleId="v2-enroll-choose" />
+    <Card gap={16} aria-labelledby="v2-enroll-choose" className="v2-enroll__choose">
+      <CardHeader number={1} title="Choose what the device gets" titleId="v2-enroll-choose" />
       <Field label="Configuration" help={configHelp}>
-        <Select size="lg" value={cfgId} onChange={(e) => setCfgId(e.target.value)} disabled={configs === null}>
+        <Select value={cfgId} onChange={(e) => setCfgId(e.target.value)} disabled={configs === null}>
           {configs === null ? (
             <option value={cfgId}>Loading configurations…</option>
           ) : (
@@ -547,7 +559,7 @@ export function EnrollPage() {
         {wifiOn ? (
           <>
             <div className="v2-enroll__wifigrid">
-              <Field label="Network name" size="sm">
+              <Field label="Network name">
                 <Input
                   value={wifiSsid}
                   onChange={(e) => setWifiSsid(e.target.value)}
@@ -556,7 +568,7 @@ export function EnrollPage() {
                   spellCheck={false}
                 />
               </Field>
-              <Field label="Security" size="sm">
+              <Field label="Security">
                 <Select
                   value={wifiSec}
                   aria-describedby={wifiIssue ? 'v2-enroll-wifi-issue' : undefined}
@@ -569,7 +581,7 @@ export function EnrollPage() {
                 </Select>
               </Field>
               {wifiSec !== 'NONE' ? (
-                <Field label="Wi-Fi password" size="sm" className="v2-enroll__wide">
+                <Field label="Wi-Fi password" className="v2-enroll__wide">
                   <Input
                     type="password"
                     value={wifiPass}
@@ -617,10 +629,19 @@ export function EnrollPage() {
     ) : (
       <div className="v2-qr">
         <div className="v2-qr__frame v2-enroll__qrwait" role="status">
-          {busy ? 'Making a code…' : expired ? 'This code has expired.' : 'No code yet.'}
+          {busy ? (
+            <>
+              <Skeleton height="100%" className="v2-enroll__qrskel" />
+              <span className="v2-visually-hidden">Making a code…</span>
+            </>
+          ) : expired ? (
+            'This code has expired.'
+          ) : (
+            'No code yet.'
+          )}
         </div>
         <div className="v2-qr__actions">
-          <Button size="lg" icon={<IconSync size={14} />} onClick={newCode} disabled={busy}>
+          <Button icon={<IconSync size={14} />} onClick={newCode} disabled={busy}>
             {busy ? 'Making a code…' : 'New code'}
           </Button>
         </div>
@@ -628,10 +649,9 @@ export function EnrollPage() {
     );
 
   const enrollCard = (
-    <Card key="enroll" padding="roomy" gap={16} aria-labelledby="v2-enroll-device" className="v2-enroll__device">
+    <Card gap={16} aria-labelledby="v2-enroll-device" className="v2-enroll__device">
       <CardHeader
         number={2}
-        size={17}
         title="Enroll the device"
         titleId="v2-enroll-device"
         actions={
@@ -648,17 +668,18 @@ export function EnrollPage() {
           />
         }
       />
+      {/* Pre-flight problems, not failures: amber (nothing has gone wrong yet; the admin can still fix it here). */}
       {address ? (
-        <Callout tone={address.tone} icon={<IconWarning size={16} />} role="status">
+        <Callout tone="warn" icon={<IconWarning size={16} />} role="status">
           {address.text}
         </Callout>
       ) : null}
       {tokError ? (
-        <Callout tone="alert" role="alert">
-          {tokError}{' '}
-          <LinkButton tone="inline" onClick={newCode} disabled={busy}>
-            Try again
-          </LinkButton>
+        <Callout tone="alert" role="alert" icon={<IconAlert />} className="v2-errorstate">
+          <span className="v2-errorstate__text">{tokError}</span>
+          <Button size="sm" onClick={newCode} disabled={busy}>
+            Retry
+          </Button>
         </Callout>
       ) : null}
       {expired && !busy ? (
@@ -676,12 +697,15 @@ export function EnrollPage() {
       ) : null}
       <TabPanel idBase={METHOD_TABS} tabKey={method} className="v2-enroll__panel">
         {method === 'qr' ? (
-          <div className="v2-enroll__cols">
-            {qrPanel}
-            <div className="v2-enroll__info">
-              <KeyValueList variant="facts" items={facts(true)} />
-              <NumberedSteps steps={qrSteps(wifiInCode)} />
+          <div className="v2-enroll__qrtab">
+            <div className="v2-enroll__cols">
+              {qrPanel}
+              <KeyValueList variant="facts" items={facts(true)} className="v2-enroll__facts" />
             </div>
+            <details className="v2-enroll__how">
+              <summary>How to scan the code</summary>
+              <NumberedSteps steps={qrSteps(wifiInCode)} />
+            </details>
           </div>
         ) : (
           <div className="v2-enroll__token">
@@ -692,13 +716,18 @@ export function EnrollPage() {
                   onCopied={() => toast.push('ok', 'Token copied', 'Enrollment token copied to clipboard.')}
                 />
               </Field>
+            ) : busy ? (
+              <div role="status" className="v2-enroll__tokenwait">
+                <Skeleton height="control" />
+                <span className="v2-visually-hidden">Making a token…</span>
+              </div>
             ) : (
-              <p className="v2-enroll__tokenwait" role="status">
-                {busy ? 'Making a token…' : expired ? 'This token has expired.' : 'No token yet.'}
-              </p>
+              <span className="v2-enroll__tokenwait" role="status">
+                {expired ? 'This token has expired.' : 'No token yet.'}
+              </span>
             )}
             <div>
-              <Button size="lg" icon={<IconSync size={14} />} onClick={newCode} disabled={busy}>
+              <Button icon={<IconSync size={14} />} onClick={newCode} disabled={busy}>
                 {busy && token ? 'Making a token…' : 'New token'}
               </Button>
             </div>
@@ -706,55 +735,69 @@ export function EnrollPage() {
             <p className="v2-enroll__note">
               For headless or scripted provisioning: pass it as{' '}
               <span className="v2-mono">com.mdmesh.ENROLL_TOKEN</span>, with{' '}
-              <span className="v2-mono">com.mdmesh.SERVER_URL</span> set to the server below. Scanning the QR code is
-              the usual way.
+              <span className="v2-mono">com.mdmesh.SERVER_URL</span> set to the server address. Scanning the QR code
+              is the usual way.
             </p>
           </div>
         )}
       </TabPanel>
-      {since != null && !arrivalsUnsupported ? (
-        <div className="v2-enroll__arrivals">
-          <h3 id="v2-enroll-arrivals" className="v2-enroll__arrivalshead" tabIndex={-1} ref={arrivalsHead}>
-            Enrolled while this page is open
-          </h3>
-          {!watching ? (
-            <span className="v2-enroll__help">
-              Stopped looking for new devices after 30 minutes.{' '}
-              <LinkButton tone="inline" onClick={lookAgain}>
-                Look again
-              </LinkButton>
-            </span>
-          ) : null}
-          {arrivals.length === 0 ? (
-            watching ? (
-              <span className="v2-enroll__help">No device yet. A device shows here within seconds of enrolling.</span>
-            ) : null
-          ) : (
-            <ul className="v2-enroll__arrivallist" aria-labelledby="v2-enroll-arrivals">
-              {arrivals.map((a) => (
-                <li key={a.number}>
-                  <Link to={paths.device(a.number)}>{a.name}</Link>
-                  <span className={`v2-enroll__arrival v2-enroll__arrival--${a.state}`}>{ARRIVAL_LABEL[a.state]}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      ) : null}
       {/* Not the list: a look every 5 s would re-read all of it. Each new device or change of state, once. */}
       <div className="v2-visually-hidden" role="status">
         {arrivalSaid.map((n) => (
           <p key={n.id}>{n.text}</p>
         ))}
       </div>
-      <div className="v2-enroll__stop">
-        <span className="v2-enroll__help">
-          A code shared further than meant? Stop every code that still works; enrolled devices stay enrolled.
-        </span>
-        <Button size="sm" variant="danger" onClick={openStop}>
-          Stop all codes
-        </Button>
+    </Card>
+  );
+
+  const arrivalsCard = (
+    <Card gap={12} aria-labelledby="v2-enroll-arrivals" className="v2-enroll__arrivals">
+      <div className="v2-cardhead">
+        <div className="v2-cardhead__text">
+          <h2 id="v2-enroll-arrivals" className="v2-cardhead__title v2-enroll__arrivalshead" tabIndex={-1} ref={arrivalsHead}>
+            Enrolled while this page is open
+          </h2>
+        </div>
       </div>
+      {!watching ? (
+        <span className="v2-enroll__help">
+          Stopped looking for new devices after 30 minutes.{' '}
+          <LinkButton tone="inline" onClick={lookAgain}>
+            Look again
+          </LinkButton>
+        </span>
+      ) : null}
+      {arrivals.length === 0 ? (
+        watching ? (
+          <span className="v2-enroll__help">No device yet. A device shows here within seconds of enrolling.</span>
+        ) : null
+      ) : (
+        <ul className="v2-enroll__arrivallist" aria-labelledby="v2-enroll-arrivals">
+          {arrivals.map((a) => (
+            <li key={a.number}>
+              <Link to={paths.device(a.number)}>{a.name}</Link>
+              <span className={`v2-enroll__arrival v2-enroll__arrival--${a.state}`}>{ARRIVAL_LABEL[a.state]}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+
+  const codesCard = (
+    <Card gap={12} aria-labelledby="v2-enroll-codes" className="v2-enroll__codes">
+      <CardHeader
+        title="Enrollment codes"
+        titleId="v2-enroll-codes"
+        actions={
+          <Button size="sm" variant="danger" onClick={openStop}>
+            Stop all codes
+          </Button>
+        }
+      />
+      <span className="v2-enroll__help">
+        A code shared further than meant? Stop every code that still works; enrolled devices stay enrolled.
+      </span>
       {!RELEASE_BUILD ? (
         <Callout tone="warn" icon={<IconWarning size={16} />}>
           No verified agent release was found when this console was built, so the code expects the debug build of
@@ -774,18 +817,33 @@ export function EnrollPage() {
         {agentVersion ? (
           <div>
             <dt>Version</dt>
-            <dd className="v2-mono">{agentVersion}</dd>
+            <dd>{agentVersion}</dd>
           </div>
         ) : null}
       </dl>
     </Card>
   );
 
+  // Devices enrolled with a code from this page show once there is a code, on a server that can list them.
+  const showArrivals = since != null && !arrivalsUnsupported;
+  const setupCells = [
+    <GridCell key="choose" span={6}>
+      {chooseCard}
+    </GridCell>,
+    <GridCell key="enroll" span={6}>
+      {enrollCard}
+    </GridCell>,
+  ];
+
   return (
     <>
       <PageHeader title="Enroll a device" subtitle="Set up a new or factory-reset Android device so MDMesh manages it." />
-      {/* QR first on phones: the person is usually holding the device to scan. */}
-      <div className="v2-enroll">{mobile ? [enrollCard, chooseCard] : [chooseCard, enrollCard]}</div>
+      <Grid className="v2-enroll">
+        {/* QR first on phones: the person is usually holding the device to scan. */}
+        {mobile ? setupCells.reverse() : setupCells}
+        {showArrivals ? <GridCell span={6}>{arrivalsCard}</GridCell> : null}
+        <GridCell span={showArrivals ? 6 : 12}>{codesCard}</GridCell>
+      </Grid>
       <Modal
         open={stopOpen}
         size="sm"
@@ -800,7 +858,7 @@ export function EnrollPage() {
             <Button size="lg" disabled={stopping} onClick={() => setStopOpen(false)}>
               Cancel
             </Button>
-            <Button size="lg" variant="danger" disabled={stopping} onClick={() => void stopAll()}>
+            <Button size="lg" variant="danger-primary" disabled={stopping} onClick={() => void stopAll()}>
               {stopping ? 'Stopping…' : 'Stop all codes'}
             </Button>
           </>

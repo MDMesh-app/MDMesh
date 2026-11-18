@@ -1,6 +1,7 @@
 // Enroll: a Wi-Fi the device can't join is left out of the code. The note saying so is read out as it appears and
 // is the description of the fields it is about.
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { chooseOption } from '../test/select';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -49,13 +50,13 @@ describe('Enroll: a Wi-Fi that stays out of the code', () => {
 
     fireEvent.click(await main.findByRole('switch', { name: 'Join Wi-Fi during setup' }, LOAD));
     fireEvent.change(main.getByLabelText('Network name'), { target: { value: 'Office' } });
-    fireEvent.change(main.getByLabelText('Security'), { target: { value: 'NONE' } });
+    chooseOption(main.getByLabelText('Security'), { value: 'NONE' });
     // Open: nothing to say, but the region stays (an empty status node, not a removed one).
     const region = main.getByText(/Changes here only affect this code/).previousElementSibling as HTMLElement;
     await waitFor(() => expect(region.textContent).toBe(''), LOAD);
     expect(region.getAttribute('role')).toBe('status');
 
-    fireEvent.change(main.getByLabelText('Security'), { target: { value: 'WPA' } });
+    chooseOption(main.getByLabelText('Security'), { value: 'WPA' });
     await waitFor(() => expect(region.textContent).toMatch(/Enter the Wi-Fi password/), LOAD);
     expect(document.getElementById('v2-enroll-wifi-issue')).toBe(region);
     expect(region.isConnected).toBe(true);

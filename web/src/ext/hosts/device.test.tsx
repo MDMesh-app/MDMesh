@@ -147,12 +147,12 @@ describe('the device page without extensions', () => {
     await screen.findByRole('tab', { name: 'Control' });
     await waitFor(() => expect(tabNames()).toEqual(['Control', 'Telemetry', 'Apps', 'Activity1', 'Location']));
     expect(selectedTab()).toBe('Control');
-    expect(railTitles()).toEqual(['Status', 'Location', 'Hardware', 'Network', 'Management']);
+    expect(railTitles()).toEqual(['Status', 'Location', 'Hardware', 'Management']);
     // Only the last group is marked last.
     expect(Array.from(rail().querySelectorAll('.v2-kvgroup.is-last')).map((g) => g.textContent)).toEqual([
       expect.stringContaining('Management'),
     ]);
-    expect(await within(panel()).findByText('Recent commands')).toBeTruthy();
+    expect(await within(panel()).findByRole('button', { name: 'View all activity' })).toBeTruthy();
     expect(here).toBe('/devices/WH-1');
   });
 
@@ -178,8 +178,8 @@ describe('the device page without extensions', () => {
 
     await waitFor(() => expect(within(panel()).getByRole('button', { name: /Reboot/ }).hasAttribute('disabled')).toBe(false));
     fireEvent.click(within(panel()).getByRole('button', { name: /Reboot/ }));
-    fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Confirm' }));
-    expect(await screen.findByText('Reboot device queued')).toBeTruthy();
+    fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Reboot' }));
+    expect(await screen.findByText('Reboot queued')).toBeTruthy();
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     expect(nudges).toHaveLength(2);
     await act(async () => nudges[1]());
@@ -278,7 +278,7 @@ describe('core fills the slots like any extension', () => {
     const { registry } = createRegistry({ ...CORE_EXTENSION, contributions: CORE_EXTENSION.contributions.filter((c) => !dropped(c)) }, []);
     openDevice({ registry });
     await waitFor(() => expect(tabNames()).toEqual(['Control', 'Telemetry', 'Apps', 'Activity1']));
-    expect(railTitles()).toEqual(['Status', 'Hardware', 'Network', 'Management']);
+    expect(railTitles()).toEqual(['Status', 'Hardware', 'Management']);
   });
 });
 
@@ -287,7 +287,7 @@ describe('extension tabs and rail groups', () => {
     openDevice({ registry: registryOf(demo) });
     await screen.findByRole('tab', { name: 'Demo' });
     await waitFor(() => expect(tabNames()).toEqual(['Control', 'Telemetry', 'Demo', 'Apps', 'Activity1', 'Location', 'Demo admin']));
-    expect(railTitles()).toEqual(['Status', 'Location', 'Hardware', 'Network', 'Demo', 'Management']);
+    expect(railTitles()).toEqual(['Status', 'Location', 'Hardware', 'Demo', 'Management']);
     expect(within(rail()).getByText('Demo agent').closest('div, li, dl')?.textContent).toContain('0.3.7');
   });
 
@@ -313,7 +313,7 @@ describe('extension tabs and rail groups', () => {
     };
     openDevice({ registry: registryOf(ext('boom', [tab('boom', Boom, { label: 'Boom' })])), path: '/devices/WH-1?tab=boom' });
     expect(await within(await screen.findByRole('tabpanel')).findByText(/The “Boom” extension ran into a problem/)).toBeTruthy();
-    expect(railTitles()).toEqual(['Status', 'Location', 'Hardware', 'Network', 'Management']);
+    expect(railTitles()).toEqual(['Status', 'Location', 'Hardware', 'Management']);
     fireEvent.click(screen.getByRole('tab', { name: 'Telemetry' }));
     expect(await within(panel()).findByText('TC52')).toBeTruthy();
     expect(screen.queryByText(/ran into a problem/)).toBeNull();
@@ -327,7 +327,7 @@ describe('extension tabs and rail groups', () => {
     openDevice({ registry: registryOf(ext('iconic', [tab('iconic', () => 'Iconic body', { label: 'Iconic', icon: BadIcon } as Partial<Contribution>)])) });
     await waitFor(() => expect(tabNames()).toEqual(['Control', 'Telemetry', 'Apps', 'Activity1', 'Location', 'Iconic']));
     expect(screen.getByRole('tab', { name: 'Iconic' }).querySelector('svg')).toBeNull();
-    expect(railTitles()).toEqual(['Status', 'Location', 'Hardware', 'Network', 'Management']);
+    expect(railTitles()).toEqual(['Status', 'Location', 'Hardware', 'Management']);
   });
 
   it('leaves out a count or a rail group whose function throws, and shows a bad rail value as a callout there', async () => {
@@ -354,7 +354,7 @@ describe('extension tabs and rail groups', () => {
     openDevice({ registry: registryOf(broken) });
     await screen.findByRole('tab', { name: 'Counted' });
     await waitFor(() => expect(tabNames()).toEqual(['Control', 'Telemetry', 'Apps', 'Activity1', 'Location', 'Counted', 'Odd']));
-    expect(railTitles()).toEqual(['Status', 'Location', 'Hardware', 'Network', 'Management']);
+    expect(railTitles()).toEqual(['Status', 'Location', 'Hardware', 'Management']);
     expect(within(rail()).getByRole('alert').textContent).toMatch(/The “Broken” extension ran into a problem/);
   });
 });
@@ -421,11 +421,11 @@ describe('the open tab lives in the URL', () => {
     expect(await within(panel()).findByText('TC52')).toBeTruthy();
   });
 
-  it('opens Activity from the Control tab’s "All activity" link, as a history entry', async () => {
+  it('opens Activity from the Control tab’s "View all activity" link, as a history entry', async () => {
     openDevice();
-    // "All activity" shows before the events answer; the Activity tab's count comes with them.
+    // "View all activity" shows before the events answer; the Activity tab's count comes with them.
     await waitFor(() => expect(tabNames()).toContain('Activity1'));
-    fireEvent.click(screen.getByRole('button', { name: 'All activity' }));
+    fireEvent.click(screen.getByRole('button', { name: 'View all activity' }));
     expect(here).toBe('/devices/WH-1?tab=activity');
     expect(selectedTab()).toBe('Activity1');
   });
@@ -488,7 +488,7 @@ describe('the open tab lives in the URL', () => {
     renderInConsole(<AppRoutes />, { registry: registryOf(plugExtension(ORDER.deviceTab.control - 50)), path: '/devices/WH-1' });
     await screen.findByRole('tab', { name: 'Control' });
     await answer([]);
-    expect(await within(await screen.findByRole('tabpanel')).findByText('Recent commands')).toBeTruthy();
+    expect(await within(await screen.findByRole('tabpanel')).findByRole('button', { name: 'View all activity' })).toBeTruthy();
     expect(selectedTab()).toBe('Control');
   });
 });
@@ -586,7 +586,7 @@ describe('useDevice()', () => {
     fireEvent.click(await within(await screen.findByRole('tabpanel')).findByRole('button', { name: 'Send' }));
     expect(await screen.findByText('Sent 2')).toBeTruthy();
     fireEvent.click(screen.getByRole('tab', { name: 'Control' }));
-    await within(panel()).findByText('Recent commands');
+    await within(panel()).findByRole('button', { name: 'View all activity' });
     expect(within(panel()).queryByText('Waiting for the device')).toBeNull();
     expect(within(panel()).queryByText('Sent')).toBeNull();
     // The page's own location command does mark it, on the same configuration.
@@ -623,7 +623,7 @@ describe('useDevice()', () => {
     renderInConsole(<AppRoutes />, { registry: registryOf(commandsExtension([ring])), path: '/devices/WH-1?tab=commands' });
     fireEvent.click(await within(await screen.findByRole('tabpanel')).findByRole('button', { name: 'Send' }));
     fireEvent.click(screen.getByRole('tab', { name: 'Control' }));
-    expect((await within(panel()).findByRole('button', { name: /Lock now/ })).hasAttribute('disabled')).toBe(false);
+    expect((await within(panel()).findByRole('button', { name: 'Lock' })).hasAttribute('disabled')).toBe(false);
     expect(screen.getByRole('button', { name: 'Sync now' }).hasAttribute('disabled')).toBe(false);
     await act(async () => queue());
     expect(await screen.findByText('Ring queued')).toBeTruthy();

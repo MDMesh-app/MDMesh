@@ -12,7 +12,7 @@ import {
   Button,
   Card,
   CardHeader,
-  Callout,
+  ErrorState,
   KeyValueList,
   PageHeader,
   SectionLayout,
@@ -23,7 +23,8 @@ import {
 } from '../ui';
 import { ChangePasswordModal } from './settings/ChangePasswordModal';
 import { UsersSection } from './settings/UsersSection';
-import { applyRunning, useSupervisor } from '../data/useSupervisor';
+import { useSupervisor } from '../data/useSupervisor';
+import { updatesNavMeta } from '../data/updateStatus';
 import { CORE_ACTION_ACCESS } from '../ext/core/access';
 import { CORE_SETTINGS, CoreSettingsProvider } from '../ext/core/settings';
 import { useSettingsSections, type SectionMeta } from '../ext/hosts/SettingsSections';
@@ -100,7 +101,7 @@ function ConnectionValue({ conn, onRetry }: { conn: Connection; onRetry: () => v
       <span className="v2-settings-conn">
         <span className="v2-settings-conn__dot is-alert" aria-hidden="true" />
         Unreachable
-        <LinkButton onClick={onRetry}>Try again</LinkButton>
+        <LinkButton onClick={onRetry}>Retry</LinkButton>
       </span>
     );
   }
@@ -120,8 +121,10 @@ export function SettingsPage() {
   const ro = useActiveRollout();
   const { conn, recheck } = useConnection();
   const [pwOpen, setPwOpen] = useState(false);
+  const [pwSession, setPwSession] = useState(0);
   const [configs, setConfigs] = useState<ConfigurationSummary[] | null>(null);
   const [configsErr, setConfigsErr] = useState(false);
+  const [configsRetry, setConfigsRetry] = useState(0);
   const [defaultConfig, setDefaultConfig] = useState<string>(readDefaultConfig);
   // Enrolling writes to devices (ext/core/access.ts).
   const canEnroll = usePermission(CORE_ACTION_ACCESS.editDevices);
@@ -163,7 +166,13 @@ export function SettingsPage() {
     return () => {
       on = false;
     };
-  }, []);
+  }, [configsRetry]);
+
+  const retryConfigs = () => {
+    setConfigs(null);
+    setConfigsErr(false);
+    setConfigsRetry((r) => r + 1);
+  };
 
   const chooseDefault = (v: string) => {
     setDefaultConfig(v);
@@ -176,14 +185,7 @@ export function SettingsPage() {
   };
 
   const s = sup.status;
-  const apply = s?.apply;
-  const updMeta: SectionMeta = applyRunning(s)
-    ? { meta: 'Updating', metaTone: 'warn' }
-    : apply && (apply.phase === 'failed' || apply.phase === 'rolled_back')
-      ? { meta: 'Failed', metaTone: 'alert' }
-      : s?.updateAvailable
-        ? { meta: '1 ready', metaTone: 'ok' }
-        : {};
+  const updMeta: SectionMeta = updatesNavMeta(s);
   // Core's sections and extensions' come from the registry (ext/core/settings.tsx); the page builds core's bodies.
   const { nav, sections } = useSettingsSections(
     {
@@ -201,7 +203,7 @@ export function SettingsPage() {
   const whatsNew = useWhatsNew();
   const versionValue = whatsNew?.target ? (
     <span className="v2-settings-ver">
-      {version ? <span className="v2-mono">{version}</span> : null}
+      {version ? <span className="v2-num">{version}</span> : null}
       <LinkButton onClick={whatsNew.open}>What’s new</LinkButton>
     </span>
   ) : (
@@ -215,13 +217,22 @@ export function SettingsPage() {
         <CardHeader
           title="Account"
           titleId={`${S.account}-title`}
-          spacing={10}
+          spacing={8}
           actions={
             <>
-              <Button onClick={() => setPwOpen(true)} disabled={!user}>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setPwSession((n) => n + 1);
+                  setPwOpen(true);
+                }}
+                disabled={!user}
+              >
                 Change password
               </Button>
-              <Button onClick={() => void signOut()}>Sign out</Button>
+              <Button size="sm" onClick={() => void signOut()}>
+                Sign out
+              </Button>
             </>
           }
         />
@@ -229,8 +240,8 @@ export function SettingsPage() {
           variant="rows"
           items={[
             { key: 'name', label: 'Name', value: user?.name || user?.login || '—' },
-            { key: 'login', label: 'Login', value: user?.login || '—', mono: !!user?.login },
-            { key: 'email', label: 'Email', value: user?.email || '—', mono: !!user?.email },
+            { key: 'login', label: 'Login', value: user?.login || '—' },
+            { key: 'email', label: 'Email', value: user?.email || '—' },
             { key: 'role', label: 'Role', value: roleLabel(user) },
           ]}
         />
@@ -241,21 +252,24 @@ export function SettingsPage() {
     ) : administration?.error ? (
       <Card id={S.users} aria-labelledby={`${S.users}-title`} gap={12} className="v2-settings-card">
         <CardHeader title="Users & roles" titleId={`${S.users}-title`} />
-        <Callout tone="alert" role="alert">
-          {administration.error}
-        </Callout>
-        <Button onClick={() => setManagementRetry((r) => r + 1)}>Retry user administration</Button>
+        <ErrorState
+          thing="users and roles"
+          detail={administration.error}
+          onRetry={() => setManagementRetry((r) => r + 1)}
+        />
       </Card>
     ) : null,
     server: (
       <Card id={S.server} aria-labelledby={`${S.server}-title`} padding="rows" className="v2-settings-card">
-        <CardHeader title="Server" titleId={`${S.server}-title`} spacing={10} />
+        <CardHeader title="Server" titleId={`${S.server}-title`} spacing={8} />
         <KeyValueList
           variant="rows"
           items={[
             { key: 'conn', label: 'Connection', value: <ConnectionValue conn={conn} onRetry={recheck} /> },
             { key: 'addr', label: 'Address', value: serverAddress(), mono: true },
-            ...(versionValue ? [{ key: 'ver', label: 'Server and console', value: versionValue, mono: !whatsNew?.target }] : []),
+            ...(versionValue
+              ? [{ key: 'ver', label: 'Server and console', value: <span className="v2-num">{versionValue}</span> }]
+              : []),
             ...(s
               ? [
                   {
@@ -279,23 +293,31 @@ export function SettingsPage() {
       <RolloutSection id={S.agentRollout} ro={ro} status={s} statusLoaded={sup.loaded} />
     ),
     enrollment: (
-      <Card id={S.enrollment} aria-labelledby={`${S.enrollment}-title`} gap={12} className="v2-settings-card">
+      <Card id={S.enrollment} aria-labelledby={`${S.enrollment}-title`} padding="rows" className="v2-settings-card">
         <CardHeader
           title="Enrollment"
           titleId={`${S.enrollment}-title`}
+          spacing={8}
           actions={canEnroll ? <Link to={paths.enroll}>Enroll a device</Link> : undefined}
         />
-        <div className="v2-settings-pref v2-settings-pref--wide">
+        <div className="v2-settings-pref">
           <div className="v2-settings-pref__text">
             <span id="v2-settings-default-config" className="v2-settings-pref__label">
               Default configuration
             </span>
             <span id="v2-settings-default-config-help" className="v2-settings-pref__help">
-              {configsErr
-                ? 'Could not load the configurations. Reload the page to try again.'
-                : configs && configs.length === 0
-                  ? 'There are no configurations yet. Once you create one, it can be the default here.'
-                  : 'Pre-selected when you open Enroll. Saved in this browser only, so other admins keep their own.'}
+              {configsErr ? (
+                <>
+                  Couldn’t load configurations.{' '}
+                  <LinkButton tone="inline" onClick={retryConfigs}>
+                    Retry
+                  </LinkButton>
+                </>
+              ) : configs && configs.length === 0 ? (
+                'No configurations yet. Once you create one, it can be the default here.'
+              ) : (
+                'Pre-selected when you open Enroll. Saved in this browser only.'
+              )}
             </span>
           </div>
           <Select
@@ -304,7 +326,7 @@ export function SettingsPage() {
             aria-describedby="v2-settings-default-config-help"
             value={known ? defaultConfig : ''}
             onChange={(e) => chooseDefault(e.target.value)}
-            disabled={configs === null}
+            disabled={configs === null || configsErr}
           >
             <option value="">No default</option>
             {(configs ?? []).map((c) => (
@@ -318,8 +340,8 @@ export function SettingsPage() {
     ),
     appearance: (
       <Card id={S.appearance} aria-labelledby={`${S.appearance}-title`} padding="rows" className="v2-settings-card">
-        <CardHeader title="Appearance" titleId={`${S.appearance}-title`} spacing={10} />
-        <div className="v2-settings-pref v2-settings-pref--row">
+        <CardHeader title="Appearance" titleId={`${S.appearance}-title`} spacing={8} />
+        <div className="v2-settings-pref">
           <div className="v2-settings-pref__text">
             <span id="v2-settings-theme" className="v2-settings-pref__label">
               Theme
@@ -338,7 +360,6 @@ export function SettingsPage() {
           />
         </div>
       </Card>
-
     ),
   };
 
@@ -346,12 +367,12 @@ export function SettingsPage() {
     <>
       <PageHeader title="Settings" subtitle="Your account, the server, updates and console preferences." />
       <CoreSettingsProvider parts={core}>
-        <SectionLayout contentMax={880} contentBasis={560} nav={sideNav}>
+        <SectionLayout contentBasis={560} nav={sideNav} className="v2-settings-layout">
           {sections}
         </SectionLayout>
       </CoreSettingsProvider>
 
-      <ChangePasswordModal open={pwOpen} user={user} onClose={() => setPwOpen(false)} />
+      <ChangePasswordModal key={pwSession} open={pwOpen} user={user} onClose={() => setPwOpen(false)} />
     </>
   );
 }

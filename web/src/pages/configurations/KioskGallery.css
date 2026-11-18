@@ -2,7 +2,7 @@
 
 .v2 .v2-kgal {
   display: grid;
-  gap: 16px;
+  gap: var(--space-4);
 }
 
 .v2 .v2-kgal__status:empty {
@@ -12,13 +12,13 @@
 .v2 .v2-kgal__status,
 .v2 .v2-kgal__empty {
   margin: 0;
-  font-size: var(--fs-sm);
+  font-size: var(--text-ui);
   color: var(--secondary);
 }
 
 .v2 .v2-kgal__error {
   margin: 0;
-  font-size: var(--fs-sm);
+  font-size: var(--text-ui);
   color: var(--alert-ink);
 }
 
@@ -32,9 +32,9 @@
 .v2 .v2-kgal__item {
   display: grid;
   grid-template-columns: 96px minmax(0, 1fr) auto;
-  gap: 16px;
+  gap: var(--space-4);
   align-items: start;
-  padding: 16px 0;
+  padding: var(--space-4) 0;
   border-top: 1px solid var(--line-soft);
 }
 
@@ -47,37 +47,37 @@
   width: 96px;
   height: 64px;
   object-fit: cover;
-  border-radius: var(--radius-seg);
+  border-radius: var(--radius-chip);
   border: 1px solid var(--border);
   background: var(--surface-sunken);
 }
 
 .v2 .v2-kgal__facts {
   display: grid;
-  gap: 4px;
+  gap: var(--space-1);
   min-width: 0;
 }
 
 .v2 .v2-kgal__name {
-  font-weight: 600;
+  font-weight: var(--weight-medium);
   color: var(--text);
   overflow-wrap: anywhere;
 }
 
 .v2 .v2-kgal__meta {
-  font-size: var(--fs-sm);
+  font-size: var(--text-ui);
   color: var(--secondary);
 }
 
 .v2 .v2-kgal__actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
   justify-content: flex-end;
 }
 
 .v2 .v2-kgal__current {
-  font-size: var(--fs-sm);
+  font-size: var(--text-ui);
   color: var(--secondary);
 }
 
@@ -100,10 +100,6 @@
 .v2 .v2-kgal__confirm {
   display: inline-flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
-.v2 .v2-kgal__list:focus-visible {
-  outline: 2px solid var(--ink);
-  outline-offset: 4px;
-}

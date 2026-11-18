@@ -58,7 +58,7 @@ describe('Enroll: what a screen reader hears about arrivals', () => {
     // The list is not live: a look every 5 s would re-read it.
     expect(link.closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
     expect(main.getByRole('list', { name: 'Enrolled while this page is open' })).toBeTruthy();
-    expect(main.getByRole('heading', { level: 3, name: 'Enrolled while this page is open' })).toBeTruthy();
+    expect(main.getByRole('heading', { level: 2, name: 'Enrolled while this page is open' })).toBeTruthy();
     await waitFor(
       () =>
         expect(main.getAllByRole('status').some((s) => s.textContent === 'new-1: Enrolled, getting its configuration….')).toBe(
@@ -111,7 +111,7 @@ describe('Enroll: each piece of arrival news is read, repeats too', () => {
 
     fireEvent.click(main.getByRole('button', { name: 'Look again' }));
     // Look again goes away: focus lands on the list's heading, not on the page.
-    expect(document.activeElement).toBe(main.getByRole('heading', { level: 3, name: 'Enrolled while this page is open' }));
+    expect(document.activeElement).toBe(main.getByRole('heading', { level: 2, name: 'Enrolled while this page is open' }));
     // The old news is gone, so browse mode doesn't find a stop that no longer holds.
     await waitFor(() => expect(said()).toEqual([]), LOAD);
     await waitFor(() => expect(main.queryByRole('button', { name: 'Look again' })).toBeNull(), LOAD);

@@ -39,9 +39,17 @@ describe('the shell renders core and extension contributions', () => {
     expect(screen.getByRole('link', { name: 'Apps' }).querySelector('.v2-navitem__label')).toBeNull();
   });
 
-  it('sends an unknown path home, as before', async () => {
+  it('says an unknown path has no page, inside the shell, with a way home', async () => {
     stubApi(fleet);
     renderInConsole(<AppRoutes />, { registry: registryOf(demo), path: '/no-such-page' });
+    expect(await screen.findByRole('heading', { level: 1, name: 'Page not found' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Go to the Overview' }).getAttribute('href')).toBe('/');
+    expect(screen.getByRole('navigation', { name: 'Main' })).toBeTruthy();
+  });
+
+  it('still moves an old bookmark to its page', async () => {
+    stubApi(fleet);
+    renderInConsole(<AppRoutes />, { registry: registryOf(demo), path: '/dashboard' });
     await waitFor(() => expect(screen.getByRole('link', { name: 'Overview' }).className).toContain('is-active'));
   });
 });

@@ -87,6 +87,16 @@ public interface UserMapper {
             "passwordResetTokenTime=#{passwordResetTokenTime} WHERE id=#{id}"})
     void setNewPassword(User user);
 
+    /**
+     * Replaces a stored password hash with the same password in the current format, at sign-in
+     * (UnsecureDAO.checkPasswordUnsecure). Only the hash changes: sessions, JWTs and the reset state stay. Changes the
+     * row only while it still holds {@code oldHash}, so a password changed in the meantime is never overwritten.
+     *
+     * @return the number of rows changed (0 or 1).
+     */
+    @Update({"UPDATE users SET password=#{newHash} WHERE id=#{id} AND password=#{oldHash}"})
+    int upgradePasswordHash(@Param("id") Integer id, @Param("oldHash") String oldHash, @Param("newHash") String newHash);
+
     /** Stores the session/JWT binding token alone (a first sign-in, impersonation); the password is untouched. */
     @Update({"UPDATE users SET authToken=#{authToken} WHERE id=#{id}"})
     void setAuthToken(User user);

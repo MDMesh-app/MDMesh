@@ -49,12 +49,14 @@ function systemTheme(): Theme {
 
 function applyTheme(t: Theme) {
   document.documentElement.setAttribute('data-theme', t);
-  const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute('content', t === 'dark' ? '#0f1115' : '#f6f7f9');
+  // index.html carries one per OS scheme (for the first paint); the console's own choice wins over both.
+  for (const meta of document.querySelectorAll('meta[name="theme-color"]')) {
+    meta.setAttribute('content', t === 'dark' ? '#0f1115' : '#f6f7f9');
+  }
 }
 
 // Switch with a smooth crossfade via the View Transitions API where available,
-// falling back to the CSS colour transitions otherwise. Reduced-motion skips it.
+// switching at once otherwise. Reduced-motion skips it.
 function withTransition(run: () => void) {
   const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const doc = document as Document & {

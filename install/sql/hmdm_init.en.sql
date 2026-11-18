@@ -233,7 +233,7 @@ DELETE FROM configurations;
 INSERT INTO configurations (id, name, description, type, password, backgroundcolor, textcolor, backgroundimageurl, iconsize, desktopheader, usedefaultdesignsettings, customerid, gps, bluetooth, wifi, mobiledata, mainappid, eventreceivingcomponent, kioskmode, qrcodekey, contentappid,autoupdate, blockstatusbar, systemupdatetype, systemupdatefrom, systemupdateto, pushoptions, keepalivetime, rundefaultlauncher, permissive, kioskexit) VALUES 
 (1, 'Managed Launcher', 'Displays a set of application icons predefined by the administrator. To show or hide applications, use the Applications tab.', 0, NULL, '', '', NULL, 'SMALL', 'NO_HEADER', true, 1, NULL, NULL, NULL, NULL, 10045, 'com.hmdm.launcher.AdminReceiver', false, md5(random()::text || clock_timestamp()::text), NULL, false, false, 0, NULL, NULL, 'mqttAlarm', 300, NULL, NULL, true),
 (2, 'MIUI (Xiaomi Redmi)', 'Optimized for MIUI-running devices', 0, NULL, '', '', NULL, 'SMALL', 'NO_HEADER', true, 1, NULL, NULL, NULL, NULL, 10045, 'com.hmdm.launcher.AdminReceiver', false, md5(random()::text || clock_timestamp()::text), NULL, false, false, 0, NULL, NULL, 'mqttAlarm', 300, NULL, NULL, true),
-(3, 'Background (Agent) Mode', 'Headwind MDM is running in the background, it is used to install apps and track the device status. User can do everything (permissive mode).', 0, NULL, '', '', NULL, 'SMALL', 'NO_HEADER', true, 1, NULL, NULL, NULL, NULL, 10045, 'com.hmdm.launcher.AdminReceiver', false, md5(random()::text || clock_timestamp()::text), NULL, false, false, 0, NULL, NULL, 'mqttAlarm', 300, true, true, true);
+(3, 'Background (Agent) Mode', 'The MDMesh agent runs in the background to install apps and report device status. The user can use the device freely (permissive mode).', 0, NULL, '', '', NULL, 'SMALL', 'NO_HEADER', true, 1, NULL, NULL, NULL, NULL, 10045, 'com.hmdm.launcher.AdminReceiver', false, md5(random()::text || clock_timestamp()::text), NULL, false, false, 0, NULL, NULL, 'mqttAlarm', 300, true, true, true);
 
 SELECT pg_catalog.setval('public.configurations_id_seq', 3, true);
 
@@ -443,7 +443,3 @@ SELECT pg_catalog.setval('public.configurationapplications_id_seq', 271, true);
 INSERT INTO devices (id, number, description, lastupdate, configurationid, oldconfigurationid, info, imei, phone, customerid) VALUES (1, 'h0001', 'My first Android device', 0, 1, NULL, NULL, NULL, NULL, 1);
 
 SELECT pg_catalog.setval('public.devices_id_seq', 1, true);
-
-INSERT INTO plugin_devicelog_settings_rules (id, settingid, name, active, applicationid, severity) VALUES (1, 1, 'Headwind MDM', true, 46, 'VERBOSE');
-SELECT pg_catalog.setval('public.plugin_devicelog_settings_rules_id_seq', 1, true);
-

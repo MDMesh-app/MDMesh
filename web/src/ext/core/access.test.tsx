@@ -81,7 +81,7 @@ describe.each([
   it('the device page: quick actions, remote actions and the rename pencil, its reads kept', async () => {
     open('/devices/WH-1', user);
     const panel = within(await screen.findByRole('tabpanel'));
-    await panel.findByText('Recent commands');
+    await panel.findByRole('button', { name: 'View all activity' });
     expectShown(screen.queryAllByRole('toolbar', { name: 'Quick actions' }));
     expectShown(panel.queryAllByText('Remote actions'));
     expectShown(screen.queryAllByRole('button', { name: /Rename device/ }));
@@ -91,20 +91,21 @@ describe.each([
   it('the Devices list: Sync, the row menu, selection and Enroll, the list kept', async () => {
     open('/devices', user);
     await main().findByRole('link', { name: /Front desk/ });
-    expectShown(main().queryAllByRole('button', { name: 'Sync WH-1 now' }));
+    expectShown(main().queryAllByRole('button', { name: 'Sync now: WH-1' }));
     expectShown(main().queryAllByRole('button', { name: 'More actions for WH-1' }));
     expectShown(main().queryAllByRole('checkbox', { name: 'Select WH-1' }));
     expectShown(main().queryAllByRole('link', { name: 'Enroll device' }));
   });
 
-  it('the Overview: Enroll, and Sync now on a device out of sync (Open device instead)', async () => {
+  it('the Overview: Enroll, and Sync now on a device out of sync (its name links to it either way)', async () => {
     open('/', user);
-    // The row's action once the probe has found the device out of sync.
+    // The row's action once the probe has found the device out of sync; the device's name is the row's link.
     const sync = () => main().queryAllByRole('button', { name: 'Sync now: Front desk' });
-    const openIt = () => main().queryAllByRole('link', { name: 'Open device: Front desk' });
-    await waitFor(() => expect(sync().length + openIt().length).toBe(1));
+    // Every role waits for the probe's answer (the row's reason), so a missing Sync now is the role's, not the probe's.
+    const attention = within(await main().findByRole('table', { name: 'Devices that need attention' }));
+    await attention.findByText(/Configuration out of sync|Configuration failed to apply/);
+    expect(attention.getAllByRole('link', { name: /Front desk/ }).length > 0).toBe(true);
     expectShown(sync());
-    expect(openIt().length > 0).toBe(!shown);
     expectShown(main().queryAllByRole('link', { name: 'Enroll device' }));
   });
 
@@ -131,7 +132,7 @@ describe.each([
     if (more.length) {
       fireEvent.click(more[0]);
       const items = within(await screen.findByRole('menu')).getAllByRole('menuitem').map((m) => m.textContent);
-      expect(items).toEqual(['SHA-256 checksum…', 'Remove from library…']);
+      expect(items).toEqual(['SHA-256 checksum', 'Remove from library']);
     }
   });
 });
@@ -156,8 +157,10 @@ describe.each([
     expect(card.getByText(/Checked/)).toBeTruthy();
     expect(card.queryAllByRole('button', { name: 'Check now' }).length > 0).toBe(shown);
     expect(card.queryAllByRole('button', { name: /Update server and console/ }).length > 0).toBe(shown);
-    expect(card.queryAllByRole('switch').length > 0).toBe(shown);
-    expect(card.getByText('Install updates automatically')).toBeTruthy();
+    // Everyone sees the switch; only the deployment admin can turn it (aria-disabled, with the reason, for the rest).
+    expect(card.getByRole('switch', { name: 'Install updates automatically' }).getAttribute('aria-disabled')).toBe(
+      shown ? null : 'true',
+    );
   });
 
   it('keeps the help that speaks of the update to the roles it offers the update to', async () => {
@@ -182,7 +185,8 @@ describe.each([
     open('/settings', user);
     const nav = within(screen.getByRole('navigation', { name: 'Main' }));
     const card = await nav.findByRole('link', { name: /Server update 0\.3\.8/ });
-    expect(card.textContent).toMatch(shown ? /About 2 minutes\./ : /An admin who runs this install can apply it\./);
+    expect(card.getAttribute('href')).toBe('/settings#updates');
+    expect(card.textContent).toMatch(shown ? /About 2 minutes to apply\./ : /An admin can apply it\./);
   });
 });
 
@@ -202,7 +206,7 @@ describe('Settings → Updates follows a deploymentAdmin refresh', () => {
     act(() => void document.dispatchEvent(new Event('visibilitychange')));
     await waitFor(() => expect(card.queryByRole('button', { name: /Update server and console/ })).toBeNull());
     expect(card.queryByRole('button', { name: 'Check now' })).toBeNull();
-    expect(card.queryByRole('switch')).toBeNull();
+    expect(card.getByRole('switch').getAttribute('aria-disabled')).toBe('true');
   });
 });
 
@@ -264,7 +268,9 @@ describe('Deploy offers only the modes the role may use', () => {
     );
     fireEvent.click(await main().findByRole('button', { name: 'Deploy Scanner' }));
     const dialog = within(await screen.findByRole('dialog', { name: 'Deploy Scanner' }));
-    expect(await dialog.findByRole('option', { name: 'Warehouse' })).toBeTruthy();
+    // The picker's options show once it opens (ui/Input Select).
+    fireEvent.click(await dialog.findByRole('combobox'));
+    expect(await screen.findByRole('option', { name: 'Warehouse' })).toBeTruthy();
   });
 });
 
@@ -277,21 +283,21 @@ describe.each([
 ])('Configurations as $role (add_config: $add, copy_config: $copy)', ({ user, add, copy }) => {
   const has = (found: unknown[], expected: boolean) => expect(found.length > 0).toBe(expected);
 
-  it('the list: New configuration, and each card’s Duplicate and Delete', async () => {
+  it('the list: New configuration, and each row’s Duplicate and Delete', async () => {
     open('/configurations', user);
     await main().findByRole('link', { name: 'Warehouse' });
-    has(main().queryAllByRole('button', { name: 'New configuration' }), add);
-    has(main().queryAllByRole('button', { name: 'Duplicate' }), copy);
+    // "New configuration" when there are templates to choose from (its chooser), else it creates directly.
+    has(main().queryAllByRole('button', { name: /^New configuration(…)?$/ }), add);
     fireEvent.click(main().getByRole('button', { name: 'More for Warehouse' }));
     const items = within(await screen.findByRole('menu')).getAllByRole('menuitem').map((m) => m.textContent);
-    expect(items).toEqual(copy ? ['Edit', 'Duplicate…', 'Delete…'] : ['Edit']);
+    expect(items).toEqual(copy ? ['Edit', 'Duplicate', 'Delete'] : ['Edit']);
   });
 
   it('the editor: Duplicate and Delete', async () => {
     open('/configurations/3', user);
     await main().findByRole('heading', { name: 'Warehouse' });
     has(main().queryAllByRole('button', { name: 'Duplicate' }), copy);
-    has(main().queryAllByRole('button', { name: 'Delete…' }), copy);
+    has(main().queryAllByRole('button', { name: 'Delete' }), copy);
   });
 
   // A new configuration, blank or from a template (?from=), saves with PUT and no id, which needs add_config.
@@ -381,8 +387,26 @@ describe('renaming follows edit_device_desc alone', () => {
     ['edit_devices without edit_device_desc', ['edit_devices'], false, true],
   ])('%s', async (_, permissions, rename, actions) => {
     open('/devices/WH-1', custom(permissions));
-    await within(await screen.findByRole('tabpanel')).findByText('Recent commands');
+    await within(await screen.findByRole('tabpanel')).findByRole('button', { name: 'View all activity' });
     expect(screen.queryAllByRole('button', { name: /Rename device/ }).length > 0).toBe(rename);
     expect(screen.queryAllByRole('toolbar', { name: 'Quick actions' }).length > 0).toBe(actions);
+  });
+});
+
+describe('the Overview with no device enrolled', () => {
+  const empty = (path: string, init?: RequestInit): unknown =>
+    new URL(path, 'http://console').pathname.endsWith('/devices/search')
+      ? { devices: { items: [], totalItemsCount: 0 }, configurations: {} }
+      : api(path, init);
+
+  it.each([
+    { role: 'Admin', user: ROLES.admin, firstRun: true },
+    { role: 'User', user: ROLES.user, firstRun: true },
+    { role: 'Observer', user: ROLES.observer, firstRun: false },
+    { role: 'User scoped to some devices', user: { ...ROLES.user, allDevicesAvailable: false }, firstRun: false },
+  ])('$role: the first-run steps only for a role that may enroll and sees the whole fleet', async ({ user, firstRun }) => {
+    open('/', user, empty);
+    await main().findAllByText('No devices yet');
+    expect(main().queryAllByRole('heading', { name: 'Enroll your first device' }).length > 0).toBe(firstRun);
   });
 });

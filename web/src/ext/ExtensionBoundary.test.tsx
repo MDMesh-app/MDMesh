@@ -62,7 +62,7 @@ describe('ExtensionBoundary', () => {
     renderCards(['flaky', 'steady']);
     expect(await screen.findByText('Steady works')).toBeTruthy();
     const alert = await screen.findByRole('alert');
-    expect(alert.textContent).toBe('The “Fleet cards” extension ran into a problem. Try again');
+    expect(alert.textContent).toBe('The “Fleet cards” extension ran into a problem. Retry');
     expect(console.error).toHaveBeenCalledWith('[ext:cards/flaky] crashed', expect.any(Error), expect.anything());
   });
 
@@ -70,7 +70,7 @@ describe('ExtensionBoundary', () => {
     renderCards(['flaky']);
     await screen.findByRole('alert');
     crash = false;
-    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByText('Flaky works')).toBeTruthy();
   });
 
@@ -95,7 +95,7 @@ describe('ExtensionBoundary', () => {
   it('does not name core in its callout', async () => {
     const core = { ...entry('flaky'), extension: { id: 'core', title: 'MDMesh', core: true } };
     render(<ExtensionBoundary entry={core}>{createElement(core.contribution.component)}</ExtensionBoundary>);
-    expect((await screen.findByRole('alert')).textContent).toBe('This part of the page ran into a problem. Try again');
+    expect((await screen.findByRole('alert')).textContent).toBe('This part of the page ran into a problem. Retry');
   });
 });
 
@@ -119,7 +119,7 @@ describe('a thrown value that is falsy is still caught', () => {
         </ExtensionBoundary>
       </AppErrorBoundary>,
     );
-    expect((await screen.findByRole('alert')).textContent).toBe('The “Fleet cards” extension ran into a problem. Try again');
+    expect((await screen.findByRole('alert')).textContent).toBe('The “Fleet cards” extension ran into a problem. Retry');
   });
 
   it.each([[undefined], [null]])('PageErrorBoundary catches throw %j', async (value) => {

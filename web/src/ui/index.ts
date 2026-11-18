@@ -17,7 +17,7 @@ export { StatusPill, StatusText, StatusDot, STATUS_META, TONE_SHAPE } from './St
 export type { StatusKind, StatusTone, StatusShape } from './Status';
 export { Card, CardHeader, Notice, Callout } from './Card';
 export type { CardPadding, CardTone } from './Card';
-export { Table } from './Table';
+export { Table, isRowClick, noShiftSelect, shiftOf, shiftSpace } from './Table';
 export type { Column, SortDir, TableProps } from './Table';
 export { SectionNav, SectionLayout, useScrollSpy } from './SectionNav';
 export type { SectionNavItem } from './SectionNav';
@@ -67,3 +67,10 @@ export { CopyField } from './CopyField';
 export { useLeaveGuard } from './useLeaveGuard';
 // Not exported here, import them by path: QrPanel (pulls in `qrcode`), LocationMap (Leaflet), and the dialogs with
 // their own API calls and CSS: DeployModal, BulkModals.
+export { Grid, GridCell } from './Grid';
+export type { GridProps, GridCellProps, GridSpan } from './Grid';
+export { Skeleton, SkeletonRows, SkeletonFacts } from './Skeleton';
+export { ErrorState } from './ErrorState';
+export { Tooltip, TooltipProvider } from './Tooltip';
+export { Popover } from './Popover';
+export { useStickyValue } from './useStickyValue';

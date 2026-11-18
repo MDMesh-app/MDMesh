@@ -1,11 +1,17 @@
+/* Badges and chips: 20px (xs, sm) or 24px (md, lg) pills, 12px/500 text; the count badge is an 11px tabular pill. */
 .v2 .v2-badge {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   box-sizing: border-box;
-  border: 1px solid transparent;
-  border-radius: var(--radius-pill);
-  line-height: var(--lh-body);
+  height: 20px;
+  padding: 0 var(--space-2);
+  border: var(--hairline) solid transparent;
+  border-radius: var(--radius-full);
+  font-family: var(--font-sans);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
+  font-weight: var(--weight-medium);
   white-space: nowrap;
   vertical-align: middle;
 }
@@ -14,34 +20,18 @@
 }
 
 /* sizes */
-.v2 .v2-badge--xs {
-  padding: 0 6px;
-  font-size: var(--fs-micro);
-}
-.v2 .v2-badge--sm {
-  padding: 0 8px;
-  font-size: var(--fs-small);
-}
-.v2 .v2-badge--md {
-  padding: 1px 9px;
-  gap: 6px;
-  font-size: var(--fs-meta);
-  font-weight: 500;
+.v2 .v2-badge--md,
+.v2 .v2-badge--lg {
+  height: var(--control-xs);
 }
 .v2 .v2-badge--lg {
-  padding: 2px 10px;
-  gap: 6px;
-  font-size: var(--fs-sm);
+  padding-inline: var(--space-3);
 }
 .v2 .v2-badge--mono {
   font-family: var(--font-mono);
 }
 .v2 .v2-badge--square {
   border-radius: var(--radius-chip);
-}
-.v2 .v2-badge--square.v2-badge--md {
-  padding: 2px 9px;
-  font-weight: 400;
 }
 
 /* tones */
@@ -55,13 +45,17 @@
   border-color: var(--border);
   color: var(--text-2);
 }
-.v2 .v2-badge--count {
-  background: var(--surface);
-  border-color: var(--border);
+/* Count (sidebar "Devices 248"): small and neutral, whatever size it is given. */
+.v2 .v2-badge.v2-badge--count {
+  justify-content: center;
+  height: 18px;
+  min-width: 18px;
+  padding: 0 var(--space-1);
+  background: var(--surface-2);
   color: var(--text-2);
-  font-family: var(--font-mono);
-  font-size: var(--fs-tiny);
-  font-weight: 500;
+  font-size: var(--text-caps);
+  line-height: var(--lh-caps);
+  font-variant-numeric: tabular-nums;
 }
 .v2 .v2-badge--ok {
   background: var(--ok-soft);
@@ -100,8 +94,6 @@
 /* Chip: a Badge you can press (link or button). Keeps its tone colour on hover. A labelled button, so it keeps the
    soft tone line (see the text-button note in Button.css). */
 .v2 .v2-chip {
-  font-family: inherit;
-  line-height: var(--lh-body);
   cursor: pointer;
 }
 .v2 .v2-chip.v2-badge--ok,
@@ -127,16 +119,12 @@
 .v2 .v2-chip:hover {
   filter: brightness(0.97);
   text-decoration: underline;
-  text-underline-offset: 2px;
+  text-underline-offset: 0.2em;
 }
 [data-theme='dark'] .v2 .v2-chip:hover {
   filter: brightness(1.15);
 }
+/* Pressed: the edge takes the text colour (the border is always there, so nothing shifts). */
 .v2 .v2-chip.is-pressed {
-  box-shadow: inset 0 0 0 1px currentColor;
-}
-/* Outline tag at md is the editor title's "Kiosk" tag: 0×9, 12.5px, regular weight. */
-.v2 .v2-badge--outline.v2-badge--md {
-  padding: 0 9px;
-  font-weight: 400;
+  border-color: currentColor;
 }

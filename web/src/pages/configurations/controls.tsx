@@ -4,6 +4,7 @@ import type { ConfigApp } from '../../api/configurations';
 import { DEFAULT_SEGMENTS, flagOffValue, type FieldDef } from '../../data/configFields';
 import { appNameForVersionId, versionIdForApp } from '../../data/configurationRules';
 import {
+  Badge,
   Button,
   ColourInput,
   IconEye,
@@ -13,6 +14,7 @@ import {
   Select,
   Textarea,
   Toggle,
+  Tooltip,
   TriState,
   TwoState,
   type InputTone,
@@ -275,6 +277,8 @@ function SecretInput({
         onChange={(e) => onChange(e.target.value)}
         autoComplete="new-password"
         spellCheck={false}
+        // The exit PIN is digits: a number pad on touch screens, any text still typeable (a PIN from before the rule).
+        inputMode={pin ? 'numeric' : undefined}
       />
       <Button
         size="md"
@@ -289,20 +293,28 @@ function SecretInput({
   );
 }
 
-/** Long help (Wi-Fi radio): help over `limit` characters shows its first sentences, with More / Less. */
-export function LongHelp({ text, limit = 400 }: { text: string; limit?: number }): ReactNode {
+/** A setting's help: one line (at most 80 characters), and its longer explanation behind "Learn more". */
+export function FieldHelp({ text, more }: { text: string; more?: string }): ReactNode {
   const [open, setOpen] = useState(false);
-  if (text.length <= limit) return text;
-  // Cut at the last sentence end within the first 200 characters (at least 80 in).
-  const head = text.slice(0, 200);
-  const cut = Math.max(head.lastIndexOf('. '), 80);
+  if (!more) return text;
   return (
     <>
-      {open ? text : `${text.slice(0, cut + 1)} `}
-      {open ? ' ' : null}
+      {text}{' '}
       <button type="button" className="v2-cfged-more" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
-        {open ? 'Less' : 'More'}
+        {open ? 'Show less' : 'Learn more'}
       </button>
+      {open ? <span className="v2-cfged-moretext">{more}</span> : null}
     </>
+  );
+}
+
+/** The agent version a setting needs, as a small tag: "Agent 0.5+" for 0.5.0. */
+export function AgentTag({ version }: { version: string }) {
+  return (
+    <Tooltip content={`Needs agent ${version} or later. Older agents ignore it.`}>
+      <Badge tone="outline" size="xs">
+        Agent {version.replace(/\.0$/, '')}+
+      </Badge>
+    </Tooltip>
   );
 }

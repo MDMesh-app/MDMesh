@@ -19,6 +19,7 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import { configurationsFixtures } from './fixtures.mjs';
 import { DIST, fx, newContext, startServer } from './harness.mjs';
+import { updateScenarios } from './fixtures.mjs';
 
 const arg = (k) => {
   const i = process.argv.indexOf(k);
@@ -36,7 +37,14 @@ const env = (data, status = 'OK', message = null) => JSON.stringify({ status, me
 const SIGNED_OUT = null;
 const RESET = { ...fx.user, passwordReset: true, passwordResetToken: 'a11y-token' };
 
-const dialog = (page) => page.locator('dialog[open]').last();
+/** An open dialog (Radix renders role="dialog" / "alertdialog", portalled to the end of <body>). */
+const DIALOG = '[role="dialog"], [role="alertdialog"]';
+const dialog = (page) => page.locator(DIALOG).last();
+/** Pick an option in a console Select (a listbox button, not a native <select>). */
+async function choose(page, label, option) {
+  await page.getByLabel(label).click();
+  await page.getByRole('option', { name: option }).click();
+}
 /** Users & roles answers: the section shows only when the server says it manages users. */
 const ROLE = { id: 2, name: 'Admin', superAdmin: false, permissions: [] };
 const USERS = {
@@ -94,12 +102,12 @@ const KIOSK_IMAGE = (() => {
   const cfx = configurationsFixtures(fx);
   const config = {
     // A launcher kiosk (no main app), so the preview draws the app grid, its plates and the Exit button.
-    ...cfx.configs.find((c) => c.id === 2), ...cfx.fullExtras(2), mainAppId: null, kioskExit: true,
+    ...cfx.configs.find((c) => c.id === 5), ...cfx.fullExtras(5), mainAppId: null, kioskExit: true,
     backgroundImageFileId: info.fileId, backgroundImageUrl: url, backgroundImageSha256: info.sha256,
   };
   return {
     rest: {
-      '**/rest/private/configurations/2': () => env(config),
+      '**/rest/private/configurations/5': () => env(config),
       '**/rest/private/configurations/backgroundImage/77': () => env(info),
       '**/rest/private/configurations/backgroundImages?*': () => env({
         items: [
@@ -119,7 +127,8 @@ const click = async (page, role, name, opts = {}) => {
 };
 
 /**
- * The states: a route, who is signed in, optional REST overrides and a setup that drives the page into the state.
+ * The states: a route, who is signed in, optional REST overrides (and `updateStatus`, the supervisor's /update/status)
+ * and a setup that drives the page into the state.
  * `mobile: false` skips it in the phone layout (≤ 860 px), `desktop: false` above it; `gallery` needs a VITE_GALLERY=1 build.
  */
 const STATES = [
@@ -194,7 +203,7 @@ const STATES = [
     route: '/devices',
     setup: async (p) => {
       await click(p, 'button', 'More actions for KIOSK-FRONT');
-      await click(p, 'menuitem', 'Delete…');
+      await click(p, 'menuitem', 'Delete');
     },
   },
   {
@@ -214,10 +223,10 @@ const STATES = [
   { name: 'device-tab-telemetry', route: '/devices/WH-SCAN-07', setup: (p) => click(p, 'tab', 'Telemetry') },
   { name: 'device-tab-activity', route: '/devices/WH-SCAN-07', setup: (p) => click(p, 'tab', /Activity/) },
   { name: 'device-rename', route: '/devices/WH-SCAN-07', setup: (p) => click(p, 'button', 'Rename device') },
-  { name: 'device-alert-dialog', route: '/devices/WH-SCAN-07', setup: (p) => click(p, 'button', 'Send alert…') },
-  { name: 'device-factory-reset', route: '/devices/WH-SCAN-07', setup: (p) => click(p, 'button', 'Factory reset…') },
+  { name: 'device-alert-dialog', route: '/devices/WH-SCAN-07', setup: (p) => click(p, 'button', 'Send alert') },
+  { name: 'device-factory-reset', route: '/devices/WH-SCAN-07', setup: (p) => click(p, 'button', 'Factory reset') },
   { name: 'device-more-menu', route: '/devices/WH-SCAN-07', setup: (p) => click(p, 'button', 'More actions') },
-  { name: 'device-kiosk-dialog', route: '/devices/WH-SCAN-07', setup: (p) => click(p, 'button', 'Custom kiosk…') },
+  { name: 'device-kiosk-dialog', route: '/devices/WH-SCAN-07', setup: (p) => click(p, 'button', 'Custom kiosk') },
   { name: 'device-not-found', route: '/devices/NOPE' },
   // ---- configurations ----
   { name: 'configurations', route: '/configurations' },
@@ -239,12 +248,12 @@ const STATES = [
       await click(p, 'menuitem', /Delete/);
     },
   },
-  { name: 'config-editor', route: '/configurations/1' },
+  { name: 'config-editor', route: '/configurations/4' },
   // The kiosk background image (#193): the image's facts, the focal point picker (focused) and the preview (open by
   // default) as a phone; the preview as a landscape tablet; and the uploaded-images dialog.
   {
     name: 'config-editor-kiosk-image',
-    route: '/configurations/2',
+    route: '/configurations/5',
     ...KIOSK_IMAGE,
     setup: async (p) => {
       await p.getByRole('img', { name: /^Current kiosk background: lobby\.png/ }).waitFor({ timeout: 8000 });
@@ -254,7 +263,7 @@ const STATES = [
   },
   {
     name: 'config-editor-kiosk-preview',
-    route: '/configurations/2',
+    route: '/configurations/5',
     ...KIOSK_IMAGE,
     setup: async (p) => {
       // The preview is open by default: show it as a tablet, turned to landscape, measured (the readout says the
@@ -270,7 +279,7 @@ const STATES = [
   },
   {
     name: 'config-editor-kiosk-gallery',
-    route: '/configurations/2',
+    route: '/configurations/5',
     ...KIOSK_IMAGE,
     setup: async (p) => {
       await click(p, 'button', 'Choose from uploaded');
@@ -279,7 +288,7 @@ const STATES = [
   },
   {
     name: 'config-editor-dirty',
-    route: '/configurations/1',
+    route: '/configurations/4',
     setup: async (p) => {
       await p.getByRole('radiogroup', { name: 'Bluetooth' }).getByRole('radio', { name: 'Block' }).click();
       await p.getByRole('region', { name: 'Unsaved changes' }).waitFor({ timeout: 5000 });
@@ -287,18 +296,18 @@ const STATES = [
   },
   {
     name: 'config-editor-add-apps',
-    route: '/configurations/1',
+    route: '/configurations/4',
     setup: (p) => click(p, 'button', 'Add apps'),
   },
   {
     name: 'config-editor-leave-guard',
-    route: '/configurations/1',
+    route: '/configurations/4',
     mobile: false,
     setup: async (p) => {
       await p.getByRole('radiogroup', { name: 'Bluetooth' }).getByRole('radio', { name: 'Block' }).click();
       await p.getByRole('region', { name: 'Unsaved changes' }).waitFor({ timeout: 5000 });
       await p.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: /Devices/ }).click();
-      await p.locator('dialog[open]').waitFor({ timeout: 5000 });
+      await p.locator(DIALOG).first().waitFor({ timeout: 5000 });
     },
   },
   // ---- apps ----
@@ -351,7 +360,7 @@ const STATES = [
       const sw = p.getByRole('switch', { name: 'Join Wi-Fi during setup' });
       if ((await sw.getAttribute('aria-checked')) !== 'true') await sw.click();
       await p.getByLabel('Network name').fill('Office');
-      await p.getByLabel('Security').selectOption('WPA');
+      await choose(p, 'Security', /WPA/);
       await p.getByLabel('Wi-Fi password').fill('short');
       await p.locator('#v2-enroll-wifi-issue').waitFor({ timeout: 5000 });
     },
@@ -398,6 +407,12 @@ const STATES = [
       await p.waitForTimeout(400);
     },
   },
+  // The offered update skips a security release: the sidebar card, the section nav and the Updates notice.
+  {
+    name: 'settings-missed-security',
+    route: '/settings',
+    updateStatus: updateScenarios(fx).missedSecurity,
+  },
   // ---- shell ----
   {
     name: 'mobile-drawer',
@@ -424,6 +439,7 @@ async function openState(browser, base, state, theme, vp) {
     viewport: { width: vp.width, height: vp.height },
     deviceScaleFactor: 1,
     blockGoogleFonts: true,
+    ...(state.updateStatus ? { updateStatus: state.updateStatus } : {}),
   });
   for (const [pattern, body] of Object.entries(state.rest ?? {})) {
     await context.route(pattern, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: body(route) }));
@@ -445,6 +461,18 @@ async function openState(browser, base, state, theme, vp) {
       setupError = String(e.message).split('\n')[0];
     }
   }
+  // A step can start a page or dialog entrance (a short fade): measure the settled page, not a frame mid-fade, whose
+  // colours axe would read lighter. Endless animations (skeleton sheens) are not waited for.
+  await page
+    .evaluate(() =>
+      Promise.all(
+        document
+          .getAnimations()
+          .filter((a) => a.effect?.getTiming().iterations !== Infinity)
+          .map((a) => a.finished.catch(() => {})),
+      ),
+    )
+    .catch(() => {});
   return { context, page, errors, setupError };
 }
 
@@ -581,8 +609,8 @@ async function keyboardWalk(browser, base) {
     ['devices', '/devices', fx.user],
     ['device', '/devices/WH-SCAN-07', fx.user],
     ['configurations', '/configurations', fx.user],
-    ['config-editor', '/configurations/1', fx.user],
-    ['config-editor-kiosk', '/configurations/2', fx.user, KIOSK_IMAGE],
+    ['config-editor', '/configurations/4', fx.user],
+    ['config-editor-kiosk', '/configurations/5', fx.user, KIOSK_IMAGE],
     ['apps', '/apps', fx.user],
     ['enroll', '/enroll', fx.user],
     ['settings', '/settings', fx.user],
@@ -600,6 +628,8 @@ async function keyboardWalk(browser, base) {
       let wrapped = false;
       for (let i = 0; i < TAB_CAP; i++) {
         await page.keyboard.press('Tab');
+        // A tooltip opens on focus and is placed a frame later (Floating UI): measure once it has its place.
+        await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
         const info = await page.evaluate(() => {
           const el = document.activeElement;
           if (!el || el === document.body) return null;
@@ -654,19 +684,24 @@ async function keyboardWalk(browser, base) {
 
   // Dialogs, menus and the inline rename: the trigger opens it with focus inside, Escape closes it and focus returns
   // to the trigger. `open` is what the trigger opens (a dialog or menu unless said).
-  const POPUP = 'dialog[open], [role=menu]';
+  const POPUP = `${DIALOG}, [role=menu]`;
   const dialogs = [
     ['/devices/WH-SCAN-07', 'button', 'Rename device', 'form.v2-device-rename'],
-    ['/devices/WH-SCAN-07', 'button', 'Send alert…'],
+    ['/devices/WH-SCAN-07', 'button', 'Send alert'],
     ['/devices', 'button', 'More actions for KIOSK-FRONT'],
-    ['/configurations', 'button', 'New configuration'],
+    ['/configurations', 'button', 'More for Default'],
     ['/apps', 'button', 'Deploy Chrome'],
     ['/enroll', 'button', 'Full screen'],
     ['/settings', 'button', /Change password/],
-    ['/configurations/2', 'button', 'Choose from uploaded', POPUP, KIOSK_IMAGE],
+    ['/configurations/5', 'button', 'Choose from uploaded', POPUP, KIOSK_IMAGE],
+    // A menu item that opens a dialog: closing the dialog (Escape, or its Cancel) returns focus to the menu's trigger.
+    ['/devices', 'button', 'More actions for KIOSK-FRONT', DIALOG, {}, { item: 'Change configuration' }],
+    ['/configurations', 'button', 'More for Default', DIALOG, {}, { item: 'Delete', close: 'Cancel' }],
+    // A dialog whose field takes focus as it mounts (autoFocus): focus still goes back to the menu's trigger.
+    ['/configurations', 'button', 'More for Default', DIALOG, {}, { item: 'Duplicate' }],
   ];
   const escapes = [];
-  for (const [route, role, label, open = POPUP, extra] of dialogs) {
+  for (const [route, role, label, open = POPUP, extra, via] of dialogs) {
     const { context, page } = await openState(browser, base, { route, ...extra }, 'light', VIEWPORTS[0]);
     const trigger = page.getByRole(role, { name: label }).first();
     let result;
@@ -674,13 +709,23 @@ async function keyboardWalk(browser, base) {
       await trigger.focus();
       await page.keyboard.press('Enter');
       await page.waitForTimeout(400);
+      if (via?.item) {
+        await page.getByRole('menuitem', { name: via.item }).focus();
+        await page.keyboard.press('Enter');
+        await page.waitForTimeout(400);
+      }
       const opened = await page.evaluate((sel) => !!document.querySelector(sel), open);
       const focusInside = await page.evaluate((sel) => !!document.activeElement?.closest(sel), open);
-      await page.keyboard.press('Escape');
+      if (via?.close) {
+        await page.locator(open).getByRole('button', { name: via.close }).focus();
+        await page.keyboard.press('Enter');
+      } else {
+        await page.keyboard.press('Escape');
+      }
       await page.waitForTimeout(400);
       const closed = await page.evaluate((sel) => !document.querySelector(sel), open);
       const returned = await trigger.evaluate((el) => el === document.activeElement);
-      result = { route, label: String(label), opened, focusInside, closed, returned };
+      result = { route, label: via?.item ? `${label} → ${via.item}` : String(label), opened, focusInside, closed, returned };
     } catch (e) {
       result = { route, label: String(label), error: String(e.message).split('\n')[0] };
     }

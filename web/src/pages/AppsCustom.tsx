@@ -1,5 +1,6 @@
 import { useId, useState, type ReactNode } from 'react';
 import {
+  bundleErrorText,
   commitUpload,
   listApplications,
   saveAndroidApplication,
@@ -16,6 +17,8 @@ import {
   CardHeader,
   Field,
   FileDropZone,
+  Grid,
+  GridCell,
   FileReadPanel,
   IconCheck,
   IconDownload,
@@ -260,8 +263,7 @@ export function AppsCustom({
       const splits = `${b.parts.length} split${b.parts.length === 1 ? '' : 's'} hosted`;
       toast.push('ok', 'Bundle ready', canAdd ? `${splits} — added to your Library.` : `${splits}.`);
     } catch (e) {
-      // The server returns a clear message for encrypted .apkm / no-apks bundles.
-      toast.push('err', 'Bundle upload failed', errorText(e));
+      toast.push('err', 'Bundle upload failed', bundleErrorText(e));
       setFile(null);
     } finally {
       setUploading(false);
@@ -392,221 +394,224 @@ export function AppsCustom({
     <>
       <div className="v2-apps-toolbar">{tabs}</div>
 
-      <div className="v2-apps-custom">
-        <Card as="section" padding="roomy" gap={18} className="v2-apps-custom__main" aria-labelledby={headId}>
-          <CardHeader
-            titleId={headId}
-            title="Add your own app"
-            size={18}
-            className="v2-apps-custom__head"
-            actions={<Stepper steps={['File', 'Check details', 'Add']} current={step} />}
-          />
-
-          {canUpload ? (
-            <Segmented<Mode>
-              aria-label="Where the app comes from"
-              className="v2-apps-custom__mode"
-              value={mode}
-              onChange={switchMode}
-              disabled={uploading || savingToLibrary}
-              options={[
-                { value: 'upload', label: 'Upload a file' },
-                { value: 'link', label: 'Use a link' },
-              ]}
+      <Grid className="v2-apps-custom">
+        <GridCell span={8}>
+          <Card as="section" gap={16} className="v2-apps-custom__main" aria-labelledby={headId}>
+            <CardHeader
+              titleId={headId}
+              title="Add your own app"
+              className="v2-apps-custom__head"
+              actions={<Stepper steps={['File', 'Check details', 'Add']} current={step} />}
             />
-          ) : null}
 
-          {mode === 'upload' ? (
-            <>
-              <FileDropZone
-                accept={FILE_ACCEPT}
-                onFile={(f) => void onFile(f)}
-                busy={uploading}
-                busyLabel={`Reading ${file?.name ?? 'the file'}…`}
-                title="Drop an APK or a split bundle here, or choose one"
-                hint="MDMesh reads the package name, version and checksum from the file."
-                buttonLabel="Choose a file"
-                result={
-                  file
-                    ? (choose) =>
-                        file.error ? (
-                          <FileReadPanel tone="alert" name={file.name} detail={file.error} action={chooseAnother(choose)} />
-                        ) : (
-                          <FileReadPanel name={file.name} detail={fileDetail} action={chooseAnother(choose)} />
-                        )
-                    : undefined
-                }
+            {canUpload ? (
+              <Segmented<Mode>
+                aria-label="Where the app comes from"
+                className="v2-apps-custom__mode"
+                value={mode}
+                onChange={switchMode}
+                disabled={uploading || savingToLibrary}
+                options={[
+                  { value: 'upload', label: 'Upload a file' },
+                  { value: 'link', label: 'Use a link' },
+                ]}
               />
-              {hostFailed ? (
-                <Callout tone="warn" icon={<IconWarning size={16} />}>
-                  <span className="v2-apps-calloutline">
-                    MDMesh read the file but couldn’t host it. Use a link to the APK to deploy it.
-                    <Button size="sm" onClick={() => switchMode('link')}>
-                      Use a link
-                    </Button>
-                  </span>
-                </Callout>
-              ) : null}
-            </>
-          ) : null}
+            ) : null}
 
-          {mode === 'link' || fileRead ? (
-            <div className="v2-apps-custom__fields">
-              {mode === 'link' ? (
-                <Field
-                  className="v2-apps-custom__wide"
-                  label="Link to the APK"
-                  help="Devices download the file from this address, so it must be reachable from them."
-                >
-                  <Input
-                    type="url"
-                    value={url}
-                    placeholder="https://…/app.apk"
-                    onChange={(e) => {
-                      setUrl(e.target.value);
-                      setVersion(''); // a hand-typed URL isn't the analysed file any more (#69)
-                      if (savedAppId && e.target.value.trim() !== hostedUrl) setSavedAppId(undefined);
-                    }}
-                  />
-                </Field>
-              ) : null}
-              <Field label="Display name" help={saved ? 'In the library under this name.' : 'What admins see in MDMesh.'}>
-                <Input value={name} readOnly={saved} onChange={(e) => setName(e.target.value)} placeholder={pkg || 'Optional'} />
-              </Field>
-              <Field label="Package name" help={pkgFromFile ? 'Read from the file.' : 'Required, e.g. com.example.app.'}>
-                <Input
-                  mono
-                  value={pkg}
-                  readOnly={pkgFromFile || saved}
-                  onChange={(e) => setPkg(e.target.value)}
-                  placeholder="com.example.app"
-                  spellCheck={false}
+            {mode === 'upload' ? (
+              <>
+                <FileDropZone
+                  accept={FILE_ACCEPT}
+                  onFile={(f) => void onFile(f)}
+                  busy={uploading}
+                  busyLabel={`Reading ${file?.name ?? 'the file'}…`}
+                  title="Drop an APK or a split bundle here, or choose one"
+                  hint="MDMesh reads the package name, version and checksum from the file."
+                  buttonLabel="Choose a file"
+                  result={
+                    file
+                      ? (choose) =>
+                          file.error ? (
+                            <FileReadPanel tone="alert" name={file.name} detail={file.error} action={chooseAnother(choose)} />
+                          ) : (
+                            <FileReadPanel name={file.name} detail={fileDetail} action={chooseAnother(choose)} />
+                          )
+                      : undefined
+                  }
                 />
-              </Field>
-              {mode === 'upload' ? (
-                <Field label="Version" help="Read from the file.">
-                  <Input mono value={versionText} readOnly />
+                {hostFailed ? (
+                  <Callout tone="warn" icon={<IconWarning size={16} />}>
+                    <span className="v2-apps-calloutline">
+                      MDMesh read the file but couldn’t host it. Use a link to the APK to deploy it.
+                      <Button size="sm" onClick={() => switchMode('link')}>
+                        Use a link
+                      </Button>
+                    </span>
+                  </Callout>
+                ) : null}
+              </>
+            ) : null}
+
+            {mode === 'link' || fileRead ? (
+              <div className="v2-apps-custom__fields">
+                {mode === 'link' ? (
+                  <Field
+                    className="v2-apps-custom__wide"
+                    label="Link to the APK"
+                    help="Devices download the file from this address, so it must be reachable from them."
+                  >
+                    <Input
+                      type="url"
+                      value={url}
+                      placeholder="https://…/app.apk"
+                      onChange={(e) => {
+                        setUrl(e.target.value);
+                        setVersion(''); // a hand-typed URL isn't the analysed file any more (#69)
+                        if (savedAppId && e.target.value.trim() !== hostedUrl) setSavedAppId(undefined);
+                      }}
+                    />
+                  </Field>
+                ) : null}
+                <Field label="Display name" help={saved ? 'In the library under this name.' : 'What admins see in MDMesh.'}>
+                  <Input value={name} readOnly={saved} onChange={(e) => setName(e.target.value)} placeholder={pkg || 'Optional'} />
                 </Field>
-              ) : (
-                <Field label="Version code" help="Optional. The versionCode from the app’s manifest.">
-                  <Input mono type="number" inputMode="numeric" value={vc} readOnly={saved} onChange={(e) => setVc(e.target.value)} />
-                </Field>
-              )}
-              {mode === 'upload' ? (
-                <Field
-                  label="SHA-256 checksum"
-                  helpTone="ok"
-                  help={bundle ? '✓ Worked out for each part of the bundle.' : '✓ Worked out by MDMesh, which hosts the file.'}
-                >
-                  <Input
-                    value={bundle ? `${bundle.parts.length} part${bundle.parts.length === 1 ? '' : 's'}, one checksum each` : 'Worked out by MDMesh'}
-                    readOnly
-                  />
-                </Field>
-              ) : (
-                <Field
-                  label="SHA-256 checksum"
-                  help={
-                    externalUrl
-                      ? 'Required: devices check the download against it. 64 hex characters.'
-                      : effectiveUrl
-                        ? 'Not needed: MDMesh hosts this file and works it out itself.'
-                        : '64 hex characters. Devices check the download against it.'
-                  }
-                  error={
-                    shaTouched && shaInvalid
-                      ? 'Enter the SHA-256 as 64 hex characters (0-9, a-f).'
-                      : shaTouched && shaMissing
-                        ? 'Enter the checksum, or upload the file instead.'
-                        : undefined
-                  }
-                >
+                <Field label="Package name" help={pkgFromFile ? 'Read from the file.' : 'Required, e.g. com.example.app.'}>
                   <Input
                     mono
-                    value={sha}
-                    readOnly={saved}
-                    onChange={(e) => setSha(e.target.value)}
-                    onBlur={() => shaTrim !== '' && setShaTouched(true)}
-                    autoComplete="off"
+                    value={pkg}
+                    readOnly={pkgFromFile || saved}
+                    onChange={(e) => setPkg(e.target.value)}
+                    placeholder="com.example.app"
                     spellCheck={false}
                   />
                 </Field>
-              )}
-            </div>
-          ) : null}
-
-          <div className="v2-apps-custom__foot">
-            {canAdd ? (
-              <Button
-                size="hero"
-                variant="primary"
-                icon={saved ? <IconCheck size={15} /> : <IconPlus size={15} />}
-                disabled={addDisabled}
-                onClick={() => void saveToLibrary()}
-              >
-                {saved ? 'In library' : savingToLibrary ? 'Adding…' : 'Add to library'}
-              </Button>
+                {mode === 'upload' ? (
+                  <Field label="Version" help="Read from the file.">
+                    <Input mono value={versionText} readOnly />
+                  </Field>
+                ) : (
+                  <Field label="Version code" help="Optional. The versionCode from the app’s manifest.">
+                    <Input mono type="number" inputMode="numeric" value={vc} readOnly={saved} onChange={(e) => setVc(e.target.value)} />
+                  </Field>
+                )}
+                {mode === 'upload' ? (
+                  <Field
+                    label="SHA-256 checksum"
+                    helpTone="ok"
+                    help={bundle ? '✓ Worked out for each part of the bundle.' : '✓ Worked out by MDMesh, which hosts the file.'}
+                  >
+                    <Input
+                      value={bundle ? `${bundle.parts.length} part${bundle.parts.length === 1 ? '' : 's'}, one checksum each` : 'Worked out by MDMesh'}
+                      readOnly
+                    />
+                  </Field>
+                ) : (
+                  <Field
+                    label="SHA-256 checksum"
+                    help={
+                      externalUrl
+                        ? 'Required: devices check the download against it. 64 hex characters.'
+                        : effectiveUrl
+                          ? 'Not needed: MDMesh hosts this file and works it out itself.'
+                          : '64 hex characters. Devices check the download against it.'
+                    }
+                    error={
+                      shaTouched && shaInvalid
+                        ? 'Enter the SHA-256 as 64 hex characters (0-9, a-f).'
+                        : shaTouched && shaMissing
+                          ? 'Enter the checksum, or upload the file instead.'
+                          : undefined
+                    }
+                  >
+                    <Input
+                      mono
+                      value={sha}
+                      readOnly={saved}
+                      onChange={(e) => setSha(e.target.value)}
+                      onBlur={() => shaTrim !== '' && setShaTouched(true)}
+                      autoComplete="off"
+                      spellCheck={false}
+                    />
+                  </Field>
+                )}
+              </div>
             ) : null}
-            {onDeploy ? (
-              <Button size="hero" icon={<IconDownload size={15} />} disabled={deployDisabled} onClick={() => void addAndDeploy()}>
-                {saved || !canAdd ? 'Deploy…' : 'Add and deploy…'}
-              </Button>
-            ) : null}
-            <span className="v2-apps-custom__hint">
-              {saved
-                ? 'It’s in the library. Nothing reaches devices until it is deployed or added to a configuration.'
-                : 'Nothing reaches devices until it is deployed or added to a configuration.'}
-            </span>
-          </div>
-        </Card>
 
-        <aside className="v2-apps-custom__side" aria-label="Help">
-          <Card padding="side" gap={10}>
-            <h2 className="v2-apps-sidecard__title">Files MDMesh can read</h2>
-            <div className="v2-apps-sidecard__exts">
-              {FILE_EXTS.map((e) => (
-                <Badge key={e} tone="neutral" size="md" square mono>
-                  {e}
-                </Badge>
-              ))}
-            </div>
-            <p className="v2-apps-sidecard__text">Split bundles are unpacked on the server. Devices install every part together.</p>
-          </Card>
-          <Card padding="side" gap={10}>
-            <h2 className="v2-apps-sidecard__title">Using a link</h2>
-            <p className="v2-apps-sidecard__text">
-              Devices download the file themselves. You’ll need its SHA-256 checksum so they can check the download wasn’t
-              changed.
-            </p>
-          </Card>
-          <Card padding="side" gap={10}>
-            <h2 className="v2-apps-sidecard__title">Need an APK?</h2>
-            <p className="v2-apps-sidecard__text">
-              Search a mirror for the package name. Only use files whose signature matches the developer’s.
-            </p>
-            <Input
-              size="sm"
-              aria-label="Search a mirror for"
-              placeholder={pkg || 'App or package name'}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-            <div className="v2-apps-sidecard__links">
-              {EXT_SOURCES.map((s) => (
-                <ButtonAnchor
-                  key={s.label}
-                  size="sm"
-                  href={s.url + encodeURIComponent(query.trim() || pkg.trim())}
-                  target="_blank"
-                  rel="noopener noreferrer"
+            <div className="v2-apps-custom__foot">
+              {canAdd ? (
+                <Button
+                  size="lg"
+                  variant="primary"
+                  icon={saved ? <IconCheck size={16} /> : <IconPlus size={16} />}
+                  disabled={addDisabled}
+                  onClick={() => void saveToLibrary()}
                 >
-                  {s.label} ↗
-                </ButtonAnchor>
-              ))}
+                  {saved ? 'In library' : savingToLibrary ? 'Adding…' : 'Add to library'}
+                </Button>
+              ) : null}
+              {onDeploy ? (
+                <Button size="lg" icon={<IconDownload size={16} />} disabled={deployDisabled} onClick={() => void addAndDeploy()}>
+                  {saved || !canAdd ? 'Deploy' : 'Add and deploy'}
+                </Button>
+              ) : null}
+              <span className="v2-apps-custom__hint">
+                {saved
+                  ? 'It’s in the library. Nothing reaches devices until it is deployed or added to a configuration.'
+                  : 'Nothing reaches devices until it is deployed or added to a configuration.'}
+              </span>
             </div>
           </Card>
-        </aside>
-      </div>
+        </GridCell>
+
+        <GridCell span={4}>
+          <aside className="v2-apps-custom__side" aria-label="Help">
+            <Card gap={12}>
+              <CardHeader title="Files MDMesh can read" />
+              <div className="v2-apps-sidecard__exts">
+                {FILE_EXTS.map((e) => (
+                  <Badge key={e} tone="neutral" size="md" square mono>
+                    {e}
+                  </Badge>
+                ))}
+              </div>
+              <p className="v2-apps-sidecard__text">Split bundles are unpacked on the server. Devices install every part together.</p>
+            </Card>
+            <Card gap={12}>
+              <CardHeader title="Using a link" />
+              <p className="v2-apps-sidecard__text">
+                Devices download the file themselves. You’ll need its SHA-256 checksum so they can check the download wasn’t
+                changed.
+              </p>
+            </Card>
+            <Card gap={12}>
+              <CardHeader title="Need an APK?" />
+              <p className="v2-apps-sidecard__text">
+                Search a mirror for the package name. Only use files whose signature matches the developer’s.
+              </p>
+              <Input
+                size="sm"
+                aria-label="Search a mirror for"
+                placeholder={pkg || 'App or package name'}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+              <div className="v2-apps-sidecard__links">
+                {EXT_SOURCES.map((s) => (
+                  <ButtonAnchor
+                    key={s.label}
+                    size="sm"
+                    href={s.url + encodeURIComponent(query.trim() || pkg.trim())}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {s.label} ↗
+                  </ButtonAnchor>
+                ))}
+              </div>
+            </Card>
+          </aside>
+        </GridCell>
+      </Grid>
     </>
   );
 }

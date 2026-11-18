@@ -1,43 +1,52 @@
-/* Text inputs, selects, textareas. Board: 9×12, r10, 1px #D6DAE1, white, 14px. The resting border uses
-   --input-border, which reaches 3:1 against the surface, as a control's border must. */
+/* Text inputs, selects, textareas, search, checkboxes. One height scale (28 / 32 / 36), r6, 14px text, a 3:1
+   resting edge (--input-border, as a control's edge must be) and one focus treatment: the ring replaces nothing,
+   the border stays, so the field never looks doubled. */
 .v2 .v2-input {
-  box-sizing: border-box;
   min-width: 0;
-  border: 1px solid var(--input-border);
-  border-radius: var(--radius-sm);
+  height: var(--control-md);
+  padding: 0 var(--space-3);
+  border: var(--hairline) solid var(--input-border);
+  border-radius: var(--radius-control);
   background: var(--surface);
   color: var(--text);
-  font-size: var(--fs-body);
-  font-weight: 400;
-  line-height: var(--lh-body);
-  transition: border-color 0.12s ease;
+  font-size: var(--text-input);
+  line-height: var(--lh-input);
+  font-weight: var(--weight-regular);
+  transition-property: border-color, box-shadow;
+  transition-duration: var(--dur-micro);
+  transition-timing-function: var(--ease);
 }
 .v2 .v2-input--sm {
-  padding: 8px 12px;
-}
-.v2 .v2-input--md {
-  padding: 9px 12px;
+  height: var(--control-sm);
+  padding-inline: var(--space-2);
+  font-size: var(--text-ui);
 }
 .v2 .v2-input--lg {
-  padding: 10px 12px;
+  height: var(--control-lg);
 }
 .v2 .v2-input--mono {
   font-family: var(--font-mono);
+  font-size: var(--text-ui);
 }
-.v2 .v2-textarea {
-  resize: vertical;
+.v2 .v2-input:hover:not(:disabled, [readonly]) {
+  border-color: var(--secondary);
 }
-.v2 .v2-input:focus-visible {
-  border-color: var(--ink);
+.v2 .v2-input:focus-visible,
+.v2 .v2-search:focus-within {
+  outline: var(--indicator) solid var(--focus);
+  outline-offset: calc(var(--hairline) * -1);
+  border-color: var(--focus);
 }
 .v2 .v2-input[readonly] {
   background: var(--app);
   border-color: var(--border);
 }
-.v2 .v2-input:disabled {
+.v2 .v2-input:disabled,
+.v2 .v2-input[data-disabled] {
   background: var(--app);
   border-color: var(--border);
   color: var(--secondary);
+  cursor: default;
 }
 .v2 .v2-input.is-invalid {
   border-color: var(--alert);
@@ -46,105 +55,223 @@
   border-color: var(--warn);
 }
 
-.v2 .v2-select {
-  cursor: pointer;
-}
-.v2 .v2-select--xs {
-  padding: 6px 8px;
-  border-radius: var(--radius-tile);
-}
-.v2 .v2-select--sm {
-  padding: 8px 10px;
-}
-.v2 .v2-select--md {
-  padding: 9px 12px;
-}
-.v2 .v2-select--lg {
-  padding: 10px 12px;
+/* Textarea: grows with its content from three lines (field-sizing where supported; else rows + resize). */
+.v2 .v2-textarea {
+  height: auto;
+  min-height: calc(var(--lh-input) * 3 + var(--space-2) * 2);
+  padding-block: var(--space-2);
+  resize: vertical;
+  field-sizing: content;
 }
 
-/* Labelled toolbar select: "Type  All ▾" */
-.v2 .v2-lselect {
+/* ---- Select trigger (Radix): an input-height button with the value and a chevron ---- */
+.v2 .v2-select {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 0 4px 0 12px;
-  box-sizing: border-box;
-  border: 1px solid var(--input-border);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  font-size: var(--fs-sm);
+  gap: var(--space-2);
+  padding-inline: var(--space-3) var(--space-2);
+  text-align: left;
+  cursor: pointer;
+  font-size: var(--text-ui);
+}
+.v2 .v2-select--sm {
+  height: var(--control-sm);
+  padding-inline: var(--space-2) var(--space-1);
+}
+.v2 .v2-select--lg {
+  height: var(--control-lg);
+  font-size: var(--text-input);
+}
+.v2 .v2-select__label {
+  flex: 0 0 auto;
   color: var(--secondary);
-  cursor: pointer;
 }
-.v2 .v2-lselect:focus-within {
-  outline: 2px solid var(--ink);
-  outline-offset: 2px;
+.v2 .v2-select__value {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.v2 .v2-lselect__select {
-  padding: 7px 6px;
-  border: 0;
-  background: transparent;
-  color: var(--text);
-  outline: none;
+.v2 .v2-select__chevron {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--secondary);
+  transition: transform var(--dur-micro) var(--ease);
+}
+.v2 .v2-select[data-state='open'] .v2-select__chevron {
+  transform: rotate(180deg);
+}
+.v2 .v2-select[data-placeholder] .v2-select__value {
+  color: var(--secondary);
+}
+/* The deprecated native select (`native` / `multiple`, until 0.6.0): the browser's own control at the input sizes. */
+.v2 .v2-select--native {
   cursor: pointer;
+  font-size: var(--text-ui);
+}
+.v2 .v2-select--native[multiple] {
+  height: auto;
+  padding-block: var(--space-1);
+}
+/* Toolbar filters: the softer card edge; the label inside carries the identity. */
+.v2 .v2-lselect {
+  font-weight: var(--weight-medium);
 }
 
-/* Search: icon + borderless input inside a bordered box; the ring goes on the box. */
+/* ---- Listbox popover (Select's list) ---- */
+.v2 .v2-listbox {
+  z-index: var(--z-overlay);
+  min-width: var(--radix-select-trigger-width);
+  max-height: min(360px, var(--radix-select-content-available-height));
+  overflow: hidden;
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  box-shadow: var(--elev-2);
+  transform-origin: var(--radix-select-content-transform-origin);
+}
+.v2 .v2-listbox[data-state='open'] {
+  animation: v2-pop-in var(--dur-enter) var(--ease);
+}
+.v2 .v2-listbox[data-state='closed'] {
+  animation: v2-pop-out var(--dur-exit) var(--ease);
+}
+.v2 .v2-listbox[data-side='top'] {
+  --pop-from: var(--lift);
+}
+.v2 .v2-listbox__viewport {
+  padding: var(--space-1);
+}
+.v2 .v2-listbox__group {
+  padding: var(--space-2) var(--space-2) var(--space-1);
+  font-size: var(--text-caps);
+  line-height: var(--lh-caps);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+  color: var(--secondary);
+}
+.v2 .v2-listbox__item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-md);
+  padding: 0 var(--space-8) 0 var(--space-2);
+  border-radius: var(--radius-chip);
+  color: var(--text);
+  font-size: var(--text-ui);
+  line-height: var(--lh-ui);
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+}
+.v2 .v2-listbox__item[data-highlighted] {
+  background: var(--hover);
+}
+.v2 .v2-listbox__item[data-state='checked'] {
+  font-weight: var(--weight-medium);
+}
+.v2 .v2-listbox__item[data-disabled] {
+  color: var(--faint);
+  cursor: default;
+}
+.v2 .v2-listbox__check {
+  position: absolute;
+  right: var(--space-2);
+  display: inline-flex;
+  color: var(--ink);
+}
+
+/* ---- Search: icon + borderless input inside an input-height box; the ring goes on the box ---- */
 .v2 .v2-search {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 12px;
-  box-sizing: border-box;
+  gap: var(--space-2);
+  height: var(--control-md);
   min-width: 0;
-  border: 1px solid var(--input-border);
-  border-radius: var(--radius-sm);
+  padding: 0 var(--space-3);
+  border: var(--hairline) solid var(--input-border);
+  border-radius: var(--radius-control);
   background: var(--surface);
   color: var(--secondary);
+  transition: border-color var(--dur-micro) var(--ease);
+}
+.v2 .v2-search:hover {
+  border-color: var(--secondary);
 }
 .v2 .v2-search > svg {
   flex: 0 0 auto;
-}
-.v2 .v2-search:focus-within {
-  outline: 2px solid var(--ink);
-  outline-offset: 2px;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
 }
 .v2 .v2-search__input {
   flex: 1 1 auto;
   min-width: 0;
-  padding: 9px 0;
+  height: 100%;
+  padding: 0;
   border: 0;
   background: transparent;
   color: var(--text);
-  font-size: var(--fs-body);
-  line-height: var(--lh-body);
+  font-size: var(--text-ui);
+  line-height: var(--lh-ui);
   outline: none;
 }
 .v2 .v2-search__input::-webkit-search-cancel-button {
   cursor: pointer;
 }
 
-/* Checkbox */
+/* ---- Checkbox: native input, drawn (16px, r4; ink when checked, a dash when mixed) ---- */
 .v2 .v2-check {
-  width: 16px;
-  height: 16px;
-  margin: 0;
+  position: relative;
   flex: 0 0 auto;
-  accent-color: var(--ink);
+  width: var(--check);
+  height: var(--check);
+  margin: 0;
+  border: var(--hairline) solid var(--input-border);
+  border-radius: var(--radius-check);
+  background: var(--surface);
+  appearance: none;
+  vertical-align: middle;
   cursor: pointer;
+  transition-property: background-color, border-color;
+  transition-duration: var(--dur-micro);
+  transition-timing-function: var(--ease);
 }
-.v2 .v2-check--17 {
-  width: 17px;
-  height: 17px;
+.v2 .v2-check:hover:not(:disabled) {
+  border-color: var(--secondary);
+}
+.v2 .v2-check:checked,
+.v2 .v2-check:indeterminate {
+  border-color: var(--ink);
+  background: var(--ink);
+}
+.v2 .v2-check::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--on-ink);
+  opacity: 0;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 8.2l2.6 2.6L12 5.4' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+  transition: opacity var(--dur-micro) var(--ease);
+}
+.v2 .v2-check:indeterminate::after {
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.5 8h7' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+.v2 .v2-check:checked::after,
+.v2 .v2-check:indeterminate::after {
+  opacity: 1;
 }
 .v2 .v2-check:disabled {
+  opacity: var(--disabled-opacity);
   cursor: default;
 }
 .v2 .v2-checklabel {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   cursor: pointer;
 }
 .v2 .v2-checklabel.is-disabled {
@@ -152,10 +279,51 @@
   cursor: default;
 }
 
+@media (max-width: 860px) {
+  .v2 .v2-input:not(.v2-textarea),
+  .v2 .v2-search {
+    min-height: var(--touch);
+  }
+  /* Phones: a 44px target around a 24px box (the box drawn in ::before, the mark in ::after). */
+  .v2 .v2-check,
+  .v2 .v2-check:checked,
+  .v2 .v2-check:indeterminate {
+    width: var(--touch);
+    height: var(--touch);
+    border: 0;
+    background: transparent;
+  }
+  .v2 .v2-check::before,
+  .v2 .v2-check::after {
+    inset: calc((var(--touch) - var(--control-xs)) / 2);
+  }
+  .v2 .v2-check::before {
+    content: '';
+    position: absolute;
+    border: var(--hairline) solid var(--input-border);
+    border-radius: var(--radius-check);
+    background: var(--surface);
+  }
+  .v2 .v2-check:checked::before,
+  .v2 .v2-check:indeterminate::before {
+    border-color: var(--ink);
+    background: var(--ink);
+  }
+  .v2 .v2-checklabel {
+    min-height: var(--touch);
+  }
+}
+
 @media (forced-colors: active) {
   .v2 .v2-input,
   .v2 .v2-search,
-  .v2 .v2-lselect {
+  .v2 .v2-check {
     border-color: CanvasText;
+  }
+  .v2 .v2-check {
+    appearance: auto;
+  }
+  .v2 .v2-check::after {
+    display: none;
   }
 }

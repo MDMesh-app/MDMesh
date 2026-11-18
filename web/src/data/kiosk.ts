@@ -9,7 +9,9 @@ import { CONFIG_FIELDS } from './configFields';
  * The configuration's own help for the exit PIN, so every kiosk dialog says the same: with agent 0.3.6+, an empty PIN
  * means no exit on the device.
  */
-export const EXIT_PIN_HELP = CONFIG_FIELDS.find((f) => f.key === 'password')?.help;
+const PIN_FIELD = CONFIG_FIELDS.find((f) => f.key === 'password');
+/** The exit PIN's help, its one line and its longer explanation, for tooltips beside a PIN field. */
+export const EXIT_PIN_HELP = [PIN_FIELD?.help, PIN_FIELD?.more].filter(Boolean).join(' ') || undefined;
 /** Placeholder of an exit-PIN input that may stay empty. */
 export const EXIT_PIN_PLACEHOLDER = 'Empty: no exit on the device (agent 0.3.6+)';
 /** What a kiosk without an exit PIN means on the device, by agent version. */
@@ -139,6 +141,17 @@ export function configuredKiosk(cfg: Configuration, apps: ConfigApp[]): Configur
     apps: allowed.map((pkg) => ({ pkg, name: names.get(pkg) ?? pkg })),
     mainAppLeftOut: mainAppId != null && !mainPkg,
   };
+}
+
+/**
+ * The `kiosk.enter` payload to queue for a configured kiosk (Return to configured kiosk), as JSON. It carries no PIN:
+ * `configuredPin` asks the server to put in each target device's own configuration PIN, so a stored PIN never travels
+ * from the console and the server has nothing to check it against (AgentAdminResource, KioskExitPin).
+ */
+export function configuredKioskCommand(k: ConfiguredKiosk): string {
+  const payload: Record<string, unknown> = { ...k.payload, configuredPin: true };
+  delete payload.password;
+  return JSON.stringify(payload);
 }
 
 /** "Pinned to Signage Player" / "Launcher grid with 3 apps": what the configured kiosk shows. */

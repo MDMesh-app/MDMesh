@@ -38,12 +38,18 @@ export default defineConfig(({ mode }) => {
           // Third-party code in its own chunks: the app chunk stays under Vite's 500 kB warning, and a console
           // upgrade that only changes app code leaves the browser's cached vendor chunks valid.
           codeSplitting: {
+            // A group takes only the modules its test names; what they import goes to its own group (vendor).
+            includeDependenciesRecursively: false,
             groups: [
               { name: 'react', test: /node_modules[\\/](react|react-dom|react-router|scheduler|cookie|set-cookie-parser)[\\/]/, priority: 2 },
               { name: 'leaflet', test: /node_modules[\\/]leaflet[\\/]/, priority: 2 },
               // The QR encoder is imported on demand (ui/QrCode): its own chunk keeps it out of the
               // vendor chunk every page loads, so only Enroll downloads it.
               { name: 'qrcode', test: /node_modules[\\/](qrcode|dijkstrajs)[\\/]/, priority: 2 },
+              // Radix's Select and Popover are for forms and filters, not the shell: their own chunks load with the
+              // first page that shows one, so the shell (menus, dialogs, tooltips) doesn't carry them.
+              { name: 'radix-select', test: /node_modules[\\/]@radix-ui[\\/]react-select[\\/]/, priority: 2 },
+              { name: 'radix-popover', test: /node_modules[\\/]@radix-ui[\\/]react-popover[\\/]/, priority: 2 },
               { name: 'vendor', test: /node_modules[\\/]/, priority: 1 },
             ],
           },

@@ -1,6 +1,7 @@
 import { useId, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { Button } from './Button';
+import { Select } from './Input';
 import { cx } from './cx';
 import './Pagination.css';
 
@@ -46,17 +47,18 @@ export function Pagination({
     <nav aria-label={`Pages of ${noun}`} className={cx('v2-pager', `v2-pager--${variant}`, className)}>
       <span className="v2-pager__count" aria-live="polite">
         Showing{' '}
-        <span className="v2-mono">
+        <span className="v2-num">
           {first}–{last}
         </span>{' '}
-        of <span className="v2-mono">{total}</span>
+        of <span className="v2-num">{total}</span>
         {suffix ? <> {suffix}</> : null}
       </span>
       {pageSizeOptions && onPageSizeChange ? (
-        <label className="v2-pager__size" htmlFor={sizeId}>
-          Rows per page
-          <select
-            id={sizeId}
+        <span className="v2-pager__size">
+          <span id={sizeId}>Rows per page</span>
+          <Select
+            size="sm"
+            aria-labelledby={sizeId}
             className="v2-pager__select"
             value={pageSize}
             onChange={(e) => onPageSizeChange(Number(e.target.value))}
@@ -66,14 +68,14 @@ export function Pagination({
                 {n}
               </option>
             ))}
-          </select>
-        </label>
+          </Select>
+        </span>
       ) : null}
       <div className="v2-pager__buttons">
-        <Button disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
+        <Button size="sm" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
           Previous
         </Button>
-        <Button disabled={page >= pages} onClick={() => onPageChange(page + 1)}>
+        <Button size="sm" disabled={page >= pages} onClick={() => onPageChange(page + 1)}>
           Next
         </Button>
       </div>
@@ -95,7 +97,7 @@ export function ShowMore({
 }) {
   return (
     <div className="v2-showmore">
-      <Button size="xl" className="v2-showmore__btn" onClick={onClick} disabled={busy}>
+      <Button className="v2-showmore__btn" onClick={onClick} disabled={busy}>
         {busy ? busyLabel : label}
       </Button>
     </div>
@@ -106,9 +108,12 @@ export function ShowMore({
 export function CountMeta({ shown, total, to, linkLabel = 'See all' }: { shown: number; total: number; to?: string; linkLabel?: string }) {
   return (
     <>
-      <span className="v2-countmeta">
-        Showing {shown} of {total}
-      </span>
+      {/* Only when the list is cut short: "Showing 5 of 5" says nothing. */}
+      {shown < total ? (
+        <span className="v2-countmeta">
+          Showing {shown} of {total}
+        </span>
+      ) : null}
       {to ? (
         <Link to={to} className="v2-countmeta__link">
           {linkLabel}

@@ -2,7 +2,7 @@
 //   node scripts/shots/v2-parity/devices.mjs [--dist <dir>]
 import { chromium } from 'playwright';
 import { fx, newContext, startServer } from '../harness.mjs';
-import { dist } from './lib.mjs';
+import { DIALOG, dist, pickOption } from './lib.mjs';
 const { server, base } = await startServer(dist);
 const browser = await chromium.launch();
 const results = [];
@@ -39,6 +39,35 @@ async function ctx({ devices, viewport, search } = {}) {
 }
 
 const last = (calls, re) => [...calls].reverse().find((c) => re.test(c.p));
+// The bulk bar stays mounted (it slides in and out): "shown" is its open state.
+const BAR = '.v2-bulkbar[data-state="open"]';
+const selectedIs = async (page, n) =>
+  (await page.locator(`${BAR} .v2-bulkbar__count`).filter({ hasText: new RegExp(`^${n} selected`) }).count()) === 1;
+// Type / Configuration / Android / Sort and "Only duplicates" live in the Filter popover.
+const filtersOf = (page) => page.getByRole('dialog', { name: 'Filters' });
+async function openFilters(page) {
+  if (!(await filtersOf(page).isVisible())) await page.getByRole('button', { name: /^Filter/ }).click();
+  await filtersOf(page).waitFor();
+  return filtersOf(page);
+}
+async function closeFilters(page) {
+  if (await filtersOf(page).isVisible()) {
+    await page.keyboard.press('Escape');
+    await filtersOf(page).waitFor({ state: 'hidden' });
+  }
+}
+// Closes the open dialog with Escape where closing it is a step, not the check: the first Escape may only dismiss the
+// tooltip of the button focus landed on (see "Escape closes modal", which checks one Escape).
+async function escapeDialog(page) {
+  for (let i = 0; i < 2 && (await page.locator(DIALOG).count()); i++) {
+    await page.keyboard.press('Escape');
+    await page.locator(DIALOG).first().waitFor({ state: 'detached', timeout: 1500 }).catch(() => {});
+  }
+}
+async function filterBy(page, label, value) {
+  await pickOption(await openFilters(page), label, { value });
+  await page.waitForTimeout(200);
+}
 
 // ---------- table view ----------
 {
@@ -49,11 +78,11 @@ const last = (calls, re) => [...calls].reverse().find((c) => re.test(c.p));
   const rows = () => page.locator('table[aria-label="Devices"] tbody tr').count();
   ok('table renders 8 rows', (await rows()) === 8);
   const sub = await page.locator('.v2-pagehead__sub').innerText();
-  ok('subtitle counts', /3 of 8 online now, 2 need attention, 3 haven’t checked in\./.test(sub), sub);
-  ok('attention strip chips', (await page.getByRole('button', { name: '1 config failed' }).count()) === 1 && (await page.getByRole('button', { name: '1 agent too old' }).count()) === 1);
+  ok('subtitle counts', /3 of 8 online now, 2 need attention, 3 offline\./.test(sub), sub);
+  ok('attention strip chips', (await page.getByRole('button', { name: '1 configuration failed' }).count()) === 1 && (await page.getByRole('button', { name: '1 agent too old' }).count()) === 1);
 
   // status filter
-  await page.getByRole('radio', { name: /Attention/ }).click(); await page.waitForTimeout(150);
+  await page.getByRole('radio', { name: /Needs attention/ }).click(); await page.waitForTimeout(150);
   ok('Attention filter → 2', (await rows()) === 2);
   const attnText = await page.locator('table[aria-label="Devices"] tbody').innerText();
   ok('attention reasons in the shared wording', attnText.includes('Configuration failed to apply') && attnText.includes('Agent too old for configuration sync'), attnText.replace(/\s+/g, ' ').slice(0, 200));
@@ -62,24 +91,25 @@ const last = (calls, re) => [...calls].reverse().find((c) => re.test(c.p));
   await page.getByRole('radio', { name: /Online/ }).click(); await page.waitForTimeout(150);
   ok('Online filter → 3', (await rows()) === 3);
   await page.getByRole('radio', { name: /^All/ }).click(); await page.waitForTimeout(150);
-  await page.getByRole('button', { name: '1 config failed' }).click();
+  await page.getByRole('button', { name: '1 configuration failed' }).click();
   ok('chip filter → 1 (KIOSK-CAFE)', (await rows()) === 1 && (await page.locator('tbody').innerText()).includes('KIOSK-CAFE'));
-  await page.getByRole('button', { name: '1 config failed' }).click();
+  await page.getByRole('button', { name: '1 configuration failed' }).click();
   await page.getByRole('radio', { name: /^All/ }).click(); await page.waitForTimeout(150);
 
-  // selects
-  await page.getByLabel('Configuration').selectOption('2');
-  await page.waitForTimeout(200);
-  ok('config filter by id + URL', (await rows()) === 3 && page.url().includes('config=2'), `${await rows()} ${page.url()}`);
-  await page.getByLabel('Configuration').selectOption('all');
+  // selects (in the Filter popover)
+  await filterBy(page, 'Configuration', '5');
+  ok('config filter by id + URL', (await rows()) === 3 && page.url().includes('config=5'), `${await rows()} ${page.url()}`);
+  await filterBy(page, 'Configuration', 'all');
   ok('config filter cleared from URL', !page.url().includes('config='));
-  await page.getByLabel('Android').selectOption('14');
+  await filterBy(page, 'Android', '14');
   ok('android filter', (await rows()) === 2);
-  await page.getByLabel('Android').selectOption('all');
-  await page.getByLabel('Type').selectOption('kiosk');
+  await filterBy(page, 'Android', 'all');
+  await filterBy(page, 'Type', 'kiosk');
   ok('type filter (kiosk from kioskMode)', (await rows()) === 3);
-  await page.getByLabel('Type').selectOption('all');
-  ok('toolbar selects are named by their label alone', (await page.getByRole('combobox', { name: 'Type', exact: true }).count()) === 1 && (await page.getByRole('combobox', { name: 'Android', exact: true }).count()) === 1);
+  await filterBy(page, 'Type', 'all');
+  const fp = filtersOf(page);
+  ok('toolbar selects are named by their label alone', (await fp.getByRole('combobox', { name: 'Type', exact: true }).count()) === 1 && (await fp.getByRole('combobox', { name: 'Android', exact: true }).count()) === 1);
+  await closeFilters(page);
 
   // search: instant client filter, then server
   await page.getByLabel('Search devices').fill('scan');
@@ -108,20 +138,20 @@ const last = (calls, re) => [...calls].reverse().find((c) => re.test(c.p));
   await page.waitForSelector('table[aria-label="Devices"] tbody tr');
 
   // per-row sync + menu
-  await page.getByRole('button', { name: 'Sync KIOSK-FRONT now' }).click();
+  await page.getByRole('button', { name: 'Sync now: KIOSK-FRONT' }).click();
   await page.waitForTimeout(300);
   ok('row Sync → POST sync', !!last(calls, /\/devices\/KIOSK-FRONT\/sync$/));
   await page.getByRole('button', { name: 'More actions for KIOSK-FRONT' }).click();
-  await page.getByRole('menuitem', { name: 'Lock device' }).click();
+  await page.getByRole('menuitem', { name: 'Lock', exact: true }).click();
   await page.waitForTimeout(300);
   const lock = last(calls, /\/devices\/KIOSK-FRONT\/commands$/);
   ok('menu Lock → device.lock', !!lock && lock.body.includes('device.lock'));
   await page.getByRole('button', { name: 'More actions for KIOSK-FRONT' }).click();
-  await page.getByRole('menuitem', { name: 'Ring device' }).click();
+  await page.getByRole('menuitem', { name: 'Ring', exact: true }).click();
   await page.waitForTimeout(300);
   ok('menu Ring → device.ring', last(calls, /\/devices\/KIOSK-FRONT\/commands$/)?.body.includes('device.ring'));
   await page.getByRole('button', { name: 'More actions for KIOSK-FRONT' }).click();
-  await page.getByRole('menuitem', { name: 'Delete…' }).click();
+  await page.getByRole('menuitem', { name: 'Delete' }).click();
   ok('menu Delete opens confirm', (await page.getByRole('alertdialog').count()) === 1);
   await page.getByRole('button', { name: 'Delete KIOSK-FRONT' }).click();
   await page.waitForTimeout(300);
@@ -130,33 +160,33 @@ const last = (calls, re) => [...calls].reverse().find((c) => re.test(c.p));
 
   // selection
   await page.getByLabel('Select KIOSK-CAFE').check();
-  ok('bulk bar shows', (await page.getByText('1 selected').count()) === 1);
+  ok('bulk bar shows', await selectedIs(page, 1));
   // row click while selecting toggles
   await page.locator('tr', { hasText: 'WH-SCAN-07' }).locator('td').nth(4).click();
-  ok('row click toggles while selecting', (await page.getByText('2 selected').count()) === 1 && page.url().endsWith('/devices'));
+  ok('row click toggles while selecting', (await selectedIs(page, 2)) && page.url().endsWith('/devices'));
   await page.getByRole('button', { name: 'Select all 8' }).click();
-  ok('Select all N', (await page.getByText('8 selected').count()) === 1);
+  ok('Select all N', await selectedIs(page, 8));
   await page.getByRole('button', { name: 'Clear', exact: true }).click();
-  ok('Clear', (await page.locator('.v2-bulkbar').count()) === 0);
+  ok('Clear', (await page.locator(BAR).count()) === 0);
   await page.getByLabel('Select all on this page').check();
-  ok('header checkbox selects page', (await page.getByText('8 selected').count()) === 1);
+  ok('header checkbox selects page', await selectedIs(page, 8));
 
   // Run action: immediate (Ring), confirm (Reboot), params (Send alert)
   await page.getByRole('button', { name: 'Run action' }).click();
   ok('run modal title', (await page.getByRole('dialog', { name: 'Run action on 8 devices' }).count()) === 1);
-  ok('destructive actions excluded', (await page.getByRole('button', { name: 'Factory reset (wipe)' }).count()) === 0 && (await page.getByRole('button', { name: 'Reset passcode' }).count()) === 0);
-  await page.getByRole('button', { name: 'Reboot device' }).click();
-  ok('Reboot asks to confirm', (await page.getByRole('button', { name: 'Run on 8' }).count()) === 1);
-  await page.getByRole('button', { name: 'Run on 8' }).click();
+  ok('destructive actions excluded', (await page.getByRole('button', { name: /^Factory reset/ }).count()) === 0 && (await page.getByRole('button', { name: /^Reset passcode/ }).count()) === 0);
+  await page.getByRole('button', { name: 'Reboot' }).click();
+  ok('Reboot asks to confirm', (await page.getByRole('dialog', { name: 'Reboot device?' }).count()) === 1 && (await page.getByRole('button', { name: 'Reboot 8 devices' }).count()) === 1);
+  await page.getByRole('button', { name: 'Reboot 8 devices' }).click();
   await page.waitForTimeout(300);
   let bulk = last(calls, /\/bulk\/commands$/);
   ok('reboot bulk queued', bulk && JSON.parse(bulk.body).command.type === 'device.reboot' && JSON.parse(bulk.body).deviceIds.length === 8);
-  ok('selection cleared after run', (await page.locator('.v2-bulkbar').count()) === 0);
+  ok('selection cleared after run', (await page.locator(BAR).count()) === 0);
 
   await page.getByLabel('Select all on this page').check();
   await page.getByRole('button', { name: 'Run action' }).click();
   await page.getByRole('button', { name: 'Send alert' }).click();
-  const run = page.getByRole('button', { name: 'Run on 8' });
+  const run = page.getByRole('button', { name: 'Send to 8 devices' });
   ok('alert: Run disabled until Message', await run.isDisabled());
   await page.getByLabel('Message', { exact: true }).fill('Hello');
   await run.click();
@@ -166,7 +196,7 @@ const last = (calls, re) => [...calls].reverse().find((c) => re.test(c.p));
 
   await page.getByLabel('Select all on this page').check();
   await page.getByRole('button', { name: 'Run action' }).click();
-  await page.getByRole('button', { name: 'Install app…' }).click();
+  await page.getByRole('button', { name: 'Install app' }).click();
   await page.getByRole('button', { name: /^Chrome/ }).click();
   await page.waitForTimeout(300);
   bulk = last(calls, /\/bulk\/commands$/);
@@ -174,20 +204,22 @@ const last = (calls, re) => [...calls].reverse().find((c) => re.test(c.p));
 
   await page.getByLabel('Select all on this page').check();
   await page.getByRole('button', { name: 'Run action' }).click();
-  const customBtn = page.getByRole('button', { name: 'Custom kiosk…' });
-  const returnBtn = page.getByRole('button', { name: 'Return to configured kiosk…' });
-  ok('kiosk group: Return to configured kiosk is primary', /v2-btn--primary/.test((await returnBtn.getAttribute('class')) ?? ''));
+  const customBtn = page.getByRole('button', { name: 'Custom kiosk' });
+  const returnBtn = page.getByRole('button', { name: 'Return to configured kiosk' });
+  // One primary per dialog now: the catalogue's buttons are all secondary (the footer has none either).
+  ok('kiosk group: Return to configured kiosk is secondary, not red', /v2-btn--secondary/.test((await returnBtn.getAttribute('class')) ?? ''), await returnBtn.getAttribute('class'));
   ok('kiosk group: Custom kiosk is secondary, not red', /v2-btn--secondary/.test((await customBtn.getAttribute('class')) ?? ''), await customBtn.getAttribute('class'));
   await customBtn.click();
   ok('custom kiosk: one-time, not the configurations’', (await page.getByRole('dialog', { name: 'Custom kiosk on 8 devices' }).textContent()).includes('A one-time kiosk with apps you pick now. The devices’ configurations don’t define it.'));
-  const enter = page.getByRole('button', { name: 'Enter custom kiosk on 8' });
+  const enter = page.getByRole('button', { name: 'Enter kiosk on 8 devices' });
   ok('kiosk: disabled until an app', await enter.isDisabled());
   ok('kiosk: empty exit PIN means no exit (0.3.6+)', await page.getByPlaceholder('Empty: no exit on the device (agent 0.3.6+)').isVisible());
   await page.getByRole('radio', { name: 'Pin a single app' }).click();
-  await page.getByRole('button', { name: 'Chrome' }).click();
-  await page.getByRole('button', { name: 'Field Ops' }).click();
-  ok('single mode keeps one app', (await page.locator('[aria-pressed="true"]', { hasText: /Chrome|Field Ops/ }).count()) === 1);
-  await page.getByLabel('Exit mode').selectOption('remote');
+  const appsGroup = page.getByRole('group', { name: 'App to pin' });
+  await appsGroup.getByRole('checkbox', { name: /^Chrome/ }).check();
+  await appsGroup.getByRole('checkbox', { name: /^Field Ops/ }).check();
+  ok('single mode keeps one app', (await appsGroup.getByRole('checkbox', { checked: true }).count()) === 1);
+  await pickOption(page.getByRole('dialog', { name: 'Custom kiosk on 8 devices' }), 'Exit mode', { value: 'remote' });
   await enter.click();
   await page.waitForTimeout(500);
   const kiosk = calls.filter((c) => /\/bulk\/commands$/.test(c.p) && c.body.includes('kiosk.enter'));
@@ -198,11 +230,11 @@ const last = (calls, re) => [...calls].reverse().find((c) => re.test(c.p));
   // (mainAppId 2710 is its usedVersionId), Chrome is hidden from kiosk and Teams isn't set to Install.
   await page.getByLabel('Select all on this page').check();
   await page.getByRole('button', { name: 'Run action' }).click();
-  await page.getByRole('button', { name: 'Return to configured kiosk…' }).click();
-  const rd = page.getByRole('dialog', { name: 'Return to configured kiosk' });
+  await page.getByRole('button', { name: 'Return to configured kiosk' }).click();
+  const rd = page.getByRole('dialog', { name: 'Return to configured kiosk?' });
   await rd.getByRole('list', { name: 'By configuration' }).waitFor({ timeout: 5000 }).catch(() => {});
   const rtext = (await rd.textContent()).replace(/\s+/g, ' ');
-  ok('return: says what it does', rtext.includes('Puts each device back into the kiosk its configuration defines'));
+  ok('return: says what it does', rtext.includes('Each device goes back into the kiosk its configuration defines'), rtext.slice(0, 200));
   ok('return: Retail Kiosk pinned to Signage Player', rtext.includes('Retail Kiosk · 3 devices: Pinned to Signage Player'), rtext.slice(0, 400));
   ok('return: kiosk-off configurations skipped with the reason', rtext.includes('Default · 3 devices: skipped, kiosk mode is off in this configuration') && rtext.includes('Field Ops · 2 devices: skipped, kiosk mode is off in this configuration'));
   const before = calls.length;
@@ -219,36 +251,43 @@ const last = (calls, re) => [...calls].reverse().find((c) => re.test(c.p));
   const canon = (v) => JSON.stringify(v, (_k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : 1))) : x));
   ok('return: payload is the configuration’s kiosk', rp && canon(rp) === canon(want), rp && canon(rp));
   ok('return: toast', (await page.getByText('Return to configured kiosk queued').count()) > 0);
-  ok('return: selection cleared', (await page.locator('.v2-bulkbar').count()) === 0);
+  ok('return: selection cleared', (await page.locator(BAR).count()) === 0);
 
   // A selection with no kiosk configuration: nothing to return, the button stays disabled.
   await page.getByLabel('Select WH-SCAN-07').check();
   await page.getByRole('button', { name: 'Run action' }).click();
-  await page.getByRole('button', { name: 'Return to configured kiosk…' }).click();
-  const rd2 = page.getByRole('dialog', { name: 'Return to configured kiosk' });
+  await page.getByRole('button', { name: 'Return to configured kiosk' }).click();
+  const rd2 = page.getByRole('dialog', { name: 'Return to configured kiosk?' });
   await rd2.getByRole('list', { name: 'By configuration' }).waitFor({ timeout: 5000 }).catch(() => {});
   ok('return: nothing to return → disabled', await rd2.getByRole('button', { name: 'Return 0 devices to configured kiosk' }).isDisabled());
   await rd2.getByRole('button', { name: 'Back' }).click();
-  ok('return: Back to the catalogue', (await page.getByRole('button', { name: 'Custom kiosk…' }).count()) === 1);
-  await page.keyboard.press('Escape');
+  ok('return: Back to the catalogue', (await page.getByRole('button', { name: 'Custom kiosk' }).count()) === 1);
+  await escapeDialog(page);
   await page.getByRole('button', { name: 'Clear', exact: true }).click().catch(() => {});
 
   // Escape closes the run modal
   await page.getByLabel('Select all on this page').check();
   await page.getByRole('button', { name: 'Run action' }).click();
+  await page.getByRole('dialog', { name: 'Run action on 8 devices' }).waitFor();
   await page.keyboard.press('Escape');
-  ok('Escape closes modal', (await page.getByRole('dialog').count()) === 0);
+  await page.locator(DIALOG).first().waitFor({ state: 'detached', timeout: 2000 }).catch(() => {});
+  ok('Escape closes modal', (await page.locator(DIALOG).count()) === 0, `${await page.locator(DIALOG).count()} dialog(s) still open after one Escape`);
+  // (Let the walk-through go on if it didn't.)
+  if (await page.locator(DIALOG).count()) {
+    await page.keyboard.press('Escape');
+    await page.locator(DIALOG).first().waitFor({ state: 'detached', timeout: 2000 }).catch(() => {});
+  }
 
   // change configuration
   await page.getByRole('button', { name: 'Change configuration' }).click();
   const move = page.getByRole('button', { name: 'Move' });
   ok('Move disabled until chosen', await move.isDisabled());
-  await page.getByRole('dialog').getByLabel('Configuration').selectOption('3');
+  await pickOption(page.getByRole('dialog', { name: 'Change configuration' }), 'Configuration', { value: '6' });
   await move.click();
   await page.waitForTimeout(400);
   const put = last(calls, /^\/private\/devices$/);
-  ok('PUT devices {ids, configurationId}', put && put.m === 'PUT' && JSON.parse(put.body).configurationId === 3 && JSON.parse(put.body).ids.length === 8);
-  ok('selection cleared after move', (await page.locator('.v2-bulkbar').count()) === 0);
+  ok('PUT devices {ids, configurationId}', put && put.m === 'PUT' && JSON.parse(put.body).configurationId === 6 && JSON.parse(put.body).ids.length === 8);
+  ok('selection cleared after move', (await page.locator(BAR).count()) === 0);
 
   // bulk delete
   await page.getByLabel('Select WH-SCAN-11').check();
@@ -258,13 +297,13 @@ const last = (calls, re) => [...calls].reverse().find((c) => re.test(c.p));
   ok('bulk delete', JSON.parse(last(calls, /deleteBulk$/).body).ids.join() === '108');
 
   // deep links: ?status=…&config=…, then Clear filters
-  await page.goto(`${base}/devices?status=offline&config=1`);
+  await page.goto(`${base}/devices?status=offline&config=4`);
   await page.waitForSelector('table[aria-label="Devices"] tbody tr');
   await page.waitForTimeout(600);
-  ok('?status=offline&config=1 → 1', (await rows()) === 1 && (await page.getByRole('radio', { name: /Offline/ }).getAttribute('aria-checked')) === 'true');
-  await page.goto(`${base}/devices?status=attention&config=1`);
+  ok('?status=offline&config=4 → 1', (await rows()) === 1 && (await page.getByRole('radio', { name: /Offline/ }).getAttribute('aria-checked')) === 'true');
+  await page.goto(`${base}/devices?status=attention&config=4`);
   await page.waitForTimeout(900);
-  ok('?status=attention&config=1 → empty', (await page.getByText('No devices match these filters').count()) === 1);
+  ok('?status=attention&config=4 → empty', (await page.getByText('No devices match these filters').count()) === 1);
   await page.getByRole('button', { name: 'Clear filters' }).click();
   await page.waitForTimeout(200);
   ok('Clear filters resets URL', (await rows()) === 8 && !page.url().includes('?'), page.url());
@@ -286,7 +325,7 @@ const last = (calls, re) => [...calls].reverse().find((c) => re.test(c.p));
   await page.goto(`${base}/devices`);
   await page.waitForSelector('table[aria-label="Devices"] tbody tr');
   await page.waitForTimeout(600);
-  const bar = () => page.locator('.v2-bulkbar').count();
+  const bar = () => page.locator(BAR).count();
   const offlineRows = async () => {
     await page.getByRole('radio', { name: /Offline/ }).click();
     await page.waitForTimeout(200);
@@ -311,18 +350,18 @@ const last = (calls, re) => [...calls].reverse().find((c) => re.test(c.p));
   // One visible + one hidden selected: the bar counts the visible one and still offers "Select all 3".
   await page.getByLabel(`Select ${online}`).check();
   await page.getByLabel(`Select ${offline[0]}`).check();
-  ok('2 selected under All', (await page.getByText('2 selected').count()) === 1);
+  ok('2 selected under All', await selectedIs(page, 2));
   await page.getByRole('radio', { name: /Offline/ }).click();
   await page.waitForTimeout(200);
-  ok('Offline filter: 1 selected, "Select all 3" offered', (await page.getByText('1 selected').count()) === 1 && (await page.getByRole('button', { name: 'Select all 3' }).count()) === 1);
+  ok('Offline filter: 1 selected, "Select all 3" offered', (await selectedIs(page, 1)) && (await page.getByRole('button', { name: 'Select all 3' }).count()) === 1);
   await page.getByRole('button', { name: 'Run action' }).click();
   ok('bulk dialog acts on the visible selection only', (await page.getByRole('dialog', { name: 'Run action on 1 device' }).count()) === 1);
-  await page.keyboard.press('Escape');
+  await escapeDialog(page);
   await page.getByRole('button', { name: 'Select all 3' }).click();
-  ok('Select all 3 → 3 selected, offer gone', (await page.getByText('3 selected').count()) === 1 && (await page.getByRole('button', { name: /^Select all \d/ }).count()) === 0);
+  ok('Select all 3 → 3 selected, offer gone', (await selectedIs(page, 3)) && (await page.getByRole('button', { name: /^Select all \d/ }).count()) === 0);
   await page.getByRole('radio', { name: /^All/ }).click();
   await page.waitForTimeout(200);
-  ok('back to All keeps the 3', (await page.getByText('3 selected').count()) === 1 && (await page.getByRole('button', { name: 'Select all 8' }).count()) === 1);
+  ok('back to All keeps the 3', (await selectedIs(page, 3)) && (await page.getByRole('button', { name: 'Select all 8' }).count()) === 1);
   await page.getByRole('button', { name: 'Clear', exact: true }).click();
 
   // A search reload drops rows it no longer returns (bulk kiosk then never meets an id it can't place in a configuration).
@@ -331,7 +370,7 @@ const last = (calls, re) => [...calls].reverse().find((c) => re.test(c.p));
   await page.waitForTimeout(900);
   ok('search reload drops the selected row it no longer lists', (await bar()) === 0);
   await page.getByLabel('Select all on this page').check();
-  ok('scanners selectable after the search', (await page.getByText('3 selected').count()) === 1);
+  ok('scanners selectable after the search', await selectedIs(page, 3));
   ok('no console errors (selection)', errors.length === 0, errors.join(' | '));
   await context.close();
 }
@@ -347,7 +386,7 @@ const last = (calls, re) => [...calls].reverse().find((c) => re.test(c.p));
   await page.getByLabel('Select KIOSK-CAFE').check();
   await page.getByLabel('Search devices').fill('cafe');
   await page.waitForTimeout(1500);
-  ok('attention filter: a reload keeps the selected row', (await page.getByText('1 selected').count()) === 1 && (await page.getByLabel('Select KIOSK-CAFE').isChecked()));
+  ok('attention filter: a reload keeps the selected row', (await selectedIs(page, 1)) && (await page.getByLabel('Select KIOSK-CAFE').isChecked()));
   await page.getByRole('button', { name: 'Clear', exact: true }).click({ timeout: 2000 }).catch(() => {});
   // Server-only prune: "kiosk" still matches KIOSK-CAFE on the client, but the server's answer leaves it out.
   await page.goto(`${base}/devices`);
@@ -355,9 +394,9 @@ const last = (calls, re) => [...calls].reverse().find((c) => re.test(c.p));
   await page.getByLabel('Select KIOSK-CAFE').check();
   await page.getByLabel('Search devices').fill('kiosk');
   await page.waitForTimeout(300);
-  ok('before the server answers, the row is still shown and selected', (await page.getByText('1 selected').count()) === 1);
+  ok('before the server answers, the row is still shown and selected', await selectedIs(page, 1));
   await page.waitForTimeout(1200);
-  ok('the server answer without the row drops it from the selection', (await page.locator('.v2-bulkbar').count()) === 0 && (await page.getByLabel('Select KIOSK-CAFE').count()) === 0);
+  ok('the server answer without the row drops it from the selection', (await page.locator(BAR).count()) === 0 && (await page.getByLabel('Select KIOSK-CAFE').count()) === 0);
   ok('no console errors (reload selection)', errors.length === 0, errors.join(' | '));
   await context.close();
 }
@@ -426,7 +465,7 @@ for (const width of [1440, 390]) {
 {
   const now = Date.now();
   const many = Array.from({ length: 25 }, (_, i) => ({
-    id: 500 + i, number: `TAB-${String(i).padStart(4, '0')}`, description: `Tablet ${i}`, configurationId: i % 5 === 0 ? undefined : 1,
+    id: 500 + i, number: `TAB-${String(i).padStart(4, '0')}`, description: `Tablet ${i}`, configurationId: i % 5 === 0 ? undefined : 4,
     lastUpdate: now - i * 60_000, androidVersion: '13', hardwareId: i < 2 ? 'same-hw' : `hw-${i}`,
   }));
   const { context, page, errors } = await ctx({ devices: many });
@@ -434,15 +473,16 @@ for (const width of [1440, 390]) {
   await page.waitForSelector('table[aria-label="Devices"] tbody tr');
   const rows = () => page.locator('table[aria-label="Devices"] tbody tr').count();
   ok('?config=none → unassigned only', (await rows()) === 5);
-  await page.getByLabel('Configuration').selectOption('all');
-  await page.waitForTimeout(200);
+  await filterBy(page, 'Configuration', 'all');
+  await closeFilters(page);
   const pc = await page.locator('.v2-pager__count').innerText();
   ok('page size 10', (await rows()) === 10 && pc.includes('1–10 of 25'), `${await rows()} ${JSON.stringify(pc)}`);
   await page.getByRole('button', { name: 'Next' }).click();
   ok('next page', (await page.locator('.v2-pager__count').innerText()).includes('11–20'));
-  await page.getByLabel('Rows per page').selectOption('50');
+  await pickOption(page, 'Rows per page', { value: '50' });
   ok('rows per page 50', (await rows()) === 25);
-  await page.getByRole('button', { name: /Duplicates/ }).click();
+  await (await openFilters(page)).getByRole('checkbox', { name: /Only duplicates/ }).check();
+  await closeFilters(page);
   ok('duplicates toggle', (await rows()) === 2 && (await page.getByText('2× hardware ID').count()) === 2);
   await page.goto(`${base}/devices?view=cards`);
   await page.waitForSelector('.v2-devices-card');

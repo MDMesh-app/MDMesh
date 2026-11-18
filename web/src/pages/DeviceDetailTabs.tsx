@@ -13,6 +13,7 @@ import {
   Card,
   CardHeader,
   EmptyState,
+  ErrorState,
   IconAlert,
   IconBattery,
   IconControl,
@@ -27,8 +28,12 @@ import {
   IconPulse,
   IconSync,
   IconTrash,
-  IconWarning,
-  KeyValueGroup,
+  Grid,
+  GridCell,
+  KeyValueList,
+  Skeleton,
+  SkeletonFacts,
+  SkeletonRows,
   RelativeTime,
   Segmented,
   Table,
@@ -259,17 +264,55 @@ function telemetryGroups(t: TelemetrySnapshot): Array<{ title: string; items: Ke
   return out;
 }
 
+type TeleGroup = { title: string; items: KeyValueItem[] };
+
+/**
+ * Where each telemetry group sits in the bento grid: the first (Hardware, the longest) is the tall cell, the next two
+ * stack beside it, the rest pair up in halves, and an odd last one takes the full width with its rows in two
+ * columns. Every row of the grid is filled edge to edge, so there are no holes at any width; below the grid's
+ * breakpoints every cell takes the full width (ui/Grid.css).
+ */
+function telemetryLayout(groups: TeleGroup[]): Array<{ group: TeleGroup; span: 6 | 12; rows: 1 | 2; wide: boolean }> {
+  if (groups.length === 1) return [{ group: groups[0], span: 12, rows: 1, wide: true }];
+  const out: Array<{ group: TeleGroup; span: 6 | 12; rows: 1 | 2; wide: boolean }> = [];
+  let rest = groups;
+  if (groups.length >= 3) {
+    out.push({ group: groups[0], span: 6, rows: 2, wide: false });
+    out.push({ group: groups[1], span: 6, rows: 1, wide: false });
+    out.push({ group: groups[2], span: 6, rows: 1, wide: false });
+    rest = groups.slice(3);
+  }
+  rest.forEach((group, i) => {
+    const alone = rest.length % 2 === 1 && i === rest.length - 1;
+    out.push({ group, span: alone ? 12 : 6, rows: 1, wide: alone });
+  });
+  return out;
+}
+
 export function TelemetryTab({ telemetry, loaded, reportedAt }: { telemetry: TelemetrySnapshot | null; loaded: boolean; reportedAt?: number }) {
   if (!telemetry) {
+    if (!loaded) {
+      return (
+        <Grid stretch aria-busy="true">
+          {[6, 6, 6, 6].map((span, i) => (
+            <GridCell key={i} span={span as 6}>
+              <Card>
+                <SkeletonFacts count={i === 0 ? 8 : 4} label={i === 0 ? 'Loading telemetry…' : undefined} />
+              </Card>
+            </GridCell>
+          ))}
+        </Grid>
+      );
+    }
     return (
       <Card>
-        <EmptyState icon={<IconPulse />} title={loaded ? 'No telemetry yet' : 'Loading telemetry…'}>
-          {loaded ? 'The agent reports its hardware, network and battery details at check-in.' : null}
+        <EmptyState icon={<IconPulse />} title="No telemetry yet">
+          The agent reports its hardware, network and battery details at check-in.
         </EmptyState>
       </Card>
     );
   }
-  const groups = telemetryGroups(telemetry);
+  const layout = telemetryLayout(telemetryGroups(telemetry));
   return (
     <div className="v2-device-tele">
       {reportedAt ? (
@@ -277,13 +320,16 @@ export function TelemetryTab({ telemetry, loaded, reportedAt }: { telemetry: Tel
           Reported <RelativeTime value={reportedAt} style="long" seconds />
         </p>
       ) : null}
-      <div className="v2-device-tele__grid">
-        {groups.map((g) => (
-          <Card key={g.title} padding="facts" className="v2-device-tele__card">
-            <KeyValueGroup title={g.title} items={g.items} last />
-          </Card>
+      <Grid stretch className="v2-device-tele__grid">
+        {layout.map(({ group, span, rows, wide }) => (
+          <GridCell key={group.title} span={span} rows={rows}>
+            <Card as="section" aria-label={group.title} className="v2-device-tele__card">
+              <CardHeader title={group.title} level={3} spacing={8} />
+              <KeyValueList items={group.items} columns={wide ? 2 : 1} />
+            </Card>
+          </GridCell>
         ))}
-      </div>
+      </Grid>
     </div>
   );
 }
@@ -336,12 +382,13 @@ export function ActivityTab({
       <Card padding="list" clip aria-labelledby={titleId}>
         <CardHeader
           inset
-          spacing={8}
           title="Events"
           titleId={titleId}
           actions={events.length ? <span className="v2-device-meta">{events.length} event{events.length === 1 ? '' : 's'}</span> : null}
         />
-        {events.length ? (
+        {!eventsLoaded && !events.length ? (
+          <SkeletonRows compact count={4} label="Loading events" />
+        ) : events.length ? (
           <ActivityList aria-label="Device events">
             {events.map((e) => (
               <ActivityRow
@@ -356,8 +403,8 @@ export function ActivityTab({
           </ActivityList>
         ) : (
           <div className="v2-device-cmds__empty">
-            <EmptyState bare icon={<IconHistory />} title={eventsLoaded ? 'No events yet' : 'Loading events…'}>
-              {eventsLoaded ? 'Boots, app installs, network changes and low battery show up here.' : null}
+            <EmptyState bare icon={<IconHistory />} title="No events yet">
+              Boots, app installs, network changes and low battery show up here.
             </EmptyState>
           </div>
         )}
@@ -394,7 +441,7 @@ export function LocationTab({
   // The list mounts only while it is open (up to 500 fixes).
   const [listOpen, setListOpen] = useState(false);
   return (
-    <Card aria-labelledby={titleId} gap={14} className="v2-device-loc">
+    <Card aria-labelledby={titleId} gap={16} className="v2-device-loc">
       <CardHeader
         title="Location history"
         titleId={titleId}
@@ -412,17 +459,13 @@ export function LocationTab({
                 ) : null}
               </span>
             ) : null}
-            <Button size="md" icon={<IconSync />} disabled={refreshing} onClick={onRefresh}>
+            <Button size="sm" icon={<IconSync />} disabled={refreshing} onClick={onRefresh}>
               Refresh
             </Button>
           </>
         }
       />
-      {error ? (
-        <Callout tone="alert" role="alert" icon={<IconWarning size={16} />}>
-          {error}
-        </Callout>
-      ) : null}
+      {error ? <ErrorState thing="the location history" detail={error} onRetry={onRefresh} retrying={refreshing} /> : null}
       {doNotTrack ? (
         <Callout tone="info" icon={<IconInfo />}>
           {DO_NOT_TRACK_HINT}
@@ -430,9 +473,10 @@ export function LocationTab({
         </Callout>
       ) : null}
       {!fixes && !error ? (
-        <p className="v2-device-meta" role="status">
-          Loading location…
-        </p>
+        <div role="status">
+          <span className="v2-visually-hidden">Loading the location history</span>
+          <Skeleton className="v2-device-loc__skel" />
+        </div>
       ) : null}
       {fixes && fixes.length === 0 && inRange ? (
         <EmptyState bare icon={<IconPin />} title={`No location in ${inRange}`}>

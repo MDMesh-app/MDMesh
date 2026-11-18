@@ -86,6 +86,7 @@ export const IconSignOut = make('0 0 16 16', 16, 1.5, <path d="M6 2.5H3.5v11H6M1
 /* ---- actions (16px grid) ---- */
 export const IconPlus = make('0 0 16 16', 15, 1.8, <path d="M8 2.5v11M2.5 8h11" />);
 export const IconCheck = make('0 0 16 16', 14, 1.8, <path d="M3 8.3l3 3 7-7" />);
+export const IconFilter = make('0 0 16 16', 16, 1.6, <path d="M2.5 4h11M4.5 8h7M6.5 12h3" />, hairline);
 export const IconSearch = make('0 0 16 16', 15, 1.6, <>
   <circle cx="7" cy="7" r="4.8" />
   <path d="M10.5 10.5L14 14" />
@@ -154,6 +155,11 @@ export const IconInfo = make('0 0 16 16', 15, 1.5, <>
   <circle cx="8" cy="8" r="6" />
   <path d="M8 7v4M8 5h.01" />
 </>, { strokeLinecap: 'round' });
+/** A shield with an exclamation mark: missing security fixes. */
+export const IconShield = make('0 0 16 16', 16, 1.5, <>
+  <path d="M8 1.75l5.25 2v4c0 3.1-2.2 5.5-5.25 6.5-3.05-1-5.25-3.4-5.25-6.5v-4z" />
+  <path d="M8 5.25v3M8 10.75h.01" />
+</>, { strokeLinecap: 'round', strokeLinejoin: 'round' });
 export const IconClock = make('0 0 16 16', 16, 1.5, <>
   <circle cx="8" cy="8" r="6" />
   <path d="M8 4.5V8l2.5 1.5" />

@@ -2,6 +2,7 @@
 // edits made through them, the changed count, Discard and the save are the same as without them. Rendered through the
 // real routes against a stubbed API.
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { chooseOption, selectValue } from '../../test/select';
 import { describe, expect, it, vi } from 'vitest';
 import type { ConfigApp } from '../../api/configurations';
 import { AppRoutes } from '../../App';
@@ -60,17 +61,14 @@ function open(apps = assigned(), configuration: Record<string, unknown> = {}) {
   return { puts };
 }
 
-const table = () => document.querySelector<HTMLTableElement>('.v2-cfged-apps__table')!;
+const table = () => document.querySelector<HTMLTableElement>('.v2-cfged-apps table')!;
 /** The app names in the table, in order. */
 const names = () => [...table().querySelectorAll('.v2-cfged-app__name')].map((n) => n.firstChild?.textContent);
 const search = () => screen.getByRole<HTMLInputElement>('searchbox', { name: 'Search assigned apps' });
 const filter = () => screen.getByRole('radiogroup', { name: 'On devices' });
 const pick = (name: RegExp) => fireEvent.click(within(filter()).getByRole('radio', { name }));
-const sortBy = (label: string) =>
-  fireEvent.change(screen.getByRole('combobox', { name: 'Sort' }), {
-    target: { value: { Name: 'name', Package: 'pkg', 'On devices': 'state' }[label] },
-  });
-const actionOf = (name: string) => screen.getByRole<HTMLSelectElement>('combobox', { name: `What happens to ${name}` });
+const sortBy = (label: string) => chooseOption(screen.getByRole('combobox', { name: 'Sort' }), label);
+const actionOf = (name: string) => screen.getByRole('combobox', { name: `What happens to ${name}` });
 const saveBar = () => screen.queryByRole('region', { name: 'Unsaved changes' });
 const live = () => document.querySelector('.v2-cfged-appsbar [aria-live="polite"]')!;
 const loaded = () => screen.findByRole('combobox', { name: 'What happens to Chrome' });
@@ -109,11 +107,11 @@ describe('assigned apps: search, filter and sort', () => {
     });
     await loaded();
     const row = screen.getByText('Chrome', { selector: '.v2-cfged-app__name' }).closest('tr')!;
-    const camera = within(row).getByText('Camera').closest('label')!.querySelector('select')!;
-    fireEvent.change(camera, { target: { value: 'default' } });
+    const camera = within(row).getByRole('combobox', { name: /Camera/ });
+    chooseOption(camera, { value: 'default' });
     expect(saveBar()?.textContent).toContain('1 unsaved change');
     // Deny again: the rule is back, now after RECORD_AUDIO in the list.
-    fireEvent.change(camera, { target: { value: 'deny' } });
+    chooseOption(camera, { value: 'deny' });
     await waitFor(() => expect(saveBar()).toBeNull());
   });
 
@@ -122,7 +120,7 @@ describe('assigned apps: search, filter and sort', () => {
     const rule = { applicationId: 1, permission: 'android.permission.CAMERA', state: 'deny' };
     const first = open(chrome, { managedAppPermissions: [rule] });
     await loaded();
-    fireEvent.change(actionOf('Chrome'), { target: { value: '0' } });
+    chooseOption(actionOf('Chrome'), { value: '0' });
     await save();
     await waitFor(() => expect(first.puts).toHaveLength(1));
     expect(first.puts[0].managedAppPermissions).toEqual([]);
@@ -204,10 +202,10 @@ describe('assigned apps: search, filter and sort', () => {
     await loaded();
     pick(/^Install/);
     expect(names()).toHaveLength(6);
-    fireEvent.change(actionOf('Chrome'), { target: { value: '2' } });
+    chooseOption(actionOf('Chrome'), { value: '2' });
     // Still there, with its new state; the counts follow the edit.
     expect(names()).toContain('Chrome');
-    expect(actionOf('Chrome').value).toBe('2');
+    expect(selectValue(actionOf('Chrome'))).toBe('2');
     expect(within(filter()).getAllByRole('radio').map((r) => r.textContent)).toEqual(['All 10', 'Install 5', 'Do not install 2', 'Remove 3']);
     expect(saveBar()?.textContent).toContain('1 unsaved change');
     // A new view files it by its new state.
@@ -217,7 +215,7 @@ describe('assigned apps: search, filter and sort', () => {
     expect(names()).not.toContain('Chrome');
     // The edit is still there under All.
     pick(/^All/);
-    expect(actionOf('Chrome').value).toBe('2');
+    expect(selectValue(actionOf('Chrome'))).toBe('2');
     expect(saveBar()?.textContent).toContain('1 unsaved change');
   });
 
@@ -225,7 +223,7 @@ describe('assigned apps: search, filter and sort', () => {
     open();
     await loaded();
     sortBy('On devices');
-    fireEvent.change(actionOf('Chrome'), { target: { value: '2' } });
+    chooseOption(actionOf('Chrome'), { value: '2' });
     expect(names()[0]).toBe('Chrome');
     sortBy('Name');
     sortBy('On devices');
@@ -263,7 +261,7 @@ describe('assigned apps: search, filter and sort', () => {
     open();
     await loaded();
     pick(/^Install/);
-    fireEvent.change(actionOf('Chrome'), { target: { value: '0' } });
+    chooseOption(actionOf('Chrome'), { value: '0' });
     fireEvent.click(screen.getByRole('button', { name: 'Remove Maps' }));
     // A new view files Chrome under Do not install: Install no longer shows it.
     pick(/^Remove/);
@@ -273,7 +271,7 @@ describe('assigned apps: search, filter and sort', () => {
     fireEvent.click(within(saveBar()!).getByRole('button', { name: 'Discard' }));
     await waitFor(() => expect(saveBar()).toBeNull());
     expect(names()).toEqual(['Chrome', 'Field Ops', 'Maps', 'Notes', 'Signage Player', 'Zebra DataWedge']);
-    expect(actionOf('Chrome').value).toBe('1');
+    expect(selectValue(actionOf('Chrome'))).toBe('1');
   });
 
   it('starts the view again when the list drops to the threshold and grows past it', async () => {
@@ -286,7 +284,7 @@ describe('assigned apps: search, filter and sort', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Remove Barcode Reader' }));
     expect(screen.queryByRole('radiogroup', { name: 'On devices' })).toBeNull();
     expect(names()).toHaveLength(APP_CONTROLS_THRESHOLD);
-    fireEvent.change(actionOf('Microsoft Teams'), { target: { value: '2' } });
+    chooseOption(actionOf('Microsoft Teams'), { value: '2' });
     // Past it again: no search or filter left from before, and the filter sees the state changed meanwhile.
     fireEvent.click(screen.getByRole('button', { name: 'Add apps' }));
     const dialog = await screen.findByRole('dialog', { name: 'Add apps' });
@@ -304,9 +302,9 @@ describe('assigned apps: search, filter and sort', () => {
     open();
     await loaded();
     pick(/^Install/);
-    fireEvent.change(actionOf('Chrome'), { target: { value: '2' } });
+    chooseOption(actionOf('Chrome'), { value: '2' });
     // Sort is already Name; Segmented reports its focused option again on Home/End (here: Install).
-    fireEvent.change(screen.getByRole('combobox', { name: 'Sort' }), { target: { value: 'name' } });
+    sortBy('Name');
     expect(names()).toContain('Chrome');
     pick(/^Do not install/);
     pick(/^Install/);
@@ -316,7 +314,7 @@ describe('assigned apps: search, filter and sort', () => {
   it('saves every assigned app, with the edits, whatever the search and filter show', async () => {
     const plain = open();
     await loaded();
-    fireEvent.change(actionOf('Wallet'), { target: { value: '1' } });
+    chooseOption(actionOf('Wallet'), { value: '1' });
     await save();
     await waitFor(() => expect(plain.puts).toHaveLength(1));
     expect((plain.puts[0].applications as ConfigApp[]).length).toBe(10);
@@ -326,7 +324,7 @@ describe('assigned apps: search, filter and sort', () => {
     await loaded();
     pick(/^Remove/);
     fireEvent.change(search(), { target: { value: 'wallet' } });
-    fireEvent.change(actionOf('Wallet'), { target: { value: '1' } });
+    chooseOption(actionOf('Wallet'), { value: '1' });
     expect(names()).toEqual(['Wallet']);
     await save();
     await waitFor(() => expect(filtered.puts).toHaveLength(1));

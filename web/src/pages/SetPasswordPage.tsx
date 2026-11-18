@@ -4,7 +4,7 @@ import { useAuth } from '../auth/AuthContext';
 import { submitForcedPasswordReset } from '../api/auth';
 import { ApiError } from '../api/client';
 import { paths } from '../routes';
-import { AuthFooter, AuthLayout, Button, Callout, Field, IconAlert, Input, RuleList, type Rule } from '../ui';
+import { AuthFooter, AuthLayout, Button, Callout, Field, IconAlert, PasswordInput, RuleList, type Rule } from '../ui';
 import { safeReturnPath } from '../auth/safeReturnPath';
 import { isUnreachable, UNREACHABLE } from './authCommon';
 
@@ -107,9 +107,8 @@ export function SetPasswordPage() {
       }
     >
       <Field label="New password">
-        <Input
-          size="lg"
-          type="password"
+        <PasswordInput
+          toggleLabel="Show new password"
           name="new-password"
           autoComplete="new-password"
           autoFocus
@@ -121,9 +120,8 @@ export function SetPasswordPage() {
       </Field>
 
       <Field label="Type it again">
-        <Input
-          size="lg"
-          type="password"
+        <PasswordInput
+          toggleLabel="Show the password typed again"
           name="confirm-password"
           autoComplete="new-password"
           required
@@ -143,7 +141,7 @@ export function SetPasswordPage() {
       ) : null}
 
       <div className="v2-login-submit">
-        <Button type="submit" variant="primary" size="auth" disabled={busy || !valid}>
+        <Button type="submit" variant="primary" size="lg" disabled={busy || !valid}>
           {busy ? 'Saving…' : 'Set password'}
         </Button>
         <p className="v2-login-submit__note">You’ll sign in once more with the new password.</p>

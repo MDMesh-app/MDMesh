@@ -40,7 +40,8 @@ only then runs the script with `MDMESH_VERSION` set to that release, so it insta
 ```
 
 If a download or check fails, it says so and nothing runs. It runs in a subshell and removes its temporary
-directory afterwards. This needs releases from 0.5.0 on (earlier ones don't publish `quickstart.sh`).
+directory afterwards. This needs releases from 0.5.0 on (earlier ones don't publish `quickstart.sh`). The README's
+one-line command runs the same release asset without these checks.
 
 **Unchecked shortcut.** Without `minisign`, this looks up the latest release's tag and runs `quickstart.sh` from
 `refs/tags/<tag>` in the repository, **without checking it** (the script still verifies everything it downloads, but
@@ -76,8 +77,8 @@ Before using anything from the release, the quick start checks its `manifest.jso
 (minisign format, checked with `openssl` 3.0+, or with `minisign` when that is installed). The signed manifest holds
 the image digests and the SHA-256 of the compose files, the seed and `install/lib/db.sh`, which come from the
 release's tag; a file that doesn't match stops the install. The trust root is `quickstart.sh` itself, which carries
-a copy of `release/minisign.pub`: checked against the signed manifest by the block above, or taken on trust from the
-release's tag by the shortcut. A fork with its own signing key sets
+a copy of `release/minisign.pub`: checked against the signed manifest by the block above, or taken on trust (from the
+release's tag by the shortcut, or as the release asset by the README's command). A fork with its own signing key sets
 `MDMESH_RELEASE_PUBKEY` to the key line of its `release/minisign.pub`.
 
 If the latest release can't be looked up (GitHub API unreachable or rate-limited), the quick start stops and says so;
@@ -152,6 +153,9 @@ and `openssl` when they are missing, to check the release). Two runtimes the dis
   Where apt has none (Debian 13), the installer downloads Temurin 17.
 
 Both downloads cover x86_64 and arm64. On other architectures, install both runtimes yourself first.
+
+Use PostgreSQL 15 or newer, as on the tested distros. With an older one already installed, the installer
+warns: the install works, but [restoring a backup](docs/OPERATIONS.md#backups-and-restore) needs 15 or newer.
 
 The installer asks you to type `yes`, then asks for the base URL and the HTTP port. `-y` skips these
 questions (and answers Keep on an upgrade), and `-v` shows the full output:
@@ -270,6 +274,8 @@ still works.
 - **Server logs** and a temporary DEBUG log: [docs/OPERATIONS.md, Server logs](docs/OPERATIONS.md#server-logs).
 - **Settings**: [configuration reference](docs/OPERATIONS.md#configuration-reference).
 - **Console accounts and roles**: [docs/USER_MANAGEMENT.md](docs/USER_MANAGEMENT.md).
+- **Device configurations** and **kiosk mode**: [docs/CONFIGURATIONS.md](docs/CONFIGURATIONS.md) and
+  [docs/KIOSK.md](docs/KIOSK.md).
 - [Health checks](docs/OPERATIONS.md#health-checks), [backups](docs/OPERATIONS.md#backups-and-restore),
   [moving to a new BASE_URL](docs/OPERATIONS.md#moving-to-a-new-base_url),
   [uninstalling](docs/OPERATIONS.md#uninstalling) and [security](docs/OPERATIONS.md#security-notes).

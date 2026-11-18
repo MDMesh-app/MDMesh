@@ -85,6 +85,8 @@ export interface CommandTemplateExt extends CommandTemplate {
   params?: ActionParam[];
   /** Confirmation strength required before queueing. */
   confirm?: 'simple' | 'type-to-confirm';
+  /** The title of the dialog that asks first ("Reboot device?"); defaults to `label`, which is the verb. */
+  title?: string;
   /** Bucket for grouping in the UI. */
   group?: 'safe' | 'disruptive' | 'destructive';
   /** Builds the request from gathered params (overrides static `request` when present). */
@@ -93,8 +95,8 @@ export interface CommandTemplateExt extends CommandTemplate {
 
 export const ACTION_TEMPLATES: CommandTemplateExt[] = [
   {
-    key: 'lockscreen-message', label: 'Set lock-screen message', group: 'safe',
-    description: 'Show a custom message on the device lock screen (empty clears it).',
+    key: 'lockscreen-message', label: 'Set lock-screen message', title: 'Lock-screen message', group: 'safe',
+    description: 'Shows your message on the lock screen. Leave it empty to clear it.',
     params: [{ key: 'message', label: 'Message', kind: 'text', placeholder: 'Property of ACME IT' }],
     request: { type: 'device.lockscreenMessage', requiresCapability: 'device.lockscreenMessage' },
     build: (v) => ({
@@ -104,7 +106,7 @@ export const ACTION_TEMPLATES: CommandTemplateExt[] = [
   },
   {
     key: 'alert', label: 'Send alert', group: 'safe',
-    description: 'Pop a high-priority message on the device.',
+    description: 'Shows a high-priority message on the device.',
     params: [
       { key: 'title', label: 'Title', kind: 'text', placeholder: 'Message from IT' },
       { key: 'body', label: 'Message', kind: 'text', required: true },
@@ -116,8 +118,8 @@ export const ACTION_TEMPLATES: CommandTemplateExt[] = [
     }),
   },
   {
-    key: 'ring', label: 'Ring device', group: 'safe',
-    description: 'Play a loud locate tone for 30 seconds.',
+    key: 'ring', label: 'Ring', group: 'safe',
+    description: 'Plays a loud locate tone for 30 seconds.',
     request: {
       type: 'device.ring', requiresCapability: 'device.ring',
       payload: JSON.stringify({ durationMs: 30000 }),
@@ -125,22 +127,22 @@ export const ACTION_TEMPLATES: CommandTemplateExt[] = [
   },
   {
     key: 'ring-stop', label: 'Stop ringing', group: 'safe',
-    description: 'Silence an active locate tone.',
+    description: 'Silences a locate tone that is playing.',
     request: { type: 'device.ringStop', requiresCapability: 'device.ringStop' },
   },
   {
-    key: 'lock', label: 'Lock device', group: 'disruptive', danger: true,
-    description: 'Lock the device screen immediately.',
+    key: 'lock', label: 'Lock', title: 'Lock device?', group: 'disruptive', danger: true,
+    description: 'Locks the screen now.',
     request: { type: 'device.lock', requiresCapability: 'device.lock' },
   },
   {
-    key: 'reboot', label: 'Reboot device', group: 'disruptive', danger: true,
-    description: 'Restart the device now.', confirm: 'simple',
+    key: 'reboot', label: 'Reboot', title: 'Reboot device?', group: 'disruptive', danger: true,
+    description: 'The device restarts and is unavailable for about a minute.', confirm: 'simple',
     request: { type: 'device.reboot', requiresCapability: 'device.reboot' },
   },
   {
-    key: 'passcode-reset', label: 'Reset passcode', group: 'destructive', danger: true,
-    description: 'Set or clear the device passcode (empty clears it).', confirm: 'simple',
+    key: 'passcode-reset', label: 'Reset passcode', title: 'Reset passcode?', group: 'destructive', danger: true,
+    description: 'The current passcode stops working. Leave the new one blank to remove it.', confirm: 'simple',
     params: [{ key: 'newPassword', label: 'New passcode (blank to clear)', kind: 'password' }],
     request: { type: 'device.passcodeReset', requiresCapability: 'device.passcodeReset' },
     build: (v) => ({
@@ -149,8 +151,8 @@ export const ACTION_TEMPLATES: CommandTemplateExt[] = [
     }),
   },
   {
-    key: 'wipe', label: 'Factory reset (wipe)', group: 'destructive', danger: true,
-    description: 'Irreversibly erase the device. Cannot be undone.', confirm: 'type-to-confirm',
+    key: 'wipe', label: 'Factory reset', title: 'Factory reset?', group: 'destructive', danger: true,
+    description: 'Erases all data. This can’t be undone.', confirm: 'type-to-confirm',
     request: { type: 'device.wipe', requiresCapability: 'device.wipe' },
   },
   {
@@ -190,15 +192,24 @@ export const ACTION_TEMPLATES: CommandTemplateExt[] = [
     // builds the KioskApplyPayload, queues kiosk.enter ungated). Listed here only for the button + grouping. The
     // kiosk a configuration defines is "Return to configured kiosk" (data/kiosk.ts configuredKiosk).
     key: 'kiosk-enter', label: 'Custom kiosk', group: 'disruptive', danger: true,
-    description: 'Lock the device to apps you pick now, as a one-time kiosk that its configuration doesn’t define.',
+    description: 'Locks the device to apps you pick now, as a one-time kiosk its configuration doesn’t define.',
     request: { type: 'kiosk.enter' },
   },
   {
     key: 'kiosk-exit', label: 'Exit kiosk', group: 'disruptive',
-    description: 'Release kiosk mode and restore the normal home screen.',
+    description: 'Ends kiosk mode and restores the normal home screen.',
     request: { type: 'kiosk.exit' },
   },
+  {
+    // Gated on the agent's capability: an agent before 0.5.0 has no handler, so the server holds it from such a device.
+    key: 'kiosk-clear-lockout', label: 'Clear PIN lockout', group: 'safe',
+    description: 'Lets staff try the exit PIN again now, with a full set of tries. The device stays in kiosk.',
+    request: { type: 'kiosk.clearPinLockout', requiresCapability: 'device.kioskClearPinLockout' },
+  },
 ];
+
+/** The agent release that takes Clear PIN lockout (`kiosk.clearPinLockout`, protocol 1.11). */
+export const CLEAR_PIN_LOCKOUT_AGENT = '0.5.0';
 
 export interface DeviceState {
   battery: number; charging: boolean; locked: boolean; kioskActive: boolean;
@@ -238,6 +249,27 @@ export async function listCommandHistory(
 export async function forceSync(deviceId: number | string): Promise<{ connected?: boolean }> {
   const res = await apiClient.post<{ connected?: unknown } | null>(`/private/agent/v1/devices/${deviceId}/sync`, {});
   return typeof res?.connected === 'boolean' ? { connected: res.connected } : {};
+}
+
+/** What Retry apply did (AgentAdminResource.retryConfig). */
+export type RetryConfigResult = 'queued' | 'alreadyQueued' | 'inSync' | 'unsupported' | 'noConfiguration';
+
+/**
+ * Retry apply: the server queues the device's configuration now, without the hour it otherwise waits after a failed
+ * attempt, and wakes the device. `connected` false: no live connection, so it applies at its next check-in.
+ */
+export async function retryConfigApply(
+  deviceId: number | string,
+): Promise<{ result?: RetryConfigResult; connected?: boolean }> {
+  const res = await apiClient.post<{ result?: unknown; connected?: unknown } | null>(
+    `/private/agent/v1/devices/${deviceId}/retryConfig`,
+    {},
+  );
+  const known: RetryConfigResult[] = ['queued', 'alreadyQueued', 'inSync', 'unsupported', 'noConfiguration'];
+  return {
+    result: known.includes(res?.result as RetryConfigResult) ? (res?.result as RetryConfigResult) : undefined,
+    connected: typeof res?.connected === 'boolean' ? res.connected : undefined,
+  };
 }
 
 /** Queue app.install for the device's configuration apps marked action=install. */

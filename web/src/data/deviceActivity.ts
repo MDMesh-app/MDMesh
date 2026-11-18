@@ -5,8 +5,8 @@ import { classifyOutcome, outcomeSummary } from './configOutcomes';
 
 const COMMAND_NAMES: Record<string, string> = {
   'config.apply': 'Apply configuration',
-  'device.lock': 'Lock device',
-  'device.reboot': 'Reboot device',
+  'device.lock': 'Lock',
+  'device.reboot': 'Reboot',
   'device.wipe': 'Factory reset',
   'device.passcodeReset': 'Reset passcode',
   'device.alert': 'Send alert',
@@ -17,6 +17,7 @@ const COMMAND_NAMES: Record<string, string> = {
   'device.locationMode': 'Location mode',
   'kiosk.enter': 'Enter kiosk',
   'kiosk.exit': 'Exit kiosk',
+  'kiosk.clearPinLockout': 'Clear PIN lockout',
   'app.install': 'Install app',
   'app.uninstall': 'Uninstall app',
   'apps.scan': 'Scan apps',

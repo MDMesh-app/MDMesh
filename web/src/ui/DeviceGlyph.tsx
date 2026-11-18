@@ -102,7 +102,7 @@ export function DeviceTile({
   title?: string;
   className?: string;
 }) {
-  const glyph = { 38: 21, 40: 22, 44: 24, 60: 34 }[tile];
+  const glyph = tile === 60 ? 28 : 20;
   return (
     <span className={cx('v2-devtile', `v2-devtile--${tile}`, className)}>
       <DeviceGlyph kind={kind} size={glyph} title={title} />

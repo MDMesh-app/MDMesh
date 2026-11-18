@@ -2,7 +2,7 @@
 // Scan now (edit_devices only) followed through that same history, and its states. Rendered through the real routes,
 // against a stubbed API.
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import type { CommandHistoryItem } from '../api/commands';
 import { AppRoutes } from '../App';
 import { ROLES, renderInConsole, stubApi } from '../test/console';
@@ -56,6 +56,10 @@ const appNames = () =>
     .map((r) => r.querySelector('td')?.textContent);
 
 describe('the Apps tab', () => {
+  // The device page is a lazy route. Load it here, so the first test's waits don't also cover compiling it cold, which
+  // a busy machine stretches past Testing Library's timeout (src/test/setup.ts).
+  beforeAll(() => import('./DeviceDetailPage'), 30_000);
+
   it('lists the latest scan by name, user apps first, a missing or odd label as its package', async () => {
     openApps({ history: [scan(9, 'done', APPS), scan(3, 'done', [{ pkg: 'com.old', label: 'Old' }])] });
     await within(await screen.findByRole('tabpanel')).findByRole('table');
@@ -72,11 +76,12 @@ describe('the Apps tab', () => {
     expect(within(panel()).getByText('No apps match.')).toBeTruthy();
   });
 
-  it('says there is no recent scan rather than never scanned, and offers Scan now to a role with edit_devices', async () => {
+  it('says there is no recent scan rather than never scanned, offers Scan now to a role with edit_devices, and hides Export CSV', async () => {
     openApps({ history: [scan(5, 'pending'), scan(4, 'failed', undefined, 'Result too large')] });
     expect(await screen.findByText('No recent scan')).toBeTruthy();
     expect(within(panel()).getByRole('button', { name: 'Scan now' })).toBeTruthy();
-    expect((within(panel()).getByRole('button', { name: 'Export CSV' }) as HTMLButtonElement).disabled).toBe(true);
+    // Nothing to export yet: the button waits for a scan that lists apps.
+    expect(within(panel()).queryByRole('button', { name: 'Export CSV' })).toBeNull();
   });
 
   it('shows the list without Scan now to a role without edit_devices', async () => {

@@ -2,68 +2,88 @@
 .v2 .v2-configs-modalform {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--space-4);
 }
 .v2 .v2-configs-modalform__lead,
 .v2 .v2-configs-modalnote {
   margin: 0;
   color: var(--text-2);
-  font-size: var(--fs-control);
+  font-size: var(--text-ui);
 }
 .v2 .v2-configs-modalform__actions {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 8px;
-  padding-top: 16px;
+  gap: var(--space-2);
+  padding-top: var(--space-4);
   border-top: 1px solid var(--line-soft);
 }
 
-/* chooser: option rows in the card language */
+/* chooser: one row per starting point, a radio group drawn as selectable rows (selected: fill, ink edge, check) */
 .v2 .v2-configs-chooser {
-  list-style: none;
   margin: 0;
   padding: 0;
+  border: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .v2 .v2-configs-chooser__opt {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  width: 100%;
-  padding: 12px 14px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: var(--hairline) solid var(--border-strong);
+  border-radius: var(--radius-control);
   background: var(--surface);
   color: var(--text);
-  text-align: left;
   cursor: pointer;
+  transition: background-color var(--dur-micro) var(--ease), border-color var(--dur-micro) var(--ease);
 }
 .v2 .v2-configs-chooser__opt:hover {
-  background: var(--surface-sunken);
+  background: var(--hover);
+}
+.v2 .v2-configs-chooser__opt.is-on {
+  background: var(--row-selected);
   border-color: var(--ink);
 }
+/* the radio itself is visually hidden: its row shows the focus ring */
+.v2 .v2-configs-chooser__opt:has(:focus-visible) {
+  outline: var(--indicator) solid var(--focus);
+  outline-offset: var(--indicator);
+}
+.v2 .v2-configs-chooser__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
 .v2 .v2-configs-chooser__name {
-  font-weight: 600;
+  font-weight: var(--weight-medium);
 }
 .v2 .v2-configs-chooser__sub {
-  font-size: var(--fs-sm);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
   color: var(--secondary);
+}
+.v2 .v2-configs-chooser__mark {
+  flex: none;
+  display: inline-flex;
+  width: var(--icon-md);
+  color: var(--ink);
 }
 
 /* app picker */
 .v2 .v2-configs-picker {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--space-4);
 }
 .v2 .v2-configs-picker__top {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 12px;
+  gap: var(--space-2) var(--space-3);
 }
 .v2 .v2-configs-picker__search {
   flex: 1 1 240px;
@@ -74,13 +94,13 @@
   max-height: min(420px, 50dvh);
   overflow-y: auto;
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-control);
 }
 .v2 .v2-configs-picker__row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
   border-top: 1px solid var(--line-soft);
   cursor: pointer;
 }
@@ -97,12 +117,12 @@
   flex-direction: column;
 }
 .v2 .v2-configs-picker__name {
-  font-weight: 500;
+  font-weight: var(--weight-medium);
 }
 .v2 .v2-configs-picker__pkg,
 .v2 .v2-configs-picker__ver {
   font-family: var(--font-mono);
-  font-size: var(--fs-small);
+  font-size: var(--text-meta);
   color: var(--secondary);
   overflow: hidden;
   text-overflow: ellipsis;

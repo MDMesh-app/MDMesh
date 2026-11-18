@@ -36,8 +36,15 @@ function api(path: string, init?: RequestInit): unknown {
   return null;
 }
 
-function open(path: string, { registry = registryOf(demo), user = ROLES.superAdmin }: { registry?: Registry; user?: AuthUser } = {}) {
-  const fetch = stubApi(api);
+function open(
+  path: string,
+  {
+    registry = registryOf(demo),
+    user = ROLES.superAdmin,
+    server = api,
+  }: { registry?: Registry; user?: AuthUser; server?: typeof api } = {},
+) {
+  const fetch = stubApi(server);
   renderInConsole(<AppRoutes />, { path, registry, user });
   return fetch;
 }
@@ -135,27 +142,31 @@ describe('settings.section', () => {
 
 describe('overview.card', () => {
   const statLabels = () => Array.from(document.querySelectorAll('.v2-statgrid .v2-stat__label')).map((d) => d.textContent);
-  const columns = () =>
-    Array.from(document.querySelectorAll('.v2-ov-row')).map((row) =>
-      Array.from(row.children).map((col) => [col.className, Array.from(col.children).map((c) => c.getAttribute('aria-labelledby') ?? c.getAttribute('aria-label'))]),
-    );
+  /** The card rows of the Overview grid: each main cell starts a row, the aside cell after it joins that row. */
+  const columns = () => {
+    const rows: Array<Array<[string, Array<string | null>]>> = [];
+    for (const cell of Array.from(document.querySelectorAll('.v2-ov-main, .v2-ov-aside'))) {
+      const kind = cell.classList.contains('v2-ov-main') ? 'v2-ov-main' : 'v2-ov-aside';
+      const cards = Array.from(cell.children).map((c) => c.getAttribute('aria-labelledby') ?? c.getAttribute('aria-label'));
+      if (kind === 'v2-ov-main' || rows.length === 0) rows.push([]);
+      rows[rows.length - 1].push([kind, cards]);
+    }
+    return rows;
+  };
 
   it('lays out core’s cards in their rows and columns as before without extensions', async () => {
     open('/', { registry: registryOf() });
-    await main().findByText('Config in sync');
-    expect(statLabels()).toEqual(['Config in sync']);
-    expect(columns()).toEqual([
-      [['v2-ov-main', ['v2-ov-att']], ['v2-ov-aside', ['v2-ov-cfg']]],
-      [['v2-ov-main', ['v2-ov-act']], ['v2-ov-side', ['v2-ov-srv']]],
-    ]);
+    await main().findByText('Configuration in sync');
+    expect(statLabels()).toEqual(['Configuration in sync']);
+    expect(columns()).toEqual([[['v2-ov-main', ['v2-ov-att', 'v2-ov-act']], ['v2-ov-aside', ['v2-ov-cfg', 'v2-ov-srv']]]]);
   });
 
   it('stacks an aside card under the core card ahead of it, and places a stat tile among core’s', async () => {
     open('/');
     await main().findByRole('heading', { name: 'Demo card' });
     await main().findByText('Demo stat');
-    expect(statLabels()).toEqual(['Config in sync', 'Demo stat']);
-    expect(columns()[0]).toEqual([['v2-ov-main', ['v2-ov-att']], ['v2-ov-aside', ['v2-ov-cfg', 'Demo card']]]);
+    expect(statLabels()).toEqual(['Configuration in sync', 'Demo stat']);
+    expect(columns()[0]).toEqual([['v2-ov-main', ['v2-ov-att', 'v2-ov-act']], ['v2-ov-aside', ['v2-ov-cfg', 'Demo card', 'v2-ov-srv']]]);
   });
 
   it('keeps By configuration’s column width when an extension aside heads that column', async () => {
@@ -164,12 +175,12 @@ describe('overview.card', () => {
     ]);
     open('/', { registry: registryOf(ahead) });
     await main().findByRole('heading', { name: 'Demo card' });
-    expect(columns()[0]).toEqual([['v2-ov-main', ['v2-ov-att']], ['v2-ov-aside', ['Demo card', 'v2-ov-cfg']]]);
+    expect(columns()[0]).toEqual([['v2-ov-main', ['v2-ov-att', 'v2-ov-act']], ['v2-ov-aside', ['Demo card', 'v2-ov-cfg', 'v2-ov-srv']]]);
   });
 
   it('drops a core card when it leaves the registry', async () => {
     open('/', { registry: coreWithout('overview.card:recent-activity') });
-    await main().findByText('Config in sync');
+    await main().findByText('Configuration in sync');
     expect(columns().flat().map(([, cards]) => cards).flat()).not.toContain('v2-ov-act');
   });
 
@@ -178,7 +189,7 @@ describe('overview.card', () => {
     const broken = ext('broken', [{ slot: 'overview.card', id: 'oops', order: 50, placement: 'main', component: throwing('boom') }]);
     open('/', { registry: registryOf(broken) });
     expect(await main().findByText(/The “Broken” extension ran into a problem/)).toBeTruthy();
-    expect(main().getByText('Config in sync')).toBeTruthy();
+    expect(main().getByText('Configuration in sync')).toBeTruthy();
     expect(main().getByRole('heading', { name: /Needs attention/ })).toBeTruthy();
   });
 
@@ -186,7 +197,7 @@ describe('overview.card', () => {
     quiet();
     const broken = ext('broken', [{ slot: 'overview.card', id: 'oops', order: 150, placement: 'stat', component: throwing('boom') }]);
     open('/', { registry: registryOf(broken) });
-    await main().findByText('Config in sync');
+    await main().findByText('Configuration in sync');
     const grid = document.querySelector('.v2-statgrid') as HTMLElement;
     const mark = await within(grid).findByText('Error');
     expect(within(grid).queryByRole('alert')).toBeNull();
@@ -195,13 +206,24 @@ describe('overview.card', () => {
     expect(mark.closest('dd')?.previousElementSibling?.tagName).toBe('DT');
   });
 
+  it('keeps an extension’s stat tiles on the first-run Overview, without core’s', async () => {
+    const empty = (path: string, init?: RequestInit): unknown =>
+      new URL(path, 'http://console').pathname.endsWith('/devices/search')
+        ? { devices: { items: [], totalItemsCount: 0 }, configurations: {} }
+        : api(path, init);
+    open('/', { server: empty });
+    await main().findByRole('heading', { name: 'Enroll your first device' });
+    await main().findByText('Demo stat');
+    expect(statLabels()).toEqual(['Demo stat']);
+  });
+
   it('hides a card the role may not use', async () => {
     const gated = ext('gated', [
       { slot: 'overview.card', id: 'audit', order: 50, placement: 'stat', requires: { permission: 'settings' }, component: demoStat() },
     ]);
     open('/', { registry: registryOf(gated), user: ROLES.user });
-    await main().findByText('Config in sync');
-    expect(statLabels()).toEqual(['Config in sync']);
+    await main().findByText('Configuration in sync');
+    expect(statLabels()).toEqual(['Configuration in sync']);
   });
 });
 
@@ -236,7 +258,7 @@ describe('list.column, list.rowAction, list.bulkAction on Devices', () => {
     await main().findByRole('link', { name: /Front desk/ });
     expect(headers()).toEqual(['', 'Device', 'Status', 'Configuration', 'Android', 'Last seen ↓', 'Actions']);
     const menu = await openMenu('WH-1');
-    expect(menu.getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['Lock device', 'Ring device', 'Change configuration…', 'Delete…']);
+    expect(menu.getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['Lock', 'Ring', 'Change configuration', 'Delete']);
     expect(menu.getAllByRole('separator')).toHaveLength(1);
     fireEvent.keyDown(menu.getAllByRole('menuitem')[0], { key: 'Escape' });
     fireEvent.click(main().getByRole('checkbox', { name: 'Select WH-1' }));
@@ -305,7 +327,7 @@ describe('list.column, list.rowAction, list.bulkAction on Devices', () => {
     expect(headers()).toContain('Error');
     expect(firstColumn('Error')).toEqual(['ok', 'ok']);
     const menu = await openMenu('WH-1');
-    expect(menu.getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['Lock device', 'Ring device', 'Change configuration…', 'Delete…']);
+    expect(menu.getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['Lock', 'Ring', 'Change configuration', 'Delete']);
   });
 
   it('hands actions helpers they cannot change, so core’s Lock still sends its own command', async () => {
@@ -325,8 +347,8 @@ describe('list.column, list.rowAction, list.bulkAction on Devices', () => {
     ]);
     const fetch = open('/devices', { registry: registryOf(meddling) });
     await main().findByRole('link', { name: /Front desk/ });
-    fireEvent.click((await openMenu('WH-1')).getByRole('menuitem', { name: 'Lock device' }));
-    expect(await screen.findByText('Lock device queued')).toBeTruthy();
+    fireEvent.click((await openMenu('WH-1')).getByRole('menuitem', { name: 'Lock' }));
+    expect(await screen.findByText('Lock queued')).toBeTruthy();
     expect(hijack).not.toHaveBeenCalled();
     expect(fetch.mock.calls.some(([url]) => String(url).includes('/devices/WH-1/commands'))).toBe(true);
   });
@@ -343,7 +365,7 @@ describe('list.column, list.rowAction, list.bulkAction on Devices', () => {
     open('/devices', { registry: registryOf(broken) });
     await main().findByRole('link', { name: /Front desk/ });
     const menu = await openMenu('WH-1');
-    expect(menu.getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['Lock device', 'Ring device', 'Error', 'Change configuration…', 'Delete…']);
+    expect(menu.getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['Lock', 'Ring', 'Error', 'Change configuration', 'Delete']);
     fireEvent.click(menu.getByRole('menuitem', { name: 'Error' }));
     expect(onSelect).toHaveBeenCalledTimes(1);
   });
@@ -376,7 +398,7 @@ describe('list.column, list.rowAction, list.bulkAction on Devices', () => {
     await main().findByRole('link', { name: /Back office/ });
     const menu = await openMenu('WH-2');
     expect(menu.getAllByRole('menuitem').map((m) => m.textContent)).toEqual([
-      'Lock device', 'Ring device', 'Demo ping', 'Change configuration…', 'Delete…', 'Demo note',
+      'Lock', 'Ring', 'Demo ping', 'Change configuration', 'Delete', 'Demo note',
     ]);
     fireEvent.click(menu.getByRole('menuitem', { name: 'Demo ping' }));
     expect(await screen.findByText('Demo ping queued')).toBeTruthy();
@@ -478,7 +500,7 @@ describe('list.column, list.rowAction, list.bulkAction on Devices', () => {
     open('/devices', { user: ROLES.observer });
     await main().findByRole('link', { name: /Front desk/ });
     expect(main().queryByRole('checkbox', { name: 'Select WH-1' })).toBeNull();
-    expect(main().queryByRole('button', { name: 'Sync WH-1 now' })).toBeNull();
+    expect(main().queryByRole('button', { name: 'Sync now: WH-1' })).toBeNull();
     const menu = await openMenu('WH-1');
     expect(menu.getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['Demo note']);
     expect(menu.queryAllByRole('separator')).toHaveLength(0);
@@ -527,7 +549,7 @@ describe('list.column and list.rowAction on Apps', () => {
     await main().findByText('com.acme.scanner');
     fireEvent.click(main().getByRole('button', { name: 'More for Notes' }));
     expect(within(await screen.findByRole('menu')).getAllByRole('menuitem').map((m) => m.textContent)).toEqual([
-      'SHA-256 checksum…', 'Pin Notes', 'Remove from library…',
+      'SHA-256 checksum', 'Pin Notes', 'Remove from library',
     ]);
   });
 });

@@ -2,7 +2,7 @@
 //   node scripts/shots/v2-parity/settings.mjs [--dist <dir>]
 import { chromium } from 'playwright';
 import { fx, newContext, startServer } from '../harness.mjs';
-import { dist } from './lib.mjs';
+import { DIALOG, dist, pickOption } from './lib.mjs';
 const { server, base } = await startServer(dist);
 const browser = await chromium.launch();
 const results = [];
@@ -11,8 +11,11 @@ const check = (name, ok, extra = '') => {
   results.push(`${ok ? 'PASS' : 'FAIL'}  ${name}${extra ? ` (${extra})` : ''}`);
 };
 
-async function page(opts = {}) {
-  const ctx = await newContext(browser, fx.user, { theme: 'light', viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1, blockGoogleFonts: true, ...opts });
+// The fixture user is a super admin; managing server updates also takes the deployment-admin flag (since the
+// v0.3.8 security fix: api/auth.ts mayManageDeployment), so the walk-through signs in as one. `asUser` overrides it.
+const deployAdmin = { ...fx.user, deploymentAdmin: true };
+async function page({ asUser = deployAdmin, ...opts } = {}) {
+  const ctx = await newContext(browser, asUser, { theme: 'light', viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1, blockGoogleFonts: true, ...opts });
   const p = await ctx.newPage();
   p.on('console', (m) => {
     if (m.type() === 'error') errors.push(`${m.text()}`);
@@ -68,7 +71,7 @@ try {
     const kv = await p.$$eval('#account dd', (d) => d.map((x) => x.textContent));
     check('account rows show name, login, email, role', kv.join('|') === 'Operations|admin|ops@acme.example|Super admin', kv.join('|'));
     await p.click('button:has-text("Change password")');
-    const dlg = p.locator('dialog[open]');
+    const dlg = p.locator(DIALOG);
     await dlg.waitFor();
     check('change password opens a dialog', await dlg.isVisible());
     const submit = dlg.locator('button[type=submit]');
@@ -90,8 +93,8 @@ try {
     wrong = false;
     await dlg.getByLabel('Current password', { exact: true }).fill('oldpass2');
     await submit.click();
-    await p.waitForSelector('dialog[open]', { state: 'detached', timeout: 3000 }).catch(() => {});
-    const open = await p.locator('dialog[open]').count();
+    await p.waitForSelector(DIALOG, { state: 'detached', timeout: 3000 }).catch(() => {});
+    const open = await p.locator(DIALOG).count();
     const toast = await p.locator('text=Password changed').count();
     check('success closes the dialog and toasts', open === 0 && toast > 0, `open=${open} toast=${toast}`);
     // Escape closes, fields reset
@@ -101,7 +104,7 @@ try {
     check('reopened dialog starts empty', cur === '');
     await p.keyboard.press('Escape');
     await p.waitForTimeout(200);
-    check('Escape closes the dialog', (await p.locator('dialog[open]').count()) === 0);
+    check('Escape closes the dialog', (await p.locator(DIALOG).count()) === 0);
     // sign out
     let loggedOut = false;
     await ctx.route('**/rest/public/auth/logout', (r) => { loggedOut = true; return json(r, env(null)); });
@@ -132,11 +135,15 @@ try {
     await p.waitForTimeout(600);
     console.log('focused before arrow:', focused, 'after:', await p.evaluate(() => document.activeElement?.textContent), await p.evaluate(() => localStorage.getItem('mdmesh-theme')));
     check('arrow keys move the theme choice', (await p.evaluate(() => localStorage.getItem('mdmesh-theme'))) === 'dark');
-    const opts = await p.$$eval('#enrollment select option', (o) => o.map((x) => x.textContent));
-    check('default configuration lists No default + sorted configurations', opts.join('|') === 'No default|Default|Field Ops|Retail Kiosk', opts.join('|'));
-    await p.selectOption('#enrollment select', { label: 'Retail Kiosk' });
-    check('choosing a default stores it per browser', (await p.evaluate(() => localStorage.getItem('mdmesh-default-config'))) === '2');
-    await p.selectOption('#enrollment select', { label: 'No default' });
+    const defSel = p.locator('#enrollment [role=combobox]');
+    await defSel.click();
+    const opts = await p.getByRole('listbox').getByRole('option').allTextContents();
+    await p.keyboard.press('Escape');
+    await p.getByRole('listbox').waitFor({ state: 'detached', timeout: 2000 }).catch(() => {});
+    check('default configuration lists No default + sorted configurations', opts.join('|') === 'No default|Background (Agent) Mode|Default|Field Ops|Managed Launcher|MIUI (Xiaomi Redmi)|Retail Kiosk', opts.join('|'));
+    await pickOption(p, defSel, 'Retail Kiosk');
+    check('choosing a default stores it per browser', (await p.evaluate(() => localStorage.getItem('mdmesh-default-config'))) === '5');
+    await pickOption(p, defSel, 'No default');
     check('No default clears it', (await p.evaluate(() => localStorage.getItem('mdmesh-default-config'))) === null);
     await p.click('#enrollment a:has-text("Enroll a device")');
     await p.waitForTimeout(300);
@@ -166,8 +173,14 @@ try {
     await p.goto(`${base}/settings`);
     await p.waitForSelector('text=is ready');
     check('ready card shows version, verified, channel, date', (await p.locator('#updates >> text=Signature verified').count()) === 1 && (await p.locator('#updates >> text=/Stable channel · released/').count()) === 1);
-    check('release notes render as headings and bullets', (await p.locator('#updates li').count()) === 3 && (await p.locator('#updates .v2-settings-notes__h').count()) === 2);
-    check('notes drop the repeated version title', (await p.locator('#updates .v2-settings-notes >> text=v0.1.15').count()) === 0);
+    // Folded: the release's header and summary, up to three items a group, no Under the hood.
+    const notes = p.locator('#updates .v2-relnotes');
+    check('release notes: one entry with version, date and summary', (await notes.locator('.v2-relnotes__entry').count()) === 1 && (await notes.locator('h3:has-text("Version 0.1.15")').count()) === 1 && (await notes.locator('.v2-relnotes__date').count()) === 1 && (await notes.locator('.v2-relnotes__headline').count()) === 1);
+    check('release notes: groups in order, folded to three items', JSON.stringify(await notes.locator('h4').evaluateAll((hs) => hs.map((h) => h.firstChild.textContent))) === JSON.stringify(['New', 'Fixes', 'Security']) && (await notes.locator('li').count()) === 6);
+    check('release notes: one Security fixes badge, on the release (it has a Security section)', (await notes.locator('.v2-badge:has-text("Security")').count()) === 1 && (await notes.locator('.v2-relnotes__head >> text=Security fixes').count()) === 1);
+    check('notes drop the repeated version title', (await notes.locator('text=v0.1.15').count()) === 0);
+    await p.click('#updates button:has-text("Show all notes")');
+    check('Show all notes opens every item and Under the hood', (await notes.locator('li').count()) === 8 && (await notes.locator('h4:has-text("Under the hood")').count()) === 1 && (await p.getAttribute('#updates button:has-text("Show less")', 'aria-expanded')) === 'true');
     check('Full release notes link opens the release URL', (await p.getAttribute('#updates a:has-text("Full release notes")', 'href')) === fx.updateStatus.release.url);
     await p.click('#updates button:has-text("Check now")');
     await p.waitForTimeout(400);
@@ -176,7 +189,7 @@ try {
     await p.waitForTimeout(300);
     check('auto toggle posts {auto:true} and shows On', autoBody?.auto === true && (await p.getAttribute('#updates [role=switch]', 'aria-checked')) === 'true');
     await p.click('#updates button:has-text("Update server and console")');
-    const dlg = p.locator('dialog[open]');
+    const dlg = p.locator(DIALOG);
     await dlg.waitFor();
     check('apply asks for confirmation first', applyCalls === 0 && (await dlg.locator('text=Update to MDMesh 0.1.15?').count()) === 1);
     await dlg.locator('button:has-text("Cancel")').click();
@@ -233,11 +246,24 @@ try {
     await p.goto(`${base}/settings`);
     await p.waitForSelector('text=is ready');
     check('source install: manual commands, no Update button, no auto toggle',
-      (await p.locator('#updates input[value="git pull && sudo ./setup.sh --native"]').count()) === 1 &&
-      (await p.locator('#updates input[value="git pull && ./setup.sh"]').count()) === 1 &&
+      // The commands are setup.sh --update since #190 (docs and installers in step).
+      (await p.locator('#updates input[value="sudo ./setup.sh --update --native"]').count()) === 1 &&
+      (await p.locator('#updates input[value="./setup.sh --update"]').count()) === 1 &&
       (await p.locator('#updates button:has-text("Update server and console")').count()) === 0 &&
       (await p.locator('#updates [role=switch]').count()) === 0);
     check('Installed with reflects a source install', (await p.locator('#server >> text=Source or native installer').count()) === 1);
+    await ctx.close();
+  }
+
+  // ---- a role that can't manage updates: no Check now / Update, the auto-update switch shown but aria-disabled ----
+  {
+    const { ctx, p } = await page({ asUser: fx.user });
+    await p.goto(`${base}/settings`);
+    await p.waitForSelector('text=is ready');
+    const sw = p.locator('#updates [role=switch]');
+    check('no deployment admin: no Check now, no Update button',
+      (await p.locator('#updates button:has-text("Check now")').count()) === 0 && (await p.locator('#updates button:has-text("Update server and console")').count()) === 0);
+    check('no deployment admin: auto-update switch shown, aria-disabled', (await sw.count()) === 1 && (await sw.getAttribute('aria-disabled')) === 'true', String(await sw.getAttribute('aria-disabled').catch(() => null)));
     await ctx.close();
   }
 
@@ -247,7 +273,7 @@ try {
     await ctx.route('**/update/status', (r) => r.fulfill({ status: 502, body: 'bad gateway' }));
     await p.goto(`${base}/settings`);
     await p.waitForSelector('text=The updater isn’t reachable');
-    check('unreachable updater: message + Try again', (await p.locator('#updates button:has-text("Try again")').count()) === 1);
+    check('unreachable updater: message + Retry', (await p.locator('#updates button:has-text("Retry")').count()) === 1);
     check('rollout section still renders (anchor target exists)', (await p.locator('#agent-rollout').count()) === 1);
     await ctx.close();
   }
@@ -282,7 +308,7 @@ try {
     check('Promote disabled while canary devices are still updating', await p.isDisabled('#agent-rollout button:has-text("Promote to everyone else")'));
     check('nav shows Running', (await p.locator('nav[aria-label="Settings sections"] >> text=Running').count()) === 1);
     await p.click('#agent-rollout button:has-text("Cancel rollout")');
-    const dlg = p.locator('dialog[open]');
+    const dlg = p.locator(DIALOG);
     await dlg.waitFor();
     check('cancel asks for confirmation', cancelCalls === 0);
     await dlg.locator('button:has-text("Cancel rollout")').click();
@@ -297,7 +323,7 @@ try {
     await dlg.locator('label:has-text("WH-SCAN-07")').click();
     check('Start canary counts the selection', (await start.textContent()).includes('(2)'));
     await start.click();
-    await p.waitForSelector('dialog[open]', { state: 'detached', timeout: 3000 }).catch(() => {});
+    await p.waitForSelector(DIALOG, { state: 'detached', timeout: 3000 }).catch(() => {});
     check('create posts the apk fields and chosen numbers',
       createBody && createBody.targetVersion === '0.1.15' && createBody.apkVersionCode === 16 && createBody.canaryDeviceNumbers.sort().join(',') === 'KIOSK-FRONT,WH-SCAN-07',
       JSON.stringify(createBody));
@@ -363,7 +389,7 @@ try {
     for (let i = 0; i < 20 && !held; i++) await p.waitForTimeout(100);
     const label = action === 'cancel' ? 'Cancel rollout' : 'Promote to everyone else';
     await p.click(`#agent-rollout button:has-text("${label}")`);
-    const dlg = p.locator('dialog[open]');
+    const dlg = p.locator(DIALOG);
     await dlg.waitFor();
     await dlg.locator(`button:has-text("${action === 'cancel' ? 'Cancel rollout' : 'Promote'}")`).last().click();
     await p.waitForSelector(action === 'cancel' ? 'text=is ready to roll out' : '#agent-rollout button:has-text("Finish rollout")');
@@ -395,7 +421,7 @@ try {
     await ctx.route('**/rest/private/agent/v1/rollout', (r) => json(r, env(null, 'ERROR', 'error.rollout.active')));
     await p.goto(`${base}/settings`);
     await p.click('#agent-rollout button:has-text("Roll out agent")');
-    const dlg = p.locator('dialog[open]');
+    const dlg = p.locator(DIALOG);
     await dlg.locator('label:has-text("KIOSK-FRONT")').click();
     await dlg.locator('button:has-text("Start canary")').click();
     await dlg.locator('text=Another rollout is already running').waitFor({ timeout: 3000 }).then(() => check('server rollout errors are worded and kept in the picker', true), () => check('server rollout errors are worded and kept in the picker', false));
@@ -414,7 +440,7 @@ try {
       await at(ctx);
       await p.goto(`${base}/settings`);
       await p.waitForSelector('#server');
-      check(`${label}: What's new stays closed on a version seen before`, (await p.locator('dialog[open]').count()) === 0);
+      check(`${label}: What's new stays closed on a version seen before`, (await p.locator(DIALOG).count()) === 0);
       const link = p.locator('#server button:has-text("What’s new")');
       await link.click();
       const dlg = p.getByRole('dialog', { name: 'What’s new in 0.3.7' });
@@ -423,7 +449,7 @@ try {
       // The notes scroll in the dialog's body, under the title, its date line and the close button, above the
       // footer: all of them in view at the top of the notes and at their end.
       const layout = await p.evaluate(() => {
-        const d = document.querySelector('dialog[open]');
+        const d = document.querySelector('[role="dialog"], [role="alertdialog"]');
         const body = d.querySelector('.v2-modal__body');
         const box = d.getBoundingClientRect();
         const shown = () =>
@@ -446,25 +472,25 @@ try {
         await dlg.getByRole('button', { name: 'Close' }).focus();
         await p.keyboard.press('Tab');
         const stop = await p.evaluate(() => {
-          const body = document.querySelector('dialog[open] .v2-modal__body');
+          const body = document.querySelector('[role="dialog"] .v2-modal__body');
           return document.activeElement === body && body.getAttribute('tabindex') === '0';
         });
         await p.keyboard.press('PageDown');
         await p.waitForTimeout(400);
-        const scrolled = await p.evaluate(() => document.querySelector('dialog[open] .v2-modal__body').scrollTop > 0);
+        const scrolled = await p.evaluate(() => document.querySelector('[role="dialog"] .v2-modal__body').scrollTop > 0);
         check(`${label}: Tab reaches the notes after the close button, and PageDown scrolls them`, stop && scrolled, JSON.stringify({ stop, scrolled }));
-        await p.evaluate(() => (document.querySelector('dialog[open] .v2-modal__body').scrollTop = 0));
+        await p.evaluate(() => (document.querySelector('[role="dialog"] .v2-modal__body').scrollTop = 0));
       }
       check(`${label}: it renders the version's CHANGELOG section`, (await dlg.getByRole('heading', { name: 'Fixes', level: 3 }).count()) === 1 && (await dlg.locator('text=Exit unavailable right now').count()) === 1);
       check(`${label}: it links the GitHub release`, (await dlg.getByRole('link', { name: 'Full release notes on GitHub ↗' }).getAttribute('href')) === 'https://github.com/MDMesh-app/MDMesh/releases/tag/v0.3.7');
       const fits = await p.evaluate(() => {
-        const d = document.querySelector('dialog[open]').getBoundingClientRect();
+        const d = document.querySelector('[role="dialog"], [role="alertdialog"]').getBoundingClientRect();
         return d.left >= 0 && d.right <= window.innerWidth && document.documentElement.scrollWidth <= window.innerWidth;
       });
       check(`${label}: the dialog fits the window`, fits);
       await p.keyboard.press('Escape');
       await p.waitForTimeout(200);
-      check(`${label}: Escape closes it and focus goes back to the link`, (await p.locator('dialog[open]').count()) === 0 && (await link.evaluate((el) => el === document.activeElement)));
+      check(`${label}: Escape closes it and focus goes back to the link`, (await p.locator(DIALOG).count()) === 0 && (await link.evaluate((el) => el === document.activeElement)));
       check(`${label}: no page errors`, errors.length === before, errors.slice(before).join(' | '));
       await ctx.close();
     }
@@ -479,7 +505,7 @@ try {
     await p.reload();
     await p.waitForSelector('.v2-shell');
     await p.waitForTimeout(800);
-    check("…and not on the next page load", (await p.locator('dialog[open]').count()) === 0);
+    check("…and not on the next page load", (await p.locator(DIALOG).count()) === 0);
     await ctx.close();
   }
 } catch (e) {

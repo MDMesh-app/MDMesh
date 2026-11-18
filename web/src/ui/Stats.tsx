@@ -1,6 +1,7 @@
 import type { Key, ReactNode } from 'react';
 import { Link } from 'react-router';
 import { StackedBar } from './Bars';
+import { Skeleton } from './Skeleton';
 import { StatusDot } from './Status';
 import { cx } from './cx';
 import './Stats.css';
@@ -14,13 +15,13 @@ export interface StatNote {
 export interface StatCellProps {
   label: ReactNode;
   value: ReactNode;
-  /** Denominator, shown 14px secondary after the value ("/248"). */
+  /** Denominator, shown secondary after the value ("/248"). */
   of?: ReactNode;
   /** Up to two footnotes ("1 failed", "12 applying"). */
   notes?: ReadonlyArray<StatNote>;
 }
 
-/** Overview stat cell: 12.5 label, Mono 24/500 value, toned 12.5 footnotes, 16px left rule. Use inside <StatGrid>. */
+/** Overview stat cell: meta-size label, page-title-size tabular value, toned meta footnotes. Use inside <StatGrid>. */
 export function StatCell({ label, value, of, notes = [] }: StatCellProps) {
   return (
     <div className="v2-stat">
@@ -38,7 +39,7 @@ export function StatCell({ label, value, of, notes = [] }: StatCellProps) {
   );
 }
 
-/** The <dl> grid of stat cells: auto-fit columns of at least 130px, 16px gaps. */
+/** The <dl> grid of stat cells: two columns with a rule between them, more rows as needed. */
 export function StatGrid({ children, className }: { children: ReactNode; className?: string }) {
   return <dl className={cx('v2-statgrid', className)}>{children}</dl>;
 }
@@ -53,56 +54,76 @@ export interface FleetLegendItem {
 }
 
 export interface FleetSummaryProps {
-  total: number;
+  /** null while unknown (loading, or the load failed): no number is shown, never a 0. */
+  total: number | null;
   /** "devices enrolled". */
   caption?: ReactNode;
   legend: ReadonlyArray<FleetLegendItem>;
-  /** Right column: a <StatGrid> of <StatCell>s. */
+  /** @deprecated The stat tiles are a card of their own beside this one now; still rendered under the legend. */
   stats?: ReactNode;
+  /** Still loading: skeletons where the numbers go. */
+  loading?: boolean;
   /** Id for the "Fleet" heading (the section uses aria-labelledby). */
   headingId?: string;
   className?: string;
 }
 
 /**
- * Overview fleet card: "FLEET 248 devices enrolled", the 12px fleet bar, a legend with shape marks,
- * counts and percentages, and the stat cells on the right. Renders the card itself (20×24, r16).
+ * Overview fleet card: "Fleet" title, the total (28px tabular) and caption on one baseline, the fleet bar, a legend
+ * with shape marks, counts and percentages. Loading shows skeletons at the same size; an unknown total shows "—".
  */
-export function FleetSummary({ total, caption = 'devices enrolled', legend, stats, headingId = 'v2-fleet', className }: FleetSummaryProps) {
-  const pct = (n: number) => (total > 0 ? `${Math.round((n / total) * 100)}%` : '0%');
+export function FleetSummary({
+  total,
+  caption = 'devices enrolled',
+  legend,
+  stats,
+  loading,
+  headingId = 'v2-fleet',
+  className,
+}: FleetSummaryProps) {
+  const known = total !== null && !loading;
+  const pct = (n: number) => (known && total > 0 ? `${Math.round((n / total) * 100)}%` : '');
   const label = legend.map((l) => `${l.count} ${typeof l.label === 'string' ? l.label.toLowerCase() : ''}`.trim()).join(', ');
   return (
-    <section aria-labelledby={headingId} className={cx('v2-fleet', className)}>
-      <div className="v2-fleet__main">
-        <div className="v2-fleet__head">
-          <h2 id={headingId} className="v2-eyebrow">
-            Fleet
-          </h2>
-          <span className="v2-fleet__total">{total}</span>
-          <span className="v2-fleet__caption">{caption}</span>
-        </div>
+    <section aria-labelledby={headingId} aria-busy={loading || undefined} className={cx('v2-fleet', className)}>
+      <h2 id={headingId} className="v2-fleet__title">
+        Fleet
+      </h2>
+      <div className="v2-fleet__head">
+        {loading ? (
+          <Skeleton width="120px" height="var(--lh-display)" />
+        ) : (
+          <>
+            <span className="v2-fleet__total">{known ? total : '—'}</span>
+            <span className="v2-fleet__caption">{caption}</span>
+          </>
+        )}
+      </div>
+      {known ? (
         <StackedBar variant="fleet" label={label} segments={legend.map((l) => ({ value: l.count, tone: l.tone }))} />
-        <div className="v2-fleet__legend">
-          {legend.map((l) => {
-            const body = (
-              <>
-                <StatusDot tone={l.tone} size={8} />
-                <span className="v2-fleet__label">{l.label}</span>
-                <span className="v2-fleet__count">{l.count}</span>
-                <span className="v2-fleet__pct">{pct(l.count)}</span>
-              </>
-            );
-            return l.to ? (
-              <Link key={l.key} to={l.to} className="v2-fleet__item">
-                {body}
-              </Link>
-            ) : (
-              <span key={l.key} className="v2-fleet__item">
-                {body}
-              </span>
-            );
-          })}
-        </div>
+      ) : (
+        <span className="v2-fleet__track" aria-hidden="true" />
+      )}
+      <div className="v2-fleet__legend">
+        {legend.map((l) => {
+          const body = (
+            <>
+              <StatusDot tone={l.tone} size={8} />
+              <span className="v2-fleet__label">{l.label}</span>
+              <span className="v2-fleet__count">{known ? l.count : '—'}</span>
+              {known ? <span className="v2-fleet__pct">{pct(l.count)}</span> : null}
+            </>
+          );
+          return l.to && known ? (
+            <Link key={l.key} to={l.to} className="v2-fleet__item">
+              {body}
+            </Link>
+          ) : (
+            <span key={l.key} className="v2-fleet__item">
+              {body}
+            </span>
+          );
+        })}
       </div>
       {stats}
     </section>

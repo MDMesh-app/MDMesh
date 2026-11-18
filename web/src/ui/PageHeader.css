@@ -1,45 +1,41 @@
+/* Page header: 22/28 title, one 13/20 secondary subtitle line (reserved), actions at the right. */
 .v2 .v2-pagehead {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 12px 16px;
+  align-items: center;
+  gap: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-2); /* with the page gap: 24 to the content */
 }
-/* Title 32px + 2.5px + subtitle 22.5px = 57px, and a breadcrumb takes 19px + the page gap: a section nav under the
-   header then starts level with a sidebar item (Sidebar.css), so the two outlined current items line up. */
 .v2 .v2-pagehead__text {
   flex: 1 1 360px;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2.5px;
+  gap: var(--space-1);
 }
 .v2 .v2-pagehead__titleline {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 10px;
+  gap: var(--space-2);
 }
 .v2 .v2-pagehead__title {
-  margin: 0;
-  font-size: var(--fs-h1);
-  font-weight: 600;
-  letter-spacing: var(--ls-h1);
-  line-height: 32px; /* --lh-h1 (1.15) at 28px, on a whole pixel */
+  font-size: var(--text-page);
+  line-height: var(--lh-page);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--track-tight);
   color: var(--text);
 }
 .v2 .v2-pagehead__sub {
-  margin: 0;
-  color: var(--text-2);
-  font-size: var(--fs-lead);
+  min-height: var(--lh-ui);
+  max-width: 80ch;
+  color: var(--secondary);
 }
 .v2 .v2-pagehead__actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
-}
-.v2 .v2-pagehead__actions--tight {
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 /* breadcrumb */
@@ -47,25 +43,31 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
   margin: 0;
   padding: 0;
   list-style: none;
-  font-size: var(--fs-sm);
-  line-height: 19px;
   color: var(--secondary);
 }
 .v2 .v2-crumbs li {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
 }
 .v2 .v2-crumbs a {
+  border-radius: var(--radius-chip);
   color: var(--secondary);
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 0.2em;
 }
 .v2 .v2-crumbs a:hover {
-  color: var(--text);
+  color: var(--ink);
+  text-decoration-color: currentColor;
 }
 .v2 .v2-crumbs__current {
   color: var(--text);
+}
+.v2 .v2-crumbs__sep {
+  color: var(--faint);
 }

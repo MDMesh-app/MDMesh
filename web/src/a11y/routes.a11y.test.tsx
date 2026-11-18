@@ -74,7 +74,7 @@ const ROUTES: Array<[path: string, heading: RegExp, loaded: RegExp]> = [
   ['/configurations', /Configurations/, /Scanners/],
   ['/configurations/3', /Warehouse/, /Scanners/],
   ['/apps', /Apps/, /^Chrome$/],
-  ['/enroll', /Enroll/, /Warehouse/],
+  ['/enroll', /Enroll/, /Use the server default/],
   ['/settings', /Settings/, /Appearance/],
 ];
 
@@ -127,7 +127,7 @@ describe('axe: signed-out pages', () => {
     stubApi(api);
     renderInConsole(<AppRoutes />, { user: null, path: '/login' });
     (await screen.findByRole('button', { name: 'Sign in' })).click();
-    const login = await screen.findByLabelText('Login');
+    const login = await screen.findByLabelText('Username');
     await waitFor(() => expect(login.getAttribute('aria-invalid')).toBe('true'));
     expect(login.getAttribute('aria-describedby')).toBeTruthy();
     expect(await violations()).toEqual([]);

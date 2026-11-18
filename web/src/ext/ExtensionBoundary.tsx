@@ -26,7 +26,7 @@ interface Props {
   frame?: (fallback: ReactNode) => ReactNode;
   /** A sentence after the crash callout's own, e.g. what happens to the section's changes. */
   crashNote?: string;
-  /** Told when the contribution crashes (true) and when "Try again" renders it again (false). */
+  /** Told when the contribution crashes (true) and when "Retry" renders it again (false). */
   onCrash?: (crashed: boolean) => void;
   children: ReactNode;
 }
@@ -53,7 +53,7 @@ function CrashCallout({ entry, error, note, onRetry }: { entry: SlotEntry; error
         </LinkButton>
       ) : (
         <LinkButton tone="inline" onClick={onRetry}>
-          Try again
+          Retry
         </LinkButton>
       )}
     </Callout>

@@ -1,42 +1,32 @@
+/* Card: white, 1px border, r8, flat. Padding 16 (or 0 for lists and tables). */
 .v2 .v2-card {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  box-sizing: border-box;
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-card);
 }
 .v2 .v2-card--pad-default {
-  padding: 20px 24px;
+  padding: var(--card-pad);
 }
 .v2 .v2-card--pad-rows {
-  padding: 20px 24px 8px;
+  padding: var(--card-pad) var(--card-pad) var(--space-1);
 }
-.v2 .v2-card--pad-roomy {
-  padding: 20px 24px 24px;
-}
-.v2 .v2-card--pad-compact {
-  padding: 18px 24px;
-}
-.v2 .v2-card--pad-snug {
-  padding: 16px 24px 18px;
-}
-.v2 .v2-card--pad-rail {
-  padding: 20px 20px 16px;
-}
-.v2 .v2-card--pad-facts {
-  padding: 4px 20px 16px;
-}
-.v2 .v2-card--pad-side {
-  padding: 18px 20px;
-}
-.v2 .v2-card--pad-list,
 .v2 .v2-card--pad-none {
   padding: 0;
 }
-.v2 .v2-card--r14 {
-  border-radius: var(--radius-card-sm);
+.v2 .v2-card--gap-2 {
+  gap: var(--space-2);
+}
+.v2 .v2-card--gap-3 {
+  gap: var(--space-3);
+}
+.v2 .v2-card--gap-4 {
+  gap: var(--space-4);
+}
+.v2 .v2-card--gap-6 {
+  gap: var(--space-6);
 }
 .v2 .v2-card--clip {
   position: relative;
@@ -54,7 +44,7 @@
 }
 .v2 .v2-card--selected {
   border-color: var(--ink);
-  box-shadow: 0 0 0 1px var(--ink);
+  outline: var(--hairline) solid var(--ink);
 }
 
 /* ---- header ---- */
@@ -62,26 +52,18 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 12px;
-}
-/* numbered cards (Enroll): 26px number, 10px gap, 17/600 title, actions after */
-.v2 .v2-cardhead--numbered {
-  gap: 10px 12px;
+  gap: var(--space-2) var(--space-3);
+  min-height: var(--control-sm);
 }
 .v2 .v2-cardhead--inset {
-  padding: 16px 24px 10px;
-}
-.v2 .v2-cardhead--sp6 {
-  padding-bottom: 6px;
+  padding: var(--space-3) var(--card-pad) var(--space-2);
+  min-height: calc(var(--control-sm) + var(--space-3) + var(--space-2));
 }
 .v2 .v2-cardhead--sp8 {
-  padding-bottom: 8px;
-}
-.v2 .v2-cardhead--sp10 {
-  padding-bottom: 10px;
+  padding-bottom: var(--space-2);
 }
 .v2 .v2-cardhead--sp12 {
-  padding-bottom: 12px;
+  padding-bottom: var(--space-3);
 }
 .v2 .v2-cardhead__text {
   flex: 1 1 auto;
@@ -90,85 +72,142 @@
   flex-direction: column;
 }
 .v2 .v2-cardhead__title {
-  margin: 0;
-  font-size: var(--fs-h2);
-  font-weight: 600;
-}
-.v2 .v2-cardhead__title--17 {
-  font-size: var(--fs-title);
-}
-.v2 .v2-cardhead__title--18 {
-  font-size: var(--fs-title-lg);
+  font-size: var(--text-title);
+  line-height: var(--lh-title);
+  font-weight: var(--weight-semibold);
 }
 .v2 .v2-cardhead__sub {
-  font-size: var(--fs-sm);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
   color: var(--secondary);
 }
 .v2 .v2-cardhead__actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 12px;
-  font-size: var(--fs-sm);
-}
-.v2 .v2-cardhead__actions > a {
-  font-weight: 600;
+  gap: var(--space-2) var(--space-3);
+  font-size: var(--text-ui);
+  color: var(--secondary);
 }
 
-/* ---- notice strip (attention / missing checksum) ---- */
+/* Links in a card header ("See all", "Manage"): ink, medium, a soft underline that firms up on hover. */
+.v2 .v2-cardhead__actions > a {
+  border-radius: var(--radius-chip);
+  font-weight: var(--weight-medium);
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 0.2em;
+}
+.v2 .v2-cardhead__actions > a:hover {
+  text-decoration-color: currentColor;
+}
+@media (max-width: 860px) {
+  .v2 .v2-cardhead__actions > a {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--touch);
+  }
+}
+
+/* ---- notice strip (attention / missing checksum) ----
+   A grid: the icon beside the body (title and chips in one wrapping row), the action at the right; where the strip
+   is narrow the action drops under the body, still aligned with it (a container query, so it follows the strip). */
 .v2 .v2-notice {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px 16px;
-  padding: 12px 16px;
+  container: v2-notice / inline-size;
   background: var(--surface);
-  border: 1px solid var(--warn-line);
-  border-radius: var(--radius-card-sm);
+  border: var(--hairline) solid var(--warn-line);
+  border-radius: var(--radius-control);
+}
+.v2 .v2-notice__grid {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  min-height: var(--row);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
 }
 .v2 .v2-notice__icon {
-  flex: 0 0 auto;
-  width: 34px;
-  height: 34px;
-  border-radius: var(--radius-sm);
   display: inline-flex;
+  align-self: start;
   align-items: center;
-  justify-content: center;
-  background: var(--warn-soft);
+  height: var(--control-sm);
   color: var(--warn-ink);
 }
+.v2 .v2-notice__icon > svg {
+  width: var(--icon-md);
+  height: var(--icon-md);
+}
 .v2 .v2-notice__body {
-  flex: 1 1 320px;
   min-width: 0;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 16px;
+  gap: var(--space-2) var(--space-3);
+  min-height: var(--control-sm);
+}
+/* The first line (the title) is as tall as the icon box, so the icon sits on its centre however the body wraps. */
+.v2 .v2-notice__body > :first-child {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--control-sm);
 }
 .v2 .v2-notice__action {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
+}
+@container v2-notice (max-width: 560px) {
+  .v2 .v2-notice__action {
+    grid-column: 2 / -1;
+  }
+}
+/* With a title: the title and its text are one block, a within-component gap (8) apart, and the icon sits on the
+   title's line (its box is one title line tall). Even padding; the action stays centred on the block beside it, or
+   under the text, on its left edge, where the notice is narrow (above). */
+.v2 .v2-notice--titled .v2-notice__grid {
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+.v2 .v2-notice--titled .v2-notice__icon {
+  height: var(--lh-ui);
+}
+.v2 .v2-notice--titled .v2-notice__body {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: var(--space-2);
+  min-height: 0;
+}
+.v2 .v2-notice--titled .v2-notice__body > :first-child {
+  display: block;
+  min-height: 0;
+}
+.v2 .v2-notice__title {
+  font-weight: var(--weight-semibold);
+}
+.v2 .v2-notice__text {
+  text-wrap: pretty;
+}
+.v2 .v2-notice__text > * {
+  margin: 0;
 }
 .v2 .v2-notice--alert {
   border-color: var(--alert-line);
 }
 .v2 .v2-notice--alert .v2-notice__icon {
-  background: var(--alert-soft);
   color: var(--alert-ink);
 }
 .v2 .v2-notice--ok {
   border-color: var(--ok-line);
 }
 .v2 .v2-notice--ok .v2-notice__icon {
-  background: var(--ok-soft);
   color: var(--ok-ink);
 }
 .v2 .v2-notice--idle {
   border-color: var(--border);
 }
 .v2 .v2-notice--idle .v2-notice__icon {
-  background: var(--surface-2);
   color: var(--text-2);
 }
 
@@ -176,18 +215,25 @@
 .v2 .v2-callout {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  padding: 10px 12px;
-  border: 1px solid;
-  border-radius: var(--radius-sm);
-  font-size: var(--fs-sm);
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: var(--hairline) solid;
+  border-radius: var(--radius-control);
+  font-size: var(--text-ui);
+  line-height: var(--lh-ui);
 }
 .v2 .v2-callout__icon {
   flex: 0 0 auto;
   display: inline-flex;
-  margin-top: 2px;
+  align-items: center;
+  height: var(--lh-ui);
+}
+.v2 .v2-callout__icon > svg {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
 }
 .v2 .v2-callout__body {
+  flex: 1 1 auto;
   min-width: 0;
 }
 .v2 .v2-callout--info {
@@ -209,4 +255,20 @@
   background: var(--ok-wash);
   border-color: var(--ok-line);
   color: var(--ok-ink);
+}
+
+/* ---- error state: text, then Retry at the right ---- */
+.v2 .v2-errorstate {
+  align-items: center;
+}
+.v2 .v2-errorstate .v2-callout__body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+.v2 .v2-errorstate .v2-callout__icon {
+  align-self: flex-start;
+  height: var(--control-sm);
 }

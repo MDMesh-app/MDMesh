@@ -42,8 +42,8 @@ jobs:
             # VERSIONING.md's highest row, and a held bump must still be under Unreleased (so a release PR runs it).
             server: pom.xml, common/**, jwt/**, notification/**, plugins/**, server/**, CHANGELOG.md, proto/VERSIONING.md
             # CHANGELOG.md is built into the console (What's new) and its tests read every release's section, checked
-            # against release/changelog-section.sh.
-            web: web/**, CHANGELOG.md, release/changelog-section.sh
+            # against release/changelog-section.sh, and its Security labels against release/security-releases.py.
+            web: web/**, CHANGELOG.md, release/changelog-section.sh, release/security-releases.py
             # The console's browser accessibility sweep (scripts/shots/a11y.mjs) reads the built console and the
             # shots fixtures; CHANGELOG.md is built into the console.
             a11y: web/**, scripts/shots/**, CHANGELOG.md
@@ -53,8 +53,9 @@ jobs:
             # web-entrypoint.sh, edge-peers.sh, CHANGELOG.md and .dockerignore are the web image build's inputs.
             edge: docker/Caddyfile, docker/web.Dockerfile, docker/web-entrypoint.sh, docker/edge-peers.sh, web/**, CHANGELOG.md, .dockerignore, docker-compose*.yml, docker/dev.env, scripts/edge-check.sh, supervisor/apply.sh
             # The installer scripts, and the signed manifest they and the supervisor read. Only the edge entry's cheap
-            # quickstart.sh checks run on these, not its image work.
-            installers: quickstart.sh, setup.sh, install/**, release/**, supervisor/lib.js, scripts/release-manifest-check.sh, tests/installer-answers/**, tests/setup-update/**, tests/apt-lock/**
+            # quickstart.sh checks run on these, not its image work. README.md and DEPLOY.md carry the install commands
+            # release-manifest-check.sh checks.
+            installers: README.md, DEPLOY.md, quickstart.sh, setup.sh, install/**, release/**, supervisor/lib.js, scripts/release-manifest-check.sh, tests/installer-answers/**, tests/setup-update/**, tests/apt-lock/**
 
   build:
     name: ${{ matrix.name }}
@@ -133,6 +134,10 @@ jobs:
         name: Unit tests (vitest)
         working-directory: web
         run: npm test
+      - if: matrix.name == 'web' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).web)
+        name: CSS uses only design tokens (stylelint)
+        working-directory: web
+        run: npm run lint:css
       - if: matrix.name == 'web' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).web)
         working-directory: web
         run: npm run build

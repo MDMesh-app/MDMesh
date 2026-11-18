@@ -1,31 +1,62 @@
-/* ---- stepper ---- */
+/* ---- the step mark (shared by every step pattern) ---- */
+.v2 .v2-stepmark {
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: var(--hairline) solid var(--border-strong);
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
+  font-weight: var(--weight-medium);
+  font-variant-numeric: tabular-nums;
+}
+.v2 .v2-stepmark.is-current {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+.v2 .v2-stepmark.is-todo {
+  color: var(--muted);
+}
+.v2 .v2-stepmark.is-done {
+  border-color: var(--ok-line);
+  background: var(--ok-soft);
+  color: var(--ok-ink);
+}
+
+/* ---- stepper (inline progress) ---- */
 .v2 .v2-stepper {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  font-size: var(--fs-sm);
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-ui);
+  line-height: var(--lh-ui);
 }
 .v2 .v2-stepper__step {
   display: inline-flex;
   align-items: center;
-  white-space: pre;
-  padding: 3px 10px;
-  border-radius: var(--radius-pill);
+  gap: var(--space-2);
+  white-space: nowrap;
+  color: var(--secondary);
 }
-.v2 .v2-stepper__step.is-done {
-  background: var(--ok-soft);
-  color: var(--ok-ink);
+.v2 .v2-stepper__step + .v2-stepper__step::before {
+  content: '';
+  width: var(--space-4);
+  height: var(--hairline);
+  background: var(--border-strong);
 }
 .v2 .v2-stepper__step.is-current {
-  background: var(--ink);
-  color: var(--on-ink);
-}
-.v2 .v2-stepper__step.is-todo {
-  background: var(--surface-2);
-  color: var(--secondary);
+  color: var(--text);
+  font-weight: var(--weight-medium);
 }
 
 /* ---- rollout steps ---- */
@@ -35,32 +66,33 @@
   padding: 0;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
-  gap: 12px;
+  gap: var(--grid-gap);
 }
 .v2 .v2-rollout__step {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 14px 16px;
+  gap: var(--space-3);
+  padding: var(--card-pad);
   background: var(--surface-sunken);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-card-sm);
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-control);
 }
 .v2 .v2-rollout__step.is-active {
   background: var(--surface);
-  border-color: var(--ink);
+  border-color: var(--border-strong);
 }
 .v2 .v2-rollout__head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .v2 .v2-rollout__name {
   flex: 1 1 auto;
-  font-weight: 600;
+  font-weight: var(--weight-medium);
 }
 .v2 .v2-rollout__state {
-  font-size: var(--fs-meta);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
 }
 .v2 .v2-rollout__state.is-warn {
   color: var(--warn-ink);
@@ -74,18 +106,19 @@
 .v2 .v2-rollout__count {
   display: flex;
   align-items: baseline;
-  gap: 6px;
+  gap: var(--space-2);
 }
 .v2 .v2-rollout__done {
-  font-family: var(--font-mono);
-  font-size: var(--fs-stat-sm);
-  font-weight: 500;
+  font-size: var(--text-page);
+  line-height: var(--lh-page);
+  font-weight: var(--weight-medium);
 }
 .v2 .v2-rollout__of {
   color: var(--secondary);
 }
 .v2 .v2-rollout__note {
-  font-size: var(--fs-sm);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
   color: var(--text-2);
 }
 
@@ -96,35 +129,10 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-3);
 }
 .v2 .v2-numsteps li {
   display: flex;
-  gap: 12px;
-}
-.v2 .v2-numsteps__n {
-  flex: 0 0 auto;
-  width: 22px;
-  height: 22px;
-  box-sizing: border-box;
-  border-radius: 50%;
-  border: 1px solid var(--border-strong);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--fs-small);
-  font-weight: 600;
-}
-.v2 .v2-stepnum {
-  flex: 0 0 auto;
-  width: 26px;
-  height: 26px;
-  border-radius: var(--radius-seg);
-  background: var(--ink);
-  color: var(--on-ink);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 600;
-  font-size: var(--fs-sm);
+  align-items: baseline;
+  gap: var(--space-3);
 }

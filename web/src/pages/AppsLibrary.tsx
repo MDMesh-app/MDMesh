@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   deleteApplication,
   getAppConfigLinks,
@@ -13,12 +13,13 @@ import {
   Badge,
   Button,
   ButtonLink,
-  Callout,
   Card,
   EmptyState,
+  ErrorState,
   Field,
-  IconAlert,
   IconApps,
+  IconButton,
+  IconCheck,
   IconDownload,
   IconWarning,
   Input,
@@ -27,11 +28,16 @@ import {
   Modal,
   Notice,
   SearchInput,
+  Skeleton,
+  SkeletonRows,
   Table,
+  Tooltip,
   useMediaQuery,
   useToast,
+  type MenuEntry,
   type SortDir,
 } from '../ui';
+import { useStickyValue } from '../ui/useStickyValue';
 import { SHA256_HEX, targetVersion } from '../data/apps';
 import { CORE_ACTION_ACCESS } from '../ext/core/access';
 import { withCoreAppsParts } from '../ext/core/lists';
@@ -60,9 +66,15 @@ function emptyLibraryText(sources: Sources, mayUpload: boolean, mayDeploy: boole
   return ways + (mayDeploy ? 'Apps in the library can be added to a configuration or pushed straight to devices.' : '');
 }
 
+/** A menu of one entry is a visible button instead (I7); two or more stay a "…" menu. */
+function singleItem(items: ReadonlyArray<MenuEntry>) {
+  const real = items.filter((it) => it !== 'separator');
+  return real.length === 1 ? real[0] : null;
+}
+
 /**
  * Library: every deployable app in the library as a table (cards ≤ 900px), with the missing-checksum
- * notice, Deploy, and the "…" menu (SHA-256…, Remove from library).
+ * notice, and per row Deploy plus the "…" menu (SHA-256 checksum, Remove from library), revealed on hover or focus.
  */
 export function AppsLibrary({
   tabs,
@@ -92,6 +104,9 @@ export function AppsLibrary({
   const [removing, setRemoving] = useState<number | null>(null);
   const [confirmRemove, setConfirmRemove] = useState<Application | null>(null);
   const [shaFor, setShaFor] = useState<{ app: Application; version: ApplicationVersion } | null>(null);
+  // Both dialogs stay mounted while they close, showing what they showed (exit motion).
+  const removeShown = useStickyValue(confirmRemove);
+  const shaShown = useStickyValue(shaFor);
   // Only extension columns sort (core's never did): null until one is picked.
   const [sort, setSort] = useState<{ key: string; dir: SortDir } | null>(null);
   const extensionColumns = useListColumns('apps');
@@ -169,12 +184,12 @@ export function AppsLibrary({
   // The "…" menu comes from the registry: core's entries (ext/core/lists.tsx) pick these out of the helpers.
   const helpers = withCoreAppsParts(listHelpers, {
     row: {
-      checksum: (a) => (canEditSha(a) ? { key: 'sha', label: 'SHA-256 checksum…', onSelect: () => void editSha256(a) } : null),
+      checksum: (a) => (canEditSha(a) ? { key: 'sha', label: 'SHA-256 checksum', onSelect: () => void editSha256(a) } : null),
       remove: (a) =>
         canRemove(a)
           ? {
               key: 'remove',
-              label: removing === a.id ? 'Removing…' : 'Remove from library…',
+              label: removing === a.id ? 'Removing…' : 'Remove from library',
               textValue: 'Remove from library',
               danger: true,
               disabled: removing != null,
@@ -187,33 +202,52 @@ export function AppsLibrary({
   // Without Deploy and any menu entry for the role, the table has no Actions column (as on Devices).
   const hasActions = !!onDeploy || rowMenu.available;
 
-  const actions = (a: Application) => {
+  const actions = (a: Application, size: 'xs' | 'sm' = 'xs') => {
     const items = rowMenu.items(a);
+    const single = singleItem(items);
+    const busy = deployingId === a.id;
     return (
-      <div className="v2-apps-lib__actions">
+      <div className="v2-rowactions">
         {onDeploy ? (
-          <Button
-            size="xs"
-            icon={<IconDownload size={14} />}
-            onClick={() => onDeploy(a)}
-            // Not disabled while it opens: focus must stay on the button so the dialog can return it there.
-            aria-busy={deployingId === a.id || undefined}
-            aria-label={`Deploy ${a.name}`}
-          >
-            {deployingId === a.id ? 'Opening…' : 'Deploy'}
-          </Button>
+          <Tooltip content={busy ? 'Opening…' : 'Deploy'}>
+            <IconButton
+              label={`Deploy ${a.name}`}
+              size={size}
+              onClick={() => onDeploy(a)}
+              // Not disabled while it opens: focus must stay on the button so the dialog can return it there.
+              aria-busy={busy || undefined}
+            >
+              <IconDownload size={14} />
+            </IconButton>
+          </Tooltip>
         ) : null}
-        {items.length > 0 ? <Menu label={`More for ${a.name}`} items={items} /> : <span className="v2-apps-lib__menugap" aria-hidden="true" />}
+        {single ? (
+          <Button
+            size="sm"
+            variant={single.danger ? 'danger' : 'ghost'}
+            icon={single.icon}
+            disabled={single.disabled}
+            onClick={single.onSelect}
+            // The visible words first ("Removing…" while busy), then the app (one such button per row; 2.5.3).
+            aria-label={`${typeof single.label === 'string' ? single.label : (single.textValue ?? '')} ${a.name}`.trim()}
+          >
+            {single.label}
+          </Button>
+        ) : items.length > 0 ? (
+          <Menu label={`More for ${a.name}`} iconSize={size} items={items} />
+        ) : null}
       </div>
     );
   };
 
   const appCell = (a: Application) => (
     <div className="v2-apps-lib__app">
-      <AppTile name={a.name} size={38} tone={sourceOf(a, baseUrl).kind === 'fdroid' ? 'neutral' : 'ink'} />
-      <span className="v2-apps-lib__names">
-        <span className="v2-apps-lib__name">{a.name}</span>
-        <span className="v2-apps-lib__pkg">{a.pkg}</span>
+      <AppTile name={a.name} size={32} />
+      <span className="v2-apps-lib__name" title={a.name}>
+        {a.name}
+      </span>
+      <span className="v2-apps-lib__pkg" title={a.pkg}>
+        {a.pkg}
       </span>
     </div>
   );
@@ -223,42 +257,48 @@ export function AppsLibrary({
     return (
       <div className="v2-apps-lib__src">
         <span>{SOURCE_LABEL[s.kind]}</span>
-        {s.note ? <span className="v2-apps-lib__srcnote">{s.note}</span> : null}
+        {s.note ? (
+          <span className="v2-apps-lib__srcnote" title={s.note}>
+            {s.note}
+          </span>
+        ) : null}
       </div>
     );
   };
 
   const checksumCell = (a: Application) =>
     missingChecksum(a, baseUrl) ? (
-      <Badge
-        tone="warn"
-        size="md"
-        title="This APK isn't hosted by MDMesh and has no SHA-256, so devices refuse to install it."
-      >
-        Missing
-      </Badge>
+      <Tooltip content="Not hosted by MDMesh and no SHA-256: devices refuse to install it.">
+        <span className="v2-apps-lib__badge">
+          <Badge tone="warn" size="md">
+            Missing
+          </Badge>
+        </span>
+      </Tooltip>
     ) : (
-      <Badge
-        tone="ok"
-        size="md"
-        title={
+      <Tooltip
+        content={
           sourceOf(a, baseUrl).hosted
-            ? 'MDMesh hosts this file and works out its SHA-256 itself; devices check the download against it.'
+            ? 'MDMesh hosts this file and works out its SHA-256; devices check the download against it.'
             : 'Devices check the download against the stored SHA-256.'
         }
       >
-        ✓ Verified
-      </Badge>
+        <span className="v2-apps-lib__badge">
+          <Badge tone="ok" size="md" icon={<IconCheck size={12} />}>
+            Verified
+          </Badge>
+        </span>
+      </Tooltip>
     );
 
   const usedCell = (a: Application) => {
     const u = usedIn[a.id];
-    if (u === undefined) return <span className="v2-apps-lib__muted">…</span>;
+    if (u === undefined) return <Skeleton width="96px" />;
     if (u === 'error') return <span className="v2-apps-lib__muted">—</span>;
     if (u.length === 0) return <span className="v2-apps-lib__muted">Not used yet</span>;
     const head = u.slice(0, 2).join(', ');
     return (
-      <span title={u.join(', ')}>
+      <span className="v2-apps-lib__used" title={u.join(', ')}>
         {head}
         {u.length > 2 ? <span className="v2-apps-lib__muted"> +{u.length - 2}</span> : null}
       </span>
@@ -283,47 +323,127 @@ export function AppsLibrary({
 
   const first = missing[0];
   const filtering = q.trim() !== '' || filter !== 'all';
+  // X7: search and the Source filter only once there is something to search.
+  const hasApps = !!apps && apps.length > 0;
+
+  let body: ReactNode;
+  if (apps === null) {
+    body = (
+      <Card padding="none" clip aria-busy="true">
+        <SkeletonRows count={6} label="Loading apps…" />
+      </Card>
+    );
+  } else if (apps.length === 0) {
+    body = error ? null : (
+      <Card>
+        <EmptyState
+          icon={<IconApps />}
+          title="No apps in the library yet"
+          action={
+            sources.custom || sources.fdroid ? (
+              <>
+                {sources.custom ? (
+                  <ButtonLink to="?source=custom" variant="primary">
+                    Add your own app
+                  </ButtonLink>
+                ) : null}
+                {sources.fdroid ? <ButtonLink to="?source=fdroid">Browse F-Droid</ButtonLink> : null}
+              </>
+            ) : undefined
+          }
+        >
+          {emptyLibraryText(sources, mayUpload, !!onDeploy) || null}
+        </EmptyState>
+      </Card>
+    );
+  } else if (narrow) {
+    body =
+      shown.length === 0 ? (
+        <Card>
+          <EmptyState icon={<IconApps />} title="No apps match your search" />
+        </Card>
+      ) : (
+        <ul className="v2-apps-libcards" aria-label="Library">
+          {shown.map((a) => (
+            <li key={a.id} className="v2-apps-libcard">
+              <div className="v2-apps-libcard__top">
+                {appCell(a)}
+                {hasActions ? actions(a, 'sm') : null}
+              </div>
+              <dl className="v2-apps-libcard__facts">
+                <div>
+                  <dt>Version</dt>
+                  <dd className="v2-num">{a.version || '—'}</dd>
+                </div>
+                <div>
+                  <dt>Source</dt>
+                  <dd>{sourceCell(a)}</dd>
+                </div>
+                <div>
+                  <dt>Checksum</dt>
+                  <dd>{checksumCell(a)}</dd>
+                </div>
+                <div>
+                  <dt>Used in</dt>
+                  <dd>{usedCell(a)}</dd>
+                </div>
+              </dl>
+            </li>
+          ))}
+        </ul>
+      );
+  } else {
+    body = (
+      <Card padding="none" clip aria-label="Library">
+        <Table
+          aria-label="Library"
+          columns={columns}
+          rows={shown}
+          rowKey={(a) => a.id}
+          minWidth={900}
+          empty={filtering ? 'No apps match your search.' : 'No apps in the library yet.'}
+          sort={{ key: sort?.key ?? '', dir: sort?.dir ?? 'ascending', onSort }}
+          className="v2-apps-lib__table"
+        />
+      </Card>
+    );
+  }
 
   return (
     <>
       <div className="v2-apps-toolbar">
         {tabs}
-        <span className="v2-apps-toolbar__spacer" />
-        <SearchInput
-          className="v2-apps-lib__search"
-          aria-label="Search the library"
-          placeholder="Search name or package"
-          value={q}
-          onChange={setQ}
-        />
-        <LabelledSelect label="Source" value={filter} onChange={(e) => setFilter(e.target.value as SourceFilter)}>
-          <option value="all">All</option>
-          <option value="uploaded">{SOURCE_LABEL.uploaded}</option>
-          <option value="link">{SOURCE_LABEL.link}</option>
-          <option value="bundle">{SOURCE_LABEL.bundle}</option>
-          <option value="fdroid">{SOURCE_LABEL.fdroid}</option>
-        </LabelledSelect>
+        {hasApps ? (
+          <>
+            <span className="v2-apps-toolbar__spacer" />
+            <SearchInput
+              className="v2-apps-lib__search"
+              aria-label="Search the library"
+              placeholder="Search name or package"
+              value={q}
+              onChange={setQ}
+            />
+            <LabelledSelect label="Source" value={filter} onChange={(e) => setFilter(e.target.value as SourceFilter)}>
+              <option value="all">All</option>
+              <option value="uploaded">{SOURCE_LABEL.uploaded}</option>
+              <option value="link">{SOURCE_LABEL.link}</option>
+              <option value="bundle">{SOURCE_LABEL.bundle}</option>
+              <option value="fdroid">{SOURCE_LABEL.fdroid}</option>
+            </LabelledSelect>
+          </>
+        ) : null}
       </div>
 
-      {error ? (
-        <Callout tone="alert" role="alert" icon={<IconAlert size={16} />}>
-          <span className="v2-apps-calloutline">
-            {error}
-            <Button size="sm" onClick={reload}>
-              Retry
-            </Button>
-          </span>
-        </Callout>
-      ) : null}
+      {error ? <ErrorState thing="the app library" onRetry={reload} /> : null}
 
       {first ? (
         <Notice
+          tone="warn"
           aria-label="Missing checksum"
           icon={<IconWarning size={16} />}
-          className="v2-apps-lib__notice"
           action={
             canEditSha(first) ? (
-              <Button size="md" onClick={() => void editSha256(first)}>
+              <Button size="sm" onClick={() => void editSha256(first)}>
                 Add checksum
               </Button>
             ) : undefined
@@ -332,8 +452,8 @@ export function AppsLibrary({
           <span>
             {missing.length === 1 ? (
               <>
-                <strong>{first.name} has no SHA-256 checksum.</strong> It downloads from a link, and devices only install
-                a linked file they can check against its checksum.{maySetChecksum ? ' Add the checksum before deploying it.' : ''}
+                <strong>{first.name} has no SHA-256 checksum.</strong> Devices only install a linked file they can check
+                against it.{maySetChecksum ? ' Add the checksum before deploying it.' : ''}
               </>
             ) : (
               <>
@@ -341,7 +461,7 @@ export function AppsLibrary({
                   {first.name} and {missing.length - 1} other app{missing.length === 2 ? '' : 's'} have no SHA-256
                   checksum.
                 </strong>{' '}
-                They download from links, and devices only install a linked file they can check against its checksum.
+                Devices only install a linked file they can check against its checksum.
                 {maySetChecksum ? ' Add the checksums before deploying them.' : ''}
               </>
             )}
@@ -349,91 +469,16 @@ export function AppsLibrary({
         </Notice>
       ) : null}
 
-      {apps === null ? (
-        <Card aria-busy="true">
-          <p className="v2-apps-loading">Loading apps…</p>
-        </Card>
-      ) : apps.length === 0 && !error ? (
-        <Card>
-          <EmptyState
-            icon={<IconApps />}
-            title="No apps in the library yet"
-            action={
-              sources.custom || sources.fdroid ? (
-                <>
-                  {sources.custom ? (
-                    <ButtonLink to="?source=custom" size="lg">
-                      Add your own app
-                    </ButtonLink>
-                  ) : null}
-                  {sources.fdroid ? (
-                    <ButtonLink to="?source=fdroid" size="lg">
-                      Browse F-Droid
-                    </ButtonLink>
-                  ) : null}
-                </>
-              ) : undefined
-            }
-          >
-            {emptyLibraryText(sources, mayUpload, !!onDeploy) || null}
-          </EmptyState>
-        </Card>
-      ) : apps.length === 0 ? null : narrow ? (
-        shown.length === 0 ? (
-          <Card>
-            <p className="v2-apps-loading">{filtering ? 'No apps match your search.' : 'No apps in the library yet.'}</p>
-          </Card>
-        ) : (
-          <ul className="v2-apps-libcards" aria-label="Library">
-            {shown.map((a) => (
-              <li key={a.id} className="v2-apps-libcard">
-                {appCell(a)}
-                <dl className="v2-apps-libcard__facts">
-                  <div>
-                    <dt>Version</dt>
-                    <dd className="v2-mono">{a.version || '—'}</dd>
-                  </div>
-                  <div>
-                    <dt>Source</dt>
-                    <dd>{sourceCell(a)}</dd>
-                  </div>
-                  <div>
-                    <dt>Checksum</dt>
-                    <dd>{checksumCell(a)}</dd>
-                  </div>
-                  <div>
-                    <dt>Used in</dt>
-                    <dd>{usedCell(a)}</dd>
-                  </div>
-                </dl>
-                {hasActions ? actions(a) : null}
-              </li>
-            ))}
-          </ul>
-        )
-      ) : (
-        <Card padding="list" clip aria-label="Library">
-          <Table
-            aria-label="Library"
-            columns={columns}
-            rows={shown}
-            rowKey={(a) => a.id}
-            edge={20}
-            minWidth={900}
-            empty={filtering ? 'No apps match your search.' : 'No apps in the library yet.'}
-            sort={{ key: sort?.key ?? '', dir: sort?.dir ?? 'ascending', onSort }}
-            className="v2-apps-lib__table"
-          />
-        </Card>
-      )}
+      {body}
 
-      {shaFor ? (
+      {shaShown ? (
         <Sha256Dialog
-          app={shaFor.app}
-          version={shaFor.version}
+          open={shaFor !== null}
+          app={shaShown.app}
+          version={shaShown.version}
           onClose={() => setShaFor(null)}
           onSaved={() => {
-            const id = shaFor.app.id;
+            const id = shaShown.app.id;
             setShaFor(null);
             setApps((cur) => cur.map((a) => (a.id === id ? { ...a, hasApkHash: true } : a)));
           }}
@@ -445,21 +490,21 @@ export function AppsLibrary({
         onClose={() => setConfirmRemove(null)}
         role="alertdialog"
         size="sm"
-        title={confirmRemove ? `Remove ${confirmRemove.name} from the library?` : ''}
+        title={removeShown ? `Remove ${removeShown.name} from the library?` : ''}
         footer={
           <>
             <Button size="lg" onClick={() => setConfirmRemove(null)}>
               Cancel
             </Button>
-            <Button size="lg" variant="danger" onClick={() => confirmRemove && void remove(confirmRemove)}>
+            <Button size="lg" variant="danger-primary" onClick={() => confirmRemove && void remove(confirmRemove)}>
               Remove from library
             </Button>
           </>
         }
       >
         <p className="v2-apps-modaltext">
-          This deletes its Library record and the APK files MDMesh hosts for it, except files another Library entry
-          still uses. It does not uninstall the app from enrolled devices.
+          This deletes its library record and the APK files MDMesh hosts for it, unless another library entry uses them.
+          Devices keep the installed app.
         </p>
       </Modal>
     </>
@@ -468,11 +513,14 @@ export function AppsLibrary({
 
 /** Store the SHA-256 of the version an app installs (classic Sha256Modal). */
 function Sha256Dialog({
+  open,
   app,
   version,
   onClose,
   onSaved,
 }: {
+  /** False while it plays its exit (kept mounted with its last app). */
+  open: boolean;
   app: Application;
   version: ApplicationVersion;
   onClose: () => void;
@@ -481,6 +529,10 @@ function Sha256Dialog({
   const toast = useToast();
   const [value, setValue] = useState('');
   const [busy, setBusy] = useState(false);
+  // Each opening starts empty.
+  useEffect(() => {
+    if (open) setValue('');
+  }, [open, version.id]);
   const trimmed = value.trim();
   const valid = SHA256_HEX.test(trimmed);
 
@@ -500,7 +552,7 @@ function Sha256Dialog({
 
   return (
     <Modal
-      open
+      open={open}
       onClose={() => !busy && onClose()}
       dismissOnBackdrop={false}
       title={`SHA-256 checksum for ${app.name}`}

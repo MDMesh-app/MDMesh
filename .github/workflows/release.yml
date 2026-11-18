@@ -3,10 +3,10 @@ name: release
 # Cut a release: tag the release PR's merge commit with its CHANGELOG.md section, then push the tag (RELEASING.md):
 #   n=$(release/changelog-section.sh 1.2.3) && git tag -a v1.2.3 --cleanup=whitespace -m "$n" SHA
 #   release/changelog-section.sh --check v1.2.3 SHA && git push origin v1.2.3
-# Produces a tested, signed GitHub Release: the release APK, server+web images on GHCR, and a
-# minisign-signed manifest the fleet updater consumes. Requires these `release` environment secrets (see RELEASING.md):
-# MDM_RELEASE_STORE_B64, MDM_RELEASE_STORE_PASSWORD, MDM_RELEASE_KEY_ALIAS, MDM_RELEASE_KEY_PASSWORD,
-# MINISIGN_SECRET_KEY, MINISIGN_PASSWORD.
+# Produces a tested, signed GitHub Release: the release APK, quickstart.sh, the server, web and supervisor images on
+# GHCR, and a minisign-signed manifest the fleet updater and the quick start consume. Requires these `release`
+# environment secrets (see RELEASING.md): MDM_RELEASE_STORE_B64, MDM_RELEASE_STORE_PASSWORD, MDM_RELEASE_KEY_ALIAS,
+# MDM_RELEASE_KEY_PASSWORD, MINISIGN_SECRET_KEY, MINISIGN_PASSWORD.
 #
 # Who may release: the `gate` job (no secrets, read-only token) refuses a tag whose commit is not on main, and the
 # `release` job, which alone holds the signing secrets and write tokens, runs in the `release` environment: it waits
@@ -235,6 +235,12 @@ jobs:
             "$SERVER_IMG" "$WEB_IMG" mdmesh-agent.apk "$CODE" "$CK" "$PROTO" \
             "$SERVER_REF" "$WEB_REF" "$SUPERVISOR_REF"
           release/sign-manifest.sh manifest.json
+      # The signed manifest's securityReleases (a supervisor reads them to warn an admin who would skip a security
+      # release) must be exactly CHANGELOG.md's: every version up to this one with a Security section (RELEASING.md).
+      - name: Signed manifest's securityReleases match CHANGELOG.md
+        run: |
+          release/security-releases.py --check manifest.json \
+            || { echo "::error::manifest.json's securityReleases differ from CHANGELOG.md (details above; RELEASING.md)"; exit 1; }
 
       # --- Publish ---
       # The notes are the tag annotation, checked once more against CHANGELOG.md right before publishing, with the

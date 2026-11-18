@@ -75,6 +75,6 @@ describe('Agent rollout', () => {
       await vi.advanceTimersByTimeAsync(SUMMARY_POLL_MS);
     });
     await main().findByText(/is ready to roll out/);
-    expect(main().getByRole('button', { name: 'Roll out agent…' })).toBeTruthy();
+    expect(main().getByRole('button', { name: 'Roll out agent' })).toBeTruthy();
   });
 });

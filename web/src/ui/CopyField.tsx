@@ -55,7 +55,7 @@ export function CopyField({ value, onCopied, copyLabel = 'Copy', className, 'ari
         className="v2-input v2-input--md v2-input--mono v2-copy__input"
         onFocus={(e) => e.target.select()}
       />
-      <Button size="lg" icon={state === 'copied' ? <IconCheck size={14} /> : <IconCopy size={14} />} onClick={() => void copy()}>
+      <Button icon={state === 'copied' ? <IconCheck size={14} /> : <IconCopy size={14} />} onClick={() => void copy()}>
         {state === 'copied' ? 'Copied' : state === 'manual' ? 'Press Ctrl+C' : copyLabel}
       </Button>
       <span className="v2-visually-hidden" aria-live="polite">

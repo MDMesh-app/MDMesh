@@ -35,7 +35,7 @@ export function PageCrash({ error, onRetry }: { error: unknown; onRetry: () => v
             </Button>
           ) : (
             <Button variant="primary" size="lg" onClick={onRetry}>
-              Try again
+              Retry
             </Button>
           )
         }
@@ -44,7 +44,7 @@ export function PageCrash({ error, onRetry }: { error: unknown; onRetry: () => v
           ? 'The console was probably updated while this tab was open. Reload to get the current version.'
           : import.meta.env.DEV
             ? detail
-            : 'The rest of the console still works. Try again, or reload the page.'}
+            : 'The rest of the console still works. Retry, or reload the page.'}
       </EmptyState>
     </Card>
   );

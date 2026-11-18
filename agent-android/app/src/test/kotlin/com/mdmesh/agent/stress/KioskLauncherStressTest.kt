@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.view.KeyEvent
 import com.mdmesh.agent.KioskLauncherActivity
 import com.mdmesh.agent.R
+import com.mdmesh.kiosk.ExitPinGate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -354,8 +355,8 @@ class KioskLauncherStressTest : KioskHarness() {
         tapExitKiosk()
         val d = pinDialog()!!
         val e = edit(d.window!!.decorView)!!
-        // A scanner burst: "0000\n" x5, with Enter down+up after each.
-        repeat(5) {
+        // A scanner burst: "0000\n", two more times than the first round, with Enter down+up after each.
+        repeat(ExitPinGate.FIRST_ROUND_TRIES + 2) {
             if (pinDialog() == null) return@repeat
             e.setText("0000")
             e.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
@@ -364,7 +365,7 @@ class KioskLauncherStressTest : KioskHarness() {
             e.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
         }
         settle()
-        assertEquals(3, pinFailures())
+        assertEquals(ExitPinGate.FIRST_ROUND_TRIES, pinFailures())
         assertNotNull(lockedDialog())
         assertEquals(1, events("kioskPinLockout"))
     }
@@ -372,7 +373,7 @@ class KioskLauncherStressTest : KioskHarness() {
     @Test fun lockoutSurvivesRecreateAndProcessDeath() {
         launch(grid)
         tapExitKiosk()
-        repeat(3) { submitPin("0000") }
+        repeat(ExitPinGate.FIRST_ROUND_TRIES) { submitPin("0000") }
         assertNotNull(lockedDialog())
         processDeathRestore()
         assertNotNull("Locked comes back after restore", lockedDialog())
@@ -385,9 +386,9 @@ class KioskLauncherStressTest : KioskHarness() {
     @Test fun lockoutEndsOnlyAfterElapsedTime() {
         launch(grid)
         tapExitKiosk()
-        repeat(3) { submitPin("0000") }
+        repeat(ExitPinGate.FIRST_ROUND_TRIES) { submitPin("0000") }
         lockedDialog()!!.dismiss(); settle()
-        org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofSeconds(29))
+        org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofSeconds(59))
         tapExitKiosk()
         assertNotNull(lockedDialog())
         lockedDialog()!!.dismiss(); settle()
@@ -395,7 +396,39 @@ class KioskLauncherStressTest : KioskHarness() {
         tapExitKiosk()
         assertNotNull(pinDialog())
         submitPin("0000")
-        assertNotNull("4th wrong PIN locks again at once", lockedDialog())
+        assertNull("one typo after a lockout doesn't lock it again: a new round", lockedDialog())
+        repeat(ExitPinGate.ROUND_TRIES - 1) { submitPin("0000") }
+        assertNotNull("the round's last wrong PIN locks again", lockedDialog())
+    }
+
+    /** Security review: once a lockout reaches the hour, the launcher takes one wrong PIN an hour, no more. */
+    @Test fun afterTheHourEveryWrongPinLocksForAnotherHour() {
+        launch(grid)
+        fun clock(d: java.time.Duration) = org.robolectric.shadows.ShadowSystemClock.advanceBy(d)
+        var minutes = 0L
+        for (round in ExitPinGate.LOCKOUTS_MS.indices) {
+            tapExitKiosk()
+            val tries = if (round == 0) ExitPinGate.FIRST_ROUND_TRIES else ExitPinGate.ROUND_TRIES
+            repeat(tries) { submitPin("0000") }
+            assertNotNull("round $round locks", lockedDialog())
+            lockedDialog()!!.dismiss(); settle()
+            val lock = ExitPinGate.LOCKOUTS_MS[round]
+            clock(java.time.Duration.ofMillis(lock + 1_000))
+            minutes += lock / 60_000
+        }
+        assertEquals(81L, minutes)
+        repeat(3) {
+            tapExitKiosk()
+            assertNotNull("the prompt opens once the hour is over", pinDialog())
+            submitPin("0000")
+            assertNotNull("a single wrong PIN locks again", lockedDialog())
+            lockedDialog()!!.dismiss(); settle()
+            clock(java.time.Duration.ofMinutes(59))
+            tapExitKiosk()
+            assertNotNull("still locked a minute before the hour", lockedDialog())
+            lockedDialog()!!.dismiss(); settle()
+            clock(java.time.Duration.ofMinutes(1).plusSeconds(1))
+        }
     }
 
     @Test fun backKeyOnPinDialogCancelsWithoutATry() {
@@ -476,8 +509,8 @@ class KioskLauncherStressTest : KioskHarness() {
     @Test fun lockedRestoredAfterExpiryIsDropped() {
         launch(grid)
         tapExitKiosk()
-        repeat(3) { submitPin("0000") }
-        org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofSeconds(31))
+        repeat(ExitPinGate.FIRST_ROUND_TRIES) { submitPin("0000") }
+        org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofSeconds(61))
         processDeathRestore()
         assertNull(lockedDialog())
     }

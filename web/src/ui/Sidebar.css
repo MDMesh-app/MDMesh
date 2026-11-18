@@ -1,24 +1,26 @@
-/* Sidebar: 20×12 padding, 24px between brand / nav / footer. */
+/* Sidebar: --sidebar-w wide, --nav-item rows at the UI size with --icon-nav icons; footer = update card + account row. */
 .v2 .v2-sidebar {
-  box-sizing: border-box;
   height: 100%;
   min-height: 100%;
-  padding: 20px 12px;
+  padding: var(--space-3) var(--space-2);
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: var(--space-4);
   background: var(--surface);
   color: var(--text);
 }
 
-/* 26px tall (the wordmark's line is 25.5), so the nav starts on whole pixels (y 70, then every 39px) and a page's
-   section nav lines up with it: PageHeader keeps the page column on the same rhythm. */
-.v2 .v2-sidebar__brand,
-.v2 .v2-sidebar__brand:hover {
+.v2 .v2-sidebar__brand {
   display: flex;
   align-items: center;
-  min-height: 26px;
-  padding: 0 12px;
+  height: var(--control-md);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-control);
+  text-decoration: none;
+  color: var(--ink);
+}
+/* Hover changes colour only, never layout (it outranks the global link hover). */
+.v2 .v2-sidebar__brand:hover {
   text-decoration: none;
   color: var(--ink);
 }
@@ -26,91 +28,116 @@
 .v2 .v2-wordmark {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-2);
   color: var(--ink);
-  font-weight: 700;
-  font-size: var(--fs-title);
-  letter-spacing: -0.01em;
-  line-height: var(--lh-body);
-}
-.v2 .v2-wordmark--18 {
-  font-size: var(--fs-title-lg);
+  font-weight: var(--weight-semibold);
+  font-size: var(--text-title);
+  line-height: var(--lh-title);
+  letter-spacing: var(--track-tight);
 }
 .v2 .v2-wordmark__mark {
-  width: 9px;
-  height: 9px;
+  width: var(--space-2);
+  height: var(--space-2);
   background: var(--ink);
 }
 .v2 .v2-wordmark--18 .v2-wordmark__mark {
-  width: 10px;
-  height: 10px;
+  width: calc(var(--space-2) + var(--space-1) / 2);
+  height: calc(var(--space-2) + var(--space-1) / 2);
 }
 .v2 .v2-wordmark__esh {
-  font-weight: 500;
+  font-weight: var(--weight-regular);
   color: var(--secondary);
 }
 
 .v2 .v2-sidebar__nav {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--hairline);
 }
-.v2 .v2-navitem,
-.v2 .v2-navitem:hover {
+.v2 .v2-navitem {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 8px 12px;
-  border-radius: var(--radius-sm);
+  gap: var(--space-3);
+  height: var(--nav-item);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-control);
+  font-size: var(--text-ui);
+  line-height: var(--lh-ui);
   text-decoration: none;
   background: transparent;
   color: var(--text-2);
-  font-weight: 400;
+  font-weight: var(--weight-regular);
+  transition-property: background-color, color;
+  transition-duration: var(--dur-micro);
+  transition-timing-function: var(--ease);
+}
+/* Hover changes colour only, never layout (it outranks the global link hover). */
+.v2 .v2-navitem:hover {
+  text-decoration: none;
+  background: transparent;
+  color: var(--text-2);
 }
 .v2 .v2-navitem > svg {
   flex: 0 0 auto;
+  width: var(--icon-nav);
+  height: var(--icon-nav);
+  color: var(--secondary);
 }
 .v2 .v2-navitem:not(.is-active):hover {
   background: var(--hover);
   color: var(--ink);
 }
-/* The current page: the fill alone is 1.1:1 on the sidebar, so a 1px control-border ring marks it at 3:1 (1.4.11). */
+/* The current page: a fill, ink text and icon, and the medium weight (no outline). */
 .v2 .v2-navitem.is-active {
   background: var(--surface-2);
-  box-shadow: inset 0 0 0 1px var(--control-border);
   color: var(--ink);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
 }
-/* Touch: nav items are the drawer's primary controls, 44px tall (2.5.8; 44 is the console's aim on touch). */
-@media (max-width: 860px) {
-  .v2 .v2-navitem {
-    min-height: 44px;
-  }
+.v2 .v2-navitem.is-active > svg {
+  color: var(--ink);
 }
 .v2 .v2-navitem__label {
   flex: 1 1 auto;
+}
+@media (max-width: 860px) {
+  .v2 .v2-navitem {
+    min-height: var(--touch);
+  }
+}
+@media (forced-colors: active) {
+  .v2 .v2-navitem.is-active {
+    outline: var(--indicator) solid Highlight;
+    outline-offset: calc(var(--indicator) * -1);
+  }
 }
 
 .v2 .v2-sidebar__foot {
   margin-top: auto;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-1);
 }
 
-/* server update card */
-.v2 .v2-updcard,
-.v2 .v2-updcard:hover {
+/* Server-update card: a compact inset card above the account row. */
+.v2 .v2-updcard {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 12px 14px;
-  border-radius: var(--radius-md);
-  background: var(--app);
-  border: 1px solid var(--border);
-  text-decoration: none;
+  align-items: flex-start;
+  gap: var(--space-1);
+  margin: 0 var(--space-1) var(--space-2);
+  padding: var(--space-3);
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-sunken);
   color: var(--text);
-  font-size: var(--fs-sm);
+  text-decoration: none;
+  transition: border-color var(--dur-micro) var(--ease);
+}
+/* Hover changes colour only, never layout (it outranks the global link hover). */
+.v2 .v2-updcard:hover {
+  background: var(--surface-sunken);
+  color: var(--text);
+  text-decoration: none;
 }
 .v2 .v2-updcard:hover {
   border-color: var(--border-strong);
@@ -118,48 +145,95 @@
 .v2 .v2-updcard__title {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-weight: 600;
+  gap: var(--space-2);
+  font-weight: var(--weight-medium);
 }
 .v2 .v2-updcard__dot {
   flex: 0 0 auto;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
+  width: var(--dot);
+  height: var(--dot);
+  border-radius: var(--radius-full);
   background: var(--online);
 }
 .v2 .v2-updcard__dot.is-warn {
   background: var(--warn);
-  border-radius: 1px;
-  transform: rotate(45deg);
 }
 .v2 .v2-updcard__dot.is-alert {
   background: var(--alert);
-  border-radius: 1px;
 }
 .v2 .v2-updcard__text {
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
   color: var(--secondary);
+  text-wrap: pretty;
 }
-.v2 .v2-updcard__link {
-  font-weight: 600;
-  text-decoration: underline;
-  text-underline-offset: 3px;
+/* The card is the link; its action is drawn as a small secondary button. */
+.v2 .v2-updcard__action {
+  display: inline-flex;
+  align-items: center;
+  height: var(--control-sm);
+  margin-top: var(--space-1);
+  padding: 0 var(--space-3);
+  border: var(--hairline) solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: var(--weight-medium);
+  transition: background-color var(--dur-micro) var(--ease);
+}
+.v2 .v2-updcard:hover .v2-updcard__action {
+  background: var(--hover);
 }
 
-/* signed-in row */
-.v2 .v2-sidebar__user {
+/* Account row: avatar initial, login, chevron; its menu holds the theme switch and Sign out. */
+.v2 .v2-account {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 4px;
+  gap: var(--space-2);
+  width: 100%;
+  height: var(--control-md);
+  padding: 0 var(--space-2) 0 var(--space-1);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-2);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--dur-micro) var(--ease);
 }
-.v2 .v2-sidebar__login {
+.v2 .v2-account:hover,
+.v2 .v2-account[data-state='open'] {
+  background: var(--hover);
+  color: var(--ink);
+}
+.v2 .v2-account__avatar {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-xs);
+  height: var(--control-xs);
+  border-radius: var(--radius-full);
+  background: var(--surface-2);
+  border: var(--hairline) solid var(--border);
+  color: var(--text-2);
+  font-size: var(--text-caps);
+  line-height: var(--lh-caps);
+  font-weight: var(--weight-medium);
+}
+.v2 .v2-account__name {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--font-mono);
-  font-size: var(--fs-small);
+}
+.v2 .v2-account > svg {
+  flex: 0 0 auto;
   color: var(--secondary);
+}
+@media (max-width: 860px) {
+  .v2 .v2-account {
+    min-height: var(--touch);
+  }
 }

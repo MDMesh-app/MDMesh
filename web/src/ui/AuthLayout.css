@@ -5,33 +5,38 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 20px;
-  padding: 48px 16px;
+  gap: var(--space-6);
+  padding: var(--space-12) var(--space-4);
   background: var(--app);
 }
 .v2 .v2-auth__card {
   width: 100%;
   max-width: 400px;
   box-sizing: border-box;
-  padding: 32px 32px 28px;
+  padding: var(--space-8);
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-auth);
-  box-shadow: var(--shadow-auth);
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--elev-2);
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--space-4);
 }
-.v2 .v2-auth__titles {
+.v2 .v2-auth__head {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+.v2 .v2-auth__head .v2-auth__sub {
+  margin-top: calc(var(--space-1) * -1);
 }
 .v2 .v2-auth__title {
   margin: 0;
-  font-size: var(--fs-h1-sm);
-  font-weight: 600;
-  letter-spacing: -0.02em;
+  font-size: var(--text-page);
+  line-height: var(--lh-page);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--track-tight);
 }
 .v2 .v2-auth__sub {
   margin: 0;
@@ -42,8 +47,9 @@
   flex-wrap: wrap;
   justify-content: center;
   align-items: center;
-  gap: 6px 16px;
-  font-size: var(--fs-sm);
+  gap: var(--space-1) var(--space-4);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
   color: var(--secondary);
 }
 .v2 .v2-auth__foot a {
@@ -51,21 +57,21 @@
 }
 @media (max-width: 480px) {
   .v2 .v2-auth__card {
-    padding: 24px 20px 20px;
+    padding: var(--space-6);
   }
 }
 
-/* Footer "host · Connected": 7px dot, 7px gap (board). */
+/* Footer "host · Connected": a status dot before the host. */
 .v2 .v2-auth-conn {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--space-2);
 }
 .v2 .v2-auth-conn__dot {
   flex: 0 0 auto;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
+  width: var(--dot);
+  height: var(--dot);
+  border-radius: var(--radius-full);
   background: var(--offline);
 }
 .v2 .v2-auth-conn__dot.is-ok {

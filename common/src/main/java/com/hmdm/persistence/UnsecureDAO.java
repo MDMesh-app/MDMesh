@@ -150,6 +150,35 @@ public class UnsecureDAO {
         return user;
     }
 
+    /**
+     * Whether {@code password} (what a client sent: the MD5 of the password, in hex) is {@code user}'s password.
+     * Every check of a user's password goes through here: the console and API sign-ins, and the current password a
+     * signed-in user confirms. A stored hash in an older format (legacy SHA-1, or bcrypt below the current cost) that
+     * just matched is replaced with a current bcrypt one. Only the hash changes, not the sessions, and only while
+     * the row still holds the hash that was checked, so a password changed meanwhile is never overwritten. A failure
+     * to store it is logged and the check still succeeds: the old hash keeps working.
+     *
+     * @param user the account, with its stored hash; null fails, at the cost of a check for a real account.
+     */
+    public boolean checkPasswordUnsecure(User user, String password) {
+        String stored = user == null ? null : user.getPassword();
+        if (!PasswordUtil.passwordMatch(password, stored)) {
+            return false;
+        }
+        if (PasswordUtil.needsRehash(stored) && PasswordUtil.isMd5Hex(password)) {
+            try {
+                String upgraded = PasswordUtil.getHashFromMd5(password);
+                if (userMapper.upgradePasswordHash(user.getId(), stored, upgraded) == 1) {
+                    user.setPassword(upgraded);
+                    logger.info("Stored the password of user {} as bcrypt", user.getLogin());
+                }
+            } catch (RuntimeException e) {
+                logger.warn("Could not store the password of user {} as bcrypt", user.getLogin(), e);
+            }
+        }
+        return true;
+    }
+
     public List<User> findAllWithOldPassword() {
         return userMapper.findAllWithOldPassword();
     }
@@ -160,6 +189,16 @@ public class UnsecureDAO {
         } else {
             userMapper.updateUserMainDetails(user);
         }
+    }
+
+    /**
+     * Replaces a stored password hash with [newHash] only while the row still holds [oldHash], so a password set in
+     * the meantime is never overwritten. Sessions are untouched: the password itself doesn't change.
+     *
+     * @return whether the row was updated
+     */
+    public boolean upgradePasswordHashUnsecure(Integer id, String oldHash, String newHash) {
+        return userMapper.upgradePasswordHash(id, oldHash, newHash) == 1;
     }
 
     /**

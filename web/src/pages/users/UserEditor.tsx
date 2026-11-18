@@ -9,7 +9,19 @@ import {
   type ManagedUser,
   type UserRole,
 } from '../../api/users';
-import { Button, Callout, Checkbox, Field, Input, Modal, PasswordInput, RuleList, Select, type Rule } from '../../ui';
+import {
+  Button,
+  Callout,
+  Checkbox,
+  Field,
+  Input,
+  Modal,
+  PasswordInput,
+  RuleList,
+  Select,
+  Skeleton,
+  type Rule,
+} from '../../ui';
 import { MIN_LENGTH } from '../settings/ChangePasswordModal';
 
 export function AccessPicker({
@@ -30,38 +42,62 @@ export function AccessPicker({
   // Keep a selected item even if a list no longer returns it; editing a name must not silently broaden access.
   const choices = [...items, ...selected.filter((s) => !items.some((i) => i.id === s.id))];
   return (
-    <fieldset className="users-scope">
+    <fieldset className="v2-users-scope">
       <legend>{label}</legend>
-      <label>
-        <Checkbox checked={all} onChange={(e) => onAll(e.target.checked)} /> All {label.toLowerCase()}
-      </label>
+      <Checkbox
+        className="v2-users-choice"
+        checked={all}
+        onChange={(e) => onAll(e.target.checked)}
+        label={`All ${label.toLowerCase()}`}
+      />
       {!all && (
-        <div className="users-choices">
-          {choices.map((item) => (
-            <label key={item.id}>
+        <>
+          <div className="v2-users-choices">
+            {choices.map((item) => (
               <Checkbox
+                key={item.id}
+                className="v2-users-choice"
                 checked={selected.some((s) => s.id === item.id)}
                 onChange={(e) =>
                   onSelect(e.target.checked ? [...selected, item] : selected.filter((s) => s.id !== item.id))
                 }
+                label={item.name}
               />
-              {item.name}
-            </label>
-          ))}
-          {!choices.length && <p>No {label.toLowerCase()} available.</p>}
-          <small>With none selected, this account has access to none.</small>
-        </div>
+            ))}
+          </div>
+          <p className="v2-users-help">
+            {choices.length ? 'With none selected, this account reaches none.' : `No ${label.toLowerCase()} to choose from.`}
+          </p>
+        </>
       )}
     </fieldset>
   );
 }
 
+/** Placeholder for the form while the account and its access options load. */
+function FormSkeleton({ fields }: { fields: number }) {
+  return (
+    <div className="v2-users-loading" role="status">
+      <span className="v2-visually-hidden">Loading the account and its access options</span>
+      {Array.from({ length: fields }, (_, i) => (
+        <div key={i} className="v2-users-loading__field" aria-hidden="true">
+          <Skeleton width="25%" />
+          <Skeleton height="control" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function UserEditor({
+  open = true,
   target,
   roles,
   onClose,
   onSaved,
 }: {
+  /** False while it animates closed (the caller keeps it mounted). */
+  open?: boolean;
   target: ManagedUser | 'new';
   roles: UserRole[];
   onClose: () => void;
@@ -138,7 +174,7 @@ export function UserEditor({
   };
   return (
     <Modal
-      open
+      open={open}
       title={target === 'new' ? 'New user' : `Edit ${target.login}`}
       onClose={() => {
         if (!busy) onClose();
@@ -147,10 +183,11 @@ export function UserEditor({
       description="Set the account’s role and the devices and configurations it can access."
       footer={
         <>
-          <Button disabled={busy} onClick={onClose}>
+          <Button size="lg" disabled={busy} onClick={onClose}>
             Cancel
           </Button>
           <Button
+            size="lg"
             variant="primary"
             type="submit"
             form="user-form"
@@ -167,17 +204,17 @@ export function UserEditor({
         </Callout>
       )}
       {!ready || !draft ? (
-        <p role="status">{error ? 'Close this dialog and try again.' : 'Loading account and access options…'}</p>
+        error ? null : <FormSkeleton fields={4} />
       ) : (
         <form
           id="user-form"
-          className="users-form"
+          className="v2-users-form"
           onSubmit={(e) => {
             e.preventDefault();
             void submit();
           }}
         >
-          <fieldset disabled={busy} className="users-fields">
+          <fieldset disabled={busy} className="v2-users-fields">
             <Field label="Login">
               <Input
                 value={draft.login}

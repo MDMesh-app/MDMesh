@@ -19,8 +19,11 @@
 # quickstart.sh calls or change its arguments or output; a new function may be called from
 # quickstart.sh only after a release that ships it.
 
-# Password format the server expects: users.password = SHA1( UPPER(MD5(raw)) + SALT ).
-# SALT must match PasswordUtil.PASS_SALT in the server.
+# The admin password is seeded in the legacy format: users.password = SHA1( UPPER(MD5(raw)) + SALT ), SALT as
+# PasswordUtil.PASS_SALT in the server. Since 0.5.0 the server stores bcrypt( UPPER(MD5(raw)) ) and still accepts this
+# format: the admin's first sign-in replaces it with bcrypt (and the seed forces a password change then too). It stays
+# legacy here because the shell has no bcrypt, and because quickstart.sh and the rollback e2e seed older releases'
+# servers with this file, which accept only this format.
 MDM_PASS_SALT='5YdSYHyg2U'
 
 mdm_rand()   { openssl rand -hex 24; }

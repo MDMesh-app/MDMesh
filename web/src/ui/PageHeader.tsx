@@ -5,7 +5,7 @@ import './PageHeader.css';
 
 export interface PageHeaderProps {
   title: ReactNode;
-  /** 15px text-2 line under the title. */
+  /** One secondary line under the title; reserve its line while it loads (pass a stable sentence or `null`). */
   subtitle?: ReactNode;
   /** Right side: buttons, an "Updated 20s ago" status. Wraps under the title when narrow. */
   actions?: ReactNode;
@@ -15,14 +15,17 @@ export interface PageHeaderProps {
   breadcrumb?: ReactNode;
   /** Sets document.title to "<docTitle> · MDMesh". Defaults to the title when it is a string. */
   docTitle?: string;
-  /** Cap the subtitle measure (Configurations: 72ch). */
+  /** @deprecated The subtitle is capped at 80 characters for every page; kept so existing callers compile. */
   subtitleMaxCh?: number;
-  /** Gap between actions: 12 (status + button, default) or 8 (a button group). */
+  /** @deprecated One gap (8) between actions now; kept so existing callers compile. */
   actionsGap?: 8 | 12;
   className?: string;
 }
 
-/** Page title block (every board): h1 28/600/-0.025em/1.15, subtitle 15px text-2, actions bottom-aligned right. */
+/**
+ * Page title block: h1 22/600, one secondary subtitle line (its height reserved, so data arriving never moves the
+ * page), actions at the right, centred on the title block.
+ */
 export function PageHeader({
   title,
   subtitle,
@@ -30,8 +33,8 @@ export function PageHeader({
   titleAdornment,
   breadcrumb,
   docTitle,
-  subtitleMaxCh,
-  actionsGap = 12,
+  subtitleMaxCh: _subtitleMaxCh,
+  actionsGap: _actionsGap,
   className,
 }: PageHeaderProps) {
   const doc = docTitle ?? (typeof title === 'string' ? title : undefined);
@@ -57,14 +60,10 @@ export function PageHeader({
           ) : (
             <h1 className="v2-pagehead__title">{title}</h1>
           )}
-          {subtitle ? (
-            <p className="v2-pagehead__sub" style={subtitleMaxCh ? { maxWidth: `${subtitleMaxCh}ch` } : undefined}>
-              {subtitle}
-            </p>
-          ) : null}
+          {subtitle !== undefined ? <p className="v2-pagehead__sub">{subtitle}</p> : null}
         </div>
         {actions ? (
-          <div className={cx('v2-pagehead__actions', actionsGap === 8 && 'v2-pagehead__actions--tight')}>{actions}</div>
+          <div className="v2-pagehead__actions">{actions}</div>
         ) : null}
       </header>
     </>
@@ -78,7 +77,7 @@ export interface Crumb {
   mono?: boolean;
 }
 
-/** "Devices / KSK-0151": 13px secondary, underlined links, current page in text colour. */
+/** "Devices / KSK-0151": 13px secondary links (underlined on hover), the current page in text colour. */
 export function Breadcrumb({ items, className }: { items: ReadonlyArray<Crumb>; className?: string }) {
   return (
     <nav aria-label="Breadcrumb" className={cx('v2-crumbs', className)}>

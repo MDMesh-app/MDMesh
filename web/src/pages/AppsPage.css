@@ -1,135 +1,159 @@
-/* Apps (library, custom APK, F-Droid). Shared parts (tabs, table, cards, badges, modal) are in ui/. */
+/* Apps (library, custom APK, F-Droid). Shared parts (tabs, table, cards, badges, dialogs) are in ui/. */
 
-/* ---- toolbar: source tabs, spacer, search (+ Source filter); wraps (gap 8 12) ---- */
+/* ---- toolbar: source tabs, spacer, search (+ Source filter) ---- */
 .v2 .v2-apps-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 12px;
+  gap: var(--space-2) var(--space-3);
 }
 .v2 .v2-apps-toolbar__spacer {
   flex: 1 1 0;
 }
-.v2 .v2-apps-lib__search {
-  flex: 1 1 240px;
-  max-width: 346px; /* board: 320px content box + 12px padding each side + border */
-}
+.v2 .v2-apps-lib__search,
 .v2 .v2-apps-fd__search {
-  flex: 1 1 260px;
-  max-width: 406px; /* board: 380px content box + padding + border */
+  flex: 1 1 200px;
+  max-width: 320px;
 }
 
 /* ---- shared bits ---- */
-.v2 .v2-apps-loading {
-  margin: 0;
-  color: var(--secondary);
-}
 .v2 .v2-apps-calloutline {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 12px;
+  gap: var(--space-2) var(--space-3);
 }
 .v2 .v2-apps-modaltext {
   margin: 0;
   color: var(--text-2);
 }
 
-/* ---- library table ---- */
+/* ---- library table: one-line identity (tile, name, package), one-line source ---- */
 .v2 .v2-apps-lib__app {
   display: flex;
   align-items: center;
-  gap: 12px;
-}
-.v2 .v2-apps-lib__names {
-  display: flex;
-  flex-direction: column;
+  gap: var(--space-3);
   min-width: 0;
 }
 .v2 .v2-apps-lib__name {
-  font-weight: 600;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--weight-medium);
 }
 .v2 .v2-apps-lib__pkg {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: var(--font-mono);
-  font-size: var(--fs-small);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
   color: var(--secondary);
-  overflow-wrap: anywhere;
+}
+.v2 .v2-apps-lib__table .v2-apps-lib__colapp {
+  max-width: 420px;
 }
 .v2 .v2-apps-lib__src {
   display: flex;
-  flex-direction: column;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+  white-space: nowrap;
 }
 .v2 .v2-apps-lib__srcnote {
-  font-size: var(--fs-meta);
+  min-width: 0;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
   color: var(--secondary);
-  overflow-wrap: anywhere;
+}
+.v2 .v2-apps-lib__badge {
+  display: inline-flex;
+  white-space: nowrap;
+}
+.v2 .v2-apps-lib__used {
+  white-space: nowrap;
 }
 .v2 .v2-apps-lib__muted {
   color: var(--secondary);
-}
-.v2 .v2-apps-lib__actions {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 6px;
-}
-.v2 .v2-apps-lib__menugap {
-  width: 32px;
-  flex: 0 0 auto;
-}
-.v2 .v2-apps-lib__table td .v2-badge {
   white-space: nowrap;
 }
 
-/* library as cards (≤ 900px) */
+/* library as cards (≤ 900px): the Devices cards' pattern */
 .v2 .v2-apps-libcards {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
-  gap: 12px;
+  gap: var(--grid-gap);
 }
 .v2 .v2-apps-libcard {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 16px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
   min-width: 0;
+  overflow: hidden;
+  background: var(--surface);
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-card);
+}
+.v2 .v2-apps-libcard__top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--card-pad);
+}
+.v2 .v2-apps-libcard__top .v2-apps-lib__app {
+  flex-wrap: wrap;
+  row-gap: 0;
 }
 .v2 .v2-apps-libcard__facts {
   margin: 0;
+  margin-top: auto;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px 12px;
+  background: var(--surface-sunken);
+  border-top: var(--hairline) solid var(--line-soft);
+}
+.v2 .v2-apps-libcard__facts > div {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-2) var(--card-pad);
+}
+.v2 .v2-apps-libcard__facts > div:nth-child(even) {
+  border-left: var(--hairline) solid var(--line-soft);
+}
+.v2 .v2-apps-libcard__facts > div:nth-child(n + 3) {
+  border-top: var(--hairline) solid var(--line-soft);
 }
 .v2 .v2-apps-libcard__facts dt {
-  font-size: var(--fs-small);
+  font-size: var(--text-caps);
+  line-height: var(--lh-caps);
   color: var(--secondary);
 }
 .v2 .v2-apps-libcard__facts dd {
-  margin: 2px 0 0;
+  margin: 0;
   min-width: 0;
 }
-.v2 .v2-apps-libcard .v2-apps-lib__actions {
-  justify-content: flex-start;
+/* A card's cell is narrow: its Used in list wraps between names instead of running past the card. */
+.v2 .v2-apps-libcard__facts .v2-apps-lib__used {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
-/* ---- custom APK ---- */
-.v2 .v2-apps-custom {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: 20px;
-}
-.v2 .v2-apps-custom__main {
-  flex: 2 1 560px;
-}
+/* ---- custom APK: the form card (8 of 12) and help cards (4 of 12) ---- */
 .v2 .v2-apps-custom__head {
-  gap: 10px 12px;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
 }
 .v2 .v2-apps-custom__mode {
   align-self: flex-start;
@@ -137,7 +161,7 @@
 .v2 .v2-apps-custom__fields {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
-  gap: 16px;
+  gap: var(--space-4);
 }
 .v2 .v2-apps-custom__wide {
   grid-column: 1 / -1;
@@ -146,54 +170,44 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px 12px;
-  padding-top: 16px;
-  border-top: 1px solid var(--line-soft);
+  gap: var(--space-2) var(--space-3);
+  padding-top: var(--space-4);
+  border-top: var(--hairline) solid var(--line-soft);
 }
 .v2 .v2-apps-custom__hint {
   flex: 1 1 240px;
-  font-size: var(--fs-sm);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
   color: var(--secondary);
 }
 .v2 .v2-apps-custom__side {
-  flex: 1 1 300px;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-}
-.v2 .v2-apps-sidecard__title {
-  margin: 0;
-  font-size: var(--fs-h2);
-  font-weight: 600;
+  gap: var(--grid-gap);
 }
 .v2 .v2-apps-sidecard__text {
   margin: 0;
-  font-size: var(--fs-control);
   color: var(--text-2);
 }
 .v2 .v2-apps-sidecard__exts,
 .v2 .v2-apps-sidecard__links {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-}
-.v2 .v2-apps-sidecard__links {
-  gap: 8px;
+  gap: var(--space-2);
 }
 
-/* ---- F-Droid ---- */
+/* ---- F-Droid: auto-fill cards on the page gutter ---- */
 .v2 .v2-apps-fd__info {
   margin: 0;
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  font-size: var(--fs-control);
+  gap: var(--space-2);
   color: var(--text-2);
 }
 .v2 .v2-apps-fd__info > svg {
   flex: 0 0 auto;
-  margin-top: 2px;
+  margin-top: var(--hairline);
   color: var(--secondary);
 }
 .v2 .v2-apps-fd__grid {
@@ -202,71 +216,77 @@
   padding: 0;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
-  gap: 16px;
+  gap: var(--grid-gap);
 }
-.v2 .v2-apps-fd__grid[aria-busy='true'] {
-  opacity: 0.6;
+.v2 .v2-apps-fd__grid[aria-busy='true'] > .v2-apps-fd__card:not([aria-hidden='true']) {
+  opacity: var(--disabled-opacity);
 }
 .v2 .v2-apps-fd__card {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  overflow: hidden;
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-card);
 }
 .v2 .v2-apps-fd__body {
   flex: 1 1 auto;
   display: flex;
   align-items: flex-start;
-  gap: 12px;
-  padding: 16px;
+  gap: var(--space-3);
+  padding: var(--card-pad);
 }
 .v2 .v2-apps-fd__text {
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
 }
 .v2 .v2-apps-fd__name {
   margin: 0;
-  font-size: var(--fs-body);
-  font-weight: 600;
+  font-size: var(--text-title);
+  line-height: var(--lh-title);
+  font-weight: var(--weight-semibold);
 }
 .v2 .v2-apps-fd__pkg {
   font-family: var(--font-mono);
-  font-size: var(--fs-small);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
   color: var(--secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .v2 .v2-apps-fd__summary {
-  margin: 4px 0 0;
-  font-size: var(--fs-control);
+  margin: var(--space-1) 0 0;
   color: var(--text-2);
 }
 .v2 .v2-apps-fd__foot {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
-  border-top: 1px solid var(--line-soft);
+  gap: var(--space-2);
+  min-height: var(--row);
+  box-sizing: border-box;
+  padding: var(--space-2) var(--card-pad);
+  border-top: var(--hairline) solid var(--line-soft);
+  background: var(--surface-sunken);
 }
 .v2 .v2-apps-fd__ver {
   flex: 1 1 auto;
-  font-family: var(--font-mono);
-  font-size: var(--fs-meta);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
   color: var(--secondary);
+  font-variant-numeric: tabular-nums;
 }
 .v2 .v2-apps-fd__inlib,
 .v2 .v2-apps-fd__blocked {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: var(--fs-sm);
+  gap: var(--space-1);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
 }
 .v2 .v2-apps-fd__inlib {
   color: var(--ok-ink);
@@ -277,7 +297,8 @@
 .v2 .v2-apps-fd__capped {
   margin: 0;
   text-align: center;
-  font-size: var(--fs-sm);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
   color: var(--secondary);
 }
 
@@ -285,12 +306,13 @@
 .v2 .v2-apps-shaform {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-3);
 }
 .v2 .v2-apps-shaform__url {
   margin: 0;
   font-family: var(--font-mono);
-  font-size: var(--fs-meta);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
   color: var(--secondary);
   word-break: break-all;
 }
@@ -298,6 +320,7 @@
 @media (max-width: 860px) {
   .v2 .v2-apps-lib__search,
   .v2 .v2-apps-fd__search {
+    flex-basis: 100%;
     max-width: none;
   }
   .v2 .v2-apps-toolbar__spacer {

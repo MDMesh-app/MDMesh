@@ -8,36 +8,32 @@
 /* A <details> lays its content out in a slot, so a grid gap on it never reaches the children: space them with margins
    (more specific than the children's own margin: 0). */
 .v2 details.v2-kbg__preview > * + * {
-  margin-top: 12px;
+  margin-top: var(--space-3);
 }
 
 .v2 .v2-kbg__preview > summary {
   cursor: pointer;
   width: fit-content;
-  padding: 4px 0;
-  line-height: 24px;
-  font-weight: 600;
-  font-size: var(--fs-sm);
+  padding: var(--space-1) 0;
+  line-height: var(--lh-title);
+  font-weight: var(--weight-medium);
+  font-size: var(--text-ui);
   color: var(--text);
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-chip);
 }
 
-.v2 .v2-kbg__preview > summary:focus-visible {
-  outline: 2px solid var(--ink);
-  outline-offset: 2px;
-}
 
 .v2 .v2-kbg__lede,
 .v2 .v2-kbg__footnote {
   margin: 0;
-  font-size: var(--fs-sm);
+  font-size: var(--text-ui);
   color: var(--secondary);
 }
 
 /* Shown (open and on screen): the device's font (kioskFonts.css); data/kioskLauncherLayout KIOSK_FONT measures with
    the same stack. Only from then on is a face downloaded. */
 .v2 .v2-kbg__preview.is-shown .v2-kbg__screen {
-  font-family: 'Kiosk Roboto', system-ui, sans-serif;
+  font-family: var(--kbg-font-device);
 }
 
 /* Each option wider than its label in either weight (the selected one is bolder): choosing one never moves the
@@ -59,7 +55,7 @@
 .v2 .v2-kbg__toolbar {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
   /* Both controls take the row's height (the taller one's), so their tops, bottoms and text line up exactly. */
   align-items: stretch;
 }
@@ -74,7 +70,7 @@
 
 .v2 .v2-kbg__large-figure {
   display: grid;
-  gap: 8px;
+  gap: var(--space-2);
   max-width: 100%;
 }
 
@@ -93,7 +89,7 @@
 
 /* Only the way there is animated: at the end the turned view replaces it in place, without a transition back. */
 .v2 .v2-kbg__large-turn.is-turning {
-  transition: transform var(--kbg-turn-ms) ease-in-out;
+  transition: transform var(--kbg-turn-ms) var(--ease);
   transform: translate(var(--kbg-turn-dx), var(--kbg-turn-dy)) rotate(-90deg) scale(var(--kbg-turn-fit));
 }
 
@@ -107,8 +103,8 @@
   margin: 0;
   display: grid;
   justify-items: start;
-  gap: 4px 12px;
-  font-size: var(--fs-sm);
+  gap: var(--space-1) var(--space-3);
+  font-size: var(--text-ui);
   color: var(--secondary);
 }
 
@@ -117,11 +113,11 @@
 .v2 .v2-kbg__thumbs {
   list-style: none;
   /* Room for the selected device's ring (5 px) above the first row: it never touches the readout above. */
-  margin: 8px 0 0;
+  margin: var(--space-2) 0 0;
   padding: 0;
   display: grid;
   justify-content: start;
-  gap: 16px;
+  gap: var(--space-4);
   align-items: start;
 }
 
@@ -134,12 +130,12 @@
   display: grid;
   width: fit-content;
   align-content: start;
-  gap: 8px;
+  gap: var(--space-2);
   justify-items: start;
   max-width: 100%;
   padding: 0;
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-control);
   background: none;
   color: inherit;
   font: inherit;
@@ -149,17 +145,15 @@
 
 /* Selected: a ring around the device itself, not around the caption's width. */
 .v2 .v2-kbg__thumb-button[aria-pressed='true'] .v2-kbg__device {
-  box-shadow: 0 0 0 1px var(--border-strong), 0 0 0 3px var(--surface), 0 0 0 5px var(--ink);
+  outline: var(--indicator) solid var(--ink);
+  outline-offset: var(--indicator);
 }
 
 .v2 .v2-kbg__thumb-button:hover .v2-kbg__device {
-  box-shadow: 0 0 0 1px var(--border-strong), 0 0 0 3px var(--surface), 0 0 0 5px var(--border-strong);
+  outline: var(--indicator) solid var(--border-strong);
+  outline-offset: var(--indicator);
 }
 
-.v2 .v2-kbg__thumb-button:focus-visible {
-  outline: 2px solid var(--ink);
-  outline-offset: 2px;
-}
 
 
 /* ---- the mock screen ---- */
@@ -172,7 +166,7 @@
   flex: none;
   padding: var(--kbg-bezel);
   border-radius: calc(var(--kbg-corner) + var(--kbg-bezel));
-  background: #16181d;
+  background: var(--kbg-bezel-fill);
   box-shadow: 0 0 0 1px var(--border-strong);
   line-height: 0;
 }
@@ -185,15 +179,15 @@
   background: var(--kbg-bg);
   color: var(--kbg-text);
   /* The browser's fonts until the preview is shown, then the device's (below). */
-  font-family: system-ui, sans-serif;
+  font-family: var(--kbg-font-browser);
   line-height: normal;
 }
 
 .v2 .v2-kbg__camera {
   position: absolute;
   border-radius: 50%;
-  background: #050506;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1);
+  background: var(--kbg-camera-fill);
+  box-shadow: var(--kbg-camera-edge);
 }
 
 .v2 .v2-kbg__dim {
@@ -225,14 +219,14 @@
 
 .v2 .v2-kbg__header {
   /* sans-serif-medium, as the agent's header (KioskRenderer: TITLE_SP, medium). */
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   white-space: nowrap;
 }
 
 .v2 .v2-kbg__icon {
   display: grid;
   place-items: center;
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   background: var(--kbg-text);
   color: var(--kbg-bg);
 }
@@ -245,7 +239,7 @@
 .v2 .v2-kbg__text-bar {
   display: block;
   margin-inline: auto;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   background: currentColor;
 }
 
@@ -266,7 +260,7 @@
 /* Outlined, as on the device: the kiosk background colour, a 1 dp edge and the label in the text colour. */
 .v2 .v2-kbg__exit {
   text-align: center;
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   background: var(--kbg-bg);
   color: var(--kbg-text);
   border: solid var(--kbg-text);
@@ -276,19 +270,19 @@
 
 .v2 .v2-kbg__caption {
   display: grid;
-  gap: 4px;
-  font-size: var(--fs-small);
+  gap: var(--space-1);
+  font-size: var(--text-meta);
   color: var(--secondary);
 }
 
 .v2 .v2-kbg__shape-name {
-  font-weight: 600;
+  font-weight: var(--weight-medium);
   color: var(--text);
 }
 
 .v2 .v2-kbg__readout {
   display: inline-flex;
-  gap: 4px;
+  gap: var(--space-1);
   align-items: center;
   color: var(--text);
 }
@@ -315,7 +309,7 @@
   justify-content: center;
   background: var(--kbg-bg);
   color: var(--kbg-text);
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--kbg-app-shadow);
   overflow: hidden;
 }
 
@@ -325,7 +319,7 @@
 }
 
 .v2 .v2-kbg__pinned-name {
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   text-align: center;
   overflow: hidden;
   text-overflow: ellipsis;

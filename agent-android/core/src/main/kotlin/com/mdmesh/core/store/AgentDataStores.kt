@@ -38,7 +38,7 @@ import javax.inject.Singleton
  * a file the storage damaged (#220: a brownout on budget eMMC) is recovered on its next read instead of failing every
  * read with "Unable to parse preferences proto.". The only place DataStore files are opened (StoreFactoryOnlyTest).
  *
- * Each store is written to its file and then copied to `<name>_mirror` next to it ([MirroredDataStore]), and every
+ * Each store is written to `<name>_mirror` and then to its own file ([MirroredDataStore]), and every
  * write records how many entries it holds ([Integrity]). A primary is damaged when it can't be parsed (DataStore's
  * corruption handler), or when it parses but is short (an empty or cut-off file parses as fewer entries): it is then
  * restored from its mirror, or failing that from the store's own rule below. Every restore is recorded as a
@@ -126,9 +126,9 @@ class AgentDataStores(
         return Integrity.sealed(prefs)
     }
 
-    /** The mirror's contents when it was written by this agent ([Integrity.isWhole]); null otherwise. */
+    /** The mirror's contents when it was written by this agent and is whole ([Integrity.isUsable]). */
     private suspend fun readMirror(mirror: DataStore<Preferences>, name: String): Preferences? = try {
-        mirror.data.first().takeIf(Integrity::isWhole)
+        mirror.data.first().takeIf(Integrity::isUsable)
     } catch (e: IOException) {
         warn("$name mirror unreadable while recovering", e)
         null
@@ -181,8 +181,9 @@ class AgentDataStores(
 
 /**
  * Each store's record of how many entries it holds, written with every write. A file cut short parses (protobuf has
- * no end marker): cut at zero it is empty, cut between entries it holds fewer. Either way the count is gone or no
- * longer matches, whichever entries were lost, so the file is known to be damaged.
+ * no end marker): cut at zero it is empty, cut between entries it holds fewer. Either way the count is gone or more
+ * than the entries left, whichever entries were lost, so the file is known to be damaged. More entries than the count
+ * is an older agent (a downgrade) that added keys and kept the count: the file is kept and counted again.
  */
 internal object Integrity {
     val ENTRIES = intPreferencesKey("__mdmesh_entries")
@@ -195,18 +196,23 @@ internal object Integrity {
         return m.toPreferences()
     }
 
-    /** Written by this agent, and every entry it wrote is there. */
-    fun isWhole(p: Preferences): Boolean = p[ENTRIES] == p.asMap().size - 1
+    /** Written by this agent (counted). */
+    fun isCounted(p: Preferences): Boolean = p[ENTRIES] != null
 
-    /** Counted, but entries are missing: cut short. */
-    fun isShort(p: Preferences): Boolean = p[ENTRIES] != null && !isWhole(p)
+    /** Counted, but fewer entries than the count: cut short. */
+    fun isShort(p: Preferences): Boolean = p[ENTRIES]?.let { p.asMap().size - 1 < it } ?: false
+
+    /** A copy to restore from: counted and not short. */
+    fun isUsable(p: Preferences): Boolean = isCounted(p) && !isShort(p)
 }
 
 /**
- * A DataStore whose every write is sealed ([Integrity]) and then copied to a mirror file, so a damaged primary can
- * be restored ([AgentDataStores]). The mirror always gets the primary's latest value (read under one lock), so two
- * writes racing can't leave it with the older one. Copying is best effort: a failed copy is logged and repeated by
- * the next write or [AgentDataStores.check]; the primary stays the truth.
+ * A DataStore whose every write is sealed ([Integrity]) and written to a mirror file first, then to the primary, so
+ * a damaged primary is restored ([AgentDataStores]) to the newest state ever written: the mirror never lags. A write
+ * cut off between the files leaves the primary older but intact, and it is kept: the write never completed (its
+ * caller got no answer), and the next write or [AgentDataStores.check] copies the primary to the mirror again.
+ * Writes run one at a time under one lock. A mirror that can't be written fails the write, before the primary is
+ * touched, so the mirror can never fall behind.
  *
  * A primary that reads short, or uncounted while its mirror is counted (cut before its count), is damaged: reads and
  * writes see it [restore]d first, inside the primary's own update, so it is restored once however many read it.
@@ -218,19 +224,23 @@ class MirroredDataStore internal constructor(
     private val name: String,
     private val restore: suspend () -> Preferences,
 ) : DataStore<Preferences> {
-    private val mirrorLock = Mutex()
+    private val writeLock = Mutex()
 
     override val data: Flow<Preferences> = primary.data.map { if (damaged(it)) primary.updateData(::intact) else it }
 
     override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences =
-        primary.updateData { Integrity.sealed(transform(intact(it))) }.also { syncMirror() }
+        writeLock.withLock {
+            val next = Integrity.sealed(transform(data.first()))
+            mirror.updateData { next }
+            primary.updateData { next }
+        }
 
     private suspend fun intact(current: Preferences): Preferences = if (damaged(current)) restore() else current
 
     private suspend fun damaged(p: Preferences): Boolean = when {
-        p[Integrity.ENTRIES] != null -> Integrity.isShort(p)
+        Integrity.isCounted(p) -> Integrity.isShort(p)
         else -> try {
-            Integrity.isWhole(mirror.data.first())
+            Integrity.isUsable(mirror.data.first())
         } catch (e: IOException) {
             warn("$name mirror unreadable; the primary is taken as it is", e)
             false
@@ -240,7 +250,7 @@ class MirroredDataStore internal constructor(
     /** Copies the primary's current value to the mirror (a damaged primary is restored first, never copied). */
     suspend fun syncMirror() {
         try {
-            mirrorLock.withLock {
+            writeLock.withLock {
                 val now = data.first()
                 mirror.updateData { now }
             }

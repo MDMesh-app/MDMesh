@@ -190,6 +190,9 @@ don't get Clear PIN lockout (the console disables it for a device on an older ag
 older agents). It also works with a 0.4.0 server, which sends none of these and ignores the attempt id: an
 enrollment there works as before, it just can't be resumed.
 
+Downgrading the agent below 0.5.1 and upgrading again can bring back agent state removed meanwhile, such as a kiosk
+exited or credentials cleared while the older agent ran.
+
 ## Version notes
 
 ### v0.5.0

@@ -1,5 +1,6 @@
 package com.mdmesh.core.store
 
+import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
@@ -24,6 +25,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.io.IOException
 
 /**
  * #220 on real DataStore files: a store the storage corrupted is recovered on its next read (mirror, then the store's
@@ -60,6 +62,72 @@ class AgentDataStoresTest {
     private fun identityAfterReopen(): Pair<String?, String?> = runBlocking {
         val store = DeviceIdStore(open().identity)
         (store.current() to store.secret()).also { close() }
+    }
+
+    /** One file opened bare, for a fault: closed with the "process" ([close]). */
+    private fun bare(name: String): DataStore<Preferences> =
+        PreferenceDataStoreFactory.create(scope = CoroutineScope(Dispatchers.IO + Job().also { jobs += it })) {
+            file(name)
+        }
+
+    /** The process dies as this file is about to be written. */
+    private class DiesOnWrite(private val inner: DataStore<Preferences>) : DataStore<Preferences> by inner {
+        override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences =
+            throw IOException("process died")
+    }
+
+    private val newSecret = stringPreferencesKey("device_secret")
+
+    /** The identity store over files with faults; its primary is never damaged here. */
+    private fun identity(primary: DataStore<Preferences>, mirror: DataStore<Preferences>) =
+        MirroredDataStore(primary, mirror, "mdm_identity") { error("the primary is not damaged") }
+
+    @Test
+    fun `a write cut off after the mirror keeps the intact primary, and a later recovery gets the newer write`() {
+        enrolled()
+        val cutOff = identity(DiesOnWrite(bare("mdm_identity")), bare("mdm_identity_mirror"))
+        runBlocking { assertTrue(runCatching { cutOff.edit { it[newSecret] = "secret-2" } }.isFailure) }
+        close()
+
+        assertEquals("the unfinished write isn't taken", "dev_1" to "secret-1", identityAfterReopen())
+        assertEquals(emptyList<String>(), events.recovered())
+        file("mdm_identity").writeBytes(ByteArray(0))
+        assertEquals("never an older state than written", "dev_1" to "secret-2", identityAfterReopen())
+    }
+
+    @Test
+    fun `a mirror that can't be written fails the write before the primary is touched`() {
+        enrolled()
+        val noMirror = identity(bare("mdm_identity"), DiesOnWrite(bare("mdm_identity_mirror")))
+        runBlocking { assertTrue(runCatching { noMirror.edit { it[newSecret] = "secret-2" } }.isFailure) }
+        close()
+        assertEquals("dev_1" to "secret-1", identityAfterReopen())
+    }
+
+    @Test
+    fun `check copies an intact primary over a mirror an unfinished write left ahead`() {
+        enrolled()
+        val cutOff = identity(DiesOnWrite(bare("mdm_identity")), bare("mdm_identity_mirror"))
+        runBlocking { runCatching { cutOff.edit { it[newSecret] = "secret-2" } } }
+        close()
+        runBlocking { open().check() }
+        close()
+        assertTrue(file("mdm_identity_mirror").readBytes().contentEquals(file("mdm_identity").readBytes()))
+    }
+
+    @Test
+    fun `keys an older agent added after a downgrade are kept, not taken for damage`() {
+        enrolled()
+        // 0.5.0 adds a key and keeps the count as it was.
+        runBlocking { bare("mdm_identity").edit { it[stringPreferencesKey("from_0_5_0")] = "x" } }
+        close()
+        val stores = open()
+        assertEquals("x", runBlocking { stores.identity.data.first()[stringPreferencesKey("from_0_5_0")] })
+        runBlocking { stores.check() } // counted again
+        close()
+        assertEquals(emptyList<String>(), events.recovered())
+        file("mdm_identity").writeBytes(ByteArray(0))
+        assertEquals("dev_1" to "secret-1", identityAfterReopen())
     }
 
     @Test

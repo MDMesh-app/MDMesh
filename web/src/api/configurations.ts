@@ -54,6 +54,27 @@ export interface ConfigApp {
   longTap?: boolean | null;
 }
 
+/** An application setting's type: Text, Number (a 32-bit integer), On/off. */
+export type AppSettingType = 'STRING' | 'INTEGER' | 'BOOLEAN';
+
+/** A configuration's (`configurationApplicationSettings`) or a device's (`deviceApplicationSettings`) row. */
+export interface AppSetting {
+  id?: number;
+  applicationId: number;
+  name: string;
+  type: AppSettingType;
+  value: string;
+  comment?: string | null;
+  readonly: boolean;
+  variable: boolean;
+  lastUpdate: number;
+  /** The configuration's or the device's id. */
+  extRefId?: number;
+  applicationPkg?: string;
+  applicationName?: string;
+  [key: string]: unknown;
+}
+
 // Full configuration. Field access is by key (the editor is schema-driven), so we
 // keep a permissive index signature alongside the well-known fields. The whole object
 // is round-tripped on save (the server replaces all columns), so never send a partial.

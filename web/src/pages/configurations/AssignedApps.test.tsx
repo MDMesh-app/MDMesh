@@ -134,6 +134,110 @@ describe('assigned apps: search, filter and sort', () => {
     expect(second.puts[0].managedAppPermissions).toEqual([]);
   });
 
+  it('keeps an Application settings disclosure inside an installed app’s row, and none for an app not installed', async () => {
+    open(assigned([TEN[0], TEN[3]]));
+    await loaded();
+    const chrome = screen.getByText('Chrome', { selector: '.v2-cfged-app__name' }).closest('tr')!;
+    const teams = screen.getByText('Microsoft Teams', { selector: '.v2-cfged-app__name' }).closest('tr')!;
+    expect(chrome.querySelector('.v2-cfged-app__text .v2-cfged-settings-app')).toBeTruthy();
+    expect(teams.querySelector('.v2-cfged-settings-app')).toBeNull();
+    expect(within(chrome).getByText('Application settings')).toBeTruthy();
+    expect(table().tBodies[0].rows).toHaveLength(2);
+  });
+
+  it('adds, edits and removes settings, and saves them with the configuration', async () => {
+    const stored = { id: 31, applicationId: 1, name: 'legacy', type: 'STRING', value: 'kept', comment: 'from Headwind', readonly: true, variable: true, lastUpdate: 5 };
+    const { puts } = open(assigned(TEN.slice(0, 1)), { applicationSettings: [stored] });
+    await loaded();
+    const row = screen.getByText('Chrome', { selector: '.v2-cfged-app__name' }).closest('tr')!;
+    expect(within(row).getByText('Application settings · 1')).toBeTruthy();
+
+    fireEvent.click(within(row).getByRole('button', { name: 'Add setting' }));
+    const added = within(row).getByRole('group', { name: 'Setting new setting' });
+    fireEvent.change(within(added).getByRole('textbox', { name: 'Key' }), { target: { value: 'pollSeconds' } });
+    const setting = within(row).getByRole('group', { name: 'Setting pollSeconds' });
+    chooseOption(within(setting).getByRole('combobox', { name: 'Type' }), 'Number');
+    fireEvent.change(within(setting).getByRole('textbox', { name: 'Value' }), { target: { value: '30' } });
+
+    fireEvent.click(within(row).getByRole('button', { name: 'Add setting' }));
+    fireEvent.change(within(within(row).getByRole('group', { name: 'Setting new setting' })).getByRole('textbox', { name: 'Key' }), { target: { value: 'gone' } });
+    fireEvent.click(within(row).getByRole('button', { name: 'Remove setting gone' }));
+
+    await save();
+    await waitFor(() => expect(puts).toHaveLength(1));
+    expect(puts[0].applicationSettings).toEqual([
+      stored,
+      expect.objectContaining({ applicationId: 1, name: 'pollSeconds', type: 'INTEGER', value: '30', readonly: false, variable: false }),
+    ]);
+  });
+
+  it('refuses a save while a setting is invalid, and says why without the value', async () => {
+    const { puts } = open(assigned(TEN.slice(0, 1)), {
+      applicationSettings: [{ applicationId: 1, name: 'token', type: 'STRING', value: 's3cr3t', readonly: false, variable: false, lastUpdate: 1 }],
+    });
+    await loaded();
+    const row = screen.getByText('Chrome', { selector: '.v2-cfged-app__name' }).closest('tr')!;
+    fireEvent.click(within(row).getByRole('button', { name: 'Add setting' }));
+    const added = within(row).getByRole('group', { name: 'Setting new setting' });
+    fireEvent.change(within(added).getByRole('textbox', { name: 'Key' }), { target: { value: 'token' } });
+    expect(within(row).getByText('This app already has a setting with this key.')).toBeTruthy();
+
+    fireEvent.click(within(saveBar()!).getByRole('button', { name: 'Save and apply' }));
+    const toast = await screen.findByText('Fix 1 problem before saving');
+    expect(toast.closest('[role="status"], [role="alert"], li, div')!.textContent).not.toContain('s3cr3t');
+    expect(puts).toHaveLength(0);
+  });
+
+  it('setting a value back to what it was leaves no unsaved change', async () => {
+    open(assigned(TEN.slice(0, 1)), {
+      applicationSettings: [
+        { applicationId: 1, name: 'serverUrl', type: 'STRING', value: 'https://a', readonly: false, variable: false, lastUpdate: 1 },
+        { applicationId: 1, name: 'kioskMode', type: 'BOOLEAN', value: 'true', readonly: false, variable: false, lastUpdate: 1 },
+      ],
+    });
+    await loaded();
+    const row = screen.getByText('Chrome', { selector: '.v2-cfged-app__name' }).closest('tr')!;
+    const value = within(within(row).getByRole('group', { name: 'Setting serverUrl' })).getByRole('textbox', { name: 'Value' });
+    fireEvent.change(value, { target: { value: 'https://b' } });
+    expect(saveBar()?.textContent).toContain('1 unsaved change');
+    fireEvent.change(value, { target: { value: 'https://a' } });
+    await waitFor(() => expect(saveBar()).toBeNull());
+  });
+
+  it('drops an app’s settings when it is no longer installed', async () => {
+    const { puts } = open(assigned(TEN.slice(0, 2)), {
+      applicationSettings: [
+        { applicationId: 1, name: 'a', type: 'STRING', value: 'x', readonly: false, variable: false, lastUpdate: 1 },
+        { applicationId: 2, name: 'b', type: 'STRING', value: 'y', readonly: false, variable: false, lastUpdate: 1 },
+      ],
+    });
+    await loaded();
+    chooseOption(actionOf('Chrome'), { value: '0' });
+    await save();
+    await waitFor(() => expect(puts).toHaveLength(1));
+    expect(puts[0].applicationSettings).toEqual([expect.objectContaining({ applicationId: 2, name: 'b' })]);
+  });
+
+  it('keeps a stored setting of an app the configuration does not install as it is, and an unrelated edit is no settings change', async () => {
+    const orphan = { id: 9, applicationId: 99, name: 'old', type: 'STRING', value: '', readonly: false, variable: false, lastUpdate: 1 };
+    const { puts } = open(assigned(TEN.slice(0, 2)), { applicationSettings: [orphan] });
+    await loaded();
+    chooseOption(actionOf('Chrome'), { value: '0' });
+    expect(saveBar()?.textContent).toContain('1 unsaved change');
+    await save();
+    await waitFor(() => expect(puts).toHaveLength(1));
+    expect(puts[0].applicationSettings).toEqual([orphan]);
+  });
+
+  it('leaves an absent settings list absent on a save that does not touch it', async () => {
+    const { puts } = open(assigned(TEN.slice(0, 1)));
+    await loaded();
+    chooseOption(actionOf('Chrome'), { value: '0' });
+    await save();
+    await waitFor(() => expect(puts).toHaveLength(1));
+    expect(puts[0].applicationSettings).toBeUndefined();
+  });
+
   it('shows no controls for a list of the threshold or fewer, in stored order', async () => {
     open(assigned(TEN.slice(0, APP_CONTROLS_THRESHOLD)));
     await loaded();

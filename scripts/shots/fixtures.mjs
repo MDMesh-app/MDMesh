@@ -243,8 +243,15 @@ export function buildDeviceDetailFixtures(base, now = Date.now()) {
     { id: 390, type: 'device.reboot', status: 'done', createdAt: now - 3 * day - 10 * min, completedAt: now - 3 * day },
     { id: 381, type: 'device.lockscreenMessage', status: 'done', createdAt: now - 4 * day, completedAt: now - 4 * day },
   ];
-  const configuration = { id: 4, name: 'Default', requestUpdates: 'WIFI', kioskMode: false, applications: [] };
-  return { telemetry, configStatus, commands, configuration };
+  // Application settings (managed configuration) of the scanner app (5) the configuration installs, and the device's
+  // own: one override that wins over the configuration's value, and one key only this device has.
+  const setting = (extRefId, name, type, value) => ({ applicationId: 5, extRefId, name, type, value, comment: null, readonly: false, variable: false, lastUpdate: now - day });
+  const configuration = {
+    id: 4, name: 'Default', requestUpdates: 'WIFI', kioskMode: false, applications: [],
+    applicationSettings: [setting(4, 'serverUrl', 'STRING', 'https://wms.acme.example'), setting(4, 'beepOnScan', 'BOOLEAN', 'true')],
+  };
+  const deviceAppSettings = [setting(101, 'serverUrl', 'STRING', 'https://wms-staging.acme.example'), setting(101, 'scannerId', 'INTEGER', '17')];
+  return { telemetry, configStatus, commands, configuration, deviceAppSettings };
 }
 
 /** REST answers for the v2 device-detail page, or undefined to fall through to the shared fixtures. */
@@ -253,6 +260,8 @@ export function deviceDetailRest(method, p, dd) {
   if (method === 'GET' && /\/devices\/[^/]+\/configStatus$/.test(p)) return dd.configStatus;
   if (method === 'GET' && /\/agent\/v1\/devices\/[^/]+\/commands/.test(p)) return dd.commands;
   if (method === 'GET' && /\/private\/configurations\/4$/.test(p)) return dd.configuration; // device 101's configuration
+  if (method === 'GET' && /\/private\/devices\/\d+\/applicationSettings$/.test(p)) return dd.deviceAppSettings;
+  if (method === 'POST' && /\/private\/devices\/\d+\/applicationSettings$/.test(p)) return null;
   if (method === 'POST' && /\/devices\/[^/]+\/syncApps$/.test(p)) return { queued: 2 };
   if (method === 'POST' && /\/agent\/v1\/devices\/[^/]+\/commands$/.test(p)) return { id: 413, status: 'pending' };
   return undefined;
@@ -319,7 +328,7 @@ export function configurationsFixtures(fx) {
       overridePath: true, remove: false, lastUpdate: 1767225600000, url: 'https://mdm.acme.example/files/acme-ca.pem',
     }],
     applicationSettings: [{
-      id: 700 + id, extRefId: id, applicationId: 6, name: 'player.url', type: 1,
+      id: 700 + id, extRefId: id, applicationId: 6, name: 'player.url', type: 'STRING',
       value: 'https://signage.acme.example/lobby', comment: null, readonly: false, lastUpdate: 1767225600000, variable: false,
     }],
     applicationUsageParameters: [{ id: 800 + id, configurationId: id, applicationId: 6, skipVersionCheck: true }],

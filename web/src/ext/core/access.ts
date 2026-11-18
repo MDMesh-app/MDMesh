@@ -70,6 +70,12 @@ export const CORE_ACTION_ACCESS = {
    * 26.10.13).
    */
   renameDevice: { permission: 'edit_device_desc' },
+  /**
+   * The device page's Application settings card (an app's managed configuration on this device): DeviceResource
+   * GET and POST /{id}/applicationSettings check edit_device_app_settings, as a value can be a secret. Without it the
+   * card is left out.
+   */
+  deviceAppSettings: { permission: 'edit_device_app_settings' },
   /** The library's "Remove from library": ApplicationResource DELETE /{id} checks edit_applications. */
   removeApp: { permission: 'edit_applications' },
   /**

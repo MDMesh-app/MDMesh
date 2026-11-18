@@ -41,6 +41,15 @@ import { configuredKiosk } from '../data/kiosk';
 import { kioskAffectingChanges } from '../data/kioskChanges';
 import { manageableAppPermissions, managedAppPermissionLabel } from '../data/managedAppPermissions';
 import {
+  appSettingsOf,
+  appSettingsProblems,
+  appSettingsSignature,
+  dropAppSettings,
+  newAppSetting,
+  type AppSetting,
+} from '../data/managedAppSettings';
+import { AppSettingRows } from './configurations/AppSettingRows';
+import {
   Badge,
   Breadcrumb,
   Button,
@@ -335,6 +344,7 @@ function changedKeys(before: Configuration, after: Configuration): Set<string> {
     || norm(before.backgroundImageFocalY) !== norm(after.backgroundImageFocalY)) out.add('backgroundImageFileId');
   if (appsSignature(before) !== appsSignature(after)) out.add('applications');
   if (appPermissionsSignature(before) !== appPermissionsSignature(after)) out.add('managedAppPermissions');
+  if (appSettingsSignature(before.applicationSettings) !== appSettingsSignature(after.applicationSettings)) out.add('applicationSettings');
   return out;
 }
 
@@ -466,7 +476,7 @@ function Editor({
   const changedIn = (sec: SectionId) => {
     let n = 0;
     for (const k of changed) {
-      if (k === 'applications') n += sec === 'apps' ? 1 : 0;
+      if (k === 'applications' || k === 'managedAppPermissions' || k === 'applicationSettings') n += sec === 'apps' ? 1 : 0;
       else if (k === 'backgroundImageFileId') n += sec === 'kiosk' ? 1 : 0;
       else if (FIELD[k] && sectionOf(FIELD[k]) === sec) n++;
     }
@@ -531,7 +541,10 @@ function Editor({
       const after = applications.find((a) => a.id === id);
       const stillMain = after != null && (after.action ?? 1) === 1 && after.showIcon !== false;
       const mainAppId = !stillMain && target?.usedVersionId != null && target.usedVersionId === d.mainAppId ? null : d.mainAppId;
-      return { ...d, applications, managedAppPermissions, mainAppId };
+      // So are application settings: those of this app go with it (the server drops them on save anyway). Settings of
+      // other apps not installed (stored before) stay as loaded, so an unrelated edit is no settings change.
+      const applicationSettings = installed.has(id) ? d.applicationSettings : dropAppSettings(d.applicationSettings, id);
+      return { ...d, applications, managedAppPermissions, applicationSettings, mainAppId };
     });
   }
   const removeApp = (id: number) => updateApps(id, (list) => list.filter((a) => a.id !== id));
@@ -549,6 +562,21 @@ function Editor({
     const rules = Array.isArray(draft.managedAppPermissions) ? draft.managedAppPermissions as Array<Record<string, unknown>> : [];
     return String(rules.find((r) => r.applicationId === applicationId && r.permission === permission)?.state ?? 'default');
   };
+
+  // Application settings, addressed by their index in the whole list. An absent list stays absent until edited (the
+  // server keeps what is stored).
+  const appSettings = appSettingsOf(draft.applicationSettings);
+  // Only the rows of installed apps: the editor shows no others, and the server drops them on save.
+  const installedIds = useMemo(() => new Set(allowed.filter((a) => (a.action ?? 1) === 1).map((a) => a.id)), [allowed]);
+  const settingProblems = useMemo(
+    () => appSettingsProblems(appSettingsOf(draft.applicationSettings)).filter((p) => installedIds.has(appSettingsOf(draft.applicationSettings)[p.index].applicationId)),
+    [draft.applicationSettings, installedIds],
+  );
+  const editSettings = (next: (rows: AppSetting[]) => AppSetting[]) =>
+    setDraft((d) => ({ ...d, applicationSettings: next(appSettingsOf(d.applicationSettings)) }));
+  const setAppSetting = (index: number, row: AppSetting) => editSettings((rows) => rows.map((r, i) => (i === index ? row : r)));
+  const removeAppSetting = (index: number) => editSettings((rows) => rows.filter((_, i) => i !== index));
+  const addAppSetting = (applicationId: number) => editSettings((rows) => [...rows, newAppSetting(applicationId)]);
 
   function requestSave() {
     if (backgroundUploading) {
@@ -569,6 +597,20 @@ function Editor({
       toast.push('err', 'Check the exit PIN', pinProblem);
       focusSection('kiosk');
       document.querySelector<HTMLInputElement>(`[aria-labelledby="${ids}-password"]`)?.focus({ preventScroll: true });
+      return;
+    }
+    if (settingProblems.length > 0) {
+      const first = settingProblems[0];
+      const row = appSettings[first.index];
+      const app = allowed.find((a) => a.id === row.applicationId);
+      const appName = app?.name ?? app?.pkg ?? 'An app';
+      toast.push('err', `Fix ${plural(settingProblems.length, 'problem')} before saving`, `Application settings of ${appName}: ${first.message}`);
+      const details = document.querySelector<HTMLDetailsElement>(`[data-app-settings="${row.applicationId}"]`);
+      if (details) {
+        details.open = true;
+        details.scrollIntoView?.({ block: 'center' });
+        details.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus({ preventScroll: true });
+      }
       return;
     }
     const invalid = host.validate();
@@ -1027,8 +1069,25 @@ function Editor({
               .filter((rule) => rule.applicationId === app.id && typeof rule.permission === 'string')
               .map((rule) => String(rule.permission));
             const permissions = manageableAppPermissions(app.requestedPermissions, configured);
-            if (permissions.length === 0) return null;
+            const settings = appSettings.flatMap((row, index) => (row.applicationId === app.id ? [{ index, row }] : []));
+            const settingsDisclosure = readOnly && settings.length === 0 ? null : (
+              <details className="v2-cfged-permission-app v2-cfged-settings-app" data-app-settings={app.id}>
+                <summary>Application settings{settings.length ? ` · ${settings.length}` : ''}</summary>
+                <p>Values the app reads as its managed configuration. A device can override a key on its page.</p>
+                <AppSettingRows
+                  appName={app.name ?? app.pkg ?? 'This app'}
+                  entries={settings}
+                  problems={settingProblems}
+                  readOnly={readOnly}
+                  onChange={setAppSetting}
+                  onRemove={removeAppSetting}
+                  onAdd={() => addAppSetting(app.id)}
+                />
+              </details>
+            );
+            if (permissions.length === 0) return settingsDisclosure;
             return (
+              <>
               <details className="v2-cfged-permission-app">
                 <summary>Permissions · {permissions.length} available</summary>
                 <p>Each device applies what its Android and the app support. Default lifts the override.</p>
@@ -1042,6 +1101,8 @@ function Editor({
                   </label>
                 ))}
               </details>
+              {settingsDisclosure}
+              </>
             );
           }}
         />

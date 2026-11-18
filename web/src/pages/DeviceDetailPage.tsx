@@ -64,6 +64,7 @@ import { ActionDialog, ConfigPanel, RemoteActions, TEMPLATE, type KioskReturnOff
 import { DeviceKioskBackground } from './configurations/KioskBackground';
 import { ActivityTab, LocationTab, TelemetryTab } from './DeviceDetailTabs';
 import { AppsTab, useAppScan } from './DeviceDetailApps';
+import { DeviceAppSettings } from './DeviceDetailAppSettings';
 import { ConfiguredKioskDialog, DeviceKioskDialog } from './DeviceKioskDialog';
 import { CORE_ACTION_ACCESS } from '../ext/core/access';
 import { withCoreParts } from '../ext/core/device';
@@ -246,6 +247,7 @@ export function DeviceDetailPage() {
   const tabsId = useId();
   // What the role may change (ext/core/access.ts); the reads stay for everyone.
   const canEdit = usePermission(CORE_ACTION_ACCESS.editDevices);
+  const canAppSettings = usePermission(CORE_ACTION_ACCESS.deviceAppSettings);
   const canRename = usePermission(CORE_ACTION_ACCESS.renameDevice);
 
   const [device, setDevice] = useState<DeviceView | null>(null);
@@ -1047,7 +1049,20 @@ export function DeviceDetailPage() {
           </>
         ),
         telemetry: <TelemetryTab telemetry={tele} loaded={teleLoaded} reportedAt={ds?.updatedAt} />,
-        apps: <AppsTab number={device.number} history={history} loaded={historyLoaded} scan={canEdit && !wiped ? appScan : undefined} />,
+        apps: (
+          <>
+            <AppsTab number={device.number} history={history} loaded={historyLoaded} scan={canEdit && !wiped ? appScan : undefined} />
+            {canAppSettings ? (
+              <DeviceAppSettings
+                key={device.id}
+                deviceId={device.id}
+                configuration={configuration?.id === configurationId ? configuration : null}
+                configurationId={configurationId}
+                canEdit={!wiped}
+              />
+            ) : null}
+          </>
+        ),
         activity: (
           <ActivityTab events={events} eventsLoaded={eventsLoaded} commands={history} commandsLoaded={historyLoaded} now={now} />
         ),

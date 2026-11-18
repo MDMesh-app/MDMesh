@@ -1,4 +1,5 @@
 import { ApiError, apiClient } from './client';
+import type { AppSetting } from './configurations';
 
 // Endpoint (see server: com.hmdm.rest.resource.DeviceResource#getAllDevices):
 //   POST /rest/private/devices/search   body: DeviceSearchRequest
@@ -126,4 +127,15 @@ export async function getDeviceByNumber(number: string): Promise<DeviceView | nu
     if (e instanceof ApiError && (e.message === DEVICE_NOT_FOUND || e.httpStatus === 400 || e.httpStatus === 404)) return null;
     throw e;
   }
+}
+
+/** The device's own application settings, its overrides of its configuration's (GET /private/devices/{id}/applicationSettings). */
+export async function getDeviceAppSettings(deviceId: number): Promise<AppSetting[]> {
+  const rows = await apiClient.get<AppSetting[] | null>(`/private/devices/${deviceId}/applicationSettings`);
+  return Array.isArray(rows) ? rows : [];
+}
+
+/** Replace the device's application settings with `rows`, its whole list (edit_devices); the server wakes the device. */
+export async function saveDeviceAppSettings(deviceId: number, rows: AppSetting[]): Promise<void> {
+  await apiClient.post(`/private/devices/${deviceId}/applicationSettings`, rows);
 }

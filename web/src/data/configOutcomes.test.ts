@@ -43,6 +43,13 @@ describe('outcomeKeyLabel', () => {
       .toMatchObject({ label: 'org.example.maps: camera', text: 'Not requested by this app', kind: 'unsupported' });
   });
 
+  it('labels a package’s managed configuration (appRestrictions.<package>) by its package', () => {
+    expect(outcomeKeyLabel('appRestrictions.hr.example.tablet')).toBe('hr.example.tablet: application settings');
+    expect(classifyOutcome('appRestrictions.hr.example.tablet', 'failed: app not installed'))
+      .toMatchObject({ label: 'hr.example.tablet: application settings', kind: 'failed', reason: 'app not installed' });
+    expect(classifyOutcome('appRestrictions.hr.example.tablet', 'unsupported')).toMatchObject({ kind: 'unsupported' });
+  });
+
   it('distinguishes an old Android release from an agent that lacks Location-services support', () => {
     expect(unsupportedOutcomeReason('policies.locationServices', { androidSdkInt: 28, isDeviceOwner: true }))
       .toBe('Requires Android 11 or later (this device is API 28).');

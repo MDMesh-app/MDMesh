@@ -65,8 +65,8 @@
    ```
 
    `n=$(…) &&` stops if the script fails (`git tag -F <(…)` would make an empty tag instead), and
-   `--cleanup=whitespace` keeps lines that start with `#`. Then approve the `release` environment's deployment twice
-   (setup step 4): the `apk` job once the `gate` job is green, and the `publish` job once the image builds are.
+   `--cleanup=whitespace` keeps lines that start with `#`. Then approve the `release` environment's deployment
+   (setup step 4); the `release` job asks for it once the `gate` job and the image builds are green.
 7. **Verify the published release** ([below](#verifying-a-published-release)): asset SHA-256 against the
    manifest, the minisign signature, the APK's signing certificate, its versionCode, `quickstart.sh`, and the GHCR
    images.
@@ -137,17 +137,19 @@ release workflow can't catch this, since it can only check the manifest against 
 
 The tag must point at a commit on `main` (its first-parent history), be newer than every earlier release, and carry
 the tagged commit's CHANGELOG.md section as its annotation (`release/changelog-section.sh --check vX.Y.Z`, which
-you can also run locally): the workflow's `gate` job checks that first. The `apk` and `publish` jobs (the only ones
-with the signing secrets) each wait for a reviewer's approval in the `release` environment (setup step 4). Each runs
-the changelog check again when it starts, `publish` once more just before it publishes, and fails if the tag no
-longer points at the commit it checked out.
+you can also run locally): the workflow's `gate` job checks that first. The `images` job then builds the **server**,
+**web**, and **supervisor** images for `linux/amd64` and `linux/arm64`, each on its own GitHub runner (`ubuntu-24.04`
+and `ubuntu-24.04-arm`, no emulation), pushes them by digest, untagged (nothing pulls them), and smoke-tests the
+pushed supervisor on both. It needs no secrets; the web image's enrollment QR gets the APK signing checksum recorded
+in `release/agent-signature-checksum`. The `release` job (the only one with the signing secrets) starts once those
+builds pass and waits for a reviewer's approval in the `release` environment (setup step 4). It runs the changelog
+check again when it starts and just before it publishes, and fails if the tag no longer points at the commit it
+checked out.
 
-`.github/workflows/release.yml` then: runs the agent unit tests + builds the **signed** release APK (`apk`); builds
-the **server**, **web**, and **supervisor** images for `linux/amd64` and `linux/arm64`, each on its own GitHub runner
-(`ubuntu-24.04` and `ubuntu-24.04-arm`, no emulation), pushes them by digest, untagged, and smoke-tests the pushed
-supervisor on both (`images`); then (`publish`) joins each image's two builds into one multi-platform index tagged
-`:VERSION`, reads back each index's digest and checks it holds exactly one image per platform
-(`release/image-digest.sh`), builds a **minisign-signed manifest**, and publishes a **GitHub Release** with
+The `release` job: runs the agent unit tests + builds the **signed** release APK, and stops unless its signing
+checksum is the recorded one (see [step 1](#1-apk-release-keystore--never-rotate)); joins each image's two builds into
+one multi-platform index tagged `:VERSION`, reads back each index's digest and checks it holds exactly one image per
+platform (`release/image-digest.sh`); builds a **minisign-signed manifest**, and publishes a **GitHub Release** with
 `mdmesh-agent.apk`, `manifest.json`, `manifest.json.minisig` and `quickstart.sh` (the tagged commit's copy, which the
 README's install command downloads from the latest release). Before the upload it checks that `quickstart.sh` is the
 file the signed manifest hashes, and after it reads the published asset back and checks it again. The fleet auto-updater consumes that signed manifest
@@ -186,8 +188,8 @@ digest, registry-side, no rebuild), then verify all three digests. It first chec
 digest the signed manifest pins. A failure anywhere earlier leaves
 `:latest` — and so every quick-start install — on the previous release.
 
-**If a changelog check fails**, re-tag. In the `gate` job or at the start of the `apk` job nothing was built or
-published; at the start of `publish` only untagged image builds were pushed, which nothing pulls; just before
+**If a changelog check fails**, re-tag. In the `gate` job nothing was built; at the start of the `release` job only
+untagged image builds were pushed, which nothing pulls; just before
 publishing (the tag changed during the run) the `:VERSION` images are tagged but there is no Release, and the new
 tag's run tags them again. Delete the tag and tag again from the changelog (deleting a `v*` tag
 needs the tag ruleset's bypass). Take the commit from the release PR's merge commit, not from the tag, which may be
@@ -208,7 +210,7 @@ own copy over it
 (`gh release upload vX.Y.Z quickstart.sh --clobber -R MDMesh-app/MDMesh` from the tagged commit, then check its
 SHA-256 against the manifest) and find out who changed it; then move `:latest` by hand as below.
 
-**If the `publish` job goes red after the GitHub Release step** (the quickstart.sh readback, or "Move :latest to this
+**If the `release` job goes red after the GitHub Release step** (the quickstart.sh readback, or "Move :latest to this
 release"): the Release and its `:VERSION` images are published and fine, but `:latest` may point at the previous
 release for some or all of the three images. Don't re-run the job (it would re-tag `:VERSION` and try to recreate the
 Release). Fix `:latest` by hand, logged in to GHCR with `write:packages`:
@@ -251,6 +253,13 @@ base64 -w0 mdmesh-release.jks   # value for the MDM_RELEASE_STORE_B64 secret
 Secrets: `MDM_RELEASE_STORE_B64` (the base64), `MDM_RELEASE_STORE_PASSWORD`, `MDM_RELEASE_KEY_ALIAS`
 (`mdmesh`), `MDM_RELEASE_KEY_PASSWORD`.
 
+The certificate's checksum is recorded in `release/agent-signature-checksum` (`release/apk-checksum.sh` prints it for a
+signed APK). The web image's enrollment QR carries that value, and the release workflow refuses a release whose
+signed APK has another one, so a swapped key or secret fails the release instead of shipping. If the key ever has to
+change anyway (a compromise; every enrolled device then needs a factory reset): change
+`release/agent-signature-checksum` to the new certificate's checksum in a reviewed PR to `main` first, then update the
+secrets, then tag. A fork with its own key records its own checksum there.
+
 ### 2. Manifest signing key (minisign)
 Establishes release trust: deployments verify the manifest against the committed public key and
 reject anything unsigned/tampered.
@@ -273,7 +282,7 @@ to work anonymously, set each package to public: **org → Packages → `mdmesh-
 manifest **anonymously** and fails the release with instructions if any package is still private.
 
 ### 4. Release environment and tag protection
-The `apk` and `publish` jobs run in the `release` environment, so the repo settings decide who can publish. (The
+The `release` job runs in the `release` environment, so the repo settings decide who can publish. (The
 `images` job builds Arm64 on `ubuntu-24.04-arm`, a GitHub-hosted runner that is free for public repositories; a
 private fork needs a paid Arm runner there.)
 
@@ -332,7 +341,7 @@ V=1.2.3; d=$(mktemp -d); gh release download "v$V" -R MDMesh-app/MDMesh -D "$d"
 release/verify-manifest.sh "$d/manifest.json"     # minisign: signed by the release key
 python3 -c 'import json,sys; a=json.load(open(sys.argv[1]))["components"]["apk"]; print(a["sha256"], a["versionCode"], a["signatureChecksum"])' "$d/manifest.json"
 sha256sum "$d/mdmesh-agent.apk"                   # = the manifest's sha256
-release/apk-checksum.sh "$d/mdmesh-agent.apk"     # = its signatureChecksum, and the same as every earlier release
+release/apk-checksum.sh "$d/mdmesh-agent.apk"     # = its signatureChecksum, and release/apk-checksum.sh --recorded
 release/version.sh "$V"                           # = its versionCode, and the APK's:
 aapt2 dump badging "$d/mdmesh-agent.apk" | grep -o "versionCode='[0-9]*'"
 for img in mdmesh-server mdmesh-web mdmesh-supervisor; do   # :V and :latest print the same digest

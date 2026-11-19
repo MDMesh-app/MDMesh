@@ -63,6 +63,12 @@ printf '{"digest":"sha256:abc"}' > "$T/inspect.json"
 : > "$T/inspect.json"
 ! digest_of 2>/dev/null || fail "image-digest.sh printed a digest for a failed inspect"
 
+# The recorded APK signing checksum (release/agent-signature-checksum), which release.yml bakes into the web image and
+# holds the signed APK to: apk-checksum.sh --recorded prints its one value, a 43-character base64url SHA-256.
+ck=$("$ROOT/release/apk-checksum.sh" --recorded) || fail "apk-checksum.sh --recorded failed"
+[[ "$ck" =~ ^[A-Za-z0-9_-]{43}$ ]] || fail "release/agent-signature-checksum does not hold one base64url SHA-256 (got '$ck')"
+[ "$ck" = "$(grep -v '^#' "$ROOT/release/agent-signature-checksum" | grep .)" ] || fail "apk-checksum.sh --recorded is not the file's value"
+
 # securityReleases: derived from CHANGELOG.md by build-manifest.sh, and checked by release.yml.
 [ "$(python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1]))["securityReleases"]))' "$T/manifest.json")" \
     = "$("$ROOT/release/security-releases.py" "$ROOT/CHANGELOG.md")" ] || fail "securityReleases is not CHANGELOG.md's list"

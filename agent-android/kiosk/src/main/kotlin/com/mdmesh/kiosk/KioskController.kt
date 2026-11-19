@@ -81,6 +81,9 @@ interface KioskController {
     /** True if the device is currently pinned in lock-task mode. */
     fun isLocked(context: Context): Boolean
 
-    /** The packages currently allowlisted for lock-task mode, or empty if unavailable. */
-    fun allowedPackages(): List<String>
+    /**
+     * The packages currently allowlisted for lock-task mode: empty when none, or where it can't be read at all (not
+     * Device Owner, API below 26); null when reading it failed, so the answer is unknown.
+     */
+    fun allowedPackages(): List<String>?
 }

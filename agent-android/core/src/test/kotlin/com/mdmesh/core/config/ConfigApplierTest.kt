@@ -364,7 +364,42 @@ class ConfigApplierTest {
         applier(fixedToggles("r" to r), kiosk(FakeController()), failLocation, store).reapplyPersisted()
 
         assertEquals("the saved Block is not put back", listOf("release"), r.calls)
+        // B failed again, but it was never saved: the saved revision stays (applyAfterInstall reads it) and the
+        // check-in reports stale because B isn't the saved one.
         assertEquals("A", store.revision())
+        assertEquals(ConfigStateStore.STALE_REVISION, store.reportedRevision())
+    }
+
+    @Test fun `a saved document whose boot re-apply fails is marked stale`() = runTest {
+        val store = InMemoryConfigStateStore()
+        val a = applier(fixedToggles(), kiosk(FakeController()), {}, store)
+        a.apply(ConfigApplyPayload(revision = "A", location = ConfigLocation(FAIL))) // the location setting worked then
+        assertEquals("A", store.revision())
+
+        applier(fixedToggles(), kiosk(FakeController()), failLocation, store).reapplyPersisted()
+
+        assertEquals(ConfigStateStore.STALE_REVISION, store.revision())
+        assertEquals(ConfigStateStore.STALE_REVISION, store.reportedRevision())
+    }
+
+    /**
+     * #227 x #228: B's app rule failed (app not installed yet), so B was never saved; the boot replays B, which fails
+     * again. Marking the revision stale there would make the install apply only that app's rule and never save B.
+     */
+    @Test fun `an unsaved document whose boot re-apply fails is applied whole once its app is installed`() = runTest {
+        val permissions = FakeAppPermissions()
+        val store = InMemoryConfigStateStore()
+        val a = applier(fixedToggles(), kiosk(FakeController()), {}, store, permissions)
+        a.apply(ConfigApplyPayload(revision = "A"))
+        assertFalse(ConfigApplier.succeeded(a.apply(denyCamera)))
+
+        assertFalse(ConfigApplier.succeeded(a.reapplyPersisted()!!))
+        assertEquals("A", store.revision())
+
+        permissions.installed += "org.example"
+        assertTrue(ConfigApplier.succeeded(a.applyAfterInstall("org.example")!!))
+        assertEquals("p1", store.revision())
+        assertEquals("p1", store.reportedRevision())
     }
 
     @Test fun `the boot re-apply exits a configured kiosk the newest delivered document turned off`() = runTest {

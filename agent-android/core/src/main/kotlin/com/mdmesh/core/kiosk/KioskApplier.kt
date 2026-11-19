@@ -176,6 +176,9 @@ class KioskApplier(
         // releases HOME, as below).
         if (current == null) {
             home.setClaimEnabled(false) // never leave a non-kiosk device claiming HOME
+            // Nor with the allowlist the failed entry may have set: lock task's allowlist is the evidence that a kiosk
+            // is active when its saved state is lost (AgentDataStores), so a half entry must not leave one behind.
+            kiosk.exit()
         } else {
             // A device in kiosk stays in it: the failed entry may already have replaced the allowlist, so put back the
             // kiosk it had, and keep HOME, or a restart would boot to the phone's own launcher.

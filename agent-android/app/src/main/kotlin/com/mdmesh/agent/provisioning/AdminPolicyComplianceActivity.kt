@@ -9,7 +9,7 @@ import com.mdmesh.agent.service.CheckInService
 import com.mdmesh.core.action.ResetPasswordTokenStore
 import com.mdmesh.core.config.ServerConfigStore
 import com.mdmesh.core.location.LocationPermissions
-import com.mdmesh.core.store.EnrollTokenStore
+import com.mdmesh.core.store.AgentDataStores
 import com.mdmesh.core.sync.CheckInWorker
 import com.mdmesh.policy.PolicyManager
 import com.mdmesh.policy.wifi.DpmHandle
@@ -47,7 +47,7 @@ class AdminPolicyComplianceActivity : Activity() {
             // the check-in is scheduled only after the token persists (avoids a race).
             CoroutineScope(Dispatchers.IO).launch {
                 try {
-                    EnrollTokenStore(ctx).save(token)
+                    AgentDataStores.stores(ctx).enrollTokenStore().save(token)
                 } finally {
                     // Even if the save failed: the check-in then reports "no enrollment code" on the device's screen
                     // instead of nothing happening at all.

@@ -6,7 +6,8 @@ import {
   type CommandHistoryItem,
   type CommandTemplateExt,
 } from '../api/commands';
-import { DEVICE_RESET_LABEL, SOME_DEFERRED_LABEL, summarizeStatus, type ConfigStatus } from '../api/configSync';
+import { DEVICE_RESET_LABEL, SOME_DEFERRED_LABEL, staleCause, summarizeStatus, type ConfigStatus } from '../api/configSync';
+import type { DeviceEvent } from '../api/events';
 import { DO_NOT_TRACK_HINT } from '../api/locationTracking';
 import { paths } from '../routes';
 import {
@@ -109,6 +110,7 @@ export function ConfigPanel({
   busy,
   onRetry,
   now,
+  events,
 }: {
   status: ConfigStatus | null;
   configName: string | undefined;
@@ -120,6 +122,8 @@ export function ConfigPanel({
   /** Sends the configuration again ("Retry apply"); left out for a role that may not, which then sees no button. */
   onRetry?: () => void;
   now: number;
+  /** The device's recent events: one may say why its configuration is out of date ([staleCause]). */
+  events?: ReadonlyArray<DeviceEvent>;
 }) {
   const titleId = useId();
   const verdict = summarizeStatus(status);
@@ -256,11 +260,11 @@ export function ConfigPanel({
     title = 'Configuration not reported yet';
     text = <>The device hasn’t reported which revision of {strongName} it runs.</>;
   } else if (verdict.label === DEVICE_RESET_LABEL) {
-    title = 'Configuration reset by the device';
+    title = 'Configuration out of date on the device';
+    const cause = staleCause(events);
     text = (
       <>
-        The agent turned Wi-Fi back on after it lost the server, and keeps it on until {strongName} changes. Any change
-        to the configuration applies it again.
+        {cause ? <>{cause} </> : null}The device asked for {strongName} again; the server re-sends it.
       </>
     );
   } else if (verdict.label === SOME_DEFERRED_LABEL) {

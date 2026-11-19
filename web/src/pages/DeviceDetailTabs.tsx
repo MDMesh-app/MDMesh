@@ -358,6 +358,8 @@ export function EventIcon({ type }: { type: string }) {
       return <IconLock size={15} />;
     case 'kioskCrashLoop':
     case 'wipeNotStarted':
+    case 'storageRecovered':
+    case 'configReapplyFailed':
       return <IconAlert size={15} />;
     default:
       return <IconInfo size={15} />;

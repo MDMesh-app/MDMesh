@@ -1,4 +1,5 @@
 import { apiClient } from './client';
+import type { DeviceEvent } from './events';
 
 export interface ConfigStatus {
   configurationId?: number | null;
@@ -49,9 +50,29 @@ export function parseOutcomes(detail: string | null | undefined): ConfigOutcomes
   } catch { return null; }
 }
 
-/** Applied revision an agent (0.3.4+) reports after turning Wi-Fi back on by itself (Wi-Fi radio self-heal). */
+/**
+ * Applied revision an agent reports when its configuration is out of date on the device, so the server re-sends it:
+ * after turning Wi-Fi back on by itself (Wi-Fi radio self-heal, 0.3.4+), recovering storage, lifting Factory reset:
+ * Block for a wipe, holding a newer configuration that didn't fully apply, or failing to re-apply it after a restart.
+ */
 export const DEVICE_RESET_REVISION = '0'.repeat(64);
-export const DEVICE_RESET_LABEL = 'Reset by device (Wi-Fi turned back on)';
+export const DEVICE_RESET_LABEL = 'Out of date on the device';
+
+/** Device events that leave the configuration out of date on the device, and what each means for it. */
+const STALE_CAUSES: Readonly<Record<string, string>> = {
+  storageRecovered: 'The device restored settings its storage had damaged.',
+  wipeNotStarted: 'A factory reset didn’t start, so the device went back to its settings.',
+  configReapplyFailed: 'The device couldn’t fully apply its configuration again after a restart.',
+};
+
+/** Why the configuration is out of date on the device, from the latest event that explains it; null when none does. */
+export function staleCause(events: ReadonlyArray<DeviceEvent> | undefined): string | null {
+  let latest: DeviceEvent | null = null;
+  for (const e of events ?? []) {
+    if (e.type in STALE_CAUSES && (!latest || e.ts > latest.ts)) latest = e;
+  }
+  return latest ? STALE_CAUSES[latest.type] : null;
+}
 /** In sync, but the agent skipped some settings on purpose (e.g. Wi-Fi radio Off while Wi-Fi is the only network). */
 export const SOME_DEFERRED_LABEL = 'In sync (some settings deferred)';
 

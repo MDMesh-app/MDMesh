@@ -1,20 +1,16 @@
 package com.mdmesh.core.store
 
-import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
 import com.mdmesh.core.BuildConfig
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
-import java.io.IOException
 
 /**
  * Supplies the single-use enrollment token presented on `/enroll`.
@@ -60,28 +56,23 @@ interface EnrollTokenProvider {
     suspend fun resumableAttempt(token: String): String? = null
 }
 
-private val Context.enrollTokenDataStore: DataStore<Preferences> by preferencesDataStore(
-    name = "mdm_enroll",
-)
-
-class EnrollTokenStore(private val context: Context) : EnrollTokenProvider {
+/** [store] is [AgentDataStores.enroll] (mirrored, recovered when corrupt). */
+class EnrollTokenStore(private val store: DataStore<Preferences>) : EnrollTokenProvider {
 
     override suspend fun token(): String? {
-        val stored = context.enrollTokenDataStore.data
-            .map { it[KEY_TOKEN] }
-            .first()
+        val stored = store.data.first()[KEY_TOKEN]
         return stored?.takeIf { it.isNotBlank() }
             ?: BuildConfig.DEV_ENROLL_TOKEN.takeIf { it.isNotBlank() }
     }
 
     suspend fun save(token: String) {
-        context.enrollTokenDataStore.edit { it[KEY_TOKEN] = token }
+        store.edit { it[KEY_TOKEN] = token }
     }
 
     override suspend fun enrollAttempt(token: String): String? {
         var attempt: String? = null
         // One edit: read and (when new) write together, so two callers can never store different ids.
-        context.enrollTokenDataStore.edit { prefs ->
+        store.edit { prefs ->
             val (id, isNew) = EnrollAttempts.resolve(prefs[KEY_ATTEMPT_FOR], prefs[KEY_ATTEMPT], token) {
                 EnrollAttempts.newId()
             }
@@ -97,33 +88,33 @@ class EnrollTokenStore(private val context: Context) : EnrollTokenProvider {
     }
 
     override suspend fun setAttemptResumable(resumable: Boolean) {
-        context.enrollTokenDataStore.edit { it[KEY_ATTEMPT_RESUMABLE] = resumable }
+        store.edit { it[KEY_ATTEMPT_RESUMABLE] = resumable }
     }
 
     override suspend fun setCredentialsLost(mark: Long?) {
-        context.enrollTokenDataStore.edit {
+        store.edit {
             if (mark != null) it[KEY_CREDENTIALS_LOST_MARK] = mark else it.remove(KEY_CREDENTIALS_LOST_MARK)
         }
     }
 
     override suspend fun credentialsLostMark(): Long? =
-        context.enrollTokenDataStore.data.first()[KEY_CREDENTIALS_LOST_MARK]
+        store.data.first()[KEY_CREDENTIALS_LOST_MARK]
 
-    /** [credentialsLostMark] now, then each time it changes; an unreadable store reads as no mark. */
-    val credentialsLostMarks: Flow<Long?> = context.enrollTokenDataStore.data
+    /** [credentialsLostMark] now, then each time it changes; while the store can't be read it reads as no mark. */
+    val credentialsLostMarks: Flow<Long?> = store.data
         .map { it[KEY_CREDENTIALS_LOST_MARK] }
-        .catch { if (it is IOException) emit(null) else throw it }
+        .retryOnStorageError("credentials mark") { null }
         .distinctUntilChanged()
 
     override suspend fun resumableAttempt(token: String): String? {
-        val prefs = context.enrollTokenDataStore.data.first()
+        val prefs = store.data.first()
         val attempt = prefs[KEY_ATTEMPT]
         val held = !attempt.isNullOrBlank() && prefs[KEY_ATTEMPT_FOR] == EnrollAttempts.bindingOf(token)
         return attempt.takeIf { held && prefs[KEY_ATTEMPT_RESUMABLE] == true }
     }
 
     override suspend fun clearEnrollAttempt() {
-        context.enrollTokenDataStore.edit {
+        store.edit {
             it.remove(KEY_ATTEMPT)
             it.remove(KEY_ATTEMPT_FOR)
             it.remove(KEY_ATTEMPT_RESUMABLE)

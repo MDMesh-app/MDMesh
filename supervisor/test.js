@@ -920,6 +920,44 @@ t.test('rollback.sh restores CURRENT_VERSION from the snapshot (not SERVER_VERSI
   } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
 });
 
+t.test('behind your own proxy, apply.sh and rollback.sh refuse a release before 0.6.0 and change nothing (mode-guard.sh)', () => {
+  const fs = require('fs'), path = require('path');
+  const proxyEnv = 'SERVER_VERSION=0.6.0\nWEB_VERSION=0.6.0\nCURRENT_VERSION=0.6.0\n'
+    + 'COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml\n';
+  // apply.sh to 0.5.9: refused before the backup, .env untouched.
+  let d = makeDeploy(proxyEnv);
+  try {
+    const r = runScript('apply.sh', applyArgs('0.5.9'), d.env);
+    a.notEqual(r.code, 0, r.all);
+    a.match(r.all, /^ERR this install runs behind your own proxy .*came in 0\.6\.0, so it can't go to 0\.5\.9/m);
+    a.match(r.all, /^PHASE failed$/m);
+    a.ok(!d.calls().some((c) => c.includes('pg_dump') || c.includes(' up ')), 'nothing was backed up or recreated');
+    a.equal(d.envFile(), proxyEnv);
+    // Its own mode allows 0.6.1, and the same .env without the overlay allows 0.5.9.
+    a.equal(runScript('apply.sh', applyArgs('0.6.1'), d.env).code, 0);
+  } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+  d = makeDeploy('SERVER_VERSION=0.6.0\nWEB_VERSION=0.6.0\nCURRENT_VERSION=0.6.0\nCOMPOSE_FILE=docker-compose.yml:docker-compose.domain.yml\n');
+  try {
+    a.equal(runScript('apply.sh', applyArgs('0.5.9'), d.env).code, 0, 'another mode is not held back');
+  } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+
+  // rollback.sh to a 0.5.x snapshot: refused before the database is restored; the supervisor's own COMPOSE_FILE counts too.
+  for (const [envText, extra] of [[proxyEnv, {}],
+    ['SERVER_VERSION=0.6.0\nWEB_VERSION=0.6.0\nCURRENT_VERSION=0.6.0\n', { COMPOSE_FILE: 'docker-compose.yml:docker-compose.proxy.yml' }]]) {
+    d = makeDeploy(envText);
+    try {
+      fs.writeFileSync(path.join(d.backups, 'latest'), '20261101-120000\n');
+      fs.writeFileSync(path.join(d.backups, '20261101-120000.env'), 'SERVER_VERSION=0.5.1@sha256:aa\nWEB_VERSION=0.5.1@sha256:bb\nCURRENT_VERSION=0.5.1\n');
+      fs.writeFileSync(path.join(d.backups, '20261101-120000.sql'), 'SELECT 1;\n-- PostgreSQL database dump complete\n');
+      const r = runScript('rollback.sh', [], { ...d.env, ...extra });
+      a.notEqual(r.code, 0, r.all);
+      a.match(r.all, /^ERR this install runs behind your own proxy .*can't go to 0\.5\.1/m);
+      a.ok(!d.calls().some((c) => c.includes('psql') || c.includes('stop server') || c.includes(' up ')), 'nothing was restored');
+      a.equal(d.envFile(), envText);
+    } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+  }
+});
+
 t.test('with AUTO_UPDATE on, a rollback is not undone by auto-applying the release just rolled away from',
   { skip: !HAS_MINISIGN && 'minisign not installed', timeout: 30000 }, async (tt) => {
     const fs = require('fs'), path = require('path');

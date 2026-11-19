@@ -116,7 +116,13 @@ if [ -f "$ENV_SNAP" ]; then
 else
   errln "version snapshot $ENV_SNAP missing — recreating current images"
 fi
-
+# The install's hosting mode allows the version it would go back to (supervisor/mode-guard.sh): checked before the
+# database is touched.
+# shellcheck source=supervisor/mode-guard.sh
+. "${BASH_SOURCE[0]%/*}/mode-guard.sh"
+_why="$(mode_problem "${OLD_CURRENT:-}")"
+[ -n "$_why" ] || _why="$(mode_problem "${OLD_WEB:-}")"
+if [ -n "$_why" ]; then errln "$_why"; phase failed; exit 1; fi
 # Restore the database dump with the server stopped; .env keeps naming the running version until that succeeded.
 if [ -s "$SQL_SNAP" ]; then
   restore_db "$SQL_SNAP" "$BACKUP_DIR/$STAMP.restore.log" || { phase failed; exit 1; }

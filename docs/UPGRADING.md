@@ -149,9 +149,8 @@ know the mode):
 and `SITE_ADDRESS=<your hostname>`; to the tunnel: `COMPOSE_FILE=docker-compose.yml`,
 `COMPOSE_PROFILES=cloudflare`, `SITE_ADDRESS=:80` and `TUNNEL_TOKEN`. Then step 4.
 
-A rollback to a release before 0.6.0 doesn't know the proxy mode: its edge believes no proxy (every client then
-counts as one address for the sign-in limits), and the HTTPS origin (`MDMESH_ORIGIN_TLS=1`) doesn't answer. Move the
-install back to its old mode first.
+A release before 0.6.0 doesn't know the proxy mode, so while an install runs behind your own proxy the updater refuses
+an update or a Roll back to one, saying so, and changes nothing. Move the install back to its old mode first.
 
 ## Recovery and rollback
 
@@ -260,8 +259,8 @@ enrollment there works as before, it just can't be resumed.
   ```
 
   (`up -d` recreates the edge with the directory mounted; updates read both files, so they keep it.)
-- **A rollback below 0.6.0** of an install you moved to the proxy mode: move it back first
-  ([why](#changing-the-hosting-mode)).
+- **A rollback below 0.6.0** of an install you moved to the proxy mode is refused by the updater: move it back first
+  ([how](#changing-the-hosting-mode)).
 
 ### v0.5.0
 

@@ -144,6 +144,11 @@ _why="$(pin_problem server "$SERVER_REF")"
 [ -n "$_why" ] || _why="$(pin_problem web "$WEB_REF")"
 [ -n "$_why" ] || _why="$(pin_problem supervisor "$SUPERVISOR_REF")"
 if [ -n "$_why" ]; then errln "$_why Nothing was changed."; phase failed; exit 1; fi
+# The install's hosting mode allows this version (supervisor/mode-guard.sh).
+# shellcheck source=supervisor/mode-guard.sh
+. "${BASH_SOURCE[0]%/*}/mode-guard.sh"
+_why="$(mode_problem "$VERSION")"
+if [ -n "$_why" ]; then errln "$_why"; phase failed; exit 1; fi
 SERVER_PIN="${VERSION}@${SERVER_REF#*@}"   # SERVER_VERSION / WEB_VERSION / SUPERVISOR_VERSION values: <version>@sha256:…
 WEB_PIN="${VERSION}@${WEB_REF#*@}"
 SUPERVISOR_PIN="${VERSION}@${SUPERVISOR_REF#*@}"

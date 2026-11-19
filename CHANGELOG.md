@@ -24,6 +24,10 @@ Fixes
   says `native update, <from> → <to>`. The update from 0.5.0 still asks once (add `-y` to skip).
 - `./setup.sh --update` no longer refuses a clone on a release branch (`release/vX.Y.Z`) as "ahead" of that release
   once it is squash-merged: a clone on an older release moves on; only one newer than the release needs `--allow-downgrade`.
+- Agent: a settings file damaged by the device's storage (after a power loss) no longer makes every kiosk and
+  configuration command fail with "Unable to parse preferences proto." or crash the kiosk screen. The agent keeps a
+  copy of each file and restores it, or the configured kiosk, and the device page shows a `storageRecovered` event
+  (#220).
 
 ## v0.5.0 — 2026-11-17
 

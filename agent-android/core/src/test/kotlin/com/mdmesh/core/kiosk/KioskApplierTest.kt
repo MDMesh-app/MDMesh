@@ -109,6 +109,14 @@ class KioskApplierTest {
         assertNull(store.load())
         assertEquals(listOf("claim:true", "claim:false"), h.log)
     }
+    @Test fun `a failed entry on a device not in kiosk clears what it may have set (no allowlist left behind)`() =
+        runTest {
+            val c = FakeController(KioskResult.Failed("allowlist set, lock task refused"))
+            val r = KioskApplier(c, InMemoryKioskStateStore(), FakeHome(), home) { false }
+                .enter(KioskApplyPayload(allowedPackages = listOf("com.a")))
+            assertTrue(r is KioskResult.Failed)
+            assertTrue("the allowlist is cleared", c.exited)
+        }
     @Test fun `a failed entry on a device in kiosk keeps it in kiosk with the kiosk it had`() = runTest {
         val p = KioskApplyPayload(mode = "single", pinPackage = "com.a", allowedPackages = listOf("com.a"))
         val c = FakeController(KioskResult.Ok); val h = FakeHome(); val store = InMemoryKioskStateStore(); store.save(p)

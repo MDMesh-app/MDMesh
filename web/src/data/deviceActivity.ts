@@ -78,6 +78,8 @@ export const EVENT_LABELS: Record<string, string> = {
   enrolled: 'Enrolled',
   kioskPinLockout: 'Exit PIN locked',
   kioskCrashLoop: 'Kiosk app keeps closing',
+  storageRecovered: 'Storage recovered',
+  configReapplyFailed: 'Config re-apply failed',
 };
 
 /** The same events as a verb phrase after the device name ("KIOSK-FRONT booted"), the v0.3 console's Dashboard wording. */
@@ -91,6 +93,8 @@ export const EVENT_VERBS: Record<string, string> = {
   enrolled: 'enrolled',
   kioskPinLockout: 'locked the exit PIN',
   kioskCrashLoop: 'reported the kiosk app keeps closing',
+  storageRecovered: 'recovered damaged storage',
+  configReapplyFailed: 'failed to re-apply its configuration',
 };
 
 /** A commandResult event's detail is "<commandId>:<status>" (agent CheckInCoordinator); null for anything else. */

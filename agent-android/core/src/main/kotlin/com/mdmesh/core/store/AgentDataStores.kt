@@ -88,8 +88,14 @@ class AgentDataStores(
         },
     )
 
-    /** Recoveries decided but not yet in their primary: recorded once it holds them ([settled]). */
-    private val pending = ConcurrentHashMap<String, String>()
+    /**
+     * Recoveries decided but not yet in their primary: recorded once it holds them ([settled]). In memory only: a
+     * process death right after the restore is written loses its event (the state itself is restored), which is fine.
+     */
+    private val pending = ConcurrentHashMap<String, Restored>()
+
+    /** A restore of a store to [generation], from [source]. */
+    private data class Restored(val source: String, val generation: Long)
 
     // Recovery rule per store, applied to a damaged primary (the first that has something wins):
 
@@ -106,13 +112,16 @@ class AgentDataStores(
      * apps that only the server can end, else no kiosk. Fail closed: a power loss that takes both files never unpins a
      * kiosk device. The re-sent configuration settles the rest. Lock task's allowlist can only be read on API 26+
      * ([KioskController.allowedPackages]): below it that step finds nothing, and the configured kiosk is the last
-     * evidence. When the evidence can't be read now (the allowlist unknown, the configuration unreadable), nothing is
-     * decided: the read fails and is tried again ([restore]).
+     * evidence. When the evidence can't be read now (the mirror, the allowlist, the configuration), nothing is
+     * decided and the read is tried again ([restore]), except that a configured kiosk is restored even then: it is real
+     * evidence, and a kiosk kept by mistake is put right by the re-sent configuration, where an unpinned device isn't.
      */
-    val kiosk: MirroredDataStore = mirrored(KIOSK) {
-        configStore.configuredKiosk()?.let { DataStoreKioskStateStore.prefsOf(it) to FROM_CONFIGURATION }
-            ?: lockedApps()?.let { DataStoreKioskStateStore.prefsOf(lockedKiosk(it)) to FROM_LOCK_TASK }
+    val kiosk: MirroredDataStore = mirrored(KIOSK, certain = ::configuredKiosk) {
+        configuredKiosk() ?: lockedApps()?.let { DataStoreKioskStateStore.prefsOf(lockedKiosk(it)) to FROM_LOCK_TASK }
     }
+
+    private fun configuredKiosk(): Pair<Preferences, String>? =
+        configStore.configuredKiosk()?.let { DataStoreKioskStateStore.prefsOf(it) to FROM_CONFIGURATION }
 
     private val all = listOf(IDENTITY to identity, ENROLL to enroll, KIOSK to kiosk)
 
@@ -120,20 +129,29 @@ class AgentDataStores(
      * Reads every store now (one that is damaged is recovered here, at start, rather than when a command needs it),
      * seals it and brings its mirror up to date: an agent upgraded from one without mirrors gets them here.
      *
-     * @return the stores that could not be read (a storage error, logged); their reads retry on their own.
+     * @return what failed, naming the file ("unreadable: mdm_kiosk", "mirror unwritable: mdm_kiosk_mirror"), for the
+     *   console; logged, and the stores' reads retry on their own
      */
     suspend fun check(): List<String> = all.mapNotNull { (name, store) ->
         try {
             store.updateData { it }
             null
+        } catch (e: MirroredDataStore.MirrorUnwritable) {
+            warn("$name: ${e.message}", e)
+            e.message
         } catch (e: IOException) {
             warn("$name unreadable at start", e)
-            name
+            "unreadable: $name"
         }
     }
 
+    /**
+     * @param fallback what the store recovers to when the mirror holds nothing usable; null: empty
+     * @param certain what it recovers to even when the mirror can't be read (only real evidence)
+     */
     private fun mirrored(
         name: String,
+        certain: () -> Pair<Preferences, String>? = { null },
         fallback: () -> Pair<Preferences, String>? = { null },
     ): MirroredDataStore {
         lateinit var store: MirroredDataStore
@@ -143,9 +161,9 @@ class AgentDataStores(
             scope.launch { store.syncMirror() }
             emptyPreferences()
         }
-        val restore: suspend () -> Preferences = { restore(name, mirror, fallback) }
+        val restore: suspend () -> Preferences = { restore(name, mirror, certain, fallback) }
         val sealMark = file(name).resolveSibling(name + SEALED_SUFFIX)
-        store = MirroredDataStore(open(name, restore), mirror, name, restore, sealMark) { settled(name) }
+        store = MirroredDataStore(open(name, restore), mirror, name, restore, sealMark) { settled(name, it) }
         return store
     }
 
@@ -155,33 +173,71 @@ class AgentDataStores(
      * and written to the mirror too, so the two match and an older mirror can never later be taken for the newer
      * state. The recovery is recorded once the primary holds it ([settled]).
      *
-     * @throws IOException the mirror can't be read, or the fallback's evidence can't be known now: nothing is
-     *   decided or written, the read fails and is tried again (a guess here would be kept for good)
+     * @throws IOException the mirror can't be read (and there is no [certain] evidence), or the fallback's evidence
+     *   can't be known now: nothing is decided or written, the read fails and is tried again (a guess here would be
+     *   kept for good)
      */
     private suspend fun restore(
         name: String,
         mirror: DataStore<Preferences>,
+        certain: () -> Pair<Preferences, String>?,
         fallback: () -> Pair<Preferences, String>?,
     ): Preferences {
-        val mirrored = mirror.data.first()
-        if (Integrity.isUsable(mirrored)) return mirrored.also { pending[name] = FROM_MIRROR }
-        val found = runCatching(fallback).getOrElse {
-            throw if (it is Exception && it !is IOException) IOException("$name: evidence unreadable now", it) else it
+        val mirrored = try {
+            mirror.data.first()
+        } catch (e: IOException) {
+            return withoutMirror(name, certain, e)
         }
-        val (prefs, source) = found ?: (emptyPreferences() to FROM_EMPTY)
+        return if (Integrity.isUsable(mirrored)) {
+            mirrored.also { record(name, FROM_MIRROR, it) }
+        } else {
+            fromFallback(name, mirror, mirrored, fallback)
+        }
+    }
+
+    /** The mirror was read and holds nothing usable: the store's [fallback], sealed above it and mirrored. */
+    private suspend fun fromFallback(
+        name: String,
+        mirror: DataStore<Preferences>,
+        mirrored: Preferences,
+        fallback: () -> Pair<Preferences, String>?,
+    ): Preferences {
+        val (prefs, source) = known(name, fallback) ?: (emptyPreferences() to FROM_EMPTY)
         val restored = Integrity.sealed(prefs, Integrity.generationOf(mirrored) + 1)
         try {
             mirror.updateData { restored }
         } catch (e: IOException) {
             warn("$name mirror not written after recovering from $source", e)
         }
-        pending[name] = source
+        record(name, source, restored)
         return restored
     }
 
-    /** [name]'s primary holds what it was restored to (if anything): record that recovery now, once. */
-    private fun settled(name: String) {
-        pending.remove(name)?.let { recovered(name, it) }
+    /** The mirror can't be read ([unreadable]): only [certain] evidence decides; without it the read is retried. */
+    private fun withoutMirror(
+        name: String,
+        certain: () -> Pair<Preferences, String>?,
+        unreadable: IOException,
+    ): Preferences {
+        val (prefs, source) = known(name, certain) ?: throw unreadable
+        // The mirror's generation is unknown: one far above any it can hold (the clock), so that mirror, once readable,
+        // is never taken for a newer write.
+        return Integrity.sealed(prefs, System.currentTimeMillis()).also { record(name, source, it) }
+    }
+
+    private fun record(name: String, source: String, restored: Preferences) {
+        pending[name] = Restored(source, Integrity.generationOf(restored))
+    }
+
+    /**
+     * [name]'s primary was just read as [current]: once it holds what it was restored to (its generation or a later
+     * one), record that recovery, once. An older value read meanwhile records nothing yet.
+     */
+    private fun settled(name: String, current: Preferences) {
+        val restored = pending[name] ?: return
+        if (Integrity.generationOf(current) >= restored.generation && pending.remove(name, restored)) {
+            recovered(name, restored.source)
+        }
     }
 
     private fun open(name: String, recover: suspend () -> Preferences): DataStore<Preferences> =
@@ -299,9 +355,10 @@ internal object Integrity {
  * mirror is the commit point, like a write-ahead log: once it is written (and its directory synced) the write has
  * happened. The primary is written next, and tried once more if that fails; if it still fails the write is not
  * failed, only logged, and the next read or [AgentDataStores.check] restores the primary from the mirror, recorded as
- * a recovery (which it is). A mirror that can't be written fails the write, before the primary is touched. So the
- * mirror is never behind a write that returned, and a damaged primary is restored ([AgentDataStores]) to the newest
- * write that did.
+ * a recovery (which it is). A mirror that can't be written fails the write ([MirrorUnwritable]), before the primary
+ * is touched: while the mirror's storage is broken the store can be read but not written, by design, since a write
+ * the mirror doesn't hold could be lost to the next recovery. So the mirror is never behind a write that returned,
+ * and a damaged primary is restored ([AgentDataStores]) to the newest write that did.
  *
  * Writes, and restores of a primary that parses, run one at a time under one lock; a primary that can't be parsed is
  * restored by DataStore's corruption handler, which DataStore runs inside its own (serialized) read. A reader that
@@ -324,8 +381,8 @@ class MirroredDataStore internal constructor(
     private val restore: suspend () -> Preferences,
     /** Null for a store opened bare (tests with faults). */
     private val sealMark: File? = null,
-    /** The primary holds what it reads now: a restore that led to it is recorded ([AgentDataStores]). */
-    private val settled: () -> Unit = {},
+    /** The primary was read as this: a restore that led to it is recorded ([AgentDataStores]). */
+    private val settled: (Preferences) -> Unit = {},
 ) : DataStore<Preferences> {
     private val writeLock = Mutex()
 
@@ -337,7 +394,7 @@ class MirroredDataStore internal constructor(
 
     /** A damaged-looking value is confirmed, and restored, under the write lock ([intactLocked]). */
     override val data: Flow<Preferences> = primary.data.combine(repairs) { p, _ -> p }
-        .map { if (damaged(it)) writeLock.withLock { intactLocked() } else it.also { settled() } }
+        .map { if (damaged(it)) writeLock.withLock { intactLocked() } else it.also(settled) }
 
     override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences =
         writeLock.withLock {
@@ -349,7 +406,11 @@ class MirroredDataStore internal constructor(
             } else {
                 Integrity.sealed(changed, Integrity.generationOf(current) + 1)
             }
-            mirror.updateData { next }
+            try {
+                mirror.updateData { next }
+            } catch (e: IOException) {
+                throw MirrorUnwritable(name, e)
+            }
             syncDirectory() // the commit point: from here the write has happened
             writePrimary(next)
             markSealed()
@@ -360,7 +421,7 @@ class MirroredDataStore internal constructor(
     private suspend fun intactLocked(): Preferences {
         val current = primary.data.first()
         val intact = if (damaged(current)) primary.updateData { if (damaged(it)) restore() else it } else current
-        settled()
+        settled(intact)
         return intact
     }
 
@@ -449,10 +510,20 @@ class MirroredDataStore internal constructor(
         }
     }
 
+    /** The commit point can't be written: the write fails, nothing changed. Names the file, for the console. */
+    class MirrorUnwritable(name: String, cause: IOException) :
+        IOException("mirror unwritable: $name${AgentDataStores.MIRROR_SUFFIX}", cause)
+
     private companion object {
         const val PRIMARY_TRIES = 2
     }
 }
+
+/** What [evidence] says; an exception from it is "unknown now" (an IOException: the read is tried again). */
+private fun known(name: String, evidence: () -> Pair<Preferences, String>?): Pair<Preferences, String>? =
+    runCatching(evidence).getOrElse {
+        throw if (it is Exception && it !is IOException) IOException("$name: evidence unreadable now", it) else it
+    }
 
 private const val TAG = "AgentDataStores"
 

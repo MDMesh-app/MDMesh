@@ -125,6 +125,36 @@ class AgentDataStoresTest {
     }
 
     @Test
+    fun `an unreadable kiosk mirror with a configured kiosk restores that kiosk (fail closed), without one it waits`() {
+        val kiosk = KioskApplyPayload(mode = "single", pinPackage = "com.example.pos")
+        runBlocking { DataStoreKioskStateStore(open().kiosk).save(kiosk) }
+        close()
+        file("mdm_kiosk").writeBytes(ByteArray(32) { 0xFF.toByte() })
+        file("mdm_kiosk_mirror").delete()
+        file("mdm_kiosk_mirror").mkdirs()
+        assertTrue("no evidence yet: the read waits",
+            runBlocking { runCatching { DataStoreKioskStateStore(open().kiosk).load() } }.isFailure)
+        close()
+        assertEquals(emptyList<String>(), events.recovered())
+
+        config.save(ConfigApplyPayload(revision = "r1", kiosk = kiosk))
+        assertEquals(kiosk, runBlocking { DataStoreKioskStateStore(open().kiosk).load() })
+        close()
+        assertEquals(listOf("mdm_kiosk from configuration"), events.recovered())
+    }
+
+    @Test
+    fun `check names a mirror that can't be written, for the console`() {
+        enrolled()
+        file("mdm_identity_mirror").delete()
+        file("mdm_identity_mirror").mkdirs()
+        val stores = open()
+        assertEquals("dev_1", runBlocking { DeviceIdStore(stores.identity).current() }) // reads still work
+        assertEquals(listOf("mirror unwritable: mdm_identity_mirror"), runBlocking { stores.check() })
+        close()
+    }
+
+    @Test
     fun `an unreadable mirror fails the read of a corrupt primary too, and the next read recovers`() {
         enrolled()
         val mirror = file("mdm_identity_mirror").readBytes()
@@ -186,6 +216,8 @@ class AgentDataStoresTest {
         val collector = launch(Dispatchers.Default) {
             store.data.collect { v -> synchronized(seen) { seen += v[newSecret] } }
         }
+        // Open and holding the old value first, so only the repair tick can bring it the new one.
+        withTimeout(10_000) { while (synchronized(seen) { seen.isEmpty() }) delay(10) }
         store.edit { it[newSecret] = "secret-2" }
         withTimeout(10_000) { while ("secret-2" !in synchronized(seen) { seen.toList() }) delay(10) }
         collector.cancelAndJoin()
@@ -202,7 +234,7 @@ class AgentDataStoresTest {
         var restores = 0
         val primary = FailsWrites(bare("mdm_identity"), 3)
         val store = MirroredDataStore(primary, mirror, "mdm_identity",
-            restore = { restores++; mirror.data.first() }, settled = { settled++ })
+            restore = { restores++; mirror.data.first() }, settled = { _ -> settled++ })
         repeat(3) { assertTrue(runCatching { store.data.first() }.isFailure) }
         assertEquals("not recorded while the repair fails", 0, settled)
         assertEquals("dev_1", store.data.first()[stringPreferencesKey("server_device_id")])

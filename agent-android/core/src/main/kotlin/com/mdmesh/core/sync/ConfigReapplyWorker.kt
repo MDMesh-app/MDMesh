@@ -38,7 +38,7 @@ class ConfigReapplyWorker @AssistedInject constructor(
     override suspend fun doWork(): Result {
         val failures = ReapplySteps(events).run(
             "storage check" to suspend {
-                stores.check().takeIf { it.isNotEmpty() }?.joinToString(prefix = "unreadable: ")
+                stores.check().takeIf { it.isNotEmpty() }?.joinToString()
             },
             // An on-device or remote exit cut off by a reboot is finished first, so the re-apply below doesn't build
             // on it.

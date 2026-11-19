@@ -45,13 +45,30 @@ function arrowIcon(angle: number): L.DivIcon {
  * a solid dot at the latest, and a key under the map. Each fix's own dot shows only while fixes sit far enough apart
  * not to crowd, so zoomed out the path stays a clean line; every dot opens a popup. Colours are set by the CSS
  * (tokens). SVG and div markers only: no image assets, no bundler icon-path issues.
+ *
+ * The map fits the path on its first draw and when `fitKey` changes (the time range); a reload that brings new fixes
+ * redraws the path but keeps the user's pan and zoom, and one that brings the same fixes (same count, same newest)
+ * changes nothing. `className` goes on the outer box (the map and its key).
  */
-export function LocationMap({ fixes, label, className }: { fixes: LocationFix[]; label: string; className?: string }) {
+export function LocationMap({
+  fixes,
+  label,
+  className,
+  fitKey,
+}: {
+  fixes: LocationFix[];
+  label: string;
+  className?: string;
+  fitKey?: string | number;
+}) {
   const elRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const layerRef = useRef<L.LayerGroup | null>(null);
   /** What depends on the view (the arrows and the fixes' dots), redrawn after every zoom and pan. */
   const zoomedRef = useRef<{ dots: L.LayerGroup; arrows: L.LayerGroup; draw: () => void } | null>(null);
+  /** The fixes drawn last (count and newest), and the fitKey the view was last fitted for (null: never fitted). */
+  const drawnRef = useRef<string | null>(null);
+  const fittedRef = useRef<{ key: string | number | undefined } | null>(null);
 
   useEffect(() => {
     const el = elRef.current;
@@ -75,6 +92,10 @@ export function LocationMap({ fixes, label, className }: { fixes: LocationFix[];
       mapRef.current = map;
     }
     const map = mapRef.current;
+    const drawn = `${fixes.length}:${fixes[0]?.id ?? ''}:${fixes[0]?.capturedAt ?? ''}`;
+    const fit = !fittedRef.current || fittedRef.current.key !== fitKey;
+    if (drawn === drawnRef.current && !fit) return;
+    drawnRef.current = drawn;
     const layer = layerRef.current!;
     const zoomed = zoomedRef.current!;
     layer.clearLayers();
@@ -84,6 +105,7 @@ export function LocationMap({ fixes, label, className }: { fixes: LocationFix[];
 
     if (!fixes.length) {
       map.setView([20, 0], 2);
+      fittedRef.current = null;
       return;
     }
     const chrono = [...fixes].reverse();
@@ -120,8 +142,7 @@ export function LocationMap({ fixes, label, className }: { fixes: LocationFix[];
       }
       zoomed.arrows.clearLayers();
       const view = map.getPixelBounds().pad(0.25);
-      for (const a of arrowSegments(px, ARROW_MIN_PX, ARROW_SPACING_PX)) {
-        if (!view.contains([a.x, a.y])) continue;
+      for (const a of arrowSegments(px, ARROW_MIN_PX, ARROW_SPACING_PX, { min: view.min!, max: view.max! })) {
         L.marker(map.unproject([a.x, a.y], z), {
           icon: arrowIcon(a.angle),
           pane: 'v2-trail-arrows',
@@ -130,13 +151,17 @@ export function LocationMap({ fixes, label, className }: { fixes: LocationFix[];
         }).addTo(zoomed.arrows);
       }
     };
-    // Not animated: the zoom is final at once, so what is drawn next matches it.
-    map.fitBounds(L.latLngBounds(pts), { padding: [32, 32], maxZoom: 17, animate: false });
-    zoomed.draw();
+    if (fit) {
+      fittedRef.current = { key: fitKey };
+      // Not animated: the view is final at once, and its moveend draws the arrows and dots for it.
+      map.fitBounds(L.latLngBounds(pts), { padding: [32, 32], maxZoom: 17, animate: false });
+    } else {
+      zoomed.draw();
+    }
     // The container is sized by layout after first paint; recompute so the tiles fill it.
     const t = setTimeout(() => map.invalidateSize(), 0);
     return () => clearTimeout(t);
-  }, [fixes]);
+  }, [fixes, fitKey]);
 
   useEffect(
     () => () => {
@@ -148,8 +173,8 @@ export function LocationMap({ fixes, label, className }: { fixes: LocationFix[];
 
   const trail = fixes.length > 1;
   return (
-    <div className="v2-locmap-wrap">
-      <div ref={elRef} className={cx('v2-locmap', className)} role="region" aria-label={label} />
+    <div className={cx('v2-locmap-wrap', className)}>
+      <div ref={elRef} className="v2-locmap" role="region" aria-label={label} />
       {/* What the marks mean (each fix's time is in its popup and in the list below). */}
       <ul className="v2-locmap-key" aria-label="Map key">
         {trail ? (

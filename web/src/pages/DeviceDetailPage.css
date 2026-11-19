@@ -281,11 +281,12 @@
 }
 
 /* ---- remote actions: a label column, then the buttons; every row on a hairline ---- */
-/* The header menu's "All actions" scrolls here and moves focus here; the card itself is not a control. */
+/* The header menu's "All actions" scrolls here and moves focus here. From the keyboard the card shows the focus ring
+   (:focus-visible, tokens.css), so the reader sees where they landed; after a pointer it shows none. */
 .v2 .v2-device-actions {
   scroll-margin-top: var(--space-6);
 }
-.v2 .v2-device-actions:focus {
+.v2 .v2-device-actions:focus:not(:focus-visible) {
   outline: none;
 }
 @media (max-width: 860px) {

@@ -50,6 +50,33 @@ describe('activity wording', () => {
     expect(rows.some((r) => r.includes('1234') || r.includes('kioskExit'))).toBe(false);
   });
 
+  it('Overview: the feed shows before the command histories come, and names the commands once they do', async () => {
+    const fetch = stubApi(api);
+    const base = fetch.getMockImplementation()!;
+    let release = () => {};
+    const held = new Promise<void>((r) => (release = r));
+    fetch.mockImplementation(async (input, init) => {
+      if (String(input).includes('/commands')) await held;
+      return base(input, init);
+    });
+    renderInConsole(<AppRoutes />, { path: '/' });
+    const feed = within(await screen.findByRole('list', { name: 'Recent activity' }, LOAD));
+    await feed.findByText('Command #1234: done', undefined, LOAD);
+    expect(feed.getByText('With the exit PIN, on the device')).toBeTruthy();
+    release();
+    await feed.findByText('Lock: done', undefined, LOAD);
+  });
+
+  it('Overview: a history that never answers doesn’t hold the feed back', async () => {
+    const fetch = stubApi(api);
+    const base = fetch.getMockImplementation()!;
+    fetch.mockImplementation((input, init) => (String(input).includes('/commands') ? new Promise<Response>(() => {}) : base(input, init)));
+    renderInConsole(<AppRoutes />, { path: '/' });
+    const feed = within(await screen.findByRole('list', { name: 'Recent activity' }, LOAD));
+    await feed.findByText('Command #1300: failed', undefined, LOAD);
+    expect(feed.getAllByRole('listitem').length).toBe(5);
+  });
+
   it('device Activity tab: the same wording', async () => {
     stubApi(api);
     renderInConsole(<AppRoutes />, { path: '/devices/WH-1?tab=activity' });

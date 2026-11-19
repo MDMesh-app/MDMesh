@@ -498,7 +498,11 @@ export function LocationTab({
         </EmptyState>
       ) : null}
       {fixes && fixes.length > 0 ? (
-        <LocationMap fixes={fixes} label={`Map of the device’s ${inRange ? `locations in ${inRange}` : 'recent locations'}`} />
+        <LocationMap
+          fixes={fixes}
+          fitKey={range}
+          label={`Map of the device’s ${inRange ? `locations in ${inRange}` : 'recent locations'}`}
+        />
       ) : null}
       {fixes && fixes.length > 0 ? (
         // The map's points open their details on a pointer only; the same fixes as text, for keyboards and screen

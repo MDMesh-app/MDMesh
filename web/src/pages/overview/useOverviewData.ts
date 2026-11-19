@@ -150,7 +150,7 @@ export function useOverviewData(): OverviewData {
     } else if (deep) {
       const top = [...list].sort((a, b) => (b.lastUpdate ?? 0) - (a.lastUpdate ?? 0)).slice(0, ACTIVITY_DEVICES);
       void Promise.allSettled(top.map((d) => getEvents(d.number).then((evs) => ({ d, evs }))))
-        .then(async (results) => {
+        .then((results) => {
           if (!live()) return;
           const items: ActivityItem[] = [];
           for (const r of results) {
@@ -160,18 +160,21 @@ export function useOverviewData(): OverviewData {
           }
           items.sort((a, b) => b.ev.ts - a.ev.ts);
           const kept = items.slice(0, ACTIVITY_KEEP);
-          // A command result names its command from the device's history: fetched only for the devices whose kept
-          // events include one. A failed fetch leaves those rows saying "Command #id".
-          const withResults = [...new Set(kept.filter((a) => a.ev.type === 'commandResult').map((a) => a.device))];
-          const histories = await Promise.allSettled(withResults.map((d) => listCommandHistory(d.number)));
-          if (!live()) return;
-          const byDevice = new Map<number, CommandHistoryItem[]>();
-          histories.forEach((h, i) => {
-            if (h.status === 'fulfilled' && Array.isArray(h.value)) byDevice.set(withResults[i].id, h.value);
-          });
-          setActivity(kept.map((a) => (byDevice.has(a.device.id) ? { ...a, commands: byDevice.get(a.device.id) } : a)));
+          setActivity(kept);
           lastDeep.current = now; // a full refresh superseded before this point leaves the next one full too
-        });
+          // Then a command result names its command, from its device's history: fetched only for the devices whose
+          // kept events include one, each applied as it comes (a slow or failed one leaves its rows "Command #id").
+          const withResults = [...new Set(kept.filter((a) => a.ev.type === 'commandResult').map((a) => a.device))];
+          for (const d of withResults) {
+            listCommandHistory(d.number)
+              .then((commands: CommandHistoryItem[]) => {
+                if (!live() || !Array.isArray(commands)) return;
+                setActivity((cur) => cur && cur.map((a) => (a.device.id === d.id ? { ...a, commands } : a)));
+              })
+              .catch(() => {});
+          }
+        })
+        .catch(() => {});
     }
 
     // Configuration problems: online devices in a configuration the summary doesn't call clean are probed (capped),

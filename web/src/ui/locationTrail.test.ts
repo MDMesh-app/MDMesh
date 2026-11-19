@@ -35,6 +35,26 @@ describe('arrowSegments', () => {
     expect(arrowSegments([], 20, 60)).toEqual([]);
   });
 
+  it('with a view, makes only the arrows inside it: a long jump at high zoom stays cheap', () => {
+    // A jump of 10 million px (two fixes far apart at zoom 19) seen through a 1000 px window in its middle.
+    const jump = pts([0, 0], [10_000_000, 0]);
+    const view = { min: { x: 5_000_000, y: -500 }, max: { x: 5_001_000, y: 500 } };
+    const a = arrowSegments(jump, 20, 100, view);
+    expect(a.length).toBe(10);
+    expect(a.every((p) => p.x >= 5_000_000 && p.x <= 5_001_000 && p.angle === 0)).toBe(true);
+    // The same places as without the view: they don't move as the map pans.
+    expect(a.map((p) => Math.round(p.x))).toEqual(
+      Array.from({ length: 10 }, (_, k) => 5_000_050 + k * 100),
+    );
+  });
+
+  it('with a view, skips segments outside it and keeps the spacing of those before', () => {
+    const steps = pts([0, 0], [30, 0], [60, 0], [90, 0], [120, 0], [150, 0], [180, 0]);
+    const view = { min: { x: 100, y: -10 }, max: { x: 200, y: 10 } };
+    expect(arrowSegments(steps, 20, 70, view).map((a) => a.x)).toEqual([105]);
+    expect(arrowSegments(steps, 20, 70, { min: { x: 0, y: 50 }, max: { x: 200, y: 60 } })).toEqual([]);
+  });
+
   it('skips repeated fixes at one spot (no NaN angle)', () => {
     expect(arrowSegments(pts([0, 0], [0, 0], [0, 0]), 0, 0)).toEqual([]);
   });

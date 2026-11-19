@@ -2,19 +2,31 @@
 
 <sub>[← README](README.md) · **Deploy** · [Upgrading](docs/UPGRADING.md) · [Operations](docs/OPERATIONS.md) · [Structure](STRUCTURE.md) · [Contributing](CONTRIBUTING.md) · [Releasing](RELEASING.md)</sub>
 
-There are three ways to run MDMesh. Each one generates its own secrets and admin login. There are no default
-passwords, and the admin must set its own password on first login.
+Each install generates its own secrets and admin login. There are no default passwords, and the admin must set its own
+password on first login.
 
-## Pick a method
+## Which install is for me?
 
-| Method | Needs | Choose it when |
-|--------|-------|----------------|
-| [A. Quick start](#option-a--quick-start-no-clone-published-images) | Docker with Compose v2, `curl`, `minisign` to check the script, `openssl` 3.0+ (or an older `openssl` and `minisign`) | You want the fastest path, with one-click updates and rollback. |
-| [B. From source](#option-b--from-source-clone--build) | Docker with Compose v2, a clone, and for `./setup.sh --update`: `git`, `curl`, `openssl` 3.0+ (or an older `openssl` and `minisign`). `python3` to verify the release for the QR (optional) | You want to build the images yourself. |
-| [C. Native](#option-c--native-no-docker) | Debian 12/13 or Ubuntu 24.04, root, `git` (`--update` installs `curl` and `openssl` when they are missing) | You don't want Docker, and you run your own TLS proxy. |
+Most people want the **quick start**: one command, Docker, published images, one-click updates and rollback. It asks
+one question, how your phones will reach MDMesh:
 
-Options A and B ask for the public hostname and set `BASE_URL=https://<hostname>`. Option C asks for the full base
-URL (`https://…`; `http://` is accepted too). See the [rules](docs/OPERATIONS.md#base-url-and-hostname-rules).
+| Your situation | Pick | What MDMesh does |
+|---|---|---|
+| Your domain is on Cloudflare, and you'd rather open no ports | [Quick start](#option-a--quick-start-no-clone-published-images), **1 Cloudflare Tunnel** | Phones reach it through the tunnel; Cloudflare does HTTPS. |
+| A domain points at this machine, and ports 80/443 are free | [Quick start](#option-a--quick-start-no-clone-published-images), **2 Your own domain** | Gets its own Let's Encrypt certificate and answers on 80/443. |
+| nginx, Apache, Caddy or Traefik already does HTTPS here (ports 80/443 are taken) | [Quick start](#option-a--quick-start-no-clone-published-images), **3 Behind your own proxy** | Listens on `127.0.0.1:8080`; your proxy forwards to it. |
+| No Docker | [Native](#option-c--native-no-docker) | Tomcat as a systemd service, behind your own proxy (unchanged). |
+
+[From source](#option-b--from-source-clone--build) is the quick start's modes with images you build yourself.
+
+| Install | Needs |
+|---|---|
+| Quick start | Docker with Compose v2, `curl`, `minisign` to check the script, `openssl` 3.0+ (or an older `openssl` and `minisign`) |
+| From source | Docker with Compose v2, a clone, and for `./setup.sh --update`: `git`, `curl`, `openssl` 3.0+ (or an older `openssl` and `minisign`). `python3` to verify the release for the QR (optional) |
+| Native | Debian 12/13 or Ubuntu 24.04, root, `git` (`--update` installs `curl` and `openssl` when they are missing) |
+
+The quick start and from source ask for the public hostname and set `BASE_URL=https://<hostname>`. Native asks for the
+full base URL (`https://…`; `http://` is accepted too). See the [rules](docs/OPERATIONS.md#base-url-and-hostname-rules).
 
 ## Option A — quick start, no clone (published images)
 
@@ -64,10 +76,11 @@ it instead.
 This needs a published release whose GHCR packages (`mdmesh-server`, `mdmesh-web`, `mdmesh-supervisor`) are public.
 If they aren't, run `docker login ghcr.io` first ([RELEASING.md](RELEASING.md)).
 
-It asks for the hosting mode (as in [Option B](#option-b--from-source-clone--build)), the GitHub repo and GHCR owner
-to pull from, and the hostname. Then it creates `./mdmesh`, downloads the pull-only compose file and the seed,
-generates secrets, pulls and starts the stack, seeds the database, and prints the console URL and a temporary admin
-password.
+It asks how your phones will reach MDMesh ([the three modes](#how-phones-reach-mdmesh) below), the GitHub repo and
+GHCR owner to pull from, and the hostname. Then it creates `./mdmesh`, downloads the pull-only compose file and the
+seed, generates secrets, pulls and starts the stack, seeds the database, and prints the console URL and a temporary
+admin password. To skip the first question, add the mode after the command (`--tunnel`, `--domain` or `--proxy`,
+as in `bash <(curl …/quickstart.sh) --proxy`), or `export MDMESH_MODE=proxy` before the checked block.
 
 Run every `docker compose` command from `./mdmesh`, where `.env` lives. The install is pinned to the latest
 release: `CURRENT_VERSION` names it, and `SERVER_VERSION`, `WEB_VERSION` and `SUPERVISOR_VERSION` name its images by
@@ -85,6 +98,124 @@ If the latest release can't be looked up (GitHub API unreachable or rate-limited
 it no longer falls back to `main` and `:latest`. Run it again later, or name the release:
 `MDMESH_VERSION=X.Y.Z bash <(curl -fsSL https://raw.githubusercontent.com/MDMesh-app/MDMesh/refs/tags/vX.Y.Z/quickstart.sh)`
 (unchecked, like the shortcut).
+
+## How phones reach MDMesh
+
+The quick start and from source set up one of three modes. The mode is kept by updates, rollbacks and `setup.sh`
+re-runs; to change it later, see [Upgrading, Changing the hosting mode](docs/UPGRADING.md#changing-the-hosting-mode).
+In every mode MDMesh's edge (Caddy) is in front of the server: it serves the console, routes the API, the agent's
+wake socket and the recovery page, and adds the security headers. Postgres and the server publish no host ports.
+
+```text
+How will your phones reach MDMesh?
+  1) Cloudflare Tunnel       easiest: no ports to open (domain on Cloudflare)
+  2) Your own domain         MDMesh gets its own HTTPS (ports 80/443 must reach this machine)
+  3) Behind your own proxy   your nginx/Apache/Caddy/Traefik does HTTPS; MDMesh listens on 127.0.0.1:8080
+```
+
+If something on the machine already listens on port 80 or 443, the question says so: that is usually a web server
+of yours, and 3 is the mode for it.
+
+### 1. Cloudflare Tunnel
+
+No open ports, and Cloudflare manages TLS. You need a domain in a Cloudflare account. Create a tunnel (Zero Trust →
+Networks → Tunnels), route its public hostname to `http://caddy:80`, and paste the tunnel token when asked. The
+stack runs `cloudflared` too. `.env`: `COMPOSE_PROFILES=cloudflare`.
+
+### 2. Your own domain
+
+Point the domain's DNS at this machine and open ports 80 and 443 first. Caddy gets a Let's Encrypt certificate (the
+email it asks for gets the certificate notices) and answers on both ports.
+`.env`: `COMPOSE_FILE=docker-compose.yml:docker-compose.domain.yml`.
+
+### 3. Behind your own proxy
+
+For a machine where nginx, Apache, Caddy or Traefik already does HTTPS for other sites. Your proxy keeps ports 80/443
+and its certificate, and forwards one hostname to MDMesh. MDMesh's edge gets no certificate of its own and listens on
+one address, `127.0.0.1:8080` by default. It asks:
+
+- **The public hostname** your proxy serves, e.g. `mdm.example.com` (`BASE_URL=https://mdm.example.com`).
+- **Where MDMesh listens** (`MDMESH_BIND`, default `127.0.0.1:8080`). Keep the default for a proxy on this machine.
+  For a proxy on another machine, an address of this one it reaches, e.g. `10.0.0.5:8080`, and keep that port off the
+  internet (a firewall rule that lets only your proxy in).
+- **Your proxy's address, as MDMesh sees it** (`TRUSTED_PROXIES`, default `host`). MDMesh believes `X-Forwarded-For`
+  (the client's address, for sign-in limits, the audit log and a device's public IP) and `X-Forwarded-Proto` from
+  these addresses only. `host` means a proxy on this machine: Docker delivers its connections from the stack
+  network's gateway, which `host` stands for. For a proxy elsewhere, its IP address (or a range, no wider than an IPv4
+  /8 or IPv6 /16), several separated by spaces. Anyone else's `X-Forwarded-For` is ignored.
+
+`.env` then holds `COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml`, `MDMESH_BIND`, `TRUSTED_PROXIES` and
+`MDMESH_ORIGIN_TLS`; the overlay publishes the edge on `MDMESH_BIND` and nothing else.
+
+**Your proxy's configuration.** Ready ones, each tested in front of MDMesh by `tests/proxy-e2e`:
+
+| Proxy | File |
+|---|---|
+| nginx | [`docs/proxies/nginx.conf`](docs/proxies/nginx.conf) |
+| Apache httpd 2.4.47+ | [`docs/proxies/apache.conf`](docs/proxies/apache.conf) |
+| Caddy | [`docs/proxies/Caddyfile`](docs/proxies/Caddyfile) |
+| Traefik v3 | [`docs/proxies/traefik.yml`](docs/proxies/traefik.yml) and [`traefik-dynamic.yml`](docs/proxies/traefik-dynamic.yml) |
+
+Replace `mdm.example.com` and the certificate paths. Whatever the proxy, it must:
+
+- forward every path unchanged (no prefix stripped, nothing decoded), with the public `Host`;
+- set `X-Forwarded-For` to the address it sees (overwriting, or appending a plain IP: MDMesh reads it from the right)
+  and send `X-Forwarded-Proto`;
+- pass WebSocket upgrades: the agent's wake socket at `/agent/ws/…` stays open while idle (the agent pings every 50
+  seconds), so allow at least 60 seconds of quiet, an hour in the examples;
+- accept request bodies of 500 MB (APK uploads in the console) and not time out a long upload.
+
+**HTTPS between your proxy and MDMesh** (a proxy on another machine). Set `MDMESH_ORIGIN_TLS=1` in `.env` (or answer
+it in advance), then `docker compose up -d caddy`. MDMesh's edge then speaks HTTPS on `MDMESH_BIND`, with a
+certificate for your public hostname from its own CA (Caddy's internal CA, kept in the `caddy_data` volume). Copy the
+CA's root certificate to your proxy and have it check MDMesh's certificate against it:
+
+```bash
+docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt ./mdmesh-origin-ca.crt
+```
+
+Each example has the lines for it, commented out (nginx: `proxy_ssl_name` and `proxy_ssl_trusted_certificate`). Your
+proxy must send the public hostname as `Host`; a proxy that sends no TLS server name still gets the certificate.
+Keep the `caddy_data` volume: a new one makes a new CA, which your proxy would have to trust again.
+
+Notes:
+
+- On a Docker version before 28, a port published on `127.0.0.1` can be reached by other machines on the same local
+  network ([moby#45610](https://github.com/moby/moby/issues/45610)); they could then name their own address. Update
+  Docker, or drop such traffic in the firewall.
+- `host` is right only where Docker keeps a client's address: a connection from another machine to `MDMESH_BIND`
+  arrives from that machine. With rootless Docker or Docker Desktop, every connection arrives from the gateway, so use
+  `host` only with the default `127.0.0.1` address there.
+- Behind a CDN or a load balancer in front of your proxy, have your proxy take the client's address from it first
+  (nginx: `set_real_ip_from` and `real_ip_header`), so the address it forwards is the client's.
+- Traefik with the Docker provider: run Traefik with `network_mode: host`, or point its file provider at
+  `MDMESH_BIND`, as in the example.
+
+### Your own edge rules
+
+The edge imports every `*.caddy` file in `site.d/` in the install directory into its site, after MDMesh's own
+settings: an IP allowlist for the console, an extra header, a redirect. Updates and rollbacks never touch `site.d`,
+and the installers create it (with a short README). For example, `site.d/office-only.caddy`:
+
+```caddyfile
+# The console's API only from the office (client_ip: the client as the edge believes it, also behind your proxy).
+@outside {
+	path /rest/private/*
+	not client_ip 203.0.113.0/24
+}
+respond @outside 403
+```
+
+Make the file readable by everyone (`chmod 644`), check it, then restart the edge:
+
+```bash
+docker compose exec caddy caddy validate --config /etc/caddy/Caddyfile && docker compose restart caddy
+```
+
+A rule that doesn't parse stops the edge, and with it the console and `/recovery`, until it is fixed. `.env`'s
+`MDMESH_SITE_DIR` names the directory (an absolute path, so the updater mounts the same one). An install from
+before 0.6.0 gets it at its first `./setup.sh` run (from source), or as in
+[Upgrading, v0.6.0](docs/UPGRADING.md#v060) (quick start).
 
 ## Option B — from source (clone + build)
 
@@ -107,15 +238,8 @@ A clone from 0.4.x has no `--update` yet. Move it to 0.5.0 once, whether it is o
 would overwrite local changes, and `--update` stops on any it would carry along. From then on, `./setup.sh --update`
 is enough.
 
-The wizard asks how to expose the server:
-
-- **Cloudflare Tunnel.** No open ports, and Cloudflare manages TLS. You need a domain in a Cloudflare account.
-  Create a tunnel (Zero Trust → Networks → Tunnels), route its public hostname to `http://caddy:80`, and paste the
-  tunnel token when asked.
-- **Your own domain.** Opens ports 80/443, and Caddy gets a Let's Encrypt certificate. Point the domain's DNS at the
-  host first.
-
-It writes `.env` (mode 600), builds the images, starts the stack, seeds the database, and prints the console URL and
+The wizard asks how your phones will reach MDMesh, as the quick start does ([the three modes](#how-phones-reach-mdmesh));
+`./setup.sh --tunnel`, `--domain` or `--proxy` answers it. It writes `.env` (mode 600), builds the images, starts the stack, seeds the database, and prints the console URL and
 the **admin** password. The password is shown only once, so save it.
 
 If the release's signed manifest verifies, setup.sh puts the agent's signing checksum in the enrollment QR. If it
@@ -127,6 +251,7 @@ recovery page) and, in tunnel mode, `cloudflared`. Postgres and the server publi
 ```bash
 docker compose --profile cloudflare up -d                                   # cloudflare mode
 docker compose -f docker-compose.yml -f docker-compose.domain.yml up -d     # own-domain mode
+docker compose -f docker-compose.yml -f docker-compose.proxy.yml up -d      # behind your own proxy
 docker compose logs -f server
 docker compose down
 ```
@@ -135,6 +260,8 @@ Re-runs reuse `.env` and never re-seed a database that holds data. `./setup.sh -
 secrets. It is only safe on an empty database, so run `docker compose down -v` first, which deletes all data.
 
 ## Option C — Native (no Docker)
+
+Native is unchanged in 0.6.0: the same commands as before, to install and to update.
 
 ```bash
 sudo ./setup.sh --update --native    # newest signed release, then install/install-native.sh
@@ -202,10 +329,13 @@ printed.
 
 | Variable | Method | Answer | If not given |
 |---|---|---|---|
-| `MDMESH_MODE` | A, B | `tunnel` (Cloudflare Tunnel) or `domain` (your own domain); `1` and `2` work too | asked |
+| `MDMESH_MODE` | A, B | `tunnel` (Cloudflare Tunnel), `domain` (your own domain) or `proxy` (behind your own proxy); `1`, `2` and `3` work too, as do the flags `--tunnel`, `--domain` and `--proxy` | asked |
 | `MDMESH_HOST` | A, B | the public hostname only, e.g. `mdm.example.com` (no `https://`), optionally `:port` | asked |
 | `MDMESH_TUNNEL_TOKEN` | A, B | the Cloudflare Tunnel token (tunnel mode) | asked |
 | `MDMESH_ACME_EMAIL` | A, B | the email for Let's Encrypt (domain mode); empty for none | asked |
+| `MDMESH_BIND` | A, B | where MDMesh listens for your proxy, `IP:port` (proxy mode) | asked, default `127.0.0.1:8080` |
+| `MDMESH_TRUSTED_PROXIES` | A, B | your proxy's addresses or ranges, or `host` for a proxy on this machine (proxy mode) | asked, default `host` |
+| `MDMESH_ORIGIN_TLS` | A, B | `1`: HTTPS from your proxy to MDMesh, with MDMesh's own CA (proxy mode) | not asked: `0` |
 | `MDMESH_REPO` | A | the GitHub repo to install from, `owner/name` | asked, default `MDMesh-app/MDMesh` |
 | `MDMESH_IMAGE_OWNER` | A | the GHCR owner of the images, lowercase | asked, default `mdmesh-app` |
 | `MDMESH_ASSUME_YES` | C | `1`: the same as `-y` | you're asked to type `yes` |

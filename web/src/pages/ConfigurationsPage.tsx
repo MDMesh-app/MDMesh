@@ -264,7 +264,6 @@ export function ConfigurationsPage() {
                 sync={c.id != null ? sync[c.id] : undefined}
                 syncFailed={syncFailed}
                 syncLoaded={syncLoaded}
-                onOpen={() => navigate(paths.configuration(c.id ?? ''))}
                 onCopy={canCopy ? () => setCopyOf(c) : undefined}
                 onDelete={canCopy ? () => setDeleting(c) : undefined}
               />
@@ -438,46 +437,22 @@ function SyncCell({ row, failed, loaded }: { row?: ConfigSyncSummary; failed: bo
   );
 }
 
-/** The row's "…" menu: Edit (View for a built-in), Duplicate, Delete. */
-function RowMenu({
-  c,
-  onOpen,
-  onCopy,
-  onDelete,
-}: {
-  c: Configuration;
-  onOpen: () => void;
-  /** Duplicate and Delete, left out for a role without copy_config. */
-  onCopy?: () => void;
-  onDelete?: () => void;
-}) {
-  const locked = isLocked(c);
-  const menu: MenuEntry[] = [{ key: 'open', label: locked ? 'View' : 'Edit', icon: <IconPencil />, onSelect: onOpen }];
-  if (onCopy) {
-    menu.push({
-      key: 'copy',
-      label: locked ? 'Duplicate to edit' : 'Duplicate',
-      textValue: 'Duplicate',
-      icon: <IconCopy />,
-      onSelect: onCopy,
-    });
-  }
-  if (!locked && onDelete) {
-    menu.push('separator', {
-      key: 'delete',
-      label: 'Delete',
-      textValue: 'Delete',
-      icon: <IconTrash />,
-      danger: true,
-      onSelect: onDelete,
-    });
-  }
+/**
+ * The card's "…" menu: only what its footer doesn't show (one place per surface), so for now Delete, kept out of
+ * reach of a stray click and the home for the card's later actions. None for a built-in or a role without
+ * copy_config.
+ */
+function RowMenu({ c, onDelete }: { c: Configuration; onDelete?: () => void }) {
+  if (isLocked(c) || !onDelete) return null;
+  const menu: MenuEntry[] = [
+    { key: 'delete', label: 'Delete', textValue: 'Delete', icon: <IconTrash />, danger: true, onSelect: onDelete },
+  ];
   return <Menu items={menu} label={`More for ${c.name}`} iconSize="xs" align="end" />;
 }
 
 /**
- * One configuration as a card: name, tags and description with its "…" menu; main app, apps and devices; the sync
- * bar; and its actions (Edit or View, Duplicate).
+ * One configuration as a card: name, tags and description with its "…" menu (Delete); main app, apps and devices;
+ * the sync bar; and its actions (Edit or View, Duplicate).
  */
 function ConfigCard({
   c,
@@ -486,7 +461,6 @@ function ConfigCard({
   sync,
   syncFailed,
   syncLoaded,
-  onOpen,
   onCopy,
   onDelete,
 }: {
@@ -497,7 +471,6 @@ function ConfigCard({
   sync?: ConfigSyncSummary;
   syncFailed: boolean;
   syncLoaded: boolean;
-  onOpen: () => void;
   /** Duplicate and Delete, left out for a role without copy_config. */
   onCopy?: () => void;
   onDelete?: () => void;
@@ -509,7 +482,7 @@ function ConfigCard({
     <Card as="article" aria-label={c.name} className="v2-configs-card">
       <div className="v2-configs-card__top">
         <ConfigIdentity c={c} />
-        <RowMenu c={c} onOpen={onOpen} onCopy={onCopy} onDelete={onDelete} />
+        <RowMenu c={c} onDelete={onDelete} />
       </div>
       <MetaGrid
         boxed

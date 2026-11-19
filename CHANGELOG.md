@@ -24,6 +24,12 @@ Fixes
   says `native update, <from> → <to>`. The update from 0.5.0 still asks once (add `-y` to skip).
 - `./setup.sh --update` no longer refuses a clone on a release branch (`release/vX.Y.Z`) as "ahead" of that release
   once it is squash-merged: a clone on an older release moves on; only one newer than the release needs `--allow-downgrade`.
+- Console: the location map's path is easy to see on any map, in both themes: a dark line on a white casing, arrows
+  for the direction, a ring at the oldest fix and a dot at the latest, and a key under the map.
+- Console: activity says which command ran and how it went ("Lock: done", not "Command 1234:done"), labels kiosk exit
+  and return, and the Overview no longer shows the device's description as if it were the event's detail.
+- Console: an action shows in one place: a configuration card's "…" holds only Delete, and the device page's "…"
+  holds Ring and Reboot and then All actions, which opens Remote actions on the Control tab.
 
 ## v0.5.0 — 2026-11-17
 

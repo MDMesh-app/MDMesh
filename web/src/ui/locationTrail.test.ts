@@ -1,0 +1,57 @@
+import { describe, expect, it } from 'vitest';
+import { arrowSegments, screenAngle, showPoints, type Pt } from './locationTrail';
+
+const pts = (...xy: [number, number][]): Pt[] => xy.map(([x, y]) => ({ x, y }));
+
+describe('screenAngle', () => {
+  it('is 0° heading right (east) and turns clockwise, as CSS rotate() does', () => {
+    expect(screenAngle({ x: 0, y: 0 }, { x: 10, y: 0 })).toBeCloseTo(0);
+    expect(screenAngle({ x: 0, y: 0 }, { x: 0, y: 10 })).toBeCloseTo(90); // down the screen (south)
+    expect(screenAngle({ x: 0, y: 0 }, { x: -10, y: 0 })).toBeCloseTo(180);
+    expect(screenAngle({ x: 0, y: 0 }, { x: 0, y: -10 })).toBeCloseTo(-90); // north
+  });
+});
+
+describe('arrowSegments', () => {
+  it('puts an arrow in the middle of a segment, pointing older → newer', () => {
+    expect(arrowSegments(pts([0, 0], [100, 0], [100, 10], [100, 110]), 20, 60)).toEqual([
+      { x: 50, y: 0, angle: 0 },
+      { x: 100, y: 60, angle: 90 },
+    ]);
+  });
+
+  it('spreads several along a long segment, never at its ends (the fixes’ dots)', () => {
+    expect(arrowSegments(pts([0, 0], [300, 0]), 20, 100).map((a) => a.x)).toEqual([50, 150, 250]);
+  });
+
+  it('keeps arrows at least `spacing` apart along the path, so short segments get every few', () => {
+    const steps = pts([0, 0], [30, 0], [60, 0], [90, 0], [120, 0], [150, 0], [180, 0]);
+    expect(arrowSegments(steps, 20, 70).map((a) => a.x)).toEqual([15, 105]);
+  });
+
+  it('draws none on segments too short to hold one (zoomed out), or with one fix', () => {
+    expect(arrowSegments(pts([0, 0], [5, 5], [10, 10]), 20, 60)).toEqual([]);
+    expect(arrowSegments(pts([0, 0]), 20, 60)).toEqual([]);
+    expect(arrowSegments([], 20, 60)).toEqual([]);
+  });
+
+  it('skips repeated fixes at one spot (no NaN angle)', () => {
+    expect(arrowSegments(pts([0, 0], [0, 0], [0, 0]), 0, 0)).toEqual([]);
+  });
+});
+
+describe('showPoints', () => {
+  it('shows every fix’s dot only when fixes sit far enough apart on screen', () => {
+    expect(showPoints(pts([0, 0], [20, 0], [40, 0], [60, 0]), 16)).toBe(true);
+    expect(showPoints(pts([0, 0], [4, 0], [8, 0], [12, 0]), 16)).toBe(false);
+  });
+
+  it('goes by the typical gap: one long jump among tight fixes keeps them hidden', () => {
+    expect(showPoints(pts([0, 0], [3, 0], [6, 0], [9, 0], [400, 0]), 16)).toBe(false);
+  });
+
+  it('always shows a short trail’s dots (nothing to crowd)', () => {
+    expect(showPoints(pts([0, 0], [1, 0]), 16)).toBe(true);
+    expect(showPoints(pts([0, 0]), 16)).toBe(true);
+  });
+});

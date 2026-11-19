@@ -70,6 +70,18 @@ describe('configurations list', () => {
     expect(within(screen.getByRole('article', { name: 'MIUI (Xiaomi Redmi)' })).getByText('Built-in')).toBeTruthy();
   });
 
+  it('shows each card action once: Edit and Duplicate in the footer, only Delete in the “…”', async () => {
+    open([WAREHOUSE, TEMPLATE]);
+    await screen.findByRole('link', { name: 'Warehouse' });
+    fireEvent.click(screen.getByRole('button', { name: 'More for Warehouse' }));
+    const menu = within(await screen.findByRole('menu'));
+    expect(menu.getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['Delete']);
+    // A built-in can't be deleted: its card has no menu at all (View and Duplicate to edit are its buttons).
+    const builtIn = within(screen.getByRole('article', { name: 'MIUI (Xiaomi Redmi)' }));
+    expect(builtIn.queryByRole('button', { name: /^More for/ })).toBeNull();
+    expect(builtIn.getByRole('button', { name: 'Duplicate to edit' })).toBeTruthy();
+  });
+
   it('with no template, New configuration opens a blank one directly', async () => {
     open([WAREHOUSE]);
     await screen.findByRole('link', { name: 'Warehouse' });

@@ -5,12 +5,12 @@ import { cx } from './cx';
 import './LocationMap.css';
 import type { LocationFix } from '../api/deviceLocations';
 import { fmtDateTime } from './format';
+import { arrowSegments, showPoints, type Pt } from './locationTrail';
 
-/** A token's computed value on the element (so the trail follows the theme), with a fallback. */
-function token(el: HTMLElement, name: string, fallback: string): string {
-  const v = getComputedStyle(el).getPropertyValue(name).trim();
-  return v || fallback;
-}
+/** On screen: arrows on segments from 20 px long, 72 px apart; a dot per fix once their median gap is 14 px. */
+const ARROW_MIN_PX = 20;
+const ARROW_SPACING_PX = 72;
+const POINT_GAP_PX = 14;
 
 /** A text-only popup body (never parsed as HTML). */
 function popupText(text: string): HTMLElement {
@@ -19,64 +19,120 @@ function popupText(text: string): HTMLElement {
   return el;
 }
 
+/** A fix's popup: which end it is (if one), when, how accurate, from which provider. */
+function popupFor(f: LocationFix, role?: string): HTMLElement {
+  return popupText(
+    (role ? `${role} · ` : '') +
+      fmtDateTime(f.capturedAt) +
+      (f.accuracy != null ? ` · ±${Math.round(f.accuracy)} m` : '') +
+      (f.provider ? ` · ${f.provider}` : ''),
+  );
+}
+
+/** A direction arrow: a notched arrowhead pointing right, turned to its segment (colours in the CSS). */
+function arrowIcon(angle: number): L.DivIcon {
+  return L.divIcon({
+    className: 'v2-locmap__arrow',
+    html: `<svg viewBox="0 0 16 16" width="16" height="16" style="transform: rotate(${angle.toFixed(1)}deg)" aria-hidden="true"><path d="M3 3 L14 8 L3 13 L6 8 Z"/></svg>`,
+    iconSize: [16, 16],
+  });
+}
+
 /**
- * Leaflet + OpenStreetMap breadcrumb map (the console's colours). Not in the barrel (it pulls in Leaflet):
- * import it from '../ui/LocationMap'. `fixes` are newest-first as the API
- * returns them; the trail is drawn chronologically, the latest fix highlighted, each fix with a popup.
- * Circle markers only (no image assets, no bundler icon-path issues).
+ * Leaflet + OpenStreetMap breadcrumb map. Not in the barrel (it pulls in Leaflet): import it from '../ui/LocationMap'.
+ * `fixes` are newest-first as the API returns them. The path is drawn oldest to newest as a dark line on a white
+ * casing (3:1 on any tile, mapContrast.test.ts), with arrows along it for the direction, a ring at the oldest fix and
+ * a solid dot at the latest, and a key under the map. Each fix's own dot shows only while fixes sit far enough apart
+ * not to crowd, so zoomed out the path stays a clean line; every dot opens a popup. Colours are set by the CSS
+ * (tokens). SVG and div markers only: no image assets, no bundler icon-path issues.
  */
 export function LocationMap({ fixes, label, className }: { fixes: LocationFix[]; label: string; className?: string }) {
   const elRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const layerRef = useRef<L.LayerGroup | null>(null);
+  /** What depends on the view (the arrows and the fixes' dots), redrawn after every zoom and pan. */
+  const zoomedRef = useRef<{ dots: L.LayerGroup; arrows: L.LayerGroup; draw: () => void } | null>(null);
 
   useEffect(() => {
     const el = elRef.current;
     if (!el) return;
     if (!mapRef.current) {
-      mapRef.current = L.map(el, { worldCopyJump: true });
+      const map = L.map(el, { worldCopyJump: true });
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
         attribution: '© OpenStreetMap contributors',
         // The edge sends Referrer-Policy: same-origin, so tiles would go without a Referer, which OpenStreetMap's
         // tile policy requires. Send the origin only (never the console path), as browsers do by default.
         referrerPolicy: 'strict-origin-when-cross-origin',
-      }).addTo(mapRef.current);
-      layerRef.current = L.layerGroup().addTo(mapRef.current);
+      }).addTo(map);
+      // Over the path (overlayPane, 400), under the popups: the arrows, then the oldest and latest markers.
+      map.createPane('v2-trail-arrows').style.zIndex = '450';
+      map.createPane('v2-trail-ends').style.zIndex = '460';
+      layerRef.current = L.layerGroup().addTo(map);
+      const zoomed = { dots: L.layerGroup().addTo(map), arrows: L.layerGroup().addTo(map), draw: () => {} };
+      zoomedRef.current = zoomed;
+      map.on('moveend', () => zoomed.draw());
+      mapRef.current = map;
     }
     const map = mapRef.current;
     const layer = layerRef.current!;
+    const zoomed = zoomedRef.current!;
     layer.clearLayers();
+    zoomed.dots.clearLayers();
+    zoomed.arrows.clearLayers();
+    zoomed.draw = () => {};
 
     if (!fixes.length) {
       map.setView([20, 0], 2);
       return;
     }
-    const trail = token(el, '--text-2', '#384152');
-    const latestColour = token(el, '--online', '#1aa766');
     const chrono = [...fixes].reverse();
-    const pts = chrono.map((f) => [f.lat, f.lon] as [number, number]);
-    L.polyline(pts, { color: trail, weight: 3, opacity: 0.55 }).addTo(layer);
-    fixes.forEach((f, i) => {
-      const latest = i === 0;
-      L.circleMarker([f.lat, f.lon], {
-        radius: latest ? 7 : 4,
-        color: latest ? latestColour : trail,
-        fillColor: latest ? latestColour : trail,
-        fillOpacity: latest ? 0.9 : 0.45,
-        weight: latest ? 2 : 1,
-      })
+    const pts = chrono.map((f) => L.latLng(f.lat, f.lon));
+    const line = { interactive: false, lineCap: 'round', lineJoin: 'round', opacity: 1 } as const;
+    L.polyline(pts, { ...line, className: 'v2-locmap__halo', weight: 8 }).addTo(layer);
+    L.polyline(pts, { ...line, className: 'v2-locmap__line', weight: 4 }).addTo(layer);
+    const end = { pane: 'v2-trail-ends', weight: 3, fillOpacity: 1 };
+    if (chrono.length > 1) {
+      L.circleMarker(pts[0], { ...end, className: 'v2-locmap__oldest', radius: 6 })
         // A DOM node, not a string: Leaflet renders popup strings as HTML, and `provider` comes from the device.
-        .bindPopup(
-          popupText(
-            `${fmtDateTime(f.capturedAt)}` +
-              (f.accuracy != null ? ` · ±${Math.round(f.accuracy)} m` : '') +
-              (f.provider ? ` · ${f.provider}` : ''),
-          ),
-        )
+        .bindPopup(popupFor(chrono[0], 'Oldest'))
         .addTo(layer);
-    });
-    map.fitBounds(L.latLngBounds(pts), { padding: [24, 24], maxZoom: 17 });
+    }
+    L.circleMarker(pts[pts.length - 1], { ...end, className: 'v2-locmap__latest', radius: 8 })
+      .bindPopup(popupFor(fixes[0], 'Latest'))
+      .addTo(layer);
+
+    // The dots are rebuilt only when they come or go (a pan must not close a dot's open popup); the arrows after
+    // every move, for the part of the path in and near the view (zoomed in on a long trail there would be thousands).
+    let dotsShown = false;
+    zoomed.draw = () => {
+      const z = map.getZoom();
+      const px: Pt[] = pts.map((p) => map.project(p, z));
+      const dots = showPoints(px, POINT_GAP_PX);
+      if (dots !== dotsShown) {
+        dotsShown = dots;
+        zoomed.dots.clearLayers();
+        for (let i = 1; dots && i < chrono.length - 1; i++) {
+          L.circleMarker(pts[i], { className: 'v2-locmap__point', radius: 3.5, weight: 1.5, fillOpacity: 1 })
+            .bindPopup(popupFor(chrono[i]))
+            .addTo(zoomed.dots);
+        }
+      }
+      zoomed.arrows.clearLayers();
+      const view = map.getPixelBounds().pad(0.25);
+      for (const a of arrowSegments(px, ARROW_MIN_PX, ARROW_SPACING_PX)) {
+        if (!view.contains([a.x, a.y])) continue;
+        L.marker(map.unproject([a.x, a.y], z), {
+          icon: arrowIcon(a.angle),
+          pane: 'v2-trail-arrows',
+          interactive: false,
+          keyboard: false,
+        }).addTo(zoomed.arrows);
+      }
+    };
+    // Not animated: the zoom is final at once, so what is drawn next matches it.
+    map.fitBounds(L.latLngBounds(pts), { padding: [32, 32], maxZoom: 17, animate: false });
+    zoomed.draw();
     // The container is sized by layout after first paint; recompute so the tiles fill it.
     const t = setTimeout(() => map.invalidateSize(), 0);
     return () => clearTimeout(t);
@@ -90,5 +146,33 @@ export function LocationMap({ fixes, label, className }: { fixes: LocationFix[];
     [],
   );
 
-  return <div ref={elRef} className={cx('v2-locmap', className)} role="region" aria-label={label} />;
+  const trail = fixes.length > 1;
+  return (
+    <div className="v2-locmap-wrap">
+      <div ref={elRef} className={cx('v2-locmap', className)} role="region" aria-label={label} />
+      {/* What the marks mean (each fix's time is in its popup and in the list below). */}
+      <ul className="v2-locmap-key" aria-label="Map key">
+        {trail ? (
+          <li>
+            <svg className="v2-locmap-key__path" viewBox="0 0 28 12" width="28" height="12" aria-hidden="true">
+              <path className="v2-locmap-key__halo" d="M3 6 H25" />
+              <path className="v2-locmap-key__line" d="M3 6 H25" />
+              <path className="v2-locmap-key__arrow" d="M9 1.5 L20 6 L9 10.5 L12 6 Z" />
+            </svg>
+            Path, oldest to latest
+          </li>
+        ) : null}
+        {trail ? (
+          <li>
+            <span className="v2-locmap-key__oldest" aria-hidden="true" />
+            Oldest
+          </li>
+        ) : null}
+        <li>
+          <span className="v2-locmap-key__latest" aria-hidden="true" />
+          Latest
+        </li>
+      </ul>
+    </div>
+  );
 }

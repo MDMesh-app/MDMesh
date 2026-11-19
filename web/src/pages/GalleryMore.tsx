@@ -93,7 +93,16 @@ export function GalleryMore() {
 
   return (
     <>
-      <Section id="menu" title="Menu" note="“…” menus: Enter / Space / ArrowDown open, arrows and type-ahead move, Esc closes and returns focus.">
+      <Section
+        id="menu"
+        title="Menu"
+        note={
+          'Enter / Space / ArrowDown open, arrows and type-ahead move, Esc closes and returns focus. Each action shows in ' +
+          'one place per surface: the primary and up to two safe secondaries are buttons, the rest go in the “…”, ' +
+          'destructive last after a separator. A menu of one item is a button instead, except a card’s lone Delete. ' +
+          'A header that sums up a panel repeats only its most used actions; its “…” ends with “All actions →”.'
+        }
+      >
         <Row label="icon md / sm">
           <Menu label="More actions for KSK-0151" items={MENU} />
           <Menu label="More for Cafeteria Signage" iconSize="sm" items={MENU} />

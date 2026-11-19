@@ -39,13 +39,11 @@ import {
   Skeleton,
   SkeletonFacts,
   Tooltip,
-  IconAlert,
-  IconDownload,
+  IconControl,
   IconLock,
   IconPencil,
   IconPower,
   IconRing,
-  IconScreenMessage,
   IconSync,
   ButtonLink,
   EmptyState,
@@ -61,7 +59,14 @@ import {
   useToast,
   type KeyValueItem,
 } from '../ui';
-import { ActionDialog, ConfigPanel, RemoteActions, TEMPLATE, type KioskReturnOffer } from './DeviceDetailControl';
+import {
+  ActionDialog,
+  ConfigPanel,
+  REMOTE_ACTIONS_ID,
+  RemoteActions,
+  TEMPLATE,
+  type KioskReturnOffer,
+} from './DeviceDetailControl';
 import { DeviceKioskBackground } from './configurations/KioskBackground';
 import { ActivityTab, LocationTab, TelemetryTab } from './DeviceDetailTabs';
 import { AppsTab, useAppScan } from './DeviceDetailApps';
@@ -282,6 +287,24 @@ export function DeviceDetailPage() {
   const [library, setLibrary] = useState<Application[] | null>(null);
 
   const deviceTabs = useDeviceTabs();
+  // "All actions" in the header menu: the Control tab, scrolled to Remote actions, which takes focus. Once the tab is
+  // open (now, or after the tab change lands), and only for that request.
+  const allActionsAsked = useRef(false);
+  const [allActionsAsk, setAllActionsAsk] = useState(0);
+  const showAllActions = () => {
+    allActionsAsked.current = true;
+    deviceTabs.select('control');
+    setAllActionsAsk((n) => n + 1);
+  };
+  useEffect(() => {
+    if (!allActionsAsked.current || deviceTabs.active !== 'control') return;
+    allActionsAsked.current = false;
+    const card = document.getElementById(REMOTE_ACTIONS_ID);
+    if (!card) return;
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    card.scrollIntoView?.({ block: 'start', behavior: reduce ? 'auto' : 'smooth' });
+    card.focus({ preventScroll: true });
+  }, [allActionsAsk, deviceTabs.active]);
   const [busy, setBusy] = useState(false);
   const [dialog, setDialog] = useState<CommandTemplateExt | null>(null);
   const [kioskOpen, setKioskOpen] = useState(false);
@@ -1146,27 +1169,27 @@ export function DeviceDetailPage() {
                   Lock
                 </Button>
               </Tooltip>
+              {/* A shortcut to the Control tab, not a copy of it: the most used actions, then the way to the rest. */}
               <Menu
                 label="More actions"
                 iconSize="md"
                 disabled={busy || wiped}
                 items={[
                   { key: 'ring', label: 'Ring', icon: <IconRing />, onSelect: () => runAction(TEMPLATE.ring) },
-                  { key: 'alert', label: 'Send alert', icon: <IconAlert />, onSelect: () => runAction(TEMPLATE.alert) },
-                  {
-                    key: 'lsm',
-                    label: 'Lock-screen message',
-                    icon: <IconScreenMessage />,
-                    onSelect: () => runAction(TEMPLATE['lockscreen-message']),
-                  },
+                  { key: 'reboot', label: 'Reboot', icon: <IconPower />, onSelect: () => runAction(TEMPLATE.reboot) },
                   'separator',
                   {
-                    key: 'apps',
-                    label: 'Install configuration apps',
-                    icon: <IconDownload size={16} />,
-                    onSelect: () => void installConfigApps(),
+                    key: 'all',
+                    label: (
+                      <>
+                        All actions <span aria-hidden="true">→</span>
+                      </>
+                    ),
+                    textValue: 'All actions',
+                    icon: <IconControl />,
+                    movesFocus: true,
+                    onSelect: showAllActions,
                   },
-                  { key: 'reboot', label: 'Reboot', icon: <IconPower />, onSelect: () => runAction(TEMPLATE.reboot) },
                 ]}
               />
             </div>

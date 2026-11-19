@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
-import { forceSync } from '../api/commands';
+import { forceSync, type CommandHistoryItem } from '../api/commands';
 import type { ConfigSyncSummary } from '../api/configSync';
 import type { ConfigurationLookup, DeviceView } from '../api/devices';
 import type { DeviceEvent } from '../api/events';
@@ -32,6 +32,8 @@ import {
   IconBattery,
   IconCheck,
   IconDownload,
+  IconEnterKiosk,
+  IconExitKiosk,
   IconInfo,
   IconLock,
   IconNetwork,
@@ -55,7 +57,7 @@ import {
   type StatusTone,
 } from '../ui';
 import { ServerCard } from './overview/ServerCard';
-import { EVENT_VERBS, parseCommandResult } from '../data/deviceActivity';
+import { EVENT_VERBS, eventDetail, parseCommandResult } from '../data/deviceActivity';
 import type { SyncCheck } from '../data/fleetHealth';
 import { wipedOnlyLine } from './configurations/sync';
 import { bucketOf, reasonFor, topReason, type ConfigIssue } from './overview/attention';
@@ -642,39 +644,32 @@ type ActivityFilter = 'all' | 'commands' | 'events';
 
 function eventView(
   ev: DeviceEvent,
-  device: DeviceView,
   appNames: Record<string, string>,
+  commands: CommandHistoryItem[] | undefined,
 ): { icon: ReactNode; tone: StatusTone; what: string; detail?: string } {
   const what = EVENT_VERBS[ev.type] ?? ev.type;
-  // Classic: the event detail, else the device description.
-  const detail = ev.detail || device.description || undefined;
+  // The event's own detail in words; an event without one has no detail line.
+  const detail = eventDetail(ev, { commands, appNames });
   switch (ev.type) {
     case 'enrolled':
       return { icon: <IconPlus size={15} />, tone: 'ok', what, detail };
     case 'appInstalled':
-    case 'appUninstalled': {
-      // Detail is the package name; show the library name when the app is in the library.
-      const pkg = ev.detail?.trim() ?? '';
-      const name = pkg ? appNames[pkg] : undefined;
+    case 'appUninstalled':
       return {
         icon: ev.type === 'appInstalled' ? <IconDownload size={15} /> : <IconTrash size={15} />,
         tone: 'idle',
         what,
-        detail: name ?? detail,
+        detail,
       };
-    }
     case 'commandResult': {
-      const r = parseCommandResult(ev.detail);
-      if (!r) return { icon: <IconCheck size={15} />, tone: 'idle', what, detail };
-      const s = r.status.toLowerCase();
+      const s = parseCommandResult(ev.detail)?.status.toLowerCase();
       const tone: StatusTone = s === 'done' ? 'ok' : s === 'failed' ? 'alert' : s === 'expired' ? 'warn' : 'idle';
-      return {
-        icon: tone === 'alert' ? <IconAlert size={15} /> : <IconCheck size={15} />,
-        tone,
-        what,
-        detail: `#${r.id} · ${r.status}`,
-      };
+      return { icon: tone === 'alert' ? <IconAlert size={15} /> : <IconCheck size={15} />, tone, what, detail };
     }
+    case 'kioskExit':
+      return { icon: <IconExitKiosk size={15} />, tone: 'idle', what, detail };
+    case 'kioskReturn':
+      return { icon: <IconEnterKiosk size={15} />, tone: 'idle', what, detail };
     case 'lowBattery':
       return { icon: <IconBattery size={15} />, tone: 'warn', what, detail };
     case 'connectivityChange':
@@ -732,7 +727,7 @@ function RecentActivity({
     body = (
       <ActivityList aria-label="Recent activity">
         {rows.map((a) => {
-          const v = eventView(a.ev, a.device, appNames);
+          const v = eventView(a.ev, appNames, a.commands);
           return (
             <ActivityRow
               key={a.key}

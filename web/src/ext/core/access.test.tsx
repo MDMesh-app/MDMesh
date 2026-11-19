@@ -288,9 +288,15 @@ describe.each([
     await main().findByRole('link', { name: 'Warehouse' });
     // "New configuration" when there are templates to choose from (its chooser), else it creates directly.
     has(main().queryAllByRole('button', { name: /^New configuration(…)?$/ }), add);
-    fireEvent.click(main().getByRole('button', { name: 'More for Warehouse' }));
-    const items = within(await screen.findByRole('menu')).getAllByRole('menuitem').map((m) => m.textContent);
-    expect(items).toEqual(copy ? ['Edit', 'Duplicate', 'Delete'] : ['Edit']);
+    // Edit and Duplicate are the card's buttons; its "…" holds only Delete, and is gone without copy_config.
+    const card = within(main().getByRole('article', { name: 'Warehouse' }));
+    has(card.queryAllByRole('button', { name: 'Duplicate' }), copy);
+    has(card.queryAllByRole('button', { name: 'More for Warehouse' }), copy);
+    if (copy) {
+      fireEvent.click(card.getByRole('button', { name: 'More for Warehouse' }));
+      const items = within(await screen.findByRole('menu')).getAllByRole('menuitem').map((m) => m.textContent);
+      expect(items).toEqual(['Delete']);
+    }
   });
 
   it('the editor: Duplicate and Delete', async () => {

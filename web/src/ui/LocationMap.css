@@ -14,6 +14,101 @@
   line-height: var(--lh-meta);
 }
 
+/* The map over its key. */
+.v2 .v2-locmap-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* The path: a dark line on a white casing, and its markers, in --map-trail / --map-halo (the same in both themes: the
+   tiles stay light). CSS wins over the colours Leaflet writes as SVG attributes. */
+.v2 .v2-locmap .v2-locmap__halo {
+  stroke: var(--map-halo);
+}
+.v2 .v2-locmap .v2-locmap__line {
+  stroke: var(--map-trail);
+}
+.v2 .v2-locmap .v2-locmap__point,
+.v2 .v2-locmap .v2-locmap__latest {
+  stroke: var(--map-halo);
+  fill: var(--map-trail);
+}
+.v2 .v2-locmap .v2-locmap__oldest {
+  stroke: var(--map-trail);
+  fill: var(--map-halo);
+}
+.v2 .v2-locmap .v2-locmap__arrow svg {
+  display: block;
+  overflow: visible;
+}
+.v2 .v2-locmap .v2-locmap__arrow path {
+  fill: var(--map-trail);
+  stroke: var(--map-halo);
+  stroke-width: 1.5px;
+  stroke-linejoin: round;
+  paint-order: stroke;
+}
+
+/* The key under the map: one line of small swatches drawn like the marks on the map. */
+.v2 .v2-locmap-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--secondary);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
+}
+.v2 .v2-locmap-key li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.v2 .v2-locmap-key__halo {
+  fill: none;
+  stroke: var(--map-halo);
+  stroke-width: 8px;
+  stroke-linecap: round;
+}
+.v2 .v2-locmap-key__line {
+  fill: none;
+  stroke: var(--map-trail);
+  stroke-width: 4px;
+  stroke-linecap: round;
+}
+.v2 .v2-locmap-key__arrow {
+  fill: var(--map-trail);
+  stroke: var(--map-halo);
+  stroke-width: 1.5px;
+  stroke-linejoin: round;
+  paint-order: stroke;
+}
+.v2 .v2-locmap-key__path {
+  flex: 0 0 auto;
+  overflow: visible;
+}
+.v2 .v2-locmap-key__oldest,
+.v2 .v2-locmap-key__latest {
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  border-radius: var(--radius-full);
+}
+.v2 .v2-locmap-key__oldest {
+  width: 12px;
+  height: 12px;
+  border: 3px solid var(--map-trail);
+  background: var(--map-halo);
+}
+.v2 .v2-locmap-key__latest {
+  width: 16px;
+  height: 16px;
+  border: 3px solid var(--map-halo);
+  background: var(--map-trail);
+}
+
 /* Dark theme: the coloured tiles, gently dimmed. */
 [data-theme='dark'] .v2 .v2-locmap .leaflet-tile-pane,
 .v2[data-theme='dark'] .v2-locmap .leaflet-tile-pane {

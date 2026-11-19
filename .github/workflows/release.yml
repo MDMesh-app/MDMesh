@@ -56,10 +56,10 @@ jobs:
             exit 1
           fi
           echo "${REF_NAME} is newer than ${latest:-(no earlier release)}"
-      # The annotation becomes the release notes (release job), so it must be this version's CHANGELOG.md section as
+      # The annotation becomes the release notes (publish job), so it must be this version's CHANGELOG.md section as
       # `release/changelog-section.sh X.Y.Z` prints it from the tagged commit (RELEASING.md), and the tag must still
       # point at the commit this run checked out. Checkout can leave the tag lightweight, so fetch the annotated tag
-      # first. REF_NAME was validated as vX.Y.Z above. The release job repeats this check twice.
+      # first. REF_NAME was validated as vX.Y.Z above. The apk job repeats this check, and the publish job twice.
       - name: Tag annotation matches CHANGELOG.md
         env:
           REF_NAME: ${{ github.ref_name }}

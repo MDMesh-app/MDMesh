@@ -26,6 +26,8 @@ Fixes
   once it is squash-merged: a clone on an older release moves on; only one newer than the release needs `--allow-downgrade`.
 - Agent rollout: a device already on a newer agent counts as updated and is no longer sent the older APK, which it
   refused, so the rollout never finished. Versions now compare as numbers (0.10.0 is newer than 0.9.0).
+- Deleting a device, or a customer, now deletes the device's commands, state, events and locations too. Before, a
+  device added later with the same number showed them as its own.
 
 ## v0.5.0 — 2026-11-17
 

@@ -121,7 +121,9 @@ public class CustomerAdminPasswordLogTest {
         stored.setFilesDir(dir.getName());
         Fakes.FakeMapper<CustomerMapper> customers = new Fakes.FakeMapper<>(CustomerMapper.class);
         customers.answer("findCustomerById", a -> stored);
-        CustomerDAO dao = new CustomerDAO(customers.mapper, null, null, null, null, null, null, base.getPath(), 2, null);
+        Fakes.FakeMapper<DeviceMapper> devices = new Fakes.FakeMapper<>(DeviceMapper.class);
+        CustomerDAO dao = new CustomerDAO(customers.mapper, null, null, devices.mapper, null, null, null, base.getPath(), 2,
+                null);
         SecurityContext.init(Fakes.superAdmin(1, 1));
         java.io.PrintStream out = System.out;
         java.io.ByteArrayOutputStream printed = new java.io.ByteArrayOutputStream();

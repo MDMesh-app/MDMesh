@@ -768,8 +768,8 @@ export function DeleteDevicesModal({
       title={n === 1 ? 'Delete device?' : `Delete ${plural(n)}?`}
       description={
         n === 1
-          ? 'Removes it from MDMesh. It comes back if it checks in again.'
-          : 'Removes them from MDMesh. They come back if they check in again.'
+          ? 'Removes it from MDMesh with its commands, events and locations. To manage it again, enroll it again.'
+          : 'Removes them from MDMesh with their commands, events and locations. To manage them again, enroll them again.'
       }
       footer={
         <>

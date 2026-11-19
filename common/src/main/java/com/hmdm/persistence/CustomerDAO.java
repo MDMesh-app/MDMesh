@@ -101,6 +101,8 @@ public class CustomerDAO {
         this.eventService = eventService;
     }
 
+    /** Deletes the customer; its devices go by foreign key, and their agent history, keyed by number, with them. */
+    @Transactional
     public void removeCustomerById(Integer id) {
         if (!SecurityContext.get().isSuperAdmin()) {
             throw SecurityException.onAdminDataAccessViolation("delete customer by ID " + id);
@@ -125,6 +127,7 @@ public class CustomerDAO {
             } else {
                 log.warn("Skipping to delete the customer's files due to invalid files directory name: {}", customer.getFilesDir());
             }
+            this.deviceMapper.removeCustomerDeviceHistory(id);
             this.mapper.delete(id);
             log.info("Deleted customer account {}", customer);
         }

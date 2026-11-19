@@ -212,7 +212,7 @@ class CheckInCoordinatorTest {
             coordinator.runOnce()
             api.checkInResponse = ResponseEnvelope(status = "OK", data = AgentCheckInResponse(eventsAccepted = 420))
             coordinator.runOnce()
-            // Rolled back to an older server: back to 100, of which it keeps them all.
+            // The server took all 420, so the backlog is gone: the next check-in has nothing to send.
             api.checkInResponse = ResponseEnvelope(status = "OK", data = AgentCheckInResponse())
             coordinator.runOnce()
 

@@ -122,6 +122,22 @@ class EventLogTest {
         assertEquals("new", rest.last().type)
     }
 
+    @Test fun `a server that claims more than the batch takes the whole batch and nothing waiting`() {
+        val store = FakeStore().apply { values["events"] = EventLog.encode(events(1..150)) }
+        val log = EventLog(store)
+        log.drain() // 1..100
+        log.delivered(accepted = 1_000)
+        assertEquals((101L..150L).toList(), log.buffered().map { it.ts })
+    }
+
+    @Test fun `a negative count takes nothing, so the whole batch goes out again`() {
+        val store = FakeStore().apply { values["events"] = EventLog.encode(events(1..150)) }
+        val log = EventLog(store)
+        log.drain()
+        log.delivered(accepted = -5)
+        assertEquals((1L..150L).toList(), log.buffered().map { it.ts })
+    }
+
     @Test fun `an older server's answer counts as the first 100 taken`() {
         // A server rolled back below protocol 1.12 keeps the first 100 and drops the rest without saying so.
         val store = FakeStore().apply { values["events"] = EventLog.encode(events(1..300)) }

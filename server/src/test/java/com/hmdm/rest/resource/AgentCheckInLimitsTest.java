@@ -65,8 +65,9 @@ public class AgentCheckInLimitsTest {
         final List<String> events = new ArrayList<>();
         final List<String> eventDetails = new ArrayList<>();
         final List<String> hardwareIds = new ArrayList<>();
-        /** An event of this type is refused by the database. */
+        /** An event of this type is refused by the database, with {@link #rejectedState}. */
         String rejectedType;
+        String rejectedState = "22001";
         final List<String> statuses = new ArrayList<>();
         final List<String> storedCaps = new ArrayList<>();
         final List<DeviceLocation> locations = new ArrayList<>();
@@ -92,7 +93,7 @@ public class AgentCheckInLimitsTest {
         @Override public void recordLocation(DeviceLocation l) { locations.add(l); }
         @Override public void insertEvent(String n, String type, Long ts, String detail) {
             if (type.equals(rejectedType)) {
-                throw new PersistenceException(new SQLException("value too long", "22001"));
+                throw new PersistenceException(new SQLException("refused", rejectedState));
             }
             events.add(type);
             eventDetails.add(detail);
@@ -308,6 +309,26 @@ public class AgentCheckInLimitsTest {
     }
 
     @Test
+    public void anEventThatBreaksAConstraintIsAlsoSkipped() {
+        commands.rejectedType = "boot";
+        commands.rejectedState = "23505";
+        Response r = checkinEvents(event("boot", null), event("lowBattery", "12%"));
+        assertEquals(Collections.singletonList("lowBattery"), commands.events);
+        assertEquals(2, eventsAccepted(r));
+    }
+
+    @Test
+    public void aLostDatabaseStopsTheEventsThereSoTheAgentResendsTheRest() {
+        // Not the event's fault: counted as consumed, the agent would delete it and every event after it.
+        commands.rejectedType = "kioskReturn";
+        commands.rejectedState = "08006";
+        Response r = checkinEvents(event("boot", null), event("kioskReturn", "x"), event("lowBattery", "12%"));
+        assertEquals(Response.ResponseStatus.OK, r.getStatus());
+        assertEquals(Collections.singletonList("boot"), commands.events);
+        assertEquals(1, eventsAccepted(r));
+    }
+
+    @Test
     public void stripsNulFromAResultDetail() {
         List<AgentCommandResult> results = new ArrayList<>();
         results.add(result(1, "out\0put"));
@@ -316,6 +337,16 @@ public class AgentCheckInLimitsTest {
 
         checkin(req);
         assertEquals(Collections.singletonList("output"), commands.details);
+    }
+
+    @Test
+    public void ignoresAHardwareIdWithControlCharacters() {
+        for (String id : Arrays.asList("hw\0x", "hw\u0001x", "hw\nx", "hw\u007fx")) {
+            AgentCheckInRequest req = new AgentCheckInRequest();
+            req.setHardwareId(id);
+            checkin(req);
+        }
+        assertTrue(commands.hardwareIds.toString(), commands.hardwareIds.isEmpty());
     }
 
     @Test

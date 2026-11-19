@@ -579,8 +579,10 @@ public class AgentResource {
     /**
      * Stores the check-in's buffered lifecycle events in the timeline and returns how many of them, counted from the
      * first, it consumed (protocol 1.12 {@code eventsAccepted}): the agent drops those and resends the rest. Capped, so
-     * one check-in can't flood device_event. An event with no valid type is skipped, and one the database refuses is
-     * logged and skipped: both count as consumed, so the agent doesn't resend them forever.
+     * one check-in can't flood device_event. An event with no valid type is skipped, and so is one whose data the
+     * database refuses (SQL state class 22 or 23): both count as consumed, so the agent doesn't resend them forever. Any
+     * other database error (a lost connection, a failover) is not the event's fault: the events stop there, uncounted,
+     * and the agent sends them again. The rest of the check-in goes on, so a short blip doesn't cost its results.
      */
     private int ingestEvents(Device device, List<AgentTelemetryEvent> events) {
         if (events == null) {
@@ -589,8 +591,13 @@ public class AgentResource {
         String deviceNumber = device.getNumber();
         int consumed = 0;
         int ingested = 0;
+        int invalid = 0;
+        String firstInvalid = null;
         for (AgentTelemetryEvent e : events) {
             if (e == null || e.getType() == null || !EVENT_TYPE.matcher(e.getType()).matches()) {
+                if (invalid++ == 0) {
+                    firstInvalid = e == null ? null : e.getType();
+                }
                 consumed++;
                 continue;
             }
@@ -599,8 +606,6 @@ public class AgentResource {
                         deviceNumber, MAX_EVENTS_PER_CHECKIN);
                 break;
             }
-            ingested++;
-            consumed++;
             long ts = e.getTs() == null ? System.currentTimeMillis() : e.getTs();
             String detail = e.getDetail();
             if (detail != null && detail.length() > MAX_EVENT_DETAIL_CHARS) {
@@ -616,9 +621,25 @@ public class AgentResource {
                     commandDAO.insertEvent(deviceNumber, e.getType(), ts, detail);
                 }
             } catch (PersistenceException ex) {
-                logger.warn("Device {} event {} not stored: {}", deviceNumber, e.getType(), ex.toString());
+                // The class and SQL state only: a driver message can echo values.
+                String state = sqlState(ex).orElse(null);
+                if (state == null || !(state.startsWith("22") || state.startsWith("23"))) {
+                    logger.warn("Device {} events not stored ({}, SQL state {}): the agent resends them from {}",
+                            deviceNumber, ex.getClass().getSimpleName(), state, e.getType());
+                    break;
+                }
+                logger.warn("Device {} event {} refused by the database (SQL state {}): skipped", deviceNumber,
+                        e.getType(), state);
             }
+            ingested++;
+            consumed++;
             kioskLockoutAlert.onEvent(device, e.getType(), detail);
+        }
+        if (invalid > 0) {
+            String shown = firstInvalid == null ? null
+                    : firstInvalid.length() > 40 ? firstInvalid.substring(0, 40) + "…" : firstInvalid;
+            logger.warn("Device {} sent {} events without a valid type, skipped (the first: {})", deviceNumber,
+                    invalid, shown == null ? "no type" : "\"" + shown.replaceAll("\\p{Cntrl}", "?") + "\"");
         }
         return consumed;
     }
@@ -628,10 +649,14 @@ public class AgentResource {
         return s == null || s.indexOf('\0') < 0 ? s : s.replace("\0", "");
     }
 
-    /** The trimmed hardware id, or null when there is none or it wouldn't fit its column. */
+    /** The trimmed hardware id, or null when there is none, it carries a control character or it wouldn't fit. */
     private static String validHardwareId(String raw) {
         String id = raw == null ? null : raw.trim();
         if (id == null || id.isEmpty()) {
+            return null;
+        }
+        if (id.chars().anyMatch(Character::isISOControl)) {
+            logger.warn("Hardware id with a control character ignored");
             return null;
         }
         if (id.length() > MAX_HARDWARE_ID_CHARS) {

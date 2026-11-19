@@ -1,5 +1,6 @@
 package com.mdmesh.core.command
 
+import com.mdmesh.policy.factoryreset.FactoryResetWipeHold
 import com.mdmesh.proto.CommandEnvelope
 import com.mdmesh.proto.CommandResult
 import com.mdmesh.proto.CommandStatus
@@ -87,6 +88,25 @@ class CommandDispatcherTest {
         assertEquals(CommandStatus.EXPIRED, skipped.status)
         assertEquals(CommandDispatcher.NOT_RUN_WIPING, skipped.detail)
         assertEquals(emptyList<String>(), ran)
+    }
+
+    /** A wipe that hasn't rebooted the device within the bound isn't coming: commands run again. */
+    @Test
+    fun `runs commands again once the wipe hold expires`() = runTest {
+        var nowMs = 0L
+        var expired = 0
+        val hold = FactoryResetWipeHold(nowMs = { nowMs }, onExpired = { expired++ })
+        val dispatcher = CommandDispatcher(listOf(EchoHandler("config.apply")), wiping = { hold.held })
+        hold.hold()
+
+        nowMs = FactoryResetWipeHold.MAX_HOLD_MS - 1
+        val within = dispatcher.dispatch(envelope("config.apply").copy(commandId = "a"))
+        nowMs = FactoryResetWipeHold.MAX_HOLD_MS
+        val after = dispatcher.dispatch(envelope("config.apply").copy(commandId = "b"))
+
+        assertEquals(CommandStatus.EXPIRED, within.status)
+        assertEquals(CommandStatus.DONE, after.status)
+        assertEquals(1, expired)
     }
 
     @Test

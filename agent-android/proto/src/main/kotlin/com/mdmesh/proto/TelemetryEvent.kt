@@ -19,4 +19,7 @@ object EventType {
     const val CONNECTIVITY = "connectivityChange"
     const val LOW_BATTERY = "lowBattery"
     const val ENROLLED = "enrolled"
+
+    /** An accepted factory reset did not reboot the device in time; the agent resumed and restores its policies. */
+    const val WIPE_NOT_STARTED = "wipeNotStarted"
 }

@@ -67,6 +67,7 @@ import com.mdmesh.core.telemetry.TelemetryAssembler
 import com.mdmesh.core.telemetry.TelemetrySource
 import com.mdmesh.proto.AppManagement
 import com.mdmesh.proto.DeviceAction
+import com.mdmesh.proto.EventType
 import com.mdmesh.kiosk.CrashLoopGuard
 import com.mdmesh.kiosk.Boot
 import com.mdmesh.kiosk.HoldStore
@@ -129,8 +130,15 @@ object AgentModule {
 
     @Provides
     @Singleton
-    fun provideFactoryResetWipeHold(@ApplicationContext context: Context): FactoryResetWipeHold =
-        FactoryResetWipeHold(SharedPrefsWipeHoldStore(context)) { Boot.count(context) }
+    fun provideFactoryResetWipeHold(@ApplicationContext context: Context, events: EventSink): FactoryResetWipeHold =
+        FactoryResetWipeHold(
+            SharedPrefsWipeHoldStore(context),
+            bootId = { Boot.count(context) },
+            nowMs = SystemClock::elapsedRealtime,
+            onExpired = {
+                events.record(EventType.WIPE_NOT_STARTED, "the device did not reset within 10 minutes; resumed")
+            },
+        )
 
     @Provides
     @Singleton

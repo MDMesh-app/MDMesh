@@ -24,6 +24,8 @@ Fixes
   says `native update, <from> → <to>`. The update from 0.5.0 still asks once (add `-y` to skip).
 - `./setup.sh --update` no longer refuses a clone on a release branch (`release/vX.Y.Z`) as "ahead" of that release
   once it is squash-merged: a clone on an older release moves on; only one newer than the release needs `--allow-downgrade`.
+- Agent rollout: a device already on a newer agent counts as updated and is no longer sent the older APK, which it
+  refused, so the rollout never finished. Versions now compare as numbers (0.10.0 is newer than 0.9.0).
 
 ## v0.5.0 — 2026-11-17
 

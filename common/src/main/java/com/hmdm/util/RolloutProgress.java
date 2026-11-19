@@ -29,6 +29,8 @@ import com.hmdm.persistence.domain.RolloutDeviceRow;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * <p>Pure classification of a device's status within a staged agent-APK rollout. Progress is derived
@@ -53,10 +55,10 @@ public final class RolloutProgress {
     }
 
     /** Classify one device against the rollout target. {@code hasPending} = it has an outstanding
-     *  (pending/delivered) app.install for this rollout. */
+     *  (pending/delivered) app.install for this rollout. A device on the target or a newer agent is UPDATED: the
+     *  install would be a downgrade, which the agent refuses, and the rollout would never complete. */
     public static Status classify(String targetVersion, RolloutDeviceRow row, boolean hasPending) {
-        String version = row == null ? null : row.getAgentVersion();
-        if (targetVersion != null && targetVersion.equals(version)) {
+        if (atOrAbove(row == null ? null : row.getAgentVersion(), targetVersion)) {
             return Status.UPDATED;
         }
         Set<String> tokens = AgentCapabilityTokens.flatten(row == null ? null : row.getCapabilitiesJson());
@@ -64,6 +66,44 @@ public final class RolloutProgress {
             return Status.INELIGIBLE; // too old / can't self-install — the gate would block the command
         }
         return hasPending ? Status.PENDING : Status.OUTSTANDING;
+    }
+
+    /** {@code MAJOR.MINOR.PATCH} (any number of parts, an optional leading v), then an optional pre-release
+     *  ({@code -rc1}) and build ({@code +42}). Nine digits a part at most, so a part always fits an int. */
+    private static final Pattern VERSION = Pattern.compile("[vV]?(\\d{1,9}(?:\\.\\d{1,9})*)(-[^+]*)?(\\+.*)?");
+
+    /**
+     * Whether an agent reporting {@code version} is on {@code target} or a newer release. Parts compare as numbers
+     * (0.10.0 is newer than 0.9.0), a missing part is 0, and a pre-release is below its release (1.2.0-rc1 is below
+     * 1.2.0), as in semver. A blank or unreadable version is never at or above: such a device stays in the rollout,
+     * as before, rather than counted done on a guess. Text that isn't a version only matches itself.
+     */
+    public static boolean atOrAbove(String version, String target) {
+        if (version == null || target == null || version.trim().isEmpty() || target.trim().isEmpty()) {
+            return false;
+        }
+        String v = version.trim();
+        String t = target.trim();
+        if (v.equals(t)) {
+            return true;
+        }
+        Matcher mv = VERSION.matcher(v);
+        Matcher mt = VERSION.matcher(t);
+        if (!mv.matches() || !mt.matches()) {
+            return false;
+        }
+        String[] a = mv.group(1).split("\\.");
+        String[] b = mt.group(1).split("\\.");
+        for (int i = 0; i < Math.max(a.length, b.length); i++) {
+            int x = i < a.length ? Integer.parseInt(a[i]) : 0;
+            int y = i < b.length ? Integer.parseInt(b[i]) : 0;
+            if (x != y) {
+                return x > y;
+            }
+        }
+        // The same release: a release is at or above it and any pre-release of it; a pre-release is below the release,
+        // and two different pre-releases aren't ordered here (no install is skipped on a guess).
+        return mv.group(2) == null;
     }
 
     /** Device numbers whose in-flight app.install is for {@code packageName}. Any other install (an F-Droid or Library

@@ -12,6 +12,10 @@
 #             killed   the same upgrade, SIGKILLed at each kill point (tests/native/lib/guest.sh), then re-run: it must
 #                      converge, keep the same settings and pass every check (the re-run also leaves HTTP_PORT and
 #                      BASE_URL out)
+#             update   the code under test installed, then `sudo ./setup.sh --update --native` over it as a user runs
+#                      it, without -y (stdin closed: a question stops it): it must ask nothing, say it is an update and
+#                      keep the port, the base URL, the data and the updater settings. The release it finds is the code
+#                      under test as v99.0.0, from a local origin, signed with a throwaway key (guest.sh update-release)
 #
 # Environment (all optional):
 #   T2_FROM_REF   the release to upgrade from (default v0.3.1). CI passes the latest GitHub release.
@@ -37,7 +41,7 @@ REPO=$(cd -P -- "$HERE/../.." && pwd)
 usage() { sed -n '/^# Usage:/,/^# Needs:/p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 DISTRO=${1:-}; SCENARIO=${2:-}
 if [ -z "$DISTRO" ] || [ -z "$SCENARIO" ]; then usage; fi
-case "$SCENARIO" in fresh|upgrade|killed) ;; *) usage ;; esac
+case "$SCENARIO" in fresh|upgrade|killed|update) ;; *) usage ;; esac
 
 T2_FROM_REF=${T2_FROM_REF:-v0.3.1}
 T2_TO_REF=${T2_TO_REF:-HEAD}
@@ -76,7 +80,7 @@ command -v docker > /dev/null || die "docker is required"
 for c in git curl python3 md5sum; do command -v "$c" > /dev/null || die "$c is required"; done
 TO_SHA=$(git -C "$REPO" rev-parse --verify "$T2_TO_REF^{commit}") || die "T2_TO_REF=$T2_TO_REF is not a commit here"
 FROM_SHA=""
-if [ "$SCENARIO" != fresh ]; then
+if [ "$SCENARIO" = upgrade ] || [ "$SCENARIO" = killed ]; then
   FROM_SHA=$(git -C "$REPO" rev-parse --verify "$T2_FROM_REF^{commit}") \
     || die "T2_FROM_REF=$T2_FROM_REF is not a commit here (fetch the release tags: git fetch --tags origin)"
 fi
@@ -173,6 +177,36 @@ case "$SCENARIO" in
     check_install upgrade "$TO_SHA"
     verdict=$([ "$CHECK_FAILS" -eq 0 ] && echo PASS || echo FAIL)
     result - "$verdict" "before: e2e $before_e2e; after: e2e ${E2E_RESULT}; $(minutes "$T0") min"
+    ;;
+
+  update)
+    # The clone ends one commit past the code under test (the rig's release key), on its release; --update moves it to
+    # v99.0.0, a separate commit holding the code under test, as a squash merge of it would be.
+    start_container "$NAME" "$IMAGE"
+    prepare_checkout "$TO_SHA"
+    install_with_settings install "$TO_SHA"
+    [ "$CHECK_FAILS" -eq 0 ] || die "the install failed its checks; not updating it"
+    continuity_before
+    guest update-release "$TO_SHA" 99.0.0 > "$OUT/update-release.out" 2>&1 \
+      || die "could not make the v99.0.0 release: $(tail -n 1 "$OUT/update-release.out")"
+    while IFS= read -r l; do log "$l"; done < "$OUT/update-release.out"
+    rel_sha=$(sed -n 's/^release //p' "$OUT/update-release.out")
+    from=$(git -C "$REPO" describe --tags --abbrev=0 --match 'v[0-9]*' "$TO_SHA" 2>/dev/null | sed 's/^v//' || true)
+    rc=0; run_update update || rc=$?
+    check "the update exits 0" "$rc" 0
+    check "the update asks nothing" \
+      "$(grep -cE 'Type "yes"|Public base URL|HTTP port \[|Choice \[|Type ERASE' "$OUT/update.out" || true)" 0
+    check "the update says it is one, from ${from:-?} to 99.0.0" \
+      "$(grep -cF "MDMesh · native update, ${from:-?} → 99.0.0" "$OUT/update.out" || true)" 1
+    check "the update ends as one" "$(grep -cF '✓ MDMesh updated (native)' "$OUT/update.out" || true)" 1
+    check "the clone is on v99.0.0" "$(docker exec -u t2user "$CTR" git -C /home/t2user/MDMesh rev-parse HEAD)" "$rel_sha"
+    check "v99.0.0 holds the code under test" \
+      "$(docker exec -u t2user "$CTR" git -C /home/t2user/MDMesh rev-parse 'HEAD^{tree}')" "$(git -C "$REPO" rev-parse "$TO_SHA^{tree}")"
+    settings_kept update
+    continuity_after update
+    check_install update "$TO_SHA"
+    verdict=$([ "$CHECK_FAILS" -eq 0 ] && echo PASS || echo FAIL)
+    result - "$verdict" "e2e ${E2E_RESULT}; $(minutes "$T0") min"
     ;;
 
   killed)

@@ -102,19 +102,19 @@
       "id": "bind", "env": "MDMESH_BIND", "aliases": [], "installers": ["quickstart.sh", "setup.sh"],
       "type": "string", "default": "127.0.0.1:8080", "emptyMeans": "default",
       "required": false, "when": { "mode": "proxy" }, "secret": false, "rule": "bind",
-      "regex": "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}|\\[[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*\\]):([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$",
+      "regex": "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}|\\[[0-9A-Fa-f:]*:[0-9A-Fa-f:]*:[0-9A-Fa-f:]*\\]):([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$",
       "description": "Where MDMesh's edge listens for your proxy, IP:port (written to .env as MDMESH_BIND). The default, 127.0.0.1:8080, is for a proxy on this machine. For a proxy on another machine, an address of this one it reaches (keep the port off the internet), and consider MDMESH_ORIGIN_TLS.",
       "prompts": [ { "id": "bind.ask", "text": "Address MDMesh listens on for your proxy [127.0.0.1:8080]:", "script": "Address MDMesh listens on for your proxy [127.0.0.1:8080]: " } ],
-      "examples": { "valid": ["127.0.0.1:8080", "10.0.0.5:8443", "[::1]:8080", ""], "invalid": ["8080", "127.0.0.1", "localhost:8080", "127.0.0.1:0", "256.0.0.1:80", "010.0.0.1:80", "127.0.0.1:08080", "[::1]"] }
+      "examples": { "valid": ["127.0.0.1:8080", "127.0.0.2:8443", "[::1]:8080", ""], "invalid": ["8080", "127.0.0.1", "localhost:8080", "127.0.0.1:0", "256.0.0.1:80", "010.0.0.1:80", "127.0.0.1:08080", "[::1]", "[::ffff:127.0.0.1]:8080"] }
     },
     {
       "id": "trusted-proxies", "env": "MDMESH_TRUSTED_PROXIES", "aliases": [], "installers": ["quickstart.sh", "setup.sh"],
       "type": "string", "default": "host", "emptyMeans": "default",
       "required": false, "when": { "mode": "proxy" }, "secret": false, "rule": "proxies",
-      "regex": "^(host|(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}(/([89]|[12][0-9]|3[0-2]))?|[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*(/(1[6-9]|[2-9][0-9]|1[01][0-9]|12[0-8]))?)([ ,]+(host|(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}(/([89]|[12][0-9]|3[0-2]))?|[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*(/(1[6-9]|[2-9][0-9]|1[01][0-9]|12[0-8]))?))*$",
-      "description": "Your proxy's address as MDMesh's edge sees it, the only peer whose X-Forwarded-For it believes (written to .env as TRUSTED_PROXIES): host (a proxy on this machine; the edge sees it at its Docker network's gateway), or IP addresses and ranges, separated by spaces or commas. A range may be no wider than an IPv4 /8 or an IPv6 /16.",
+      "regex": "^(host|(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}(/([89]|[12][0-9]|3[0-2]))?|[0-9A-Fa-f:]*:[0-9A-Fa-f:]*:[0-9A-Fa-f:]*(/(1[6-9]|[2-9][0-9]|1[01][0-9]|12[0-8]))?)([ ,]+(host|(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}(/([89]|[12][0-9]|3[0-2]))?|[0-9A-Fa-f:]*:[0-9A-Fa-f:]*:[0-9A-Fa-f:]*(/(1[6-9]|[2-9][0-9]|1[01][0-9]|12[0-8]))?))*$",
+      "description": "Your proxy's address as MDMesh's edge sees it, the only peer whose X-Forwarded-For it believes (written to .env as TRUSTED_PROXIES): host (a proxy on this machine; the edge sees it at its Docker network's gateway; only with a loopback MDMESH_BIND, 127.0.0.1 or [::1]), or IP addresses and ranges, separated by spaces or commas. A range may be no wider than an IPv4 /8 or an IPv6 /16; IPv4-mapped IPv6 addresses are refused (use the IPv4 address).",
       "prompts": [ { "id": "trusted-proxies.ask", "text": "Your proxy's IP address as MDMesh sees it (host = a proxy on this machine) [host]:", "script": "Your proxy's IP address as MDMesh sees it (host = a proxy on this machine) [host]: " } ],
-      "examples": { "valid": ["host", "192.0.2.10", "192.0.2.0/24 2001:db8::1", "10.0.0.0/8,host", "2001:db8::/32", ""], "invalid": ["0.0.0.0/0", "::/0", "10.0.0.0/7", "2001:db8::/15", "private_ranges", "proxy.example.com", "192.0.2.300", "192.0.2.10/33", "*"] }
+      "examples": { "valid": ["host", "192.0.2.10", "192.0.2.0/24 2001:db8::1", "10.0.0.0/8,host", "2001:db8::/32", ""], "invalid": ["0.0.0.0/0", "::/0", "10.0.0.0/7", "2001:db8::/15", "private_ranges", "proxy.example.com", "192.0.2.300", "192.0.2.10/33", "::ffff:10.0.0.1", "::ffff:10.0.0.0/104", "*"] }
     },
     {
       "id": "base-url", "env": "MDMESH_BASE_URL", "aliases": ["BASE_URL"], "installers": ["install-native.sh"],

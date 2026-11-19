@@ -301,7 +301,7 @@ mdm_answer tunnel-token TUNNEL_TOKEN tunnel-token MDMESH_TUNNEL_TOKEN
 mdm_answer acme-email ACME_EMAIL email MDMESH_ACME_EMAIL
 mdm_answer bind PROXY_BIND bind MDMESH_BIND
 mdm_answer trusted-proxies PROXY_TRUSTED proxies MDMESH_TRUSTED_PROXIES
-if mdm_given mode; then mdm_mode_answers_unused; fi
+mdm_mode_check_answers
 REUSE_ENV=0
 if [ -f .env ] && [ "$RESET" != 1 ]; then REUSE_ENV=1; fi
 if [ "$REUSE_ENV" = 1 ] && mdm_any_answered; then
@@ -411,52 +411,14 @@ else
     warn "run 'docker compose down -v' first for a genuinely clean slate."
   fi
   version_preflight ""
-  if ! mdm_answered mode; then
-    mdm_mode_menu "Without Docker? Run sudo ./setup.sh --update --native (DEPLOY.md, Native)."
-    MODE=""
-    while :; do
-      read -rp "Choose [1/2/3]: " MODE || { err "No selection (non-interactive run?). Aborting."; exit 1; }   # answer: mode
-      case "$MODE" in 1|2|3) break ;; *) warn "Please enter 1, 2 or 3." ;; esac
-    done
-  fi
+  mdm_mode_choose "Without Docker? Run sudo ./setup.sh --update --native (DEPLOY.md, Native)."
 
   DB_PASSWORD=$(rand)
   HASH_SECRET=$(rand)
   if [ -n "$REPO_VERSION" ]; then CURRENT_VERSION=$REPO_VERSION; fi   # else the heredoc's ${CURRENT_VERSION:-0.0.0}
 
-  if ! mdm_answered host; then
-    case "$MODE" in
-      1) read -rp "Public hostname devices will use (e.g. mdm.example.com): " HOST ;;   # answer: host
-      2) read -rp "Your domain (DNS already pointing here, e.g. mdm.example.com): " HOST ;;   # answer: host
-      3) read -rp "Public hostname your proxy serves (e.g. mdm.example.com): " HOST ;;   # answer: host
-    esac
-  fi
-  mdm_check_host HOST || { err "Enter the hostname only, e.g. mdm.example.com, then re-run."; exit 1; }
-  BASE_URL="https://${HOST}"
-  # Checked before .env is written (install/lib/url.sh), so a mistyped hostname leaves nothing behind.
-  mdm_check_base_url BASE_URL || { err "Check the hostname you entered (the name only, e.g. mdm.example.com), then re-run."; exit 1; }
-  case "$MODE" in
-    1) while :; do
-         mdm_answered tunnel-token || read -rp "Cloudflare Tunnel token (Zero Trust → Tunnels → your tunnel): " TUNNEL_TOKEN   # answer: tunnel-token
-         mdm_prompt_ok tunnel-token TUNNEL_TOKEN && break
-       done ;;
-    2) while :; do
-         mdm_answered acme-email || read -rp "Email for Let's Encrypt: " ACME_EMAIL   # answer: acme-email
-         mdm_prompt_ok acme-email ACME_EMAIL && break
-       done ;;
-    3) while :; do
-         mdm_answered bind || read -rp "Address MDMesh listens on for your proxy [127.0.0.1:8080]: " PROXY_BIND   # answer: bind
-         mdm_prompt_ok bind PROXY_BIND && break
-       done
-       PROXY_BIND=${PROXY_BIND:-$MDM_PROXY_BIND_DEFAULT}
-       while :; do
-         mdm_answered trusted-proxies || read -rp "Your proxy's IP address as MDMesh sees it (host = a proxy on this machine) [host]: " PROXY_TRUSTED   # answer: trusted-proxies
-         mdm_prompt_ok trusted-proxies PROXY_TRUSTED && break
-       done
-       PROXY_TRUSTED=${PROXY_TRUSTED:-$MDM_PROXY_TRUSTED_DEFAULT} ;;
-  esac
-  ORIGIN_TLS=${MDMESH_ORIGIN_TLS:-0}
-  mdm_mode_settings "$MODE"
+  # Checked before .env is written, so a mistyped hostname leaves nothing behind.
+  mdm_mode_questions
 
   # Owner-only from the start: written to a new mode-600 file (mktemp), then renamed over .env, so no other user can
   # read the secrets at any moment, and a --reset over a looser old .env does not keep its mode.
@@ -648,7 +610,8 @@ export VITE_AGENT_PACKAGE VITE_AGENT_CHECKSUM VITE_AGENT_APK_URL
 
 say "Building + starting the stack…"
 # shellcheck disable=SC2086
-docker compose $COMPOSE_ARGS up -d --build
+docker compose $COMPOSE_ARGS up -d --build \
+  || { err "docker compose up failed (above). $(mdm_up_hint)"; err "Then re-run ./setup.sh (it reuses your .env)."; exit 1; }
 
 say "Waiting for the server to finish first-boot (Liquibase)…"
 BOOTED=0
@@ -725,8 +688,7 @@ else
 fi
 echo
 echo "  Access is via the URL above only — Postgres and the server publish no host ports;"
-case "$MODE" in 1) _entry="Cloudflare Tunnel" ;; 2) _entry="ports 80/443" ;; *) _entry="${PROXY_BIND}, behind your proxy" ;; esac
-echo "  the edge (Caddy) is the single entry point (${_entry})."
+echo "  the edge (Caddy) is the single entry point (${ENTRY})."
 echo
 if [ "$SEED" = yes ]; then
   warn "Sign in with the temporary password — you'll be required to set your own on first login."

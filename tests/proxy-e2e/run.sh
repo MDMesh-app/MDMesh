@@ -9,13 +9,13 @@
 #            console, sign-in, the client's own address in the audit log (a forged X-Forwarded-For not believed), the
 #            agent's wake socket held open past nginx's default 60 s (and an unauthorised one closed), a 64 MiB upload
 #            not refused, /recovery and /healthz; the edge itself not reachable from outside. Then MDMESH_BIND=0.0.0.0:8080:
-#            the client reaches the edge directly, and its own X-Forwarded-For (it is not in TRUSTED_PROXIES) is not
-#            believed. A rule in site.d applies.
+#            with TRUSTED_PROXIES=host the edge refuses to start; with a proxy address the client reaches the edge
+#            directly, and its own X-Forwarded-For (it is not in TRUSTED_PROXIES) is not believed. A rule in site.d applies.
 #   tls      MDMESH_ORIGIN_TLS=1 and nginx.conf's HTTPS-origin lines (MDMesh's CA, from `docker compose cp`): the same
 #            checks through HTTPS from nginx to the edge.
 #   proxies  docs/proxies' Apache, Caddy and Traefik configurations in front instead of nginx: console, sign-in, the
 #            client's address, the wake socket.
-#   update   The supervisor's own apply.sh updates to the next release, then Roll back (POST /update/rollback with the
+#   update   The supervisor refuses an update to a release before 0.6.0; its own apply.sh updates to the next release, then Roll back (POST /update/rollback with the
 #            recovery token, through nginx, as /recovery sends it): the mode, the published port, .env and the site.d
 #            rule stay, and the nginx checks pass on both versions.
 #
@@ -333,8 +333,16 @@ phase_nginx() {
   r="$(edge GET /)"
   check "the edge is not reachable from another machine on 127.0.0.1:8080 (${r:0:60})" grep -q '^000 ' <<< "$r"
 
-  echo "-- MDMESH_BIND=0.0.0.0:8080: the edge reachable directly; the client is not in TRUSTED_PROXIES"
+  echo "-- MDMESH_BIND=0.0.0.0:8080 with TRUSTED_PROXIES=host: the edge refuses to start (others could arrive as host)"
   set_env MDMESH_BIND 0.0.0.0:8080
+  dc up -d caddy >>"$LOG" 2>&1
+  sleep 5
+  r="$(edge GET /healthz)"
+  check "0.0.0.0:8080 with host: the edge does not answer (${r:0:40})" grep -q '^000 ' <<< "$r"
+  check "0.0.0.0:8080 with host: the edge says why in its log" \
+    bash -c 'docker exec -i -w "$1" "$2" docker compose logs caddy 2>&1 | grep -qF "host needs a loopback MDMESH_BIND"' _ "$D" "$DIND"
+  echo "-- MDMESH_BIND=0.0.0.0:8080, TRUSTED_PROXIES=192.0.2.10: the edge reachable directly; the client is not that proxy"
+  set_env TRUSTED_PROXIES '"192.0.2.10"'
   dc up -d caddy >>"$LOG" 2>&1
   for _ in $(seq 1 30); do case "$(edge GET /healthz)" in '200 ok'*) break ;; esac; sleep 2; done
   nonce="px$(openssl rand -hex 4)"
@@ -344,6 +352,7 @@ phase_nginx() {
   r="$(ws "$SECRET" "$DEVICE" 8 edge)"
   check "direct to the edge: the wake socket opens and gets the wake signal ($r)" grep -qE "$WS_OK" <<< "$r"
   set_env MDMESH_BIND 127.0.0.1:8080
+  set_env TRUSTED_PROXIES '"host"'
   dc up -d caddy >>"$LOG" 2>&1
   wait_web || fail "the console did not come back through nginx after MDMESH_BIND=127.0.0.1:8080"
 }
@@ -412,6 +421,11 @@ phase_update() {
   say "update: the supervisor's apply.sh to 0.6.1, then Roll back through nginx (as /recovery does)"
   local before r tok st _
   before="$(in_dind grep -vE '^(SERVER|WEB|SUPERVISOR)_VERSION=|^CURRENT_VERSION=' "$D/.env" | sha256sum)"
+  # A release before 0.6.0 doesn't know the mode: the running supervisor refuses it and changes nothing.
+  dc exec -T supervisor /app/apply.sh 0.5.9 "$(ref_of 0.6.1 server)" "$(ref_of 0.6.1 web)" "$(ref_of 0.6.1 supervisor)" \
+    > "$WORK/apply-old.out" 2>&1
+  check "an update to 0.5.9 is refused behind your own proxy" grep -q '^ERR this install runs behind your own proxy' "$WORK/apply-old.out"
+  check "... and nothing changed (the edge still runs 0.6.0)" test "$(image_of caddy)" = "ghcr.io/$OWNER/mdmesh-web:$(pin_of 0.6.0 web)"
   dc exec -T supervisor /app/apply.sh 0.6.1 "$(ref_of 0.6.1 server)" "$(ref_of 0.6.1 web)" "$(ref_of 0.6.1 supervisor)" \
     > "$WORK/apply.out" 2>&1
   sed 's/^/      apply: /' "$WORK/apply.out" | cut -c1-200 | tail -12

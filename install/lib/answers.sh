@@ -160,10 +160,11 @@ _mdm_ipv4() {
   done
   [ "$n" = 4 ]
 }
-# _mdm_ipv6 ADDR: ADDR (no brackets) looks like an IPv6 address: hex digits, ":" and ".", at least two ":", at most one
-# "::". (Not checked further, as for a hostname's [IPv6]: whatever reads it next refuses a wrong one.)
+# _mdm_ipv6 ADDR: ADDR (no brackets) looks like an IPv6 address: hex digits and ":", at least two ":", at most one "::".
+# IPv4-mapped addresses (::ffff:…, or with a dotted IPv4 part) are refused: written as IPv6 they don't match the IPv4
+# peers they mean, so use the IPv4 address. (Not checked further: whatever reads it next refuses a wrong one.)
 _mdm_ipv6() {
-  case "$1" in ''|*[!${_MDM_HEX}:.]*|*:::*|*::*::*) return 1 ;; *:*:*) return 0 ;; esac
+  case "$1" in ''|*[!${_MDM_HEX}:]*|*:::*|*::*::*|::[Ff][Ff][Ff][Ff]:*|0:0:0:0:0:[Ff][Ff][Ff][Ff]:*) return 1 ;; *:*:*) return 0 ;; esac
   return 1
 }
 # _mdm_bind_ok IP:PORT: an address to listen on: an IPv4 address or an [IPv6] one, then :port (1-65535).

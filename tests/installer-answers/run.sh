@@ -53,6 +53,8 @@ chmod +x "$WORK/stubs-chmod/chmod"
 # With STUB_DOCKER_OK=1, `docker compose version` succeeds (so setup.sh gets past its checks); anything else still fails.
 # shellcheck disable=SC2016  # the stub's own variables
 sed -i '2i [ "${STUB_DOCKER_OK:-}" = 1 ] \&\& [ "$1 $2" = "compose version" ] \&\& exit 0' "$WORK/stubs/docker"
+# With STUB_DOCKER_INFO, `docker info` prints it (what install/lib/modes.sh reads to tell rootless Docker apart).
+sed -i '2i [ -n "${STUB_DOCKER_INFO:-}" ] \&\& [ "$1" = info ] \&\& { echo "$STUB_DOCKER_INFO"; exit 0; }' "$WORK/stubs/docker"
 
 FAILS=0; CHECKS=0
 fail() { FAILS=$((FAILS + 1)); printf 'FAIL: %s\n' "$*" >&2; }
@@ -77,6 +79,11 @@ prompt_reads() {
 for inst in $(installer_ids); do
   f="$REPO/$(installer_path "$inst")"
   [ -f "$f" ] || { fail "$inst: $f is missing"; continue; }
+  # An installer that sources install/lib/modes.sh asks its questions there too (quickstart.sh holds a copy of it):
+  # checked as one text, the installer's then the library's.
+  if grep -qE '^\. \./install/lib/modes\.sh$' "$f"; then
+    cat "$f" "$REPO/install/lib/modes.sh" > "$WORK/with-modes.$inst"; f="$WORK/with-modes.$inst"
+  fi
   while IFS= read -r hit; do
     [ -n "$hit" ] || continue
     n=${hit%%:*}; line=${hit#*:}
@@ -553,12 +560,16 @@ for inst in quickstart.sh setup.sh; do
 done
 
 # The menu, as the design has it (plain text: what each choice is for), its footer, and the hint when ports 80/443 are
-# taken (an ss stub that lists a listener on :443). A wrong choice is asked again; the run then goes on to the repo
+# taken (an ss stub that lists a listener on :443, as ss prints it: a header line first; for "free" one that lists
+# nothing, so the host's own listeners don't count). A wrong choice is asked again; the run then goes on to the repo
 # question and stops at the curl stub.
-mkdir -p "$WORK/stubs-ss" "$WORK/qs5"
-printf '#!/bin/sh\necho "LISTEN 0 511 0.0.0.0:443 0.0.0.0:*"\n' > "$WORK/stubs-ss/ss"; chmod +x "$WORK/stubs-ss/ss"
+mkdir -p "$WORK/stubs-ss" "$WORK/stubs-ssfree" "$WORK/qs5"
+SS_HEAD='State  Recv-Q Send-Q Local Address:Port Peer Address:Port'
+printf '#!/bin/sh\necho "%s"\necho "LISTEN 0 511 0.0.0.0:443 0.0.0.0:*"\n' "$SS_HEAD" > "$WORK/stubs-ss/ss"
+printf '#!/bin/sh\necho "%s"\n' "$SS_HEAD" > "$WORK/stubs-ssfree/ss"
+chmod +x "$WORK/stubs-ss/ss" "$WORK/stubs-ssfree/ss"
 for ports in free busy; do
-  p="$WORK/stubs:$PATH"; [ "$ports" = free ] || p="$WORK/stubs-ss:$p"
+  p="$WORK/stubs-ssfree:$WORK/stubs:$PATH"; [ "$ports" = free ] || p="$WORK/stubs-ss:$WORK/stubs:$PATH"
   (cd "$WORK/qs5" && printf '%s\n' 4 3 '' '' | env -i PATH="$p" HOME="$WORK" STUB_LOG="$WORK/children.log" STUB_DOCKER_OK=1 \
     bash "$REPO/quickstart.sh" > "$WORK/out/o" 2> "$WORK/out/e") || true
   menu=$(sed -n '/^How will your phones reach MDMesh?$/,/^Without Docker/p' "$WORK/out/o")
@@ -569,7 +580,7 @@ for ports in free busy; do
   [ "$ports" = free ] || want="$want
   Ports 80/443 are already in use on this machine. If that is your own web server, pick 3."
   want="$want
-Without Docker? See Native in DEPLOY.md (github.com/MDMesh-app/MDMesh)."
+Without Docker? See Native in DEPLOY.md: https://github.com/MDMesh-app/MDMesh/blob/main/DEPLOY.md#option-c--native-no-docker"
   { [ "$menu" = "$want" ] && grep -qF 'Please enter 1, 2 or 3.' "$WORK/out/o" \
     && grep -qF 'Could not resolve the latest release of MDMesh-app/MDMesh' "$WORK/out/e"; } \
     || { fail "quickstart.sh's menu (ports $ports) is not as designed: $(diff <(echo "$want") <(echo "$menu") | tr '\n' ' ')"; show; }
@@ -582,7 +593,7 @@ done
 setup_run() {  # setup_run DIR [NAME=VALUE...]: ./setup.sh in DIR (a copy), stdin empty; docker calls in $WORK/docker.log
   local d=$1; shift
   : > "$WORK/docker.log"
-  (cd "$d" && env -i PATH="$WORK/stubs:$PATH" HOME="$WORK" STUB_LOG="$WORK/docker.log" STUB_DOCKER_OK=1 "$@" \
+  (cd "$d" && env -i PATH="$WORK/stubs-ssfree:$WORK/stubs:$PATH" HOME="$WORK" STUB_LOG="$WORK/docker.log" STUB_DOCKER_OK=1 "$@" \
     bash ./setup.sh ${SETUP_ARGS[@]+"${SETUP_ARGS[@]}"} < /dev/null > "$WORK/out/o" 2> "$WORK/out/e") || true
 }
 up_args() { sed -n 's#^\S*/docker compose \(.*\) up -d --build$#\1#p' "$WORK/docker.log" | head -1; }
@@ -619,6 +630,73 @@ for c in 'cloudflare|:80|--profile cloudflare' '|mdm.example.com, www.example.co
     || { fail "a 0.5.x .env (COMPOSE_PROFILES=$prof) re-run: compose args \"$(up_args)\", want \"$want\", or .env changed"; show; }
   ok
 done
+
+# Behind your own proxy: `host` (a proxy on this machine) only with MDMesh on a loopback address, refused before
+# anything happens (dry runs too); a proxy's own address with any address.
+for inst in quickstart.sh setup.sh; do
+  dry "$inst" MDMESH_MODE=proxy MDMESH_HOST=mdm.example.com MDMESH_BIND=0.0.0.0:8080
+  { [ "$RC" != 0 ] && grep -qF 'host (a proxy on this machine) needs MDMesh on a loopback address' "$WORK/out/e"; } \
+    || { fail "$inst: MDMESH_BIND=0.0.0.0:8080 with the default TRUSTED_PROXIES=host is not refused"; show; }
+  dry "$inst" MDMESH_MODE=proxy MDMESH_HOST=mdm.example.com MDMESH_BIND=10.0.0.5:8080 MDMESH_TRUSTED_PROXIES='192.0.2.10, host'
+  [ "$RC" != 0 ] || { fail "$inst: host with MDMESH_BIND=10.0.0.5:8080 is not refused"; show; }
+  for ok in '[::1]:8080|host' '127.0.0.2:9000|host' '10.0.0.5:8080|192.0.2.10'; do
+    dry "$inst" MDMESH_MODE=proxy MDMESH_HOST=mdm.example.com MDMESH_BIND="${ok%|*}" MDMESH_TRUSTED_PROXIES="${ok#*|}"
+    [ "$RC" = 0 ] || { fail "$inst: MDMESH_BIND=${ok%|*} with ${ok#*|} is refused"; show; }
+  done
+  # MDMESH_ORIGIN_TLS outside the proxy mode is reported unused, like any other mode's answer.
+  dry "$inst" MDMESH_MODE=domain MDMESH_HOST=mdm.example.com MDMESH_ORIGIN_TLS=1
+  { [ "$RC" = 0 ] && grep -qF 'MDMESH_ORIGIN_TLS is not used in domain mode' "$WORK/out/e"; } \
+    || { fail "$inst: MDMESH_ORIGIN_TLS=1 in domain mode is not reported unused"; show; }
+  ok
+done
+# A release before 0.6.0 named in advance has no proxy mode: refused at once, dry run included.
+dry quickstart.sh MDMESH_MODE=proxy MDMESH_HOST=mdm.example.com MDMESH_VERSION=0.5.1
+{ [ "$RC" != 0 ] && grep -qF 'behind your own proxy came in 0.6.0' "$WORK/out/e"; } || { fail "proxy mode with MDMESH_VERSION=0.5.1 is not refused"; show; }
+dry quickstart.sh MDMESH_MODE=proxy MDMESH_HOST=mdm.example.com MDMESH_VERSION=0.6.0
+[ "$RC" = 0 ] || { fail "proxy mode with MDMESH_VERSION=0.6.0 is refused"; show; }
+ok
+
+# setup.sh asked at the terminal, behind a proxy on another machine: the address in use is refused and asked again
+# (an ss stub lists 127.0.0.1:8080), Enter for `host` with a LAN address is refused and asked again, and a rootless
+# Docker (the docker stub's `info`) is warned about. It stops at the docker stub (`up`).
+mkdir -p "$WORK/stubs-busy8080" "$WORK/src8/install"
+printf '#!/bin/sh\necho "%s"\necho "LISTEN 0 511 127.0.0.1:8080 0.0.0.0:*"\n' "$SS_HEAD" > "$WORK/stubs-busy8080/ss"
+chmod +x "$WORK/stubs-busy8080/ss"
+cp -- "$REPO/setup.sh" "$WORK/src8/"; cp -R -- "$REPO/install/lib" "$WORK/src8/install/"
+(cd "$WORK/src8" && printf '%s\n' 3 mdm.example.com '' 10.0.0.5:8080 '' 192.0.2.10 | env -i PATH="$WORK/stubs-busy8080:$WORK/stubs:$PATH" \
+  HOME="$WORK" STUB_LOG="$WORK/docker.log" STUB_DOCKER_OK=1 STUB_DOCKER_INFO='Ubuntu ["name=seccomp","name=rootless"]' \
+  bash ./setup.sh > "$WORK/out/o" 2> "$WORK/out/e") || true
+{ grep -qF 'already listens on 127.0.0.1:8080' "$WORK/out/o" && grep -qF 'needs MDMesh on a loopback address' "$WORK/out/o" \
+  && grep -qF 'This Docker (rootless, or Docker Desktop)' "$WORK/out/o" && grep -qxF 'MDMESH_BIND=10.0.0.5:8080' "$WORK/src8/.env" \
+  && grep -qxF 'TRUSTED_PROXIES="192.0.2.10"' "$WORK/src8/.env"; } || { fail "setup.sh's proxy questions: busy address, host off loopback or rootless Docker not handled"; show; }
+ok
+# Non-interactive, the default address in use stops the installer instead of asking forever.
+rm -f -- "$WORK/src8/.env"
+(cd "$WORK/src8" && env -i PATH="$WORK/stubs-busy8080:$WORK/stubs:$PATH" HOME="$WORK" STUB_LOG="$WORK/docker.log" STUB_DOCKER_OK=1 \
+  MDMESH_NONINTERACTIVE=1 MDMESH_MODE=proxy MDMESH_HOST=mdm.example.com bash ./setup.sh < /dev/null > "$WORK/out/o" 2> "$WORK/out/e") || true
+{ grep -qF 'MDMESH_BIND=127.0.0.1:8080: something on this machine already listens there' "$WORK/out/e" && [ ! -e "$WORK/src8/.env" ]; } \
+  || { fail "a non-interactive setup.sh with its default address in use does not stop before writing .env"; show; }
+ok
+
+# quickstart.sh over an existing install: an .env it didn't finish (.quickstart-unfinished) is resumed with that .env,
+# answers ignored; any other .env is left alone, saying never to delete it while the volumes exist.
+mkdir -p "$WORK/qs6/mdmesh/install/lib"
+cp -- "$REPO/install/lib/db.sh" "$WORK/qs6/mdmesh/install/lib/"
+printf '%s\n' DB_PASSWORD=keepme BASE_URL=https://mdm.example.com IMAGE_OWNER=me CURRENT_VERSION=0.6.0 \
+  COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml COMPOSE_PROFILES= MDMESH_BIND=127.0.0.1:8080 \
+  'TRUSTED_PROXIES="host"' MDMESH_ORIGIN_TLS=0 > "$WORK/qs6/mdmesh/.env"
+: > "$WORK/qs6/mdmesh/.quickstart-unfinished"; : > "$WORK/docker.log"
+(cd "$WORK/qs6" && env -i PATH="$WORK/stubs:$PATH" HOME="$WORK" STUB_LOG="$WORK/docker.log" STUB_DOCKER_OK=1 MDMESH_MODE=domain \
+  bash "$REPO/quickstart.sh" < /dev/null > "$WORK/out/o" 2> "$WORK/out/e") || true
+{ grep -qF 'finishing the install in' "$WORK/out/o" && grep -qF 'answers are not used' "$WORK/out/o" \
+  && grep -q '/docker compose pull$' "$WORK/docker.log" && grep -qxF DB_PASSWORD=keepme "$WORK/qs6/mdmesh/.env" \
+  && grep -qF 'MDMESH_DIR=' "$WORK/out/e"; } || { fail "quickstart.sh does not resume an unfinished install with its .env"; show; }
+rm -f -- "$WORK/qs6/mdmesh/.quickstart-unfinished"
+(cd "$WORK/qs6" && env -i PATH="$WORK/stubs:$PATH" HOME="$WORK" STUB_LOG="$WORK/docker.log" STUB_DOCKER_OK=1 \
+  bash "$REPO/quickstart.sh" < /dev/null > "$WORK/out/o" 2> "$WORK/out/e") || true
+{ grep -qF "Don't delete that .env" "$WORK/out/e" && grep -qxF DB_PASSWORD=keepme "$WORK/qs6/mdmesh/.env"; } \
+  || { fail "quickstart.sh over a finished install does not leave it alone, saying how"; show; }
+ok
 
 if [ -e "$WORK/stubs.called" ]; then fail "a dry run ran a command that changes the host: $(cat "$WORK/stubs.called")"; fi
 

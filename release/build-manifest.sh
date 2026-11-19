@@ -1,9 +1,13 @@
 #!/usr/bin/env sh
 # Emits manifest.json — the signed fleet-update contract.
 # Args: VERSION CHANNEL SERVER_IMG WEB_IMG APK_FILE APK_VERSIONCODE APK_CHECKSUM PROTO_VERSION SERVER_REF WEB_REF SUPERVISOR_REF
+#       PLATFORMS
 #   SERVER_IMG / WEB_IMG: the :VERSION tags (components.serverImage / webImage, which every supervisor reads).
 #   *_REF: the same images by digest, repo@sha256:<hex> (components.images: what a 0.5.0+ supervisor and the quick start
 #   pull; a supervisor before 0.5.0 ignores the field).
+#   PLATFORMS: the platforms each of those images holds, comma-separated (components.platforms, e.g.
+#   "linux/amd64,linux/arm64"). The quick start refuses a host whose platform is not listed; a manifest without the
+#   field (before the first release with Arm64 images) means linux/amd64 only.
 # Also records the SHA-256 of each file the quick start downloads from this release's tag, and of quickstart.sh itself
 # (published as a release asset, so an operator can check it before running it: RELEASING.md), in files, and the commit
 # (commit: what `setup.sh --update` checks the tag against). They are read from the checkout this runs in, which must be
@@ -15,10 +19,13 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 python3 - "$ROOT" "$@" <<'PY'
 import sys, json, hashlib, os, re
 root = sys.argv[1]
-if len(sys.argv) != 13:
+if len(sys.argv) != 14:
     sys.exit("usage: build-manifest.sh VERSION CHANNEL SERVER_IMG WEB_IMG APK_FILE APK_VERSIONCODE APK_CHECKSUM "
-             "PROTO_VERSION SERVER_REF WEB_REF SUPERVISOR_REF")
-ver, ch, server_img, web_img, apk, apk_vc, apk_ck, proto, server_ref, web_ref, sup_ref = sys.argv[2:13]
+             "PROTO_VERSION SERVER_REF WEB_REF SUPERVISOR_REF PLATFORMS")
+ver, ch, server_img, web_img, apk, apk_vc, apk_ck, proto, server_ref, web_ref, sup_ref, platforms = sys.argv[2:14]
+# One string, not a list: quickstart.sh reads fields line by line (see the end).
+if not re.fullmatch(r"linux/[a-z0-9]+(,linux/[a-z0-9]+)*", platforms) or "linux/amd64" not in platforms.split(","):
+    sys.exit("PLATFORMS must be comma-separated linux/<arch> names, linux/amd64 among them (got %r)" % platforms)
 sha = lambda p: hashlib.sha256(open(p, "rb").read()).hexdigest()
 
 # Each ref is repo@sha256:<64 hex>; server and web are the repositories of the :VERSION tags above, and the
@@ -63,6 +70,7 @@ m = {
   "components": {
     "serverImage": server_img, "webImage": web_img,
     "images": images,
+    "platforms": platforms,
     "apk": {"file": apk.split("/")[-1], "versionCode": int(apk_vc),
             "sha256": sha(apk), "signatureChecksum": apk_ck},
   },

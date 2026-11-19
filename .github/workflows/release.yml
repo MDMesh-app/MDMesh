@@ -153,6 +153,10 @@ jobs:
     permissions:
       contents: write
       packages: write
+    env:
+      # The platforms every image's index must hold (one image each, the images job's matrix), recorded in the signed
+      # manifest as components.platforms: the quick start refuses a host whose platform is not listed.
+      PLATFORMS: linux/amd64,linux/arm64
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
@@ -224,6 +228,21 @@ jobs:
           path: ${{ runner.temp }}/digest
           merge-multiple: true
 
+      # The gate's check again, right before anything is tagged: "Re-run failed jobs" on an older release's run, after a
+      # newer release, must not re-tag its images or move :latest back to them. Reads the tags from origin, not the
+      # shallow checkout.
+      - name: Version is still newer than every earlier release
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          latest=$(git ls-remote --tags --refs origin 'v*' | sed 's#.*refs/tags/##' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            | grep -vx "$REF_NAME" | sort -V | tail -n 1 || true)
+          if [ -n "$latest" ] && [ "$(printf '%s\n%s\n' "$latest" "$REF_NAME" | sort -V | tail -n 1)" != "$REF_NAME" ]; then
+            echo "::error::${REF_NAME} is not newer than the latest release tag ${latest}; nothing was tagged (RELEASING.md)."
+            exit 1
+          fi
+          echo "${REF_NAME} is newer than ${latest:-(no earlier release)}"
+
       # --- Tag the images on GHCR as :VERSION (:latest moves in the last step) ---
       - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550  # v4.8.0
         with:
@@ -239,6 +258,7 @@ jobs:
           VERSION: ${{ steps.ver.outputs.version }}
         run: |
           O=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
+          IFS=, read -ra plats <<< "$PLATFORMS"
           for img in server web supervisor; do
             REPO="ghcr.io/${O}/mdmesh-${img}"
             srcs=()
@@ -248,7 +268,7 @@ jobs:
               srcs+=("${REPO}@${d}")
             done
             docker buildx imagetools create --tag "${REPO}:${VERSION}" "${srcs[@]}"
-            D=$(release/image-digest.sh "${REPO}:${VERSION}" linux/amd64 linux/arm64)   # its own line: a failure fails the step
+            D=$(release/image-digest.sh "${REPO}:${VERSION}" "${plats[@]}")   # its own line: a failure fails the step
             echo "${img^^}_REF=${REPO}@${D}" >> "$GITHUB_ENV"
           done
           echo "SERVER_IMG=ghcr.io/${O}/mdmesh-server:${VERSION}" >> "$GITHUB_ENV"
@@ -290,7 +310,7 @@ jobs:
           sudo apt-get update -y && sudo apt-get install -y minisign
           release/build-manifest.sh "$VERSION" stable \
             "$SERVER_IMG" "$WEB_IMG" mdmesh-agent.apk "$CODE" "$CK" "$PROTO" \
-            "$SERVER_REF" "$WEB_REF" "$SUPERVISOR_REF"
+            "$SERVER_REF" "$WEB_REF" "$SUPERVISOR_REF" "$PLATFORMS"
           release/sign-manifest.sh manifest.json
       # The signed manifest's securityReleases (a supervisor reads them to warn an admin who would skip a security
       # release) must be exactly CHANGELOG.md's: every version up to this one with a Security section (RELEASING.md).

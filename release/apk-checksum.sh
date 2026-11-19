@@ -5,9 +5,13 @@
 set -eu
 APK="${1:?usage: apk-checksum.sh <signed.apk> | --recorded}"
 if [ "$APK" = --recorded ]; then
-  CK=$(grep -v '^#' "$(dirname "$0")/agent-signature-checksum" | grep . || true)
-  printf '%s\n' "$CK" | grep -Eqx '[A-Za-z0-9_-]{43}' \
-    || { echo "release/agent-signature-checksum must hold one base64url SHA-256 line (got '$CK')" >&2; exit 1; }
+  # Exactly one line that is neither a comment (# after any indentation) nor blank, and it is the checksum.
+  CK=$(grep -Ev '^[[:space:]]*(#|$)' "$(dirname "$0")/agent-signature-checksum" || true)
+  # 43 base64url characters; a second line (its newline) or any other character fails.
+  case "$CK" in ''|*[!A-Za-z0-9_-]*) CK_OK=0 ;; *) CK_OK=1 ;; esac
+  if [ "$CK_OK" = 0 ] || [ "${#CK}" -ne 43 ]; then
+    echo "release/agent-signature-checksum must hold exactly one base64url SHA-256 line (got '$CK')" >&2; exit 1
+  fi
   printf '%s\n' "$CK"
   exit 0
 fi

@@ -106,8 +106,9 @@ git clone https://github.com/MDMesh-app/MDMesh.git && cd MDMesh
 ```
 
 Without Docker, run `sudo ./setup.sh --update --native` from the clone on Debian 12/13 or Ubuntu 24.04 (x86_64 or
-Arm64). It only needs `git` and brings the rest ([native install](DEPLOY.md#option-c--native-no-docker)). Each
-installer prints the console URL and a temporary admin password. Then enroll a device:
+Arm64; CI tests the native install on x86_64 only). It only needs `git` and brings the rest
+([native install](DEPLOY.md#option-c--native-no-docker)). Each installer prints the console URL and a temporary admin
+password. Then enroll a device:
 
 1. Sign in and set your own password.
 2. Open **Enroll** and choose a configuration. The page shows its QR code.

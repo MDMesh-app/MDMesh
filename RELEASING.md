@@ -160,6 +160,8 @@ supervisors before 0.5.0 read) and `components.apk`, and from 0.5.0 adds:
 
 - `components.images`: the server, web and supervisor images as `repo@sha256:…` (keys `server`, `web`,
   `supervisor`);
+- `components.platforms`: the platforms each of those images holds, comma-separated (`linux/amd64,linux/arm64`; from
+  0.6.0). The quick start stops on a host whose platform isn't listed; a manifest without it is `linux/amd64` only;
 - `files`: the SHA-256 of each file the quick start downloads from the tag, and of `quickstart.sh` itself (the
   release asset);
 - `commit`: the tagged commit.
@@ -212,8 +214,10 @@ SHA-256 against the manifest) and find out who changed it; then move `:latest` b
 
 **If the `release` job goes red after the GitHub Release step** (the quickstart.sh readback, or "Move :latest to this
 release"): the Release and its `:VERSION` images are published and fine, but `:latest` may point at the previous
-release for some or all of the three images. Don't re-run the job (it would re-tag `:VERSION` and try to recreate the
-Release). Fix `:latest` by hand, logged in to GHCR with `write:packages`:
+release for some or all of the three images. Don't re-run it, neither "Re-run failed jobs" (it would re-tag `:VERSION` and
+try to recreate the Release) nor "Re-run all jobs" (that also rebuilds and re-pushes every image, so `:VERSION` would
+point at new digests the signed manifest doesn't pin). A re-run on an older release's tag, once a newer one exists,
+stops before tagging anything. Fix `:latest` by hand, logged in to GHCR with `write:packages`:
 
 ```bash
 V=1.2.3                   # edit: the release version, no leading v

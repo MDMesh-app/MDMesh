@@ -10,7 +10,8 @@
 # it builds the web image (docker/web.Dockerfile), which nothing else builds before a release. When the installers change,
 # the edge entry also checks that quickstart.sh's inline BASE_URL check and answers functions are still install/lib's,
 # byte for byte, and that install/options.json (the installers' answers contract) matches the scripts. The arm64 job
-# builds the three release images on GitHub's Arm runner when their Dockerfiles or build context change.
+# builds the three release images on GitHub's Arm runner when docker/** or .dockerignore change, and on the kit's
+# fail-closed paths (lockfiles such as web/package-lock.json, .github/**); not on other source changes.
 name: t0-fast
 
 on:
@@ -53,7 +54,8 @@ jobs:
             # Listed explicitly: the kit's fail-closed **/Dockerfile* does not match docker/web.Dockerfile. web/**,
             # web-entrypoint.sh, edge-peers.sh, CHANGELOG.md and .dockerignore are the web image build's inputs.
             edge: docker/Caddyfile, docker/web.Dockerfile, docker/web-entrypoint.sh, docker/edge-peers.sh, web/**, CHANGELOG.md, .dockerignore, docker-compose*.yml, docker/dev.env, scripts/edge-check.sh, supervisor/apply.sh
-            # The release images' Dockerfiles and build context (web/package-lock.json and .github/** are fail-closed).
+            # The release images' Dockerfiles and entrypoints: where an Arm64-only break comes from (a base image, an Alpine
+            # package), with npm binaries via the fail-closed lockfiles. Source changes alone don't trigger the arm64 job.
             images: docker/**, .dockerignore
             # The installer scripts, and the signed manifest they and the supervisor read. Only the edge entry's cheap
             # quickstart.sh checks run on these, not its image work. README.md and DEPLOY.md carry the install commands

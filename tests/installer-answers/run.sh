@@ -452,9 +452,10 @@ mkdir -p "$WORK/qs3"; : > "$WORK/children3.log"
   && grep -qF '/refs/tags/v0.4.0/quickstart.sh' "$WORK/out/e" && ! grep -q 'curl' "$WORK/children3.log"; } \
   || { fail "quickstart.sh does not send MDMESH_VERSION=0.4.0 to that release's own quickstart.sh"; show; }
 ok
-# The images are linux/amd64 + linux/arm64 from 0.6.0: another architecture stops before any question, and Arm64 with a
-# release before 0.6.0 stops before anything is downloaded. (The docker stub fails `docker info`, so the host's
-# architecture comes from uname, stubbed here.)
+# The images are linux/amd64, and linux/arm64 from the first release with Arm64 images: another architecture stops
+# before any question, and x86_64 and Arm64 go on to verify the release. (Whether that release has images for the host
+# is read from its signed manifest: scripts/release-manifest-check.sh. The docker stub fails `docker info`, so the
+# host's architecture comes from uname, stubbed here.)
 mkdir -p "$WORK/stubs-arch"
 # shellcheck disable=SC2016  # the stub's own variables
 printf '#!/bin/sh\n[ "$1" = -m ] && { echo "$STUB_ARCH"; exit 0; }\nexec /bin/uname "$@"\n' > "$WORK/stubs-arch/uname"
@@ -469,15 +470,11 @@ qs_arch riscv64
   && ! grep -qF 'Hosting mode' "$WORK/out/o"; } || { fail "quickstart.sh does not stop on an unsupported architecture"; show; }
 ok
 qs_arch aarch64 MDMESH_VERSION=0.5.0
-{ grep -qF 'v0.5.0 has x86_64 images only' "$WORK/out/e" && ! grep -q 'curl' "$WORK/children4.log"; } \
-  || { fail "quickstart.sh does not stop on Arm64 with a release before 0.6.0"; show; }
-ok
-qs_arch aarch64 MDMESH_VERSION=0.6.0
-{ grep -qF 'Verifying release v0.6.0' "$WORK/out/o" && ! grep -q 'images only\|built for x86_64' "$WORK/out/e"; } \
-  || { fail "quickstart.sh does not go on to verify 0.6.0 on Arm64"; show; }
+{ grep -qF 'Verifying release v0.5.0' "$WORK/out/o" && ! grep -q 'no images for this host\|built for x86_64' "$WORK/out/e"; } \
+  || { fail "quickstart.sh does not go on to verify a release on Arm64"; show; }
 ok
 qs_arch x86_64 MDMESH_VERSION=0.5.0
-{ grep -qF 'Verifying release v0.5.0' "$WORK/out/o" && ! grep -q 'images only\|built for x86_64' "$WORK/out/e"; } \
+{ grep -qF 'Verifying release v0.5.0' "$WORK/out/o" && ! grep -q 'no images for this host\|built for x86_64' "$WORK/out/e"; } \
   || { fail "quickstart.sh does not go on to verify 0.5.0 on x86_64"; show; }
 ok
 

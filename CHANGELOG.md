@@ -16,7 +16,8 @@ Upgrading
 New
 - Arm64: the server, web and supervisor images are built for linux/amd64 and linux/arm64, so the quick start and
   one-click updates run on Arm64 hosts such as Oracle Ampere (#205, thanks @sgofferj). On any other architecture,
-  or on Arm64 with `MDMESH_VERSION` before 0.6.0, the quick start stops and says why before it downloads anything.
+  or on Arm64 with an `MDMESH_VERSION` that has no Arm64 images, the quick start stops and says why before it pulls
+  anything.
 
 Fixes
 - Commands: the server refuses a command, Install configuration apps and Retry apply for a device marked Wiped

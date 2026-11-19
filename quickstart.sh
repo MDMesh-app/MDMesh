@@ -120,6 +120,14 @@ mdm_manifest_field() {
   [ -n "$hits" ] && [ "$(printf '%s\n' "$hits" | wc -l)" -eq 1 ] || return 1
   printf '%s\n' "$hits" | sed -E 's/^[[:space:]]*"[^"]*": "([^"]*)",?$/\1/'
 }
+# mdm_manifest_has_platform FILE PLATFORM: the manifest's images hold PLATFORM (linux/<arch>). A manifest without
+# components.platforms (from before the first release with Arm64 images) holds linux/amd64 only.
+mdm_manifest_has_platform() {
+  local p
+  p=$(mdm_manifest_field "$1" platforms '[abcdefghijklmnopqrstuvwxyz0123456789/,]+') || p=linux/amd64
+  case ",$p," in *",$2,"*) return 0 ;; esac
+  return 1
+}
 MDM_SHA256_ERE='[0123456789abcdef]{64}'
 MDM_IMAGE_REF_ERE='[abcdefghijklmnopqrstuvwxyz0123456789._/-]+@sha256:[0123456789abcdef]{64}'
 
@@ -505,7 +513,8 @@ command -v docker >/dev/null || { err "Docker is required."; exit 1; }
 docker compose version >/dev/null 2>&1 || { err "Docker Compose v2 is required ('docker compose')."; exit 1; }
 command -v curl    >/dev/null || { err "curl is required."; exit 1; }
 command -v openssl >/dev/null || { err "openssl is required."; exit 1; }
-# The images are published for linux/amd64 and, from 0.6.0, linux/arm64; docker pulls the one for the host it runs on.
+# The images are published for linux/amd64 and, from the first release with Arm64 images, linux/arm64 (the signed
+# manifest's components.platforms, checked below); docker pulls the one for the host it runs on.
 HOST_ARCH=$(docker info --format '{{.Architecture}}' 2>/dev/null) || HOST_ARCH=$(uname -m)
 case "$HOST_ARCH" in
   x86_64|amd64) HOST_ARCH=amd64 ;;
@@ -571,11 +580,6 @@ if [ -z "$RELEASE" ]; then
   err "  MDMESH_VERSION=X.Y.Z bash <(curl -fsSL https://raw.githubusercontent.com/${REPO}/refs/tags/vX.Y.Z/quickstart.sh)"
   exit 1
 fi
-if [ "$HOST_ARCH" = arm64 ] && [[ "$RELEASE" =~ ^0\.([0-5])\. ]]; then
-  err "Release v${RELEASE} has x86_64 images only; Arm64 images start with 0.6.0. Install 0.6.0 or later (leave"
-  err "MDMESH_VERSION unset for the latest release), or use the native install (DEPLOY.md, Option C). Nothing was installed."
-  exit 1
-fi
 [ -z "${MDMESH_RELEASE_PUBKEY:-}" ] || warn "Using MDMESH_RELEASE_PUBKEY: a custom release signing key, not MDMesh's."
 say "Verifying release v${RELEASE} of ${GH_REPO}…"
 VERIFY_DIR=$(mktemp -d)
@@ -611,6 +615,13 @@ fi
 MANIFEST_VERSION=$(mdm_manifest_field "$MANIFEST" version '[0-9A-Za-z.+-]+' || true)
 if [ "$MANIFEST_VERSION" != "$RELEASE" ]; then
   err "The signed manifest is for version ${MANIFEST_VERSION:-(none)}, not v${RELEASE}. Nothing was installed."; exit 1
+fi
+# Images for this host's platform: a manifest without components.platforms has linux/amd64 only.
+if ! mdm_manifest_has_platform "$MANIFEST" "linux/${HOST_ARCH}"; then
+  err "Release v${RELEASE} has no images for this host (linux/${HOST_ARCH}): its images are x86_64 only. Install a release"
+  err "with Arm64 images (leave MDMESH_VERSION unset for the latest), or use the native install (DEPLOY.md, Option C)."
+  err "Nothing was installed."
+  exit 1
 fi
 # The image digests: all three, under the owner chosen above.
 SERVER_REF=$(mdm_manifest_field "$MANIFEST" server "$MDM_IMAGE_REF_ERE" || true)

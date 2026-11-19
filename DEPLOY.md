@@ -13,8 +13,9 @@ passwords, and the admin must set its own password on first login.
 | [B. From source](#option-b--from-source-clone--build) | Docker with Compose v2, a clone, and for `./setup.sh --update`: `git`, `curl`, `openssl` 3.0+ (or an older `openssl` and `minisign`). `python3` to verify the release for the QR (optional) | You want to build the images yourself. |
 | [C. Native](#option-c--native-no-docker) | Debian 12/13 or Ubuntu 24.04, root, `git` (`--update` installs `curl` and `openssl` when they are missing) | You don't want Docker, and you run your own TLS proxy. |
 
-All three run on x86_64 and Arm64 (aarch64): the published images hold both from 0.6.0 on, and docker pulls the
-host's. 32-bit Arm is not supported.
+All three run on x86_64 and Arm64 (aarch64): the published images hold both from the first release with Arm64 images
+(0.6.0) on, and docker pulls the host's. For an earlier release on Arm64, the quick start stops and says so before it
+pulls anything. 32-bit Arm is not supported.
 
 Options A and B ask for the public hostname and set `BASE_URL=https://<hostname>`. Option C asks for the full base
 URL (`https://…`; `http://` is accepted too). See the [rules](docs/OPERATIONS.md#base-url-and-hostname-rules).

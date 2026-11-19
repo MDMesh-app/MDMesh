@@ -20,8 +20,8 @@ T=$(mktemp -d)
 cleanup() {
   rm -f -- "$T/manifest.json" "$T/manifest.json.minisig" "$T/k.pub" "$T/k.key" "$T/x.pub" "$T/x.key" \
     "$T/agent.apk" "$T/tampered.json" "$T/qs.sh" "$T/changelog.md" "$T/sec.json" "$T/sec.out" "$T/inspect.json" \
-    "$T/bin/docker"
-  rmdir -- "$T/bin" "$T" 2>/dev/null || true
+    "$T/bin/docker" "$T/old.json" "$T/rc/apk-checksum.sh" "$T/rc/agent-signature-checksum"
+  rmdir -- "$T/bin" "$T/rc" "$T" 2>/dev/null || true
 }
 trap cleanup EXIT
 fail() { echo "release-manifest-check: $*" >&2; exit 1; }
@@ -29,15 +29,22 @@ fail() { echo "release-manifest-check: $*" >&2; exit 1; }
 O=example-owner
 D1=sha256:$(printf '1%.0s' $(seq 64)); D2=sha256:$(printf '2%.0s' $(seq 64)); D3=sha256:$(printf '3%.0s' $(seq 64))
 head -c 4096 /dev/urandom > "$T/agent.apk"
+P2=linux/amd64,linux/arm64
 ( cd "$T" && "$ROOT/release/build-manifest.sh" 9.8.7 stable "ghcr.io/$O/mdmesh-server:9.8.7" "ghcr.io/$O/mdmesh-web:9.8.7" \
-    agent.apk 90807 CKSUM 1.5 "ghcr.io/$O/mdmesh-server@$D1" "ghcr.io/$O/mdmesh-web@$D2" "ghcr.io/$O/mdmesh-supervisor@$D3" ) >/dev/null
+    agent.apk 90807 CKSUM 1.5 "ghcr.io/$O/mdmesh-server@$D1" "ghcr.io/$O/mdmesh-web@$D2" "ghcr.io/$O/mdmesh-supervisor@$D3" "$P2" ) >/dev/null
 # A ref outside the image's repository, or not a digest, is refused at build time.
 ( cd "$T" && ! "$ROOT/release/build-manifest.sh" 9.8.7 stable "ghcr.io/$O/mdmesh-server:9.8.7" "ghcr.io/$O/mdmesh-web:9.8.7" \
-    agent.apk 90807 CKSUM 1.5 "ghcr.io/other/mdmesh-server@$D1" "ghcr.io/$O/mdmesh-web@$D2" "ghcr.io/$O/mdmesh-supervisor@$D3" ) 2>/dev/null \
+    agent.apk 90807 CKSUM 1.5 "ghcr.io/other/mdmesh-server@$D1" "ghcr.io/$O/mdmesh-web@$D2" "ghcr.io/$O/mdmesh-supervisor@$D3" "$P2" ) 2>/dev/null \
   || fail "build-manifest.sh accepted a server digest from another repository"
 ( cd "$T" && ! "$ROOT/release/build-manifest.sh" 9.8.7 stable "ghcr.io/$O/mdmesh-server:9.8.7" "ghcr.io/$O/mdmesh-web:9.8.7" \
-    agent.apk 90807 CKSUM 1.5 "ghcr.io/$O/mdmesh-server:9.8.7" "ghcr.io/$O/mdmesh-web@$D2" "ghcr.io/$O/mdmesh-supervisor@$D3" ) 2>/dev/null \
+    agent.apk 90807 CKSUM 1.5 "ghcr.io/$O/mdmesh-server:9.8.7" "ghcr.io/$O/mdmesh-web@$D2" "ghcr.io/$O/mdmesh-supervisor@$D3" "$P2" ) 2>/dev/null \
   || fail "build-manifest.sh accepted a tag where a digest belongs"
+# The image platforms (components.platforms) are linux/<arch> names, linux/amd64 among them.
+for bad in linux/arm64 'linux/amd64, linux/arm64' amd64,arm64 ''; do
+  ( cd "$T" && ! "$ROOT/release/build-manifest.sh" 9.8.7 stable "ghcr.io/$O/mdmesh-server:9.8.7" "ghcr.io/$O/mdmesh-web:9.8.7" \
+      agent.apk 90807 CKSUM 1.5 "ghcr.io/$O/mdmesh-server@$D1" "ghcr.io/$O/mdmesh-web@$D2" "ghcr.io/$O/mdmesh-supervisor@$D3" "$bad" ) 2>/dev/null \
+    || fail "build-manifest.sh accepted the platforms '$bad'"
+done
 
 # The digests release.yml pins come from release/image-digest.sh: a registry index (docker stubbed with its inspect
 # output) is pinned only when it holds exactly one image for each platform asked for.
@@ -68,6 +75,16 @@ printf '{"digest":"sha256:abc"}' > "$T/inspect.json"
 ck=$("$ROOT/release/apk-checksum.sh" --recorded) || fail "apk-checksum.sh --recorded failed"
 [[ "$ck" =~ ^[A-Za-z0-9_-]{43}$ ]] || fail "release/agent-signature-checksum does not hold one base64url SHA-256 (got '$ck')"
 [ "$ck" = "$(grep -v '^#' "$ROOT/release/agent-signature-checksum" | grep .)" ] || fail "apk-checksum.sh --recorded is not the file's value"
+# It takes exactly one value line: comments (indented ones too) and blank lines aside; two values, or none, fail.
+mkdir "$T/rc"; cp "$ROOT/release/apk-checksum.sh" "$T/rc/"
+printf '# c\n\n  # indented c\n%s\n\n' "$ck" > "$T/rc/agent-signature-checksum"
+[ "$("$T/rc/apk-checksum.sh" --recorded)" = "$ck" ] || fail "apk-checksum.sh --recorded refused comments and blank lines"
+printf '# c\n%s\n%s\n' "$ck" "$ck" > "$T/rc/agent-signature-checksum"
+! "$T/rc/apk-checksum.sh" --recorded 2>/dev/null || fail "apk-checksum.sh --recorded accepted two value lines"
+printf '# c\n   # %s\n' "$ck" > "$T/rc/agent-signature-checksum"
+! "$T/rc/apk-checksum.sh" --recorded 2>/dev/null || fail "apk-checksum.sh --recorded took a value from an indented comment"
+printf '%s \n' "$ck" > "$T/rc/agent-signature-checksum"
+! "$T/rc/apk-checksum.sh" --recorded 2>/dev/null || fail "apk-checksum.sh --recorded accepted a malformed line"
 
 # securityReleases: derived from CHANGELOG.md by build-manifest.sh, and checked by release.yml.
 [ "$(python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1]))["securityReleases"]))' "$T/manifest.json")" \
@@ -175,6 +192,14 @@ mdm_verify_manifest "$PK" "$T/manifest.json" "$T/manifest.json.minisig" || fail 
 [ "$(mdm_manifest_field "$T/manifest.json" server "$MDM_IMAGE_REF_ERE")" = "ghcr.io/$O/mdmesh-server@$D1" ] || fail "server ref not read"
 [ "$(mdm_manifest_field "$T/manifest.json" web "$MDM_IMAGE_REF_ERE")" = "ghcr.io/$O/mdmesh-web@$D2" ] || fail "web ref not read"
 [ "$(mdm_manifest_field "$T/manifest.json" supervisor "$MDM_IMAGE_REF_ERE")" = "ghcr.io/$O/mdmesh-supervisor@$D3" ] || fail "supervisor ref not read"
+# The platforms the quick start checks the host against; a manifest without them (before Arm64 images) is linux/amd64 only.
+mdm_manifest_has_platform "$T/manifest.json" linux/arm64 || fail "the quick start does not read linux/arm64 from the manifest"
+mdm_manifest_has_platform "$T/manifest.json" linux/amd64 || fail "the quick start does not read linux/amd64 from the manifest"
+! mdm_manifest_has_platform "$T/manifest.json" linux/arm || fail "the quick start matched linux/arm against linux/arm64"
+python3 -c 'import json,sys; m=json.load(open(sys.argv[1])); del m["components"]["platforms"]; open(sys.argv[2],"w").write(json.dumps(m, indent=2))' \
+  "$T/manifest.json" "$T/old.json"
+mdm_manifest_has_platform "$T/old.json" linux/amd64 || fail "a manifest without platforms is not linux/amd64"
+! mdm_manifest_has_platform "$T/old.json" linux/arm64 || fail "a manifest without platforms counted as linux/arm64"
 grep -q '^  "files": {$' "$T/manifest.json" || fail "quickstart.sh would not find the files block"
 for f in $MDM_QUICKSTART_FILES quickstart.sh; do
   [ "$(mdm_manifest_field "$T/manifest.json" "$f" "$MDM_SHA256_ERE")" = "$(mdm_sha256 "$ROOT/$f")" ] || fail "sha256 of $f not read or wrong"

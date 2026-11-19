@@ -1,7 +1,6 @@
 package com.mdmesh.agent
 
 import android.app.Application
-import android.os.Looper
 import android.widget.TextView
 import androidx.test.core.app.ApplicationProvider
 import com.mdmesh.agent.stress.StoreCorruption
@@ -12,7 +11,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 /**
@@ -25,33 +23,26 @@ class StatusStoreCorruptionTest {
     private val app: Application get() = ApplicationProvider.getApplicationContext()
     private val storage by lazy { StoreCorruption(app) }
 
-    /** Opens the status screen and lets the stores' real threads deliver; returns the Device ID shown. */
-    private fun shownDeviceId(): String {
+    /** Opens the status screen and waits for it to show [expected] as the Device ID (read from storage). */
+    private fun assertShowsDeviceId(expected: String) {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
-        repeat(SETTLE_ROUNDS) {
-            shadowOf(Looper.getMainLooper()).idle()
-            Thread.sleep(SETTLE_MS)
-        }
-        shadowOf(Looper.getMainLooper()).idle()
         // Without the zero-width breaks the screen puts in for wrapping.
-        return activity.findViewById<TextView>(R.id.status_device_id).text.toString().replace("​", "")
+        fun shown() = activity.findViewById<TextView>(R.id.status_device_id).text.toString().replace("\u200B", "")
+        storage.eventually("the Device ID $expected, showing \"${shown()}\"") { shown() == expected }
+        assertEquals(expected, shown())
     }
 
     @Test fun `corrupt identity and kiosk stores are recovered and the device id shows`() {
         storage.corruptIdentity(mirrorId = "dev_7f3a")
         storage.corruptKiosk(mirror = null)
-        assertEquals("dev_7f3a", shownDeviceId())
-        assertEquals(listOf("mdm_identity from mirror", "mdm_kiosk from empty"), storage.recoveries().sortedBy { it })
+        assertShowsDeviceId("dev_7f3a")
+        val both = listOf("mdm_identity from mirror", "mdm_kiosk from empty")
+        storage.eventually("both recoveries") { storage.recoveries().sortedBy { it } == both }
     }
 
     @Test fun `an unreadable kiosk store does not hold back the device id`() {
         runBlocking { AgentDataStores.stores(app).deviceIdStore().saveCredentials("dev_9", "s") }
         storage.unreadable(AgentDataStores.KIOSK)
-        assertEquals("dev_9", shownDeviceId())
-    }
-
-    private companion object {
-        const val SETTLE_ROUNDS = 12
-        const val SETTLE_MS = 25L
+        assertShowsDeviceId("dev_9")
     }
 }

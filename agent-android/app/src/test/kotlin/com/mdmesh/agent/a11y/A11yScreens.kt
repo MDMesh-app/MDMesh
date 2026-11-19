@@ -1,6 +1,7 @@
 package com.mdmesh.agent.a11y
 
 import android.app.Activity
+import android.app.ActivityManager
 import android.app.Application
 import android.app.Dialog
 import android.app.admin.DevicePolicyManager
@@ -117,22 +118,24 @@ class A11yScreens {
         val a = start(Robolectric.buildActivity(MainActivity::class.java))
         if (state != null) {
             // The screen's own state loads from storage on other threads; drawn after [state], it would undo it.
-            awaitLoaded(a)
+            val model = ViewModelProvider(a)[StatusViewModel::class.java]
+            awaitLoaded("the status screen's device id") {
+                model.state.value.deviceId !is StatusUiState.DeviceIdUi.Loading
+            }
             StatusScreen(a, {}, {}).render(state)
             idle()
         }
         return a
     }
 
-    /** Waits until the status screen's own state has its device id from storage: nothing more is coming to draw. */
-    private fun awaitLoaded(a: MainActivity) {
-        val model = ViewModelProvider(a)[StatusViewModel::class.java]
+    /** Runs the main looper until [loaded] holds: what a screen reads from storage arrives on other threads. */
+    private fun awaitLoaded(what: String, loaded: () -> Boolean) {
         repeat(LOAD_ROUNDS) {
             idle()
-            if (model.state.value.deviceId !is StatusUiState.DeviceIdUi.Loading) return
+            if (loaded()) return
             Thread.sleep(LOAD_POLL_MS)
         }
-        error("the status screen didn't load its device id")
+        error("$what didn't load")
     }
 
     @Suppress("LongParameterList")
@@ -209,8 +212,13 @@ class A11yScreens {
 
     fun launcher(k: KioskApplyPayload?): KioskLauncherActivity {
         runBlocking { AgentDataStores.stores(app).kioskStateStore().save(k) }
-        return start(Robolectric.buildActivity(KioskLauncherActivity::class.java))
+        val a = start(Robolectric.buildActivity(KioskLauncherActivity::class.java))
+        // The saved kiosk reaches the launcher from storage on other threads: wait until it is applied (locked).
+        if (k != null) awaitLoaded("the kiosk") { lockTask() == ActivityManager.LOCK_TASK_MODE_LOCKED }
+        return a
     }
+
+    private fun lockTask(): Int = app.getSystemService(ActivityManager::class.java).lockTaskModeState
 
     fun exitPinDialog(): Dialog {
         val a = launcher(kiosk)

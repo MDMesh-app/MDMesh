@@ -1,6 +1,7 @@
 package com.mdmesh.agent.stress
 
 import android.content.Context
+import android.os.Looper
 import com.mdmesh.core.store.AgentDataStores
 import com.mdmesh.core.store.DataStoreKioskStateStore
 import com.mdmesh.core.store.DeviceIdStore
@@ -15,6 +16,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
+import org.robolectric.Shadows.shadowOf
 import java.io.File
 import java.nio.file.Files
 
@@ -47,9 +49,23 @@ internal class StoreCorruption(private val app: Context) {
         File(dir, "$name.preferences_pb").mkdirs()
     }
 
-    /** The recoveries recorded for the next check-in. */
-    fun recoveries(): List<String?> =
-        EventLog(app).drain().filter { it.type == EventType.STORAGE_RECOVERED }.map { it.detail }
+    private val recorded = mutableListOf<String?>()
+
+    /** The recoveries recorded so far (taken from the events for the next check-in, and kept here). */
+    fun recoveries(): List<String?> {
+        recorded += EventLog(app).drain().filter { it.type == EventType.STORAGE_RECOVERED }.map { it.detail }
+        return recorded.toList()
+    }
+
+    /** Runs the main looper until [done] holds (the stores deliver on real threads), failing after a timeout. */
+    fun eventually(what: String, done: () -> Boolean) {
+        repeat(POLL_ROUNDS) {
+            shadowOf(Looper.getMainLooper()).idle()
+            if (done()) return
+            Thread.sleep(POLL_MS)
+        }
+        throw AssertionError("timed out waiting for $what")
+    }
 
     /** The file DataStore writes for [name] after [write], made in a scratch directory. */
     private fun bytesOf(name: String, write: suspend (AgentDataStores) -> Unit): ByteArray {
@@ -78,5 +94,7 @@ internal class StoreCorruption(private val app: Context) {
 
     private companion object {
         const val ZEROED_BYTES = 4096
+        const val POLL_ROUNDS = 500
+        const val POLL_MS = 10L
     }
 }

@@ -42,7 +42,7 @@ import org.junit.Test
 class WipeHoldsFactoryResetTest {
 
     /** One device: our admin's restrictions, written by both the wipe handler and the factory reset policy. */
-    private class Device(blocked: Boolean, private val wipeError: Exception? = null) : WipeTarget {
+    private class Device(blocked: Boolean, var wipeError: Exception? = null) : WipeTarget {
         val restrictions = if (blocked) mutableSetOf(KEY) else mutableSetOf()
         override fun isDeviceOwner() = true
         override fun holdsRestriction(key: String) = key in restrictions
@@ -239,6 +239,30 @@ class WipeHoldsFactoryResetTest {
         assertEquals(2, device.wipes)
         assertEquals(listOf(0L, 300_000L), checks)
         assertTrue(hold.held)
+        assertFalse(KEY in device.restrictions)
+    }
+
+    /**
+     * PR #227 review: a repeat wipe that throws must not end the hold the accepted one set, or the next apply puts
+     * Block back while that wipe is heading into recovery (#222).
+     */
+    @Test
+    fun `a repeat wipe that throws keeps the earlier wipe's hold and the block off`() = runTest {
+        val device = Device(blocked = true)
+        val hold = FactoryResetWipeHold()
+        val applier = applier(device, hold)
+        applier.apply(block)
+        val dispatcher = dispatcher(device, hold, applier)
+        val first = dispatcher.dispatch(wipeCommand)
+
+        device.wipeError = SecurityException("wipe refused")
+        val second = dispatcher.dispatch(wipeCommand.copy(commandId = "w2"))
+        val apply = applier.apply(block.copy(revision = "r2"))
+
+        assertEquals(CommandStatus.DONE, first.status)
+        assertEquals(CommandStatus.FAILED, second.status)
+        assertTrue(hold.held)
+        assertEquals(ConfigOutcome.deferred(WipeHeldFactoryResetPolicy.WIPING), apply.outcomes["policies.factoryReset"])
         assertFalse(KEY in device.restrictions)
     }
 

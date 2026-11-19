@@ -22,8 +22,10 @@ import com.mdmesh.proto.DeviceAction
  * [RUN_WHILE_WIPING] runs until the device reboots or the hold ends; the rest is reported `expired`
  * (not run), not `failed` (#222). `config.apply` and `policy.apply` run: the factory reset policy
  * defers Block itself while the hold lasts, and the document is saved, so the re-apply at the
- * hold's end puts the newest one in force (an Allow sent meanwhile isn't lost). Another `device.wipe`
- * runs: a lost device is always wiped.
+ * hold's end puts the newest one in force (an Allow sent meanwhile isn't lost). A Block sent by
+ * `policy.apply` meanwhile is reported deferred and is not re-applied at the hold's end: a
+ * `policy.apply` lasts only until the next `config.apply`, and that re-apply is one. Another
+ * `device.wipe` runs: a lost device is always wiped.
  */
 class CommandDispatcher(
     handlers: List<CommandHandler>,

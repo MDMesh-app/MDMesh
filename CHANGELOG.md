@@ -24,10 +24,10 @@ Fixes
   says `native update, <from> → <to>`. The update from 0.5.0 still asks once (add `-y` to skip).
 - `./setup.sh --update` no longer refuses a clone on a release branch (`release/vX.Y.Z`) as "ahead" of that release
   once it is squash-merged: a clone on an older release moves on; only one newer than the release needs `--allow-downgrade`.
-- Factory reset from the console lifts the configuration's Factory reset: Block for the wipe, and puts it back if the
-  wipe can't start or the device hasn't reset within 10 minutes. Some vendor recoveries honour the block and stopped
-  mid-wipe (HyperOS, #222).
-- Lock on a device with no screen lock set still turns the screen off, and its result now says the device isn't
+- Agent: Factory reset from the console lifts the configuration's Factory reset: Block for the wipe, and puts it back
+  if the wipe can't start or the device hasn't reset within 10 minutes. Some vendor recoveries honour the block and
+  stopped mid-wipe (HyperOS, #222).
+- Agent: Lock on a device with no screen lock set still turns the screen off, and its result now says the device isn't
   protected.
 
 ## v0.5.0 — 2026-11-17

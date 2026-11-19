@@ -22,7 +22,8 @@ import com.mdmesh.proto.DeviceAction
  *
  * [hold] is set before anything is lifted and released when the wipe call throws, so no apply can
  * put the block back once it is lifted: the wipe call can return before the reboot, and the process
- * can die between the lift and the call. If no reboot follows, the hold expires and the
+ * can die between the lift and the call. A repeat wipe that throws keeps the hold an earlier accepted
+ * wipe set: that one may still be heading into recovery. If no reboot follows, the hold expires and the
  * agent re-applies its configuration ([FactoryResetWipeHold]). [exclusive] keeps applies out from the
  * hold to the wipe call (check-in commands already run one at a time).
  *
@@ -46,6 +47,7 @@ class DeviceWipeHandler(
     }
 
     private fun wipe(command: CommandEnvelope): CommandResult {
+        val wasHeld = hold.held
         hold.hold()
         val lift = WipeRestrictions.lift(target, beforeClear = markConfigStale)
         return runCatching {
@@ -56,7 +58,7 @@ class DeviceWipeHandler(
             )
             CommandResults.done(command, notes.joinToString("; ").ifEmpty { null })
         }.getOrElse { error ->
-            hold.release()
+            if (!wasHeld) hold.release()
             val notRestored = WipeRestrictions.restore(target, lift.lifted)
             val notes = listOfNotNull(
                 error.message ?: "wipe failed",

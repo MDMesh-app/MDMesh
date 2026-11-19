@@ -29,17 +29,19 @@ internal object WipeRestrictions {
         data class Error(val cause: Throwable, val notRestored: List<String>) : Lift
     }
 
-    fun lift(target: WipeTarget): Lift {
+    /** [beforeClear] runs once, before the first restriction is cleared (nothing to clear: never). */
+    fun lift(target: WipeTarget, beforeClear: () -> Unit = {}): Lift {
         val lifted = mutableListOf<String>()
-        val stillSet = runCatching { liftEach(target, lifted) }
+        val stillSet = runCatching { liftEach(target, lifted, beforeClear) }
             .getOrElse { return Lift.Error(it, restore(target, lifted)) }
         return if (stillSet == null) Lift.Ready(lifted) else Lift.StillSet(stillSet, restore(target, lifted))
     }
 
     /** Clears ours among [keys] into [lifted]; returns the first key still in force afterwards, if any. */
-    private fun liftEach(target: WipeTarget, lifted: MutableList<String>): String? {
+    private fun liftEach(target: WipeTarget, lifted: MutableList<String>, beforeClear: () -> Unit): String? {
         for (key in keys) {
             if (target.holdsRestriction(key)) {
+                if (lifted.isEmpty()) beforeClear()
                 target.clearRestriction(key)
                 lifted += key
             }

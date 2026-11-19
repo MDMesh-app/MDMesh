@@ -59,6 +59,36 @@ class CommandDispatcherTest {
         assertEquals(CommandStatus.EXPIRED, result.status)
     }
 
+    /** #222: the server can queue a config.apply in the same response as the wipe; it must not run after it. */
+    @Test
+    fun `runs nothing after a wipe is accepted and reports it not run, not failed`() = runTest {
+        var wiping = false
+        val ran = mutableListOf<String>()
+        val wipe = object : CommandHandler {
+            override val type = "device.wipe"
+            override suspend fun handle(command: CommandEnvelope): CommandResult {
+                wiping = true // as DeviceWipeHandler sets the hold just before the wipe call returns
+                return CommandResults.done(command)
+            }
+        }
+        val apply = object : CommandHandler {
+            override val type = "config.apply"
+            override suspend fun handle(command: CommandEnvelope): CommandResult {
+                ran += command.commandId
+                return CommandResults.done(command)
+            }
+        }
+        val dispatcher = CommandDispatcher(listOf(wipe, apply), wiping = { wiping })
+
+        val wiped = dispatcher.dispatch(envelope("device.wipe").copy(commandId = "w"))
+        val skipped = dispatcher.dispatch(envelope("config.apply").copy(commandId = "c"))
+
+        assertEquals(CommandStatus.DONE, wiped.status)
+        assertEquals(CommandStatus.EXPIRED, skipped.status)
+        assertEquals(CommandDispatcher.NOT_RUN_WIPING, skipped.detail)
+        assertEquals(emptyList<String>(), ran)
+    }
+
     @Test
     fun `handler exception becomes failed`() = runTest {
         val throwing = object : CommandHandler {

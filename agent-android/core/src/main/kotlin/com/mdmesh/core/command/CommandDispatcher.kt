@@ -15,10 +15,16 @@ import com.mdmesh.proto.CommandResult
  * Idempotency: the dispatcher dedupes by `commandId` for this process's lifetime, so a command
  * fetched twice (e.g. a push wake and the reconcile floor racing within the delivered->done
  * window) runs its handler exactly once; the duplicate returns `done` without re-running.
+ *
+ * Wiping: once a wipe is accepted ([wiping], the per-boot `FactoryResetWipeHold`), nothing else
+ * runs this boot. A command after it, e.g. a `config.apply` the server queued in the same response,
+ * could put Factory reset: Block back before recovery starts (#222). It is reported `expired`
+ * (not run), not `failed`.
  */
 class CommandDispatcher(
     handlers: List<CommandHandler>,
     private val nowEpochSeconds: () -> Long = { System.currentTimeMillis() / 1000 },
+    private val wiping: () -> Boolean = { false },
 ) {
 
     private val handlersByType: Map<String, CommandHandler> = handlers.associateBy { it.type }
@@ -27,6 +33,9 @@ class CommandDispatcher(
     suspend fun dispatch(command: CommandEnvelope): CommandResult {
         if (isExpired(command)) {
             return CommandResults.expired(command, "command past ttl")
+        }
+        if (wiping()) {
+            return CommandResults.expired(command, NOT_RUN_WIPING)
         }
 
         // Run each command id at most once per process (defence over server delivered-marking).
@@ -48,5 +57,9 @@ class CommandDispatcher(
             java.time.Instant.parse(command.issuedAt).epochSecond
         }.getOrNull() ?: return false
         return nowEpochSeconds() - issuedAtEpoch > ttl
+    }
+
+    companion object {
+        const val NOT_RUN_WIPING = "not run: a factory reset is under way"
     }
 }

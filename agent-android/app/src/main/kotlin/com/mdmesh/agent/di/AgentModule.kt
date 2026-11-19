@@ -222,7 +222,8 @@ object AgentModule {
     @Singleton
     fun provideCommandDispatcher(
         handlers: Set<@JvmSuppressWildcards CommandHandler>,
-    ): CommandDispatcher = CommandDispatcher(handlers.toList())
+        wipeHold: FactoryResetWipeHold,
+    ): CommandDispatcher = CommandDispatcher(handlers.toList(), wiping = { wipeHold.held })
 
     // --- Kiosk (lock-task) ---
 
@@ -371,10 +372,13 @@ object AgentModule {
         handle: DpmHandle,
         applier: ConfigApplier,
         wipeHold: FactoryResetWipeHold,
+        configStore: ConfigStateStore,
     ): CommandHandler =
-        DeviceWipeHandler(DpmWipeTarget(handle, context.getSystemService(UserManager::class.java)), wipeHold) { wipe ->
-            applier.exclusive(wipe)
-        }
+        DeviceWipeHandler(
+            DpmWipeTarget(handle, context.getSystemService(UserManager::class.java)),
+            wipeHold,
+            markConfigStale = configStore::markStale,
+        ) { wipe -> applier.exclusive(wipe) }
 
     @Provides
     @IntoSet

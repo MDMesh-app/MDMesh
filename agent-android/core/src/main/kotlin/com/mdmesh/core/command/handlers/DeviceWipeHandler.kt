@@ -21,11 +21,16 @@ import com.mdmesh.proto.DeviceAction
  * [exclusive] holds off every configuration apply from the lift until the wipe call, so a boot
  * re-apply can't put the block back in between (check-in commands already run one at a time). The
  * wipe call can return before the reboot, so [hold] is set first and keeps every later apply from
- * putting it back for the rest of this process; it is released only if the wipe call throws.
+ * putting it back for the rest of this boot; it is released only if the wipe call throws.
+ *
+ * [markConfigStale] (`ConfigStateStore.markStale`) runs before anything is lifted: if the process
+ * dies before the wipe call, the next check-in reports drift and the server re-sends the
+ * configuration, which puts the block back.
  */
 class DeviceWipeHandler(
     private val target: WipeTarget,
     private val hold: FactoryResetWipeHold = FactoryResetWipeHold(),
+    private val markConfigStale: () -> Unit = {},
     private val exclusive: suspend (suspend () -> CommandResult) -> CommandResult = { it() },
 ) : CommandHandler {
 
@@ -39,7 +44,7 @@ class DeviceWipeHandler(
     }
 
     private fun wipe(command: CommandEnvelope): CommandResult {
-        return when (val lift = WipeRestrictions.lift(target)) {
+        return when (val lift = WipeRestrictions.lift(target, beforeClear = markConfigStale)) {
             is WipeRestrictions.Lift.Ready -> wipeLifted(command, lift.lifted)
             is WipeRestrictions.Lift.StillSet -> failed(
                 command,

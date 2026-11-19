@@ -2,9 +2,11 @@ package com.mdmesh.core.config
 
 import android.content.ComponentName
 import com.mdmesh.core.command.handlers.DeviceWipeHandler
+import com.mdmesh.core.command.handlers.PolicyApplyHandler
 import com.mdmesh.core.command.handlers.WipeTarget
 import com.mdmesh.core.kiosk.KioskApplier
 import com.mdmesh.core.kiosk.KioskHomeSwitch
+import com.mdmesh.core.store.ConfigStateStore
 import com.mdmesh.core.store.InMemoryConfigStateStore
 import com.mdmesh.core.store.InMemoryKioskStateStore
 import com.mdmesh.kiosk.KioskController
@@ -21,6 +23,8 @@ import com.mdmesh.proto.CommandStatus
 import com.mdmesh.proto.ConfigApplyPayload
 import com.mdmesh.proto.ConfigOutcome
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -76,19 +80,22 @@ class WipeHoldsFactoryResetTest {
 
     private val wipeCommand = CommandEnvelope(commandId = "w1", issuedAt = "2026-01-01T00:00:00Z", type = "device.wipe")
 
+    private val store = InMemoryConfigStateStore()
+
+    // As CapabilityRegistry builds it: FactoryResetPolicyFactory wraps every strategy in the hold.
+    private fun toggles(device: Device, hold: FactoryResetWipeHold) = TogglePolicyResolver(
+        linkedMapOf<String, () -> TogglePolicy?>(
+            "factoryReset" to { WipeHeldFactoryResetPolicy(RestrictionPolicy(device), hold) },
+        ),
+    )
+
     private fun applier(device: Device, hold: FactoryResetWipeHold): ConfigApplier {
-        // As CapabilityRegistry builds it: FactoryResetPolicyFactory wraps every strategy in the hold.
-        val toggles = TogglePolicyResolver(
-            linkedMapOf<String, () -> TogglePolicy?>(
-                "factoryReset" to { WipeHeldFactoryResetPolicy(RestrictionPolicy(device), hold) },
-            ),
-        )
         val kiosk = KioskApplier(NoKiosk(), InMemoryKioskStateStore(), NoHome, ComponentName("a", "b")) { false }
-        return ConfigApplier(toggles::current, kiosk, {}, InMemoryConfigStateStore(), setPowerMode = {})
+        return ConfigApplier(toggles(device, hold)::current, kiosk, {}, store, setPowerMode = {})
     }
 
     private fun wipeHandler(device: Device, hold: FactoryResetWipeHold, applier: ConfigApplier) =
-        DeviceWipeHandler(device, hold) { wipe -> applier.exclusive(wipe) }
+        DeviceWipeHandler(device, hold, markConfigStale = store::markStale) { wipe -> applier.exclusive(wipe) }
 
     @Test
     fun `after an accepted wipe neither config apply nor the boot re-apply sets the block`() = runTest {
@@ -106,6 +113,43 @@ class WipeHoldsFactoryResetTest {
         assertEquals(deferred, apply.outcomes["policies.factoryReset"])
         assertEquals(deferred, reapply.outcomes["policies.factoryReset"])
         assertFalse(KEY in device.restrictions)
+    }
+
+    @Test
+    fun `policy apply after an accepted wipe defers the block too`() = runTest {
+        val device = Device(blocked = true)
+        val hold = FactoryResetWipeHold()
+        wipeHandler(device, hold, applier(device, hold)).handle(wipeCommand)
+
+        val result = PolicyApplyHandler(toggles(device, hold)::current).handle(
+            CommandEnvelope(
+                commandId = "p1",
+                issuedAt = "2026-01-01T00:00:00Z",
+                type = "policy.apply",
+                payload = buildJsonObject {
+                    put("policy", "factoryReset")
+                    put("value", false)
+                },
+            ),
+        )
+
+        assertEquals(CommandStatus.DONE, result.status)
+        assertEquals(ConfigOutcome.deferred(WipeHeldFactoryResetPolicy.WIPING), result.detail)
+        assertFalse(KEY in device.restrictions)
+    }
+
+    /** Had the process died before the wipe call, the stale revision makes the server re-send the configuration. */
+    @Test
+    fun `the configuration is reported stale once the block is lifted`() = runTest {
+        val device = Device(blocked = true)
+        val hold = FactoryResetWipeHold()
+        val applier = applier(device, hold)
+        applier.apply(block)
+        assertEquals("r1", store.revision())
+
+        wipeHandler(device, hold, applier).handle(wipeCommand)
+
+        assertEquals(ConfigStateStore.STALE_REVISION, store.revision())
     }
 
     @Test

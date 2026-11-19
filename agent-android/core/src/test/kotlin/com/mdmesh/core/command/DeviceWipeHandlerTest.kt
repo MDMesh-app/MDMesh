@@ -161,6 +161,25 @@ class DeviceWipeHandlerTest {
         assertFalse(UserRestrictions.DISALLOW_SAFE_BOOT in WipeRestrictions.keys)
     }
 
+    /** If the process dies between the lift and the wipe call, the server must re-send the configuration. */
+    @Test
+    fun `marks the configuration stale before lifting the block`() = runTest {
+        val device = FakeDevice(blocked = true)
+
+        DeviceWipeHandler(device, markConfigStale = { device.calls += "stale" }).handle(command)
+
+        assertEquals(listOf("stale", "clear $KEY", "wipe blocked=false"), device.calls)
+    }
+
+    @Test
+    fun `leaves the configuration alone when nothing is lifted`() = runTest {
+        val device = FakeDevice(blocked = false)
+
+        DeviceWipeHandler(device, markConfigStale = { device.calls += "stale" }).handle(command)
+
+        assertEquals(listOf("wipe blocked=false"), device.calls)
+    }
+
     @Test
     fun `is unsupported without Device Owner`() = runTest {
         val device = FakeDevice(deviceOwner = false, blocked = true)

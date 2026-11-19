@@ -1,6 +1,7 @@
 package com.mdmesh.agent.stress
 
 import android.app.ActivityManager
+import android.os.Looper
 import androidx.lifecycle.Lifecycle
 import com.mdmesh.agent.KioskLauncherActivity
 import com.mdmesh.core.store.AgentDataStores
@@ -12,6 +13,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Test
 import org.robolectric.Robolectric
+import org.robolectric.Shadows.shadowOf
+import java.time.Duration
 
 /**
  * #220 on the kiosk HOME: a kiosk store the storage corrupted used to fail every read ("Unable to parse preferences
@@ -88,15 +91,22 @@ class KioskStoreCorruptionTest : KioskHarness() {
         awaitRecoveries("mdm_kiosk from mirror")
     }
 
-    @Test fun unreadableKioskStoreKeepsHomeUpAndOtherwiseIdle() {
+    @Test fun unreadableKioskStoreKeepsHomeUpAndPicksTheKioskUpOnceReadable() {
         storage.unreadable(AgentDataStores.KIOSK)
         startHome()
         settle()
         ctl!!.pause().stop().start().resume()
         settle()
-        // No crash: the collector retries in the background; nothing is applied from a store it can't read.
+        // Nothing is applied from a store that can't be read.
+        assertEquals(ActivityManager.LOCK_TASK_MODE_NONE, lockTaskState())
+        // The storage comes back: the collector's backoff retries (on the main looper's clock) pick the kiosk up, so
+        // HOME went through at least one retry without crashing.
+        storage.readableAgain(single)
+        storage.eventually("the kiosk, after a retry") {
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(1))
+            lockTaskState() == ActivityManager.LOCK_TASK_MODE_LOCKED
+        }
         assertEquals(Lifecycle.State.RESUMED, activity.lifecycle.currentState)
         assertFalse(activity.isFinishing)
-        assertEquals(ActivityManager.LOCK_TASK_MODE_NONE, lockTaskState())
     }
 }

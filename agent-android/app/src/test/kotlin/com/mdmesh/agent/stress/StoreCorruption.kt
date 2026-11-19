@@ -49,6 +49,14 @@ internal class StoreCorruption(private val app: Context) {
         File(dir, "$name.preferences_pb").mkdirs()
     }
 
+    /** The storage error is over: the kiosk store [unreadable] made holds [kiosk] again, as the agent writes it. */
+    fun readableAgain(kiosk: KioskApplyPayload) {
+        val bytes = bytesOf(AgentDataStores.KIOSK) { DataStoreKioskStateStore(it.kiosk).save(kiosk) }
+        val primary = File(dir, "${AgentDataStores.KIOSK}.preferences_pb")
+        check(primary.delete()) { "the unreadable store's directory is empty" }
+        primary.writeBytes(bytes)
+    }
+
     private val recorded = mutableListOf<String?>()
 
     /** The recoveries recorded so far (taken from the events for the next check-in, and kept here). */

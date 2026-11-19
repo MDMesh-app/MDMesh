@@ -282,10 +282,14 @@ class ConfigApplier(
      * the result still reaches the server. Thrown out instead, it ended the document midway, after it was recorded
      * as delivered (#220). Cancellation still propagates.
      */
-    @Suppress("UNCHECKED_CAST") // T is String or String?: a failed outcome is either.
-    private inline fun <T : String?> section(what: String, apply: () -> T): T = runCatching(apply).getOrElse {
-        if (it is CancellationException) throw it
-        ConfigOutcome.failed(it.message ?: "$what threw ${it.javaClass.simpleName}") as T
+    // T is String or String?: a failed outcome is either. Exceptions only: an Error (out of memory) is not a section's.
+    @Suppress("UNCHECKED_CAST", "TooGenericExceptionCaught")
+    private inline fun <T : String?> section(what: String, apply: () -> T): T = try {
+        apply()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        ConfigOutcome.failed(e.message ?: "$what threw ${e.javaClass.simpleName}") as T
     }
 
     /** @return the kiosk outcome, or null when nothing was asserted or exited (the key is then omitted). */

@@ -5,10 +5,12 @@ import androidx.test.core.app.ApplicationProvider
 import com.mdmesh.core.BuildConfig
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.io.File
 
 /**
  * #220 nearby: a lost `mdm_server` file (Android reads a corrupt preferences file as empty) must not send an enrolled
@@ -30,7 +32,10 @@ class ServerConfigStoreRecoveryTest {
 
         assertEquals(provisioned, ServerConfigStore(context).baseUrl())
         assertNotEquals(provisioned, BuildConfig.MDM_BASE_URL.trimEnd('/'))
-        assertEquals("restored on disk", provisioned, primary.getString("base_url", null))
+        // On disk, not only in memory: an empty commit waits for the restore's background write, then the file is read.
+        primary.edit().commit()
+        val onDisk = File(context.dataDir, "shared_prefs/mdm_server.xml").readText()
+        assertTrue("restored on disk: $onDisk", provisioned in onDisk)
     }
 
     @Test

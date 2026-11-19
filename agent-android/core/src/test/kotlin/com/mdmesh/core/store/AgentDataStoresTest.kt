@@ -18,7 +18,9 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -44,6 +46,9 @@ class AgentDataStoresTest {
     /** What lock task's allowlist says (null: empty, or an exit in progress). */
     private var lockedApps: List<String>? = null
 
+    /** How many more times lock task's allowlist reads as unknown (a DPM call that throws). */
+    private var lockedAppsUnknown = 0
+
     private val dir: File get() = tmp.root
 
     private fun file(name: String) = File(dir, "datastore/$name.preferences_pb")
@@ -51,7 +56,9 @@ class AgentDataStoresTest {
     /** A fresh process: new DataStore instances over the same files. */
     private fun open(): AgentDataStores {
         val job = Job().also { jobs += it }
-        return AgentDataStores(::file, config, events, CoroutineScope(Dispatchers.IO + job)) { lockedApps }
+        return AgentDataStores(::file, config, events, CoroutineScope(Dispatchers.IO + job)) {
+            if (lockedAppsUnknown-- > 0) throw IOException("lock task's allowlist couldn't be read") else lockedApps
+        }
     }
 
     /** Ends a "process", so the next [open] reads the files again (DataStore allows one instance per file). */
@@ -80,6 +87,127 @@ class AgentDataStoresTest {
     private class DiesOnWrite(private val inner: DataStore<Preferences>) : DataStore<Preferences> by inner {
         override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences =
             throw IOException("process died")
+    }
+
+    /** Its first [failures] writes fail (the storage, briefly), then it writes. */
+    private class FailsWrites(private val inner: DataStore<Preferences>, private var failures: Int) :
+        DataStore<Preferences> by inner {
+        override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences {
+            if (failures-- > 0) throw IOException("EIO")
+            return inner.updateData(transform)
+        }
+    }
+
+    /** A primary its count says is short: two entries counted, one there. */
+    private fun shortPrimary(name: String) = runBlocking {
+        bare(name).edit {
+            it.clear()
+            it[stringPreferencesKey("server_device_id")] = "dev_short"
+            it[Integrity.ENTRIES] = 2
+            it[Integrity.GENERATION] = 3
+        }
+        close()
+    }
+
+    @Test
+    fun `an unreadable mirror fails the read, and nothing is decided, written or recorded`() {
+        enrolled()
+        shortPrimary("mdm_identity")
+        val before = file("mdm_identity").readBytes()
+        file("mdm_identity_mirror").delete()
+        file("mdm_identity_mirror").mkdirs() // a read of it fails (EIO), it isn't absent
+        val read = runBlocking { runCatching { open().identity.data.first() } }
+        close()
+        assertTrue("the read fails: ${read.exceptionOrNull()}", read.exceptionOrNull() is IOException)
+        assertTrue("nothing persisted", before.contentEquals(file("mdm_identity").readBytes()))
+        assertEquals(emptyList<String>(), events.recovered())
+        assertEquals(null, config.revision())
+    }
+
+    @Test
+    fun `an unreadable mirror fails the read of a corrupt primary too, and the next read recovers`() {
+        enrolled()
+        val mirror = file("mdm_identity_mirror").readBytes()
+        file("mdm_identity").writeBytes(ByteArray(32) { 0xFF.toByte() })
+        file("mdm_identity_mirror").delete()
+        file("mdm_identity_mirror").mkdirs()
+        val read = runBlocking { runCatching { open().identity.data.first() } }
+        close()
+        assertTrue(read.exceptionOrNull() is IOException)
+        assertEquals(emptyList<String>(), events.recovered())
+        file("mdm_identity_mirror").delete()
+        file("mdm_identity_mirror").writeBytes(mirror) // the storage is back
+        assertEquals("dev_1" to "secret-1", identityAfterReopen())
+        assertEquals(listOf("mdm_identity from mirror"), events.recovered())
+    }
+
+    @Test
+    fun `an unknown lock task allowlist decides nothing, and the next read decides on what is there`() {
+        val adHoc = KioskApplyPayload(mode = "single", pinPackage = "com.example.pos")
+        runBlocking { DataStoreKioskStateStore(open().kiosk).save(adHoc) }
+        close()
+        file("mdm_kiosk").writeBytes(ByteArray(0))
+        file("mdm_kiosk_mirror").writeBytes(ByteArray(0))
+        lockedApps = listOf("com.example.pos")
+        lockedAppsUnknown = 1
+        val stores = open()
+        val first = runBlocking { runCatching { DataStoreKioskStateStore(stores.kiosk).load() } }
+        assertTrue("unknown: the read fails", first.exceptionOrNull() is IOException)
+        assertEquals(emptyList<String>(), events.recovered())
+        assertEquals(AgentDataStores.lockedKiosk(listOf("com.example.pos")),
+            runBlocking { DataStoreKioskStateStore(stores.kiosk).load() })
+        close()
+        assertEquals(listOf("mdm_kiosk from lock task"), events.recovered())
+    }
+
+    @Test
+    fun `a never-kiosk device with an unknown allowlist ends with no kiosk once it is known, not a stranded one`() {
+        runBlocking { DataStoreKioskStateStore(open().kiosk).save(null) }
+        close()
+        file("mdm_kiosk").writeBytes(ByteArray(0))
+        file("mdm_kiosk_mirror").writeBytes(ByteArray(0))
+        lockedApps = null // known: nothing allowed
+        lockedAppsUnknown = 1
+        val stores = open()
+        assertTrue(runBlocking { runCatching { DataStoreKioskStateStore(stores.kiosk).load() } }.isFailure)
+        assertNull(runBlocking { DataStoreKioskStateStore(stores.kiosk).load() })
+        close()
+        assertEquals(listOf("mdm_kiosk from empty"), events.recovered())
+    }
+
+    @Test
+    fun `when the primary can't be written after a commit, an open collector sees it repaired`() = runBlocking {
+        enrolled()
+        val mirror = bare("mdm_identity_mirror")
+        // Both tries of the write fail; the repair's write goes through.
+        val store = MirroredDataStore(FailsWrites(bare("mdm_identity"), 2), mirror, "mdm_identity",
+            restore = { mirror.data.first() })
+        val seen = mutableListOf<String?>()
+        val collector = launch(Dispatchers.Default) {
+            store.data.collect { v -> synchronized(seen) { seen += v[newSecret] } }
+        }
+        store.edit { it[newSecret] = "secret-2" }
+        withTimeout(10_000) { while ("secret-2" !in synchronized(seen) { seen.toList() }) delay(10) }
+        collector.cancelAndJoin()
+        close()
+        assertEquals("dev_1" to "secret-2", identityAfterReopen())
+    }
+
+    @Test
+    fun `a repair whose write keeps failing records nothing until it lands`() = runBlocking {
+        enrolled()
+        shortPrimary("mdm_identity")
+        val mirror = bare("mdm_identity_mirror")
+        var settled = 0
+        var restores = 0
+        val primary = FailsWrites(bare("mdm_identity"), 3)
+        val store = MirroredDataStore(primary, mirror, "mdm_identity",
+            restore = { restores++; mirror.data.first() }, settled = { settled++ })
+        repeat(3) { assertTrue(runCatching { store.data.first() }.isFailure) }
+        assertEquals("not recorded while the repair fails", 0, settled)
+        assertEquals("dev_1", store.data.first()[stringPreferencesKey("server_device_id")])
+        assertTrue("recorded once it lands", settled > 0)
+        close()
     }
 
     private val newSecret = stringPreferencesKey("device_secret")
@@ -390,9 +518,8 @@ class AgentDataStoresTest {
             AgentDataStores.lockedAppsOf(apps, own) { exit(attempts = 1) })
         assertEquals("a journal that can't be read is no exit", listOf("com.example.pos"),
             AgentDataStores.lockedAppsOf(apps, own) { throw IllegalStateException("unreadable") })
-        assertEquals("an allowlist that can't be read fails closed", emptyList<String>(),
-            AgentDataStores.lockedAppsOf(null, own) { null })
-        assertNull(AgentDataStores.lockedAppsOf(null, own) { exit() })
+        assertTrue("an allowlist that can't be read is unknown, not a decision",
+            runCatching { AgentDataStores.lockedAppsOf(null, own) { null } }.exceptionOrNull() is IOException)
     }
 
     @Test

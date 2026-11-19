@@ -96,13 +96,15 @@ class LockTaskKioskController(
         return am.lockTaskModeState == ActivityManager.LOCK_TASK_MODE_LOCKED
     }
 
-    override fun allowedPackages(): List<String>? = when {
-        !dpm.isDeviceOwnerApp(admin.packageName) -> emptyList()
-        // getLockTaskPackages() was added in API 26 (O); on 24/25 the method doesn't exist.
-        Build.VERSION.SDK_INT < Build.VERSION_CODES.O -> emptyList()
-        // A failed read is unknown, never "nothing allowed": a kiosk recovery then fails closed.
-        else -> runCatching { dpm.getLockTaskPackages(admin).toList() }.getOrNull()
-    }
+    // Any failure, the Device Owner check's included, is unknown (null), never "nothing allowed".
+    override fun allowedPackages(): List<String>? = runCatching {
+        when {
+            !dpm.isDeviceOwnerApp(admin.packageName) -> emptyList()
+            // getLockTaskPackages() was added in API 26 (O); on 24/25 the method doesn't exist.
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.O -> emptyList()
+            else -> dpm.getLockTaskPackages(admin).toList()
+        }
+    }.getOrNull()
 
     /** Run [block]; convert success to [KioskResult.Ok] and any throwable to [KioskResult.Failed]. */
     private inline fun runGuarded(block: () -> Unit): KioskResult =

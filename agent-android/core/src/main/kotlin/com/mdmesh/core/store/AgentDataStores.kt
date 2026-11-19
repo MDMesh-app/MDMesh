@@ -29,6 +29,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -37,6 +40,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 import java.io.FileOutputStream
 import java.io.IOException
 import javax.inject.Inject
@@ -66,7 +70,7 @@ class AgentDataStores(
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob()),
     /**
      * The apps the device is locked to now, when it was left in a kiosk: lock task's allowlist, which only a kiosk
-     * sets and every finished exit clears ([lockedAppsOf]).
+     * sets and every finished exit clears ([lockedAppsOf]). Throws when that can't be known now.
      */
     private val lockedApps: () -> List<String>? = { null },
 ) {
@@ -84,6 +88,9 @@ class AgentDataStores(
         },
     )
 
+    /** Recoveries decided but not yet in their primary: recorded once it holds them ([settled]). */
+    private val pending = ConcurrentHashMap<String, String>()
+
     // Recovery rule per store, applied to a damaged primary (the first that has something wins):
 
     /** The server-issued device id and secret ([DeviceIdStore]). Recovery: mirror, else empty (re-enrollment). */
@@ -99,7 +106,8 @@ class AgentDataStores(
      * apps that only the server can end, else no kiosk. Fail closed: a power loss that takes both files never unpins a
      * kiosk device. The re-sent configuration settles the rest. Lock task's allowlist can only be read on API 26+
      * ([KioskController.allowedPackages]): below it that step finds nothing, and the configured kiosk is the last
-     * evidence.
+     * evidence. When the evidence can't be read now (the allowlist unknown, the configuration unreadable), nothing is
+     * decided: the read fails and is tried again ([restore]).
      */
     val kiosk: MirroredDataStore = mirrored(KIOSK) {
         configStore.configuredKiosk()?.let { DataStoreKioskStateStore.prefsOf(it) to FROM_CONFIGURATION }
@@ -137,49 +145,50 @@ class AgentDataStores(
         }
         val restore: suspend () -> Preferences = { restore(name, mirror, fallback) }
         val sealMark = file(name).resolveSibling(name + SEALED_SUFFIX)
-        store = MirroredDataStore(open(name, restore), mirror, name, restore, sealMark)
+        store = MirroredDataStore(open(name, restore), mirror, name, restore, sealMark) { settled(name) }
         return store
     }
 
     /**
-     * What a damaged primary [name] is replaced by, recorded. The mirror's copy as it is; a fallback is sealed one
-     * generation above anything the mirror holds and written to the mirror too, so the two match and an older mirror
-     * can never later be taken for the newer state.
+     * What a damaged primary [name] is replaced by. The mirror's copy as it is; a fallback only when the mirror was
+     * read and holds nothing usable (absent, short, uncounted), sealed one generation above anything the mirror holds
+     * and written to the mirror too, so the two match and an older mirror can never later be taken for the newer
+     * state. The recovery is recorded once the primary holds it ([settled]).
+     *
+     * @throws IOException the mirror can't be read, or the fallback's evidence can't be known now: nothing is
+     *   decided or written, the read fails and is tried again (a guess here would be kept for good)
      */
     private suspend fun restore(
         name: String,
         mirror: DataStore<Preferences>,
         fallback: () -> Pair<Preferences, String>?,
     ): Preferences {
-        val mirrored = readMirror(mirror, name)
-        if (mirrored != null && Integrity.isUsable(mirrored)) {
-            recovered(name, FROM_MIRROR)
-            return mirrored
+        val mirrored = mirror.data.first()
+        if (Integrity.isUsable(mirrored)) return mirrored.also { pending[name] = FROM_MIRROR }
+        val found = runCatching(fallback).getOrElse {
+            throw if (it is Exception && it !is IOException) IOException("$name: evidence unreadable now", it) else it
         }
-        val (prefs, source) = runCatching(fallback).onFailure { warn("$name fallback failed", it) }.getOrNull()
-            ?: (emptyPreferences() to FROM_EMPTY)
-        val restored = Integrity.sealed(prefs, (mirrored?.let(Integrity::generationOf) ?: 0L) + 1)
+        val (prefs, source) = found ?: (emptyPreferences() to FROM_EMPTY)
+        val restored = Integrity.sealed(prefs, Integrity.generationOf(mirrored) + 1)
         try {
             mirror.updateData { restored }
         } catch (e: IOException) {
             warn("$name mirror not written after recovering from $source", e)
         }
-        recovered(name, source)
+        pending[name] = source
         return restored
     }
 
-    /** The mirror's contents, whatever they are; null when it can't be read. */
-    private suspend fun readMirror(mirror: DataStore<Preferences>, name: String): Preferences? = try {
-        mirror.data.first()
-    } catch (e: IOException) {
-        warn("$name mirror unreadable while recovering", e)
-        null
+    /** [name]'s primary holds what it was restored to (if anything): record that recovery now, once. */
+    private fun settled(name: String) {
+        pending.remove(name)?.let { recovered(name, it) }
     }
 
     private fun open(name: String, recover: suspend () -> Preferences): DataStore<Preferences> =
         PreferenceDataStoreFactory.create(
             // DataStore's handler isn't suspending, so the mirror's read (another file, another DataStore) blocks
-            // the reading thread for that one small read, once per corruption.
+            // the reading thread for that one small read, once per corruption. An IOException from it fails the read,
+            // which is tried again; DataStore serializes its own reads, so two handlers for one file never overlap.
             corruptionHandler = ReplaceFileCorruptionHandler { e ->
                 warn("$name is corrupt, recovering", e)
                 runBlocking { recover() }
@@ -224,16 +233,18 @@ class AgentDataStores(
          * The apps of [allowlist] besides the agent's own, when the device was left in a kiosk; null when there are
          * none, or when an authorised exit was under way ([pending] untried, not failed): the device was on its way
          * out. An exit that failed or was already tried settles back in kiosk ([ExitJournal]), so it doesn't count,
-         * and neither does a journal that can't be read. An allowlist that couldn't be read (null) fails closed: the
-         * agent's own launcher, with no apps, until the server says otherwise.
+         * and neither does a journal that can't be read.
+         *
+         * @throws IOException the allowlist couldn't be read ([KioskController.allowedPackages] null): unknown, so
+         *   the recovery is tried again rather than deciding on a guess
          */
         internal fun lockedAppsOf(
             allowlist: List<String>?,
             ownPackage: String,
             pending: () -> ExitJournal.Pending?,
         ): List<String>? {
-            val apps = allowlist?.minus(ownPackage) ?: emptyList()
-            if (allowlist != null && apps.isEmpty()) return null
+            val apps = (allowlist ?: throw IOException("lock task's allowlist couldn't be read")) - ownPackage
+            if (apps.isEmpty()) return null
             val journal = runCatching(pending).onFailure { warn("exit journal unreadable; taken as no exit", it) }
             val exiting = journal.getOrNull()?.let { !it.failed && it.attempts == 0 } == true
             return apps.takeUnless { exiting }
@@ -292,10 +303,13 @@ internal object Integrity {
  * mirror is never behind a write that returned, and a damaged primary is restored ([AgentDataStores]) to the newest
  * write that did.
  *
- * Writes, and every restore, run one at a time under one lock. A reader that sees a primary damaged (short, or a
- * generation behind the mirror) confirms it under that lock before restoring, so a write in progress (mirror written,
- * primary not yet) is never taken for damage. A mirror exactly one generation ahead of an intact primary (a write
- * whose primary write failed, was cut off, or whose rename the storage lost) is the newer state.
+ * Writes, and restores of a primary that parses, run one at a time under one lock; a primary that can't be parsed is
+ * restored by DataStore's corruption handler, which DataStore runs inside its own (serialized) read. A reader that
+ * sees a primary damaged (short, or a generation behind the mirror) confirms it under the lock before restoring, so a
+ * write in progress (mirror written, primary not yet) is never taken for damage. When the primary can't be written
+ * after a commit, the collectors already open are told ([repairs]), so they check again and repair it. A mirror
+ * exactly one generation ahead of an intact primary (a write whose primary write failed, was cut off, or whose rename
+ * the storage lost) is the newer state.
  *
  * A primary that reads short is damaged, and so is one without a count once this agent has written the store
  * ([sealMark], a file kept apart from both, written and synced with its directory after the first counted write), or
@@ -310,15 +324,20 @@ class MirroredDataStore internal constructor(
     private val restore: suspend () -> Preferences,
     /** Null for a store opened bare (tests with faults). */
     private val sealMark: File? = null,
+    /** The primary holds what it reads now: a restore that led to it is recorded ([AgentDataStores]). */
+    private val settled: () -> Unit = {},
 ) : DataStore<Preferences> {
     private val writeLock = Mutex()
 
     /** Once true, stays true: the mark is never removed. */
     @Volatile private var sealed = false
 
+    /** Bumped when a committed write's primary failed: open collectors look again and repair it. */
+    private val repairs = MutableStateFlow(0)
+
     /** A damaged-looking value is confirmed, and restored, under the write lock ([intactLocked]). */
-    override val data: Flow<Preferences> =
-        primary.data.map { if (damaged(it)) writeLock.withLock { intactLocked() } else it }
+    override val data: Flow<Preferences> = primary.data.combine(repairs) { p, _ -> p }
+        .map { if (damaged(it)) writeLock.withLock { intactLocked() } else it.also { settled() } }
 
     override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences =
         writeLock.withLock {
@@ -340,7 +359,9 @@ class MirroredDataStore internal constructor(
     /** The primary as it should be, restored when damaged; only under [writeLock] (a Mutex isn't re-entrant). */
     private suspend fun intactLocked(): Preferences {
         val current = primary.data.first()
-        return if (damaged(current)) primary.updateData { if (damaged(it)) restore() else it } else current
+        val intact = if (damaged(current)) primary.updateData { if (damaged(it)) restore() else it } else current
+        settled()
+        return intact
     }
 
     /** After the mirror commit: tried twice; a failure is left to the next read, which restores from the mirror. */
@@ -353,6 +374,7 @@ class MirroredDataStore internal constructor(
                 warn("$name primary not written (try ${attempt + 1}); the mirror holds the write", e)
             }
         }
+        repairs.update { it + 1 }
     }
 
     private suspend fun wasSealed(): Boolean =

@@ -21,7 +21,7 @@ import com.mdmesh.policy.PolicyOutcome
  * the first read of [held] or [remainingMs] (or [expireIfDue]) after the deadline, whichever comes
  * first, and only once: [hold] calls [onHold], which schedules such a read at the deadline
  * (`WipeHoldExpiryWorker`), so the hold ends with no command, apply or server; each check-in, command
- * and apply reads it too. Then [onExpired] re-applies the saved configuration on the device (the
+ * and apply reads it too. Then [onExpired] re-applies the newest delivered configuration on the device (the
  * agent enqueues `ConfigReapplyWorker`), which puts the block back. One instance per process (Hilt
  * singleton).
  *

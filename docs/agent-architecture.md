@@ -45,8 +45,9 @@ configuration.
   polling.
 - The agent applies each key through the existing strategies (kiosk via the same `KioskApplier` as `kiosk.enter`)
   and reports a per-key outcome: `applied`, `unsupported`, `failed: <reason>` or `deferred: <reason>`.
-- It saves the new revision only when nothing failed, and re-applies the saved document after a boot or self-update,
-  so a reboot can't silently undo it.
+- It saves the new revision only when nothing failed. After a boot or self-update it re-applies the newest document
+  the server delivered, saved or not (one with a failed section may still have changed the device), so a reboot can't
+  silently undo it or bring back an older setting.
 - Only agents that advertise `configApply` get the command. Older ones show "Agent too old" in the console.
 - When a device reports a new agent version, the server re-sends `config.apply` until one queued for that version
   comes back done (`device_state.configAgentVersion`), so stale `unsupported` results refresh. A re-sent document

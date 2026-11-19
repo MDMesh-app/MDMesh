@@ -434,7 +434,7 @@ class ConfigApplierTest {
         val resent = a.apply(b)
         assertTrue(resent.outcomes["policies.wifiRadio"]!!.startsWith("deferred: no connection to the server"))
         assertEquals(true, radio.on)
-        a.reapplyPersisted() // boot: replays A, which does not end the hold either
+        a.reapplyPersisted() // boot: replays B, the newest delivered, which does not end the hold either
         assertTrue(a.apply(b).outcomes["policies.wifiRadio"]!!.startsWith("deferred"))
         assertEquals(true, radio.on)
 

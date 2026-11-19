@@ -14,7 +14,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 
 /**
  * Last desired-state document the agent fully applied (see ConfigApplier). Its revision is reported in every
- * check-in so the server can tell drift from convergence; the document itself is re-applied after boot.
+ * check-in so the server can tell drift from convergence. After boot the newest [delivered] document is re-applied,
+ * this one only on a store from before that was kept.
  * Synchronous (SharedPreferences) on purpose: the state snapshot is built on a non-suspending path.
  */
 interface ConfigStateStore {

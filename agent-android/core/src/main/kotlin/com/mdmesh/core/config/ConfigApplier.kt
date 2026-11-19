@@ -141,7 +141,7 @@ class ConfigApplier(
      * @param toggles the supported toggle policies, read once for this document.
      * @param previous the documents whose keys this one may stop managing.
      * @param unreleased outcome keys whose release (or kiosk exit) failed before: released again.
-     * @param persist false for the boot re-apply: the document is already stored (or stale until re-sent).
+     * @param persist false for the boot re-apply: never saved there, so the server re-sends what isn't saved yet.
      */
     private suspend fun applyLocked(
         doc: ConfigApplyPayload,
@@ -301,11 +301,18 @@ class ConfigApplier(
     }
 
     /**
-     * Re-run the last fully-applied document (after boot / self-update). Null when nothing is persisted. Not saved
-     * again: a stale document ([selfHealWifiRadio]) stays stale until the server re-sends it.
+     * Re-run the newest document the server delivered (after boot / self-update, or when a wipe hold ends), or the
+     * last saved one on a store from before delivered documents were kept. Null when there is none.
+     *
+     * The delivered one, not the saved one: a document with a failed section is never saved but may have changed the
+     * device, e.g. set Factory reset: Block over a saved Allow (PR #227). Replaying the saved one would put the older
+     * setting back. Not saved here, so a failed section is never reported applied: the revision stays as it was
+     * (stale, or the saved one's) until the server re-sends the document.
      */
     suspend fun reapplyPersisted(): ConfigApplyResult? = mutex.withLock {
-        store.load()?.let { applyLocked(it, toggles(), listOf(it), persist = false) }
+        val saved = store.load()
+        val doc = store.delivered ?: saved ?: return@withLock null
+        applyLocked(doc, toggles(), listOfNotNull(saved, doc).distinct(), persist = false)
     }
 
     /**

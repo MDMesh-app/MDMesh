@@ -14,7 +14,7 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 
 /**
- * After boot / self-update, re-assert the last fully-applied desired-state document BEFORE the first check-in,
+ * After boot / self-update, re-assert the newest delivered desired-state document BEFORE the first check-in,
  * so restrictions and kiosk are back even if the network is not. No network constraint; runs once.
  * First drops a stale kiosk volume lock (it survives reboots and mutes the device) when no kiosk asks for it;
  * [KioskApplier] serializes that with kiosk enter/exit, so a concurrent config.apply or kiosk.enter keeps its lock.

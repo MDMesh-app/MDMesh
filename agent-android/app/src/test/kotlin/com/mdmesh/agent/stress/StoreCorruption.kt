@@ -61,7 +61,10 @@ internal class StoreCorruption(private val app: Context) {
 
     /** The recoveries recorded so far (taken from the events for the next check-in, and kept here). */
     fun recoveries(): List<String?> {
-        recorded += EventLog(app).drain().filter { it.type == EventType.STORAGE_RECOVERED }.map { it.detail }
+        // Taken as a check-in takes them: a drained batch stays in flight (and comes again) until delivered.
+        val log = EventLog(app)
+        recorded += log.drain().filter { it.type == EventType.STORAGE_RECOVERED }.map { it.detail }
+        log.delivered()
         return recorded.toList()
     }
 

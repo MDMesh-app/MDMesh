@@ -68,6 +68,8 @@ class KioskStoreCorruptionTest : KioskHarness() {
     @Test fun corruptKioskStoreWithNothingToRecoverIsIdleNotACrash() {
         storage.corruptKiosk(mirror = null)
         startHome()
+        // Recorded only once a read delivered the restored value (the launcher's collector is the only reader here):
+        // the idle below is the delivered "no kiosk", not a launcher that never heard from the store.
         awaitRecoveries("mdm_kiosk from empty")
         settle()
         assertEquals(ActivityManager.LOCK_TASK_MODE_NONE, lockTaskState())

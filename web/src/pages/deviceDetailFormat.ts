@@ -211,7 +211,7 @@ export function commandStatus(status: string): { kind: StatusKind; label?: strin
 
 export function eventTone(type: string): StatusTone {
   if (type === 'kioskPinLockout') return 'alert';
-  if (type === 'lowBattery' || type === 'kioskCrashLoop') return 'warn';
+  if (type === 'lowBattery' || type === 'kioskCrashLoop' || type === 'eventsDropped') return 'warn';
   if (type === 'enrolled' || type === 'appInstalled') return 'ok';
   return 'idle';
 }

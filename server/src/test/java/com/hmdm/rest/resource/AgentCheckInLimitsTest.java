@@ -16,6 +16,7 @@ import com.hmdm.rest.json.agent.AgentCapabilities;
 import com.hmdm.rest.json.agent.AgentCheckInRequest;
 import com.hmdm.rest.json.agent.AgentCommandResult;
 import com.hmdm.rest.json.agent.AgentDeviceState;
+import com.hmdm.rest.json.agent.AgentTelemetryEvent;
 import com.hmdm.rest.resource.support.AppReconciler;
 import com.hmdm.rest.resource.support.ConfigAppInstaller;
 import com.hmdm.rest.resource.support.ConfigReconciler;
@@ -24,10 +25,13 @@ import com.hmdm.rest.resource.support.KioskLockoutAlert;
 import com.hmdm.rest.resource.support.RolloutRequeuer;
 import com.hmdm.testsupport.Fakes;
 import com.hmdm.util.CryptoUtil;
+import org.apache.ibatis.exceptions.PersistenceException;
 import org.junit.Before;
 import org.junit.Test;
 
+import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
@@ -58,6 +62,12 @@ public class AgentCheckInLimitsTest {
 
     private static final class FakeCommandDAO extends AgentCommandDAO {
         final List<String> details = new ArrayList<>();
+        final List<String> events = new ArrayList<>();
+        final List<String> eventDetails = new ArrayList<>();
+        final List<String> hardwareIds = new ArrayList<>();
+        /** An event of this type is refused by the database, with {@link #rejectedState}. */
+        String rejectedType;
+        String rejectedState = "22001";
         final List<String> statuses = new ArrayList<>();
         final List<String> storedCaps = new ArrayList<>();
         final List<DeviceLocation> locations = new ArrayList<>();
@@ -81,6 +91,17 @@ public class AgentCheckInLimitsTest {
         @Override public void upsertState(DeviceState s) { telemetry = s.getTelemetry(); }
         @Override public void updateAndroidVersion(String n, String v) { }
         @Override public void recordLocation(DeviceLocation l) { locations.add(l); }
+        @Override public void insertEvent(String n, String type, Long ts, String detail) {
+            if (type.equals(rejectedType)) {
+                throw new PersistenceException(new SQLException("refused", rejectedState));
+            }
+            events.add(type);
+            eventDetails.add(detail);
+        }
+        @Override public void recordKioskReturn(String n, Long ts, String detail) {
+            insertEvent(n, "kioskReturn", ts, detail);
+        }
+        @Override public void updateHardwareId(String n, String id) { hardwareIds.add(id); }
     }
 
     private static final class NoopReconciler extends ConfigReconciler {
@@ -124,6 +145,24 @@ public class AgentCheckInLimitsTest {
 
     private static int accepted(Response r) {
         return ((com.hmdm.rest.json.agent.AgentCheckInResponse) r.getData()).getResultsAccepted();
+    }
+
+    private static int eventsAccepted(Response r) {
+        return ((com.hmdm.rest.json.agent.AgentCheckInResponse) r.getData()).getEventsAccepted();
+    }
+
+    private static AgentTelemetryEvent event(String type, String detail) {
+        AgentTelemetryEvent e = new AgentTelemetryEvent();
+        e.setType(type);
+        e.setTs(1L);
+        e.setDetail(detail);
+        return e;
+    }
+
+    private Response checkinEvents(AgentTelemetryEvent... events) {
+        AgentCheckInRequest req = new AgentCheckInRequest();
+        req.setEvents(Arrays.asList(events));
+        return checkin(req);
     }
 
     @Test
@@ -173,6 +212,163 @@ public class AgentCheckInLimitsTest {
 
         assertEquals(AgentResource.MAX_RESULTS_PER_CHECKIN, accepted(checkin(req)));
         assertEquals(0, commands.details.size());
+    }
+
+    private static List<AgentTelemetryEvent> events(int count) {
+        List<AgentTelemetryEvent> events = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            AgentTelemetryEvent e = new AgentTelemetryEvent();
+            e.setType("e" + i);
+            e.setTs((long) i);
+            events.add(e);
+        }
+        return events;
+    }
+
+    @Test
+    public void storesAWholeOfflineBufferFromAnOlderAgent() {
+        // Agents before 0.5.2 send their whole buffer, up to 500 events, in one check-in and count all of it delivered.
+        AgentCheckInRequest req = new AgentCheckInRequest();
+        req.setEvents(events(500));
+
+        assertEquals(Response.ResponseStatus.OK, checkin(req).getStatus());
+        assertEquals(500, commands.events.size());
+        assertEquals("e499", commands.events.get(499));
+    }
+
+    @Test
+    public void capsTheEventsStoredPerCheckIn() {
+        AgentCheckInRequest req = new AgentCheckInRequest();
+        req.setEvents(events(10_000));
+
+        Response r = checkin(req);
+        assertEquals(Response.ResponseStatus.OK, r.getStatus());
+        assertEquals(AgentResource.MAX_EVENTS_PER_CHECKIN, commands.events.size());
+        // The agent keeps (and resends) everything past this count instead of losing it.
+        assertEquals(AgentResource.MAX_EVENTS_PER_CHECKIN, eventsAccepted(r));
+    }
+
+    @Test
+    public void countsSkippedEventsAsAcceptedSoTheAgentDropsThem() {
+        String tooLong = new String(new char[65]).replace('\0', 'a');
+        Response r = checkinEvents(null, event(null, "x"), event(tooLong, null), event("has space", null),
+                event("", null), event("boot", null));
+        assertEquals(Response.ResponseStatus.OK, r.getStatus());
+        assertEquals(Collections.singletonList("boot"), commands.events);
+        assertEquals(6, eventsAccepted(r));
+    }
+
+    @Test
+    public void skippedEventsDoNotUseUpTheCap() {
+        List<AgentTelemetryEvent> events = events(AgentResource.MAX_EVENTS_PER_CHECKIN + 1);
+        events.add(0, event("not valid!", null));
+        AgentCheckInRequest req = new AgentCheckInRequest();
+        req.setEvents(events);
+
+        Response r = checkin(req);
+        assertEquals(AgentResource.MAX_EVENTS_PER_CHECKIN, commands.events.size());
+        assertEquals(AgentResource.MAX_EVENTS_PER_CHECKIN + 1, eventsAccepted(r));
+    }
+
+    @Test
+    public void acceptsAnEventTypeOf64SafeCharacters() {
+        String longest = "a.B_c-9" + new String(new char[57]).replace('\0', 'x');
+        assertEquals(64, longest.length());
+        checkinEvents(event(longest, null));
+        assertEquals(Collections.singletonList(longest), commands.events);
+    }
+
+    @Test
+    public void reportsZeroEventsAcceptedWithoutEvents() {
+        assertEquals(0, eventsAccepted(checkin(new AgentCheckInRequest())));
+    }
+
+    @Test
+    public void stripsNulFromAnEventDetail() {
+        // PostgreSQL refuses a NUL in text: the insert would fail the check-in, and the agent would resend it forever.
+        checkinEvents(event("boot", "a\0b\0"), event("kioskReturn", "\0x"));
+        assertEquals(Arrays.asList("ab", "x"), commands.eventDetails);
+    }
+
+    @Test
+    public void stripsNulAfterCuttingAnOverlongDetail() {
+        StringBuilder detail = new StringBuilder();
+        while (detail.length() < 4000) detail.append('a');
+        detail.append("\0tail");
+        checkinEvents(event("boot", "\0" + detail));
+        assertEquals(3999, commands.eventDetails.get(0).length());
+    }
+
+    @Test
+    public void anEventTheDatabaseRefusesCostsOnlyThatEvent() {
+        commands.rejectedType = "kioskReturn";
+        Response r = checkinEvents(event("boot", null), event("kioskReturn", "x"), event("lowBattery", "12%"));
+        assertEquals(Response.ResponseStatus.OK, r.getStatus());
+        assertEquals(Arrays.asList("boot", "lowBattery"), commands.events);
+        assertEquals("the agent must not resend it forever", 3, eventsAccepted(r));
+    }
+
+    @Test
+    public void anEventThatBreaksAConstraintIsAlsoSkipped() {
+        commands.rejectedType = "boot";
+        commands.rejectedState = "23505";
+        Response r = checkinEvents(event("boot", null), event("lowBattery", "12%"));
+        assertEquals(Collections.singletonList("lowBattery"), commands.events);
+        assertEquals(2, eventsAccepted(r));
+    }
+
+    @Test
+    public void aLostDatabaseStopsTheEventsThereSoTheAgentResendsTheRest() {
+        // Not the event's fault: counted as consumed, the agent would delete it and every event after it.
+        commands.rejectedType = "kioskReturn";
+        commands.rejectedState = "08006";
+        Response r = checkinEvents(event("boot", null), event("kioskReturn", "x"), event("lowBattery", "12%"));
+        assertEquals(Response.ResponseStatus.OK, r.getStatus());
+        assertEquals(Collections.singletonList("boot"), commands.events);
+        assertEquals(1, eventsAccepted(r));
+    }
+
+    @Test
+    public void stripsNulFromAResultDetail() {
+        List<AgentCommandResult> results = new ArrayList<>();
+        results.add(result(1, "out\0put"));
+        AgentCheckInRequest req = new AgentCheckInRequest();
+        req.setResults(results);
+
+        checkin(req);
+        assertEquals(Collections.singletonList("output"), commands.details);
+    }
+
+    @Test
+    public void logsADeviceSentTypeOnOneLineWithoutSplittingACharacter() {
+        assertEquals("a?b?c?d", AgentResource.loggable("a\nb\u2028c\u2029d", 40));
+        String emoji = "\uD83D\uDE00";
+        assertEquals("ab" + emoji + "…", AgentResource.loggable("ab" + emoji + "cd", 3));
+        assertEquals("ab" + emoji, AgentResource.loggable("ab" + emoji, 3));
+    }
+
+    @Test
+    public void ignoresAHardwareIdWithControlCharacters() {
+        for (String id : Arrays.asList("hw\0x", "hw\u0001x", "hw\nx", "hw\u007fx")) {
+            AgentCheckInRequest req = new AgentCheckInRequest();
+            req.setHardwareId(id);
+            checkin(req);
+        }
+        assertTrue(commands.hardwareIds.toString(), commands.hardwareIds.isEmpty());
+    }
+
+    @Test
+    public void ignoresAHardwareIdLongerThanItsColumn() {
+        String max = new String(new char[128]).replace('\0', 'h');
+        AgentCheckInRequest req = new AgentCheckInRequest();
+        req.setHardwareId(max + "h");
+        checkin(req);
+        assertTrue(commands.hardwareIds.isEmpty());
+
+        req = new AgentCheckInRequest();
+        req.setHardwareId(" " + max + " ");
+        checkin(req);
+        assertEquals(Collections.singletonList(max), commands.hardwareIds);
     }
 
     @Test

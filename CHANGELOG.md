@@ -20,10 +20,17 @@ Fixes
   from its page.
 - Agent: app installs and agent updates no longer fail with `apk fetch failed: timeout` on slow Wi-Fi. A download now
   waits up to a minute for data, not 10 seconds, and has no limit on its total time (#174).
+- Events: a device that was offline for a while no longer loses all but 100 of the events it kept. The server update
+  alone fixes it for devices on older agents. When an agent's buffer of 500 fills, the device's events say how many
+  older ones it dropped.
 - Native: `sudo ./setup.sh --update --native` over an install asks nothing: it keeps the data, base URL and port, and
   says `native update, <from> → <to>`. The update from 0.5.0 still asks once (add `-y` to skip).
 - `./setup.sh --update` no longer refuses a clone on a release branch (`release/vX.Y.Z`) as "ahead" of that release
   once it is squash-merged: a clone on an older release moves on; only one newer than the release needs `--allow-downgrade`.
+
+Under the hood
+- Agent protocol 1.12 (additive): the check-in response's `eventsAccepted`, and the `eventsDropped` event
+  ([VERSIONING](https://github.com/MDMesh-app/MDMesh/blob/main/proto/VERSIONING.md)).
 
 ## v0.5.0 — 2026-11-17
 

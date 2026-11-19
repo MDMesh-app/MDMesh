@@ -41,6 +41,7 @@ import com.hmdm.rest.json.agent.AgentCommandResult;
 import com.hmdm.rest.json.agent.AgentEnrollRequest;
 import com.hmdm.rest.json.agent.AgentEnrollResponse;
 import com.hmdm.rest.json.agent.AgentProtocol;
+import com.hmdm.rest.json.agent.AgentTelemetryEvent;
 import com.hmdm.util.AgentCapabilityTokens;
 import com.hmdm.util.CryptoUtil;
 import com.hmdm.util.DesiredConfigBuilder;
@@ -48,6 +49,7 @@ import com.hmdm.util.InstallIntegrity;
 import com.hmdm.util.RolloutProgress;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
+import org.apache.ibatis.exceptions.PersistenceException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -65,6 +67,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 /**
  * <p>Public-facing resource for the from-scratch Android agent v1 protocol. Mirrors
@@ -94,10 +97,17 @@ public class AgentResource {
 
     // Ingestion caps: an authenticated device is still untrusted input. These bound what a single
     // check-in (potentially every 5s in foreground mode) can write into the database.
-    private static final int MAX_EVENTS_PER_CHECKIN = 100;
+    // Past this count the server stops and reports how many events it took (eventsAccepted, protocol 1.12), so the
+    // agent resends the rest. Older agents ignore that and count their whole batch delivered: they send up to 500,
+    // their whole buffer, so this cap takes all of it.
+    static final int MAX_EVENTS_PER_CHECKIN = 500;
     private static final int MAX_EVENT_DETAIL_CHARS = 4000;
+    /** device_event.type is VARCHAR(64); the agent's types are short names. */
+    private static final Pattern EVENT_TYPE = Pattern.compile("^[A-Za-z0-9._-]{1,64}$");
+    /** devices.hardwareid is VARCHAR(128). */
+    private static final int MAX_HARDWARE_ID_CHARS = 128;
     private static final int MAX_TELEMETRY_CHARS = 256 * 1024;
-    // Each result is one UPDATE. Current agents send at most 100 per check-in; the rest of a backlog follows on the
+    // Each result is one UPDATE. Current agents send at most 1000 per check-in; the rest of a backlog follows on the
     // next ones. Past this count the server stops and reports how many it took (resultsAccepted), so the agent
     // resends the remainder rather than losing it. Older agents that send everything at once never get near it.
     static final int MAX_RESULTS_PER_CHECKIN = 1000;
@@ -202,8 +212,7 @@ public class AgentResource {
             return Response.ERROR("error.agent.token.used");
         }
 
-        String hardwareId = request.getHardwareId() == null || request.getHardwareId().trim().isEmpty()
-                ? null : request.getHardwareId().trim();
+        String hardwareId = validHardwareId(request.getHardwareId(), "Enroll with token " + token.getId());
         // Enrolls of one code wait on its lock one after another, each holding a pooled connection: past a few, turn
         // the rest away now (retryable) instead of letting one code's burst take the pool.
         if (!enrollsPerCode.tryEnter(token.getId())) {
@@ -383,9 +392,9 @@ public class AgentResource {
         }
 
         // Backfill the stable hardware id for already-enrolled devices (set once / when it changes).
-        if (request.getHardwareId() != null && !request.getHardwareId().trim().isEmpty()
-                && !request.getHardwareId().trim().equals(device.getHardwareId())) {
-            commandDAO.updateHardwareId(deviceNumber, request.getHardwareId().trim());
+        String hardwareId = validHardwareId(request.getHardwareId(), "Device " + deviceNumber);
+        if (hardwareId != null && !hardwareId.equals(device.getHardwareId())) {
+            commandDAO.updateHardwareId(deviceNumber, hardwareId);
         }
 
         // Refresh the stored capability matrix (kept fresh every check-in). Computed once here and
@@ -445,34 +454,7 @@ public class AgentResource {
             recordLocation(deviceNumber, tel);
         }
 
-        // Ingest buffered lifecycle events into the timeline — capped, so one check-in can't
-        // flood device_event (each entry is an INSERT with unbounded TEXT detail otherwise).
-        if (request.getEvents() != null) {
-            int ingested = 0;
-            for (com.hmdm.rest.json.agent.AgentTelemetryEvent e : request.getEvents()) {
-                if (e == null || e.getType() == null) {
-                    continue;
-                }
-                if (++ingested > MAX_EVENTS_PER_CHECKIN) {
-                    logger.warn("Device {} sent >{} events in one check-in — rest dropped",
-                            deviceNumber, MAX_EVENTS_PER_CHECKIN);
-                    break;
-                }
-                long ts = e.getTs() == null ? System.currentTimeMillis() : e.getTs();
-                String detail = e.getDetail();
-                if (detail != null && detail.length() > MAX_EVENT_DETAIL_CHARS) {
-                    detail = detail.substring(0, MAX_EVENT_DETAIL_CHARS);
-                }
-                if ("kioskReturn".equals(e.getType())) {
-                    // Timeline keeps the device timestamp. The durable proof is ordered by the server-owned kiosk
-                    // generation, so device clock skew cannot make it override a later kiosk command.
-                    commandDAO.recordKioskReturn(deviceNumber, ts, detail);
-                } else {
-                    commandDAO.insertEvent(deviceNumber, e.getType(), ts, detail);
-                }
-                kioskLockoutAlert.onEvent(device, e.getType(), detail);
-            }
-        }
+        int eventsAccepted = ingestEvents(device, request.getEvents());
 
         // Ack results from previously-delivered commands.
         int resultsAccepted = 0;
@@ -499,7 +481,7 @@ public class AgentResource {
                 // Ownership is enforced inside the UPDATE's WHERE (id + deviceNumber) — no
                 // per-result pre-SELECT needed on the hot path.
                 String status = result.getStatus();
-                String detail = result.getDetail();
+                String detail = withoutNul(result.getDetail());
                 if (detail != null && detail.length() > MAX_RESULT_DETAIL_CHARS) {
                     logger.warn("Device {} result detail for command {} oversized ({} chars) — stored as failed",
                             deviceNumber, commandId, detail.length());
@@ -590,7 +572,121 @@ public class AgentResource {
 
         AgentCheckInResponse response = new AgentCheckInResponse(commands);
         response.setResultsAccepted(resultsAccepted);
+        response.setEventsAccepted(eventsAccepted);
         return Response.OK(response);
+    }
+
+    /**
+     * Stores the check-in's buffered lifecycle events in the timeline and returns how many of them, counted from the
+     * first, it consumed (protocol 1.12 {@code eventsAccepted}): the agent drops those and resends the rest. Capped, so
+     * one check-in can't flood device_event. An event with no valid type is skipped, and so is one whose data the
+     * database refuses (SQL state class 22 or 23): both count as consumed, so the agent doesn't resend them forever. Any
+     * other database error (a lost connection, a failover) is not the event's fault: the events stop there, uncounted,
+     * and the agent sends them again. The rest of the check-in goes on, so a short blip doesn't cost its results.
+     */
+    private int ingestEvents(Device device, List<AgentTelemetryEvent> events) {
+        if (events == null) {
+            return 0;
+        }
+        String deviceNumber = device.getNumber();
+        int consumed = 0;
+        int ingested = 0;
+        int invalid = 0;
+        String firstInvalid = null;
+        for (AgentTelemetryEvent e : events) {
+            if (e == null || e.getType() == null || !EVENT_TYPE.matcher(e.getType()).matches()) {
+                if (invalid++ == 0) {
+                    firstInvalid = e == null ? null : e.getType();
+                }
+                consumed++;
+                continue;
+            }
+            if (ingested == MAX_EVENTS_PER_CHECKIN) {
+                logger.info("Device {} sent more than {} events in one check-in: the agent resends the rest",
+                        deviceNumber, MAX_EVENTS_PER_CHECKIN);
+                break;
+            }
+            long ts = e.getTs() == null ? System.currentTimeMillis() : e.getTs();
+            String detail = e.getDetail();
+            if (detail != null && detail.length() > MAX_EVENT_DETAIL_CHARS) {
+                detail = detail.substring(0, MAX_EVENT_DETAIL_CHARS);
+            }
+            detail = withoutNul(detail);
+            try {
+                if ("kioskReturn".equals(e.getType())) {
+                    // Timeline keeps the device timestamp. The durable proof is ordered by the server-owned kiosk
+                    // generation, so device clock skew cannot make it override a later kiosk command.
+                    commandDAO.recordKioskReturn(deviceNumber, ts, detail);
+                } else {
+                    commandDAO.insertEvent(deviceNumber, e.getType(), ts, detail);
+                }
+            } catch (PersistenceException ex) {
+                // The class and SQL state only: a driver message can echo values.
+                String state = sqlState(ex).orElse(null);
+                if (state == null || !(state.startsWith("22") || state.startsWith("23"))) {
+                    logger.warn("Device {} events not stored ({}, SQL state {}): the agent resends them from {}",
+                            deviceNumber, ex.getClass().getSimpleName(), state, e.getType());
+                    break;
+                }
+                logger.warn("Device {} event {} refused by the database (SQL state {}): skipped", deviceNumber,
+                        e.getType(), state);
+            }
+            ingested++;
+            consumed++;
+            kioskLockoutAlert.onEvent(device, e.getType(), detail);
+        }
+        if (invalid > 0) {
+            logger.warn("Device {} sent {} events without a valid type, skipped (the first: {})", deviceNumber,
+                    invalid, firstInvalid == null ? "no type" : "\"" + loggable(firstInvalid, 40) + "\"");
+        }
+        return consumed;
+    }
+
+    /** PostgreSQL refuses a NUL character in text, so a value carrying one would fail its statement. */
+    private static String withoutNul(String s) {
+        return s == null || s.indexOf('\0') < 0 ? s : s.replace("\0", "");
+    }
+
+    /**
+     * A device-sent value safe to log on one line: at most {@code max} code points (a surrogate pair is never split),
+     * control characters and line or paragraph separators shown as "?".
+     */
+    static String loggable(String s, int max) {
+        StringBuilder out = new StringBuilder();
+        int count = 0;
+        for (int i = 0; i < s.length(); i += Character.charCount(s.codePointAt(i))) {
+            if (count++ == max) {
+                return out.append('…').toString();
+            }
+            int cp = s.codePointAt(i);
+            if (Character.isISOControl(cp) || cp == '\u2028' || cp == '\u2029') {
+                out.append('?');
+            } else {
+                out.appendCodePoint(cp);
+            }
+        }
+        return out.toString();
+    }
+
+    /**
+     * The trimmed hardware id, or null when there is none, it carries a control character or it wouldn't fit.
+     * {@code who} names the sender in the log: the device, or the enrollment's token.
+     */
+    private static String validHardwareId(String raw, String who) {
+        String id = raw == null ? null : raw.trim();
+        if (id == null || id.isEmpty()) {
+            return null;
+        }
+        if (id.chars().anyMatch(Character::isISOControl)) {
+            logger.warn("{}: hardware id with a control character ignored", who);
+            return null;
+        }
+        if (id.length() > MAX_HARDWARE_ID_CHARS) {
+            logger.warn("{}: hardware id of {} characters ignored, at most {} are stored", who, id.length(),
+                    MAX_HARDWARE_ID_CHARS);
+            return null;
+        }
+        return id;
     }
 
     /**

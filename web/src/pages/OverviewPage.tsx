@@ -684,6 +684,7 @@ function eventView(
     case 'kioskPinLockout':
       return { icon: <IconLock size={15} />, tone: 'alert', what, detail };
     case 'kioskCrashLoop':
+    case 'eventsDropped':
       return { icon: <IconAlert size={15} />, tone: 'warn', what, detail };
     default:
       return { icon: <IconInfo size={15} />, tone: 'idle', what, detail };

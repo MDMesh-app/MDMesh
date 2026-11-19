@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { DEVICE_RESET_REVISION } from '../api/configSync';
 import { LOCATION_HISTORY_LIMIT } from '../api/deviceLocations';
-import { LOCATION_RANGES, fixesCount, locationSince, rangePhrase, shortRevision } from './deviceDetailFormat';
+import { EVENT_LABELS, EVENT_VERBS } from '../data/deviceActivity';
+import { LOCATION_RANGES, eventTone, fixesCount, locationSince, rangePhrase, shortRevision } from './deviceDetailFormat';
 
 describe('the location history range', () => {
   const now = Date.UTC(2026, 10, 4, 12);
@@ -36,5 +37,13 @@ describe('a configuration revision for display', () => {
     expect(shortRevision(DEVICE_RESET_REVISION)).toBe('Reset by device');
     expect(shortRevision(null)).toBe('—');
     expect(shortRevision('')).toBe('—');
+  });
+});
+
+describe('an eventsDropped event', () => {
+  it('reads as a warning with its own wording', () => {
+    expect(eventTone('eventsDropped')).toBe('warn');
+    expect(EVENT_LABELS.eventsDropped).toBe('Events dropped');
+    expect(EVENT_VERBS.eventsDropped).toBe('dropped events it could not send');
   });
 });

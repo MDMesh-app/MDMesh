@@ -452,6 +452,34 @@ mkdir -p "$WORK/qs3"; : > "$WORK/children3.log"
   && grep -qF '/refs/tags/v0.4.0/quickstart.sh' "$WORK/out/e" && ! grep -q 'curl' "$WORK/children3.log"; } \
   || { fail "quickstart.sh does not send MDMESH_VERSION=0.4.0 to that release's own quickstart.sh"; show; }
 ok
+# The images are linux/amd64 + linux/arm64 from 0.6.0: another architecture stops before any question, and Arm64 with a
+# release before 0.6.0 stops before anything is downloaded. (The docker stub fails `docker info`, so the host's
+# architecture comes from uname, stubbed here.)
+mkdir -p "$WORK/stubs-arch"
+# shellcheck disable=SC2016  # the stub's own variables
+printf '#!/bin/sh\n[ "$1" = -m ] && { echo "$STUB_ARCH"; exit 0; }\nexec /bin/uname "$@"\n' > "$WORK/stubs-arch/uname"
+chmod +x "$WORK/stubs-arch/uname"
+qs_arch() {   # ARCH [VAR=value...]: a quick start run in a new directory, answering mode 1 and the defaults
+  local arch="$1"; shift; rm -rf -- "$WORK/qs4"; mkdir -p "$WORK/qs4"; : > "$WORK/children4.log"
+  (cd "$WORK/qs4" && printf '%s\n' 1 '' '' | env -i PATH="$WORK/stubs-arch:$WORK/stubs:$PATH" HOME="$WORK" STUB_ARCH="$arch" \
+    STUB_LOG="$WORK/children4.log" STUB_DOCKER_OK=1 "$@" bash "$REPO/quickstart.sh" > "$WORK/out/o" 2> "$WORK/out/e") || true
+}
+qs_arch riscv64
+{ grep -qF 'built for x86_64 and Arm64 (aarch64); this host is riscv64' "$WORK/out/e" && ! grep -q 'curl' "$WORK/children4.log" \
+  && ! grep -qF 'Hosting mode' "$WORK/out/o"; } || { fail "quickstart.sh does not stop on an unsupported architecture"; show; }
+ok
+qs_arch aarch64 MDMESH_VERSION=0.5.0
+{ grep -qF 'v0.5.0 has x86_64 images only' "$WORK/out/e" && ! grep -q 'curl' "$WORK/children4.log"; } \
+  || { fail "quickstart.sh does not stop on Arm64 with a release before 0.6.0"; show; }
+ok
+qs_arch aarch64 MDMESH_VERSION=0.6.0
+{ grep -qF 'Verifying release v0.6.0' "$WORK/out/o" && ! grep -q 'images only\|built for x86_64' "$WORK/out/e"; } \
+  || { fail "quickstart.sh does not go on to verify 0.6.0 on Arm64"; show; }
+ok
+qs_arch x86_64 MDMESH_VERSION=0.5.0
+{ grep -qF 'Verifying release v0.5.0' "$WORK/out/o" && ! grep -q 'images only\|built for x86_64' "$WORK/out/e"; } \
+  || { fail "quickstart.sh does not go on to verify 0.5.0 on x86_64"; show; }
+ok
 
 # A re-run whose .env this user can't read says what to do, instead of a bare "Permission denied": its own .env (mode
 # 000) → chmod 600 .env; another user's (here a link to /proc/1/environ: root's, mode 400) → run as them.

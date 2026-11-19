@@ -505,6 +505,14 @@ command -v docker >/dev/null || { err "Docker is required."; exit 1; }
 docker compose version >/dev/null 2>&1 || { err "Docker Compose v2 is required ('docker compose')."; exit 1; }
 command -v curl    >/dev/null || { err "curl is required."; exit 1; }
 command -v openssl >/dev/null || { err "openssl is required."; exit 1; }
+# The images are published for linux/amd64 and, from 0.6.0, linux/arm64; docker pulls the one for the host it runs on.
+HOST_ARCH=$(docker info --format '{{.Architecture}}' 2>/dev/null) || HOST_ARCH=$(uname -m)
+case "$HOST_ARCH" in
+  x86_64|amd64) HOST_ARCH=amd64 ;;
+  aarch64|arm64) HOST_ARCH=arm64 ;;
+  *) err "MDMesh's images are built for x86_64 and Arm64 (aarch64); this host is ${HOST_ARCH}. Nothing was installed."
+     exit 1 ;;
+esac
 
 DIR="${MDMESH_DIR:-mdmesh}"
 # Two statements, not `mkdir && cd`: under set -e a failure before an && is not fatal, so a failed mkdir would fall
@@ -561,6 +569,11 @@ if [ -z "$RELEASE" ]; then
   err "Could not resolve the latest release of ${GH_REPO} (GitHub API unreachable or rate-limited, or no release yet)."
   err "The quick start installs only a published, signed release. Try again in a few minutes, or name the release:"
   err "  MDMESH_VERSION=X.Y.Z bash <(curl -fsSL https://raw.githubusercontent.com/${REPO}/refs/tags/vX.Y.Z/quickstart.sh)"
+  exit 1
+fi
+if [ "$HOST_ARCH" = arm64 ] && [[ "$RELEASE" =~ ^0\.([0-5])\. ]]; then
+  err "Release v${RELEASE} has x86_64 images only; Arm64 images start with 0.6.0. Install 0.6.0 or later (leave"
+  err "MDMESH_VERSION unset for the latest release), or use the native install (DEPLOY.md, Option C). Nothing was installed."
   exit 1
 fi
 [ -z "${MDMESH_RELEASE_PUBKEY:-}" ] || warn "Using MDMESH_RELEASE_PUBKEY: a custom release signing key, not MDMesh's."

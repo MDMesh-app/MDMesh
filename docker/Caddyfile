@@ -73,8 +73,9 @@
 # images send just the origin, which OpenStreetMap requires (web/src/ui/LocationMap.tsx). `defer` applies them
 # after the upstream's own headers, so these are the values the browser gets.
 # HSTS only where the browser is on HTTPS: Caddy's own TLS (own domain), or a proxy in front that says so in
-# X-Forwarded-Proto (Cloudflare tunnel, your own proxy). A browser ignores HSTS received over plain HTTP, so a forged
-# X-Forwarded-Proto gains nothing, and HTTP-only (LAN) installs are unaffected. Six months, this host only, no preload.
+# X-Forwarded-Proto (Cloudflare tunnel, your own proxy), believed only from a peer the listener trusts (the same peers
+# whose X-Forwarded-For it believes: {http.vars.trusted_proxy}). HTTP-only (LAN) installs are unaffected. Six months,
+# this host only, no preload.
 # Importers define @https (a site's named matchers are visible in its handle_errors, and may be defined only once).
 (security_headers) {
 	header {
@@ -92,7 +93,7 @@
 
 {$SITE_ADDRESS} {
 	encode gzip
-	@https expression `{http.request.scheme} == "https" || {http.request.header.X-Forwarded-Proto} == "https"`
+	@https expression `{http.request.scheme} == "https" || ({http.vars.trusted_proxy} == true && {http.request.header.X-Forwarded-Proto} == "https")`
 	import security_headers
 	import edge_tls_{$EDGE_TLS:off}
 

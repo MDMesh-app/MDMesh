@@ -96,7 +96,37 @@ if docker run --rm --network none -e SITE_ADDRESS=:80 -e ACME_EMAIL= -v "$CADDYF
 else
   pass "a broken site.d/*.caddy fails caddy validate"
 fi
-rm -f "$SITE_D/own.caddy"; rmdir "$SITE_D"
+rm -f "$SITE_D/own.caddy"
+# DEPLOY.md's own example (the caddyfile block under "Your own edge rules"), run as written: from outside its office range
+# the console's API is refused (403), from inside it reaches the server, and other paths are untouched. A client is an
+# extra address on the container's loopback (NET_ADMIN); a stub server answers on :8080.
+awk '/^### Your own edge rules/ { s = 1 } s && /^```caddyfile$/ { c = 1; next } c && /^```$/ { exit } c' "$ROOT/DEPLOY.md" > "$SITE_D/office.caddy"
+chmod 644 "$SITE_D/office.caddy"
+# shellcheck disable=SC2016  # expanded by the container's shell
+SITE_PROBE='set -u; F=0
+ip addr add 203.0.113.7/32 dev lo && ip addr add 198.51.100.7/32 dev lo || { echo "  FAIL could not add test addresses"; exit 1; }
+mkdir -p /srv /tmp/stub && echo spa > /srv/index.html
+printf "{\n\tadmin off\n}\n:8080 {\n\trespond \"server\" 200\n}\n" > /tmp/stub/s
+caddy run --config /tmp/stub/s --adapter caddyfile >/dev/null 2>&1 &
+caddy start --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1 || { echo "  FAIL edge did not start"; exit 1; }
+for _ in $(seq 1 50); do [ "$(curl -s -m 2 http://127.0.0.1/rest/public/name)" = server ] && break; sleep 0.1; done
+c() { curl -s -m 5 -o /dev/null -w "%{http_code}" --interface "$1" "http://127.0.0.1$2"; }
+t() { got=$(c "$1" "$2"); if [ "$got" = "$3" ]; then echo "  ok   DEPLOY.md site.d example: $4 ($got)"; else echo "  FAIL DEPLOY.md site.d example: $4 (got $got, want $3)"; F=$((F + 1)); fi; }
+t 198.51.100.7 /rest/private/users/current 403 "outside the office: the console API is refused"
+t 203.0.113.7 /rest/private/users/current 200 "inside the office: the console API reaches the server"
+t 198.51.100.7 /rest/public/name 200 "outside the office: other paths are untouched"
+exit "$F"'
+if [ -s "$SITE_D/office.caddy" ]; then
+  out="$(docker run --rm --network none --cap-add NET_ADMIN --add-host server:127.0.0.1 --add-host supervisor:127.0.0.1 \
+      -e SITE_ADDRESS=:80 -e ACME_EMAIL= -e HTTP_TRUSTED_PEERS=127.0.0.1/32 -v "$CADDYFILE:/etc/caddy/Caddyfile:ro" \
+      -v "$SITE_D:/etc/caddy/site.d:ro" "$CADDY_IMAGE" sh -c "$SITE_PROBE" 2>&1)" && rc=0 || rc=$?
+  printf '%s\n' "$out"
+  n="$(grep -c '^  FAIL' <<<"$out" || true)"; FAILED=$((FAILED + n))
+  if [ "$rc" -ne 0 ] && [ "$n" -eq 0 ]; then fail "DEPLOY.md site.d example: probe container exited $rc"; fi
+else
+  fail "DEPLOY.md has no caddyfile example under Your own edge rules"
+fi
+rm -f "$SITE_D/office.caddy"; rmdir "$SITE_D"
 
 # Behind your own proxy, docker/edge-peers.sh turns TRUSTED_PROXIES into Caddy's list: `host` is this container's
 # default gateway(s) (`ip` stubbed here: --network none has none), a lone address a /32 or /128; and it stops the edge on
@@ -110,7 +140,15 @@ PEER_CASES=(
   "host||172.19.0.1/32|:8080|off|"
   "host|V6=1|172.19.0.1/32 fd00::1/128|:8080|off|"
   "192.0.2.10, 2001:db8::1 10.0.0.0/8|MDMESH_ORIGIN_TLS=1|192.0.2.10/32 2001:db8::1/128 10.0.0.0/8|https://mdm.example.com:8080|internal|mdm.example.com"
+  "host|EDGE_BIND=127.0.0.1:8080|172.19.0.1/32|:8080|off|"
+  "host|EDGE_BIND=[::1]:8080|172.19.0.1/32|:8080|off|"
+  "192.0.2.10|EDGE_BIND=0.0.0.0:8080|192.0.2.10/32|:8080|off|"
   "host||refused"
+  "host|EDGE_BIND=0.0.0.0:8080|refused"
+  "host|EDGE_BIND=10.0.0.5:8080|refused"
+  "host|EDGE_BIND=[::]:8080|refused"
+  "::ffff:10.0.0.1||refused"
+  "::ffff:10.0.0.0/104||refused"
   "0.0.0.0/0||refused"
   "::/0||refused"
   "10.0.0.0/7||refused"
@@ -125,11 +163,14 @@ for c in "${PEER_CASES[@]}"; do
   [ -z "$extra" ] || envs+=(-e "$extra")
   probe=$PEERS_PROBE
   # The "host" case that must be refused: no gateway at all (`ip` answers nothing).
-  if [ "$list|$want" = "host|refused" ]; then probe=${probe/default via 172.19.0.1 dev eth0/}; fi
+  if [ "$list|$extra|$want" = "host||refused" ]; then probe=${probe/default via 172.19.0.1 dev eth0/}; fi
   rc=0; out="$(docker run --rm --network none "${envs[@]}" -v "$EDGE_PEERS:/edge-peers.sh:ro" "$CADDY_IMAGE" sh -c "$probe" 2>&1)" || rc=$?
   if [ "$want" = refused ]; then
-    if [ "$rc" != 0 ] && grep -qF 'MDMesh edge:' <<<"$out" && grep -qF 'Not starting' <<<"$out"; then pass "TRUSTED_PROXIES='$list': the edge refuses to start"
-    else fail "TRUSTED_PROXIES='$list': not refused (rc $rc: $out)"; fi
+    # `host` with an address other machines reach: refused for that reason (the gateway is there).
+    why='MDMesh edge:'; case "$extra" in EDGE_BIND=*) why='host needs a loopback MDMESH_BIND' ;; esac
+    if [ "$rc" != 0 ] && grep -qF "$why" <<<"$out" && grep -qF 'Not starting' <<<"$out"; then
+      pass "TRUSTED_PROXIES='$list'${extra:+ $extra}: the edge refuses to start"
+    else fail "TRUSTED_PROXIES='$list'${extra:+ $extra}: not refused for that (rc $rc: $out)"; fi
   elif [ "$rc" = 0 ] && [ "$out" = "${c#*|*|}" ]; then pass "TRUSTED_PROXIES='$list'${extra:+ $extra}: $out"
   else fail "TRUSTED_PROXIES='$list'${extra:+ $extra}: got '$out', want '${c#*|*|}'"; fi
 done
@@ -513,6 +554,12 @@ h="$($CURL --interface 192.0.2.1 -D - -o /dev/null -H 'X-Forwarded-Proto: https'
 if printf '%s\n' "$h" | grep -qix 'x-frame-options: DENY' && printf '%s\n' "$h" | grep -qix 'strict-transport-security: max-age=15552000'; then
   echo "  ok   $MODE: security headers, HSTS behind HTTPS"
 else echo "  FAIL $MODE: security headers missing: $(printf '%s' "$h" | tr '\n' ' ')"; F=$((F + 1)); fi
+if [ "$KIND" = http ]; then
+  h="$($CURL --interface 203.0.113.1 -D - -o /dev/null -H 'X-Forwarded-Proto: https' "$BASE/" 2>/dev/null | tr -d '\r')"
+  if printf '%s\n' "$h" | grep -qi '^strict-transport-security:'; then
+    echo "  FAIL $MODE: HSTS for an X-Forwarded-Proto from a peer that is not the proxy"; F=$((F + 1))
+  else echo "  ok   $MODE: no HSTS for an X-Forwarded-Proto from anyone but the proxy"; fi
+fi
 if [ "$KIND" = https ]; then
   got="$(curl -s -m 5 --cacert "$CA" --interface 192.0.2.1 --connect-to mdm.example.com:8080:127.0.0.1:8080 \
     https://mdm.example.com:8080/rest/echo 2>/dev/null || true)"

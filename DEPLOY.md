@@ -82,6 +82,10 @@ seed, generates secrets, pulls and starts the stack, seeds the database, and pri
 admin password. To skip the first question, add the mode after the command (`--tunnel`, `--domain` or `--proxy`,
 as in `bash <(curl …/quickstart.sh) --proxy`), or `export MDMESH_MODE=proxy` before the checked block.
 
+If the quick start stops after it wrote `.env` (an image pull, a port in use), fix the cause and run it again with
+`MDMESH_DIR` set to that directory, as it says: it finishes the install with the same `.env`. Don't delete that
+`.env` while the install's volumes exist: the database keeps the password in it.
+
 Run every `docker compose` command from `./mdmesh`, where `.env` lives. The install is pinned to the latest
 release: `CURRENT_VERSION` names it, and `SERVER_VERSION`, `WEB_VERSION` and `SUPERVISOR_VERSION` name its images by
 digest (`0.5.0@sha256:…`). Updates are one click ([Upgrading](docs/UPGRADING.md#quick-start-installs)).
@@ -141,8 +145,11 @@ one address, `127.0.0.1:8080` by default. It asks:
 - **Your proxy's address, as MDMesh sees it** (`TRUSTED_PROXIES`, default `host`). MDMesh believes `X-Forwarded-For`
   (the client's address, for sign-in limits, the audit log and a device's public IP) and `X-Forwarded-Proto` from
   these addresses only. `host` means a proxy on this machine: Docker delivers its connections from the stack
-  network's gateway, which `host` stands for. For a proxy elsewhere, its IP address (or a range, no wider than an IPv4
-  /8 or IPv6 /16), several separated by spaces. Anyone else's `X-Forwarded-For` is ignored.
+  network's gateway, which `host` stands for. It is accepted only with a loopback `MDMESH_BIND` (`127.0.0.1` or
+  `[::1]`): on any other address, other machines' connections can arrive from that same gateway (Docker Desktop,
+  rootless Docker, IPv6), so the installers and the edge refuse it there. For a proxy elsewhere, its IP address (or a
+  range, no wider than an IPv4 /8 or IPv6 /16; IPv4 addresses as IPv4, not `::ffff:…`), several separated by spaces.
+  Anyone else's `X-Forwarded-For` and `X-Forwarded-Proto` are ignored.
 
 `.env` then holds `COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml`, `MDMESH_BIND`, `TRUSTED_PROXIES` and
 `MDMESH_ORIGIN_TLS`; the overlay publishes the edge on `MDMESH_BIND` and nothing else.
@@ -183,9 +190,13 @@ Notes:
 - On a Docker version before 28, a port published on `127.0.0.1` can be reached by other machines on the same local
   network ([moby#45610](https://github.com/moby/moby/issues/45610)); they could then name their own address. Update
   Docker, or drop such traffic in the firewall.
-- `host` is right only where Docker keeps a client's address: a connection from another machine to `MDMESH_BIND`
-  arrives from that machine. With rootless Docker or Docker Desktop, every connection arrives from the gateway, so use
-  `host` only with the default `127.0.0.1` address there.
+- With rootless Docker or Docker Desktop, every connection to `MDMESH_BIND` arrives from Docker's gateway, so MDMesh
+  can't see a proxy on another machine by its address: it then believes no one's `X-Forwarded-For`, and every client
+  counts as one address for the sign-in limits. The installers warn about it. Keep the proxy on the same machine and
+  MDMesh on `127.0.0.1` there.
+- The installers check that nothing listens on `MDMESH_BIND` before they write `.env`. If the edge still can't
+  publish it, set another one in `.env` and run `docker compose up -d` (a quick start: run the quick start again, as
+  it says; it finishes the install with the same `.env`).
 - Behind a CDN or a load balancer in front of your proxy, have your proxy take the client's address from it first
   (nginx: `set_real_ip_from` and `real_ip_header`), so the address it forwards is the client's.
 - Traefik with the Docker provider: run Traefik with `network_mode: host`, or point its file provider at
@@ -203,8 +214,13 @@ and the installers create it (with a short README). For example, `site.d/office-
 	path /rest/private/*
 	not client_ip 203.0.113.0/24
 }
-respond @outside 403
+handle @outside {
+	respond 403
+}
 ```
+
+Wrap a rule that answers a request in `handle` (or `route`), as here: Caddy runs MDMesh's own `handle` blocks before
+a bare `respond`, so a bare one would never answer the paths MDMesh routes. `scripts/edge-check.sh` runs this example.
 
 Make the file readable by everyone (`chmod 644`), check it, then restart the edge:
 

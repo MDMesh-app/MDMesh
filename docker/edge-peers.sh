@@ -89,14 +89,22 @@ edge_gateways() {
   { ip -4 route show default; ip -6 route show default; } 2>/dev/null | awk '$1 == "default" && $2 == "via" { print $3 }'
 }
 
-# edge_proxy_list LIST: LIST (addresses and ranges, separated by spaces or commas, and `host`), checked as the
-# installers check it (install/lib/answers.sh, rule proxies), as Caddy's static list. Refuses (exits) on anything else.
+# edge_proxy_list LIST [BIND]: LIST (addresses and ranges, separated by spaces or commas, and `host`), checked as the
+# installers check it (install/lib/answers.sh, rule proxies; install/lib/modes.sh, mdm_proxy_trust_problem), as Caddy's
+# static list: `host` only with a loopback BIND (MDMESH_BIND; unset: the default 127.0.0.1:8080), and no IPv4-mapped
+# IPv6 address (it wouldn't match the IPv4 peer it means). Refuses (exits) on anything else.
 edge_proxy_list() {
   _out=''
   set -f   # no pathname expansion of the entries (this runs in a command substitution: it ends with it)
   for _t in $(printf '%s' "$1" | tr ',' ' '); do
     case "$_t" in
       host)
+        # Only with a loopback bind: other machines reaching any other address can arrive from the same gateway
+        # (Docker Desktop, rootless Docker, docker-proxy for IPv6), and would then be believed.
+        case "${2:-127.0.0.1:8080}" in
+          127.*|\[::1\]:*) ;;
+          *) edge_refuse "TRUSTED_PROXIES says host (a proxy on this machine), but MDMESH_BIND is ${2}: host needs a loopback MDMESH_BIND (127.0.0.1 or [::1]); list your proxy's own address instead" ;;
+        esac
         _gw=$(edge_gateways)
         [ -n "$_gw" ] || edge_refuse "TRUSTED_PROXIES says host, but this container has no default gateway"
         for _g in $_gw; do case "$_g" in *:*) _out="$_out $_g/128" ;; *) _out="$_out $_g/32" ;; esac; done
@@ -108,7 +116,7 @@ edge_proxy_list() {
       _min=8; _max=32
     else
       case "$_a" in
-        *:*:*) case "$_a" in *[!0-9A-Fa-f:.]*|*:::*) edge_refuse "TRUSTED_PROXIES: \"$_t\" is not an address or range" ;; esac
+        *:*:*) case "$_a" in *[!0-9A-Fa-f:]*|*:::*|::[Ff][Ff][Ff][Ff]:*|0:0:0:0:0:[Ff][Ff][Ff][Ff]:*) edge_refuse "TRUSTED_PROXIES: \"$_t\" is not an address or range" ;; esac
                _min=16; _max=128 ;;
         *) edge_refuse "TRUSTED_PROXIES: \"$_t\" is not an address or range (no names, no private_ranges)" ;;
       esac
@@ -133,7 +141,7 @@ edge_url_host() {
 }
 
 if [ "${MDMESH_EXPOSURE:-}" = proxy ]; then
-  PROXY_TRUSTED_PEERS=$(edge_proxy_list "${EDGE_TRUSTED_PROXIES:-}") || exit 1
+  PROXY_TRUSTED_PEERS=$(edge_proxy_list "${EDGE_TRUSTED_PROXIES:-}" "${EDGE_BIND:-}") || exit 1
   if [ "${MDMESH_ORIGIN_TLS:-0}" = 1 ]; then
     EDGE_ORIGIN_NAME=$(edge_url_host "${BASE_URL:-}")
     case "$EDGE_ORIGIN_NAME" in ''|*[!0-9A-Za-z.:\[\]-]*) edge_refuse "MDMESH_ORIGIN_TLS=1 needs BASE_URL's host for the certificate (BASE_URL=${BASE_URL:-unset})" ;; esac

@@ -6,8 +6,8 @@
 # It mounts nothing, so the updater's compose (run from inside its own container) recreates the edge exactly as here.
 #
 # The edge believes X-Forwarded-For (and X-Forwarded-Proto) only from TRUSTED_PROXIES: your proxy's addresses or ranges,
-# or `host` for a proxy on this machine (docker/edge-peers.sh refuses to start with an empty list or a range wider than
-# an IPv4 /8 or an IPv6 /16). It reaches the edge as EDGE_TRUSTED_PROXIES, and TRUSTED_PROXIES is blanked there: a web
+# or `host` for a proxy on this machine, allowed only with a loopback MDMESH_BIND (docker/edge-peers.sh refuses to start
+# otherwise, with an empty list, or with a range wider than an IPv4 /8 or an IPv6 /16). It reaches the edge as EDGE_TRUSTED_PROXIES, and TRUSTED_PROXIES is blanked there: a web
 # image from before 0.6.0 (after a rollback below it) then trusts no proxy, rather than fail to read `host`.
 # MDMESH_ORIGIN_TLS=1: HTTPS to your proxy, with a certificate for BASE_URL's host from Caddy's own CA (for a proxy on
 # another machine; it trusts /data/caddy/pki/authorities/local/root.crt, kept in the caddy_data volume).
@@ -22,3 +22,5 @@ services:
       EDGE_TRUSTED_PROXIES: ${TRUSTED_PROXIES:?set TRUSTED_PROXIES in .env to your proxy's address (host for a proxy on this machine)}
       TRUSTED_PROXIES: ""
       MDMESH_ORIGIN_TLS: ${MDMESH_ORIGIN_TLS:-0}
+      # Where it is published (the ports line above): `host` in TRUSTED_PROXIES is refused unless this is loopback.
+      EDGE_BIND: ${MDMESH_BIND:-127.0.0.1:8080}

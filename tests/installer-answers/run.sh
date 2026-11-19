@@ -678,23 +678,87 @@ rm -f -- "$WORK/src8/.env"
   || { fail "a non-interactive setup.sh with its default address in use does not stop before writing .env"; show; }
 ok
 
-# quickstart.sh over an existing install: an .env it didn't finish (.quickstart-unfinished) is resumed with that .env,
-# answers ignored; any other .env is left alone, saying never to delete it while the volumes exist.
-mkdir -p "$WORK/qs6/mdmesh/install/lib"
-cp -- "$REPO/install/lib/db.sh" "$WORK/qs6/mdmesh/install/lib/"
-printf '%s\n' DB_PASSWORD=keepme BASE_URL=https://mdm.example.com IMAGE_OWNER=me CURRENT_VERSION=0.6.0 \
-  COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml COMPOSE_PROFILES= MDMESH_BIND=127.0.0.1:8080 \
-  'TRUSTED_PROXIES="host"' MDMESH_ORIGIN_TLS=0 > "$WORK/qs6/mdmesh/.env"
-: > "$WORK/qs6/mdmesh/.quickstart-unfinished"; : > "$WORK/docker.log"
-(cd "$WORK/qs6" && env -i PATH="$WORK/stubs:$PATH" HOME="$WORK" STUB_LOG="$WORK/docker.log" STUB_DOCKER_OK=1 MDMESH_MODE=domain \
-  bash "$REPO/quickstart.sh" < /dev/null > "$WORK/out/o" 2> "$WORK/out/e") || true
+# quickstart.sh over an existing directory. It must be this user's (or root's) and nobody else's to write, with what is
+# in it, or nothing in it is read: a directory someone else made (group- or world-writable, another user's) is refused.
+# An install it didn't finish (.quickstart-unfinished) is resumed with its private .env, but nothing else on disk is
+# trusted: each .env value is checked, the release is verified again against its signed manifest (a throwaway key,
+# MDMESH_RELEASE_PUBKEY; a curl stub serving the release and this checkout's files), the files are fetched and checked
+# again over the ones there (a tampered db.sh is replaced, never sourced), and .env's image pins must be the manifest's.
+# Any other .env is left alone.
+FIX="$WORK/fix"; mkdir -p "$FIX/rel" "$FIX/raw/install/lib" "$FIX/raw/install/sql" "$WORK/stubs-rel"
+for f in docker-compose.release.yml docker-compose.domain.yml docker-compose.proxy.yml install/sql/hmdm_init.en.sql \
+         install/sql/post_seed.sql install/lib/db.sh; do cp -- "$REPO/$f" "$FIX/raw/$f"; done
+D1=$(printf 'a%.0s' {1..64}); D2=$(printf 'b%.0s' {1..64}); D3=$(printf 'c%.0s' {1..64})
+{
+  printf '{\n  "version": "0.6.0",\n  "components": {\n    "images": {\n'
+  printf '      "server": "ghcr.io/me/mdmesh-server@sha256:%s",\n      "web": "ghcr.io/me/mdmesh-web@sha256:%s",\n' "$D1" "$D2"
+  printf '      "supervisor": "ghcr.io/me/mdmesh-supervisor@sha256:%s"\n    }\n  },\n  "files": {\n' "$D3"
+  for f in docker-compose.release.yml docker-compose.domain.yml docker-compose.proxy.yml install/sql/hmdm_init.en.sql \
+           install/sql/post_seed.sql; do printf '    "%s": "%s",\n' "$f" "$(sha256sum "$FIX/raw/$f" | cut -d' ' -f1)"; done
+  printf '    "install/lib/db.sh": "%s"\n  }\n}\n' "$(sha256sum "$FIX/raw/install/lib/db.sh" | cut -d' ' -f1)"
+} > "$FIX/rel/manifest.json"
+minisign -G -W -p "$FIX/k.pub" -s "$FIX/k.key" > /dev/null
+minisign -S -s "$FIX/k.key" -m "$FIX/rel/manifest.json" -x "$FIX/rel/manifest.json.minisig" > /dev/null
+# shellcheck disable=SC2016  # the stub's own variables
+printf '#!/bin/sh\nout=; url=\nwhile [ $# -gt 0 ]; do case "$1" in -o) out=$2; shift ;; https://*) url=$1 ;; esac; shift; done\ncase "$url" in\n  https://github.com/me/fork/releases/download/v0.6.0/*) f="%s/rel/${url##*/}" ;;\n  https://raw.githubusercontent.com/me/fork/v0.6.0/*) f="%s/raw/${url#https://raw.githubusercontent.com/me/fork/v0.6.0/}" ;;\n  *) exit 22 ;;\nesac\n[ -f "$f" ] && cp "$f" "$out"\n' "$FIX" "$FIX" > "$WORK/stubs-rel/curl"
+chmod +x "$WORK/stubs-rel/curl"
+qs_env() {  # the .env lines of an unfinished quick start of v0.6.0 of me/fork in domain mode, then any NAME=VALUE overrides
+  local l k
+  for l in DB_PASSWORD=keepme BASE_URL=https://mdm.example.com IMAGE_OWNER=me GITHUB_REPO=me/fork CURRENT_VERSION=0.6.0 \
+           "SERVER_VERSION=0.6.0@sha256:$D1" "WEB_VERSION=0.6.0@sha256:$D2" "SUPERVISOR_VERSION=0.6.0@sha256:$D3" \
+           COMPOSE_FILE=docker-compose.yml:docker-compose.domain.yml COMPOSE_PROFILES=; do
+    k=${l%%=*}
+    case " $* " in *" $k="*) ;; *) printf '%s\n' "$l" ;; esac
+  done
+  for l in "$@"; do printf '%s\n' "$l"; done
+}
+qs_dir() {  # qs_dir: a fresh $WORK/qs7/mdmesh holding an unfinished install, its db.sh tampered with
+  rm -rf -- "$WORK/qs7"; mkdir -p "$WORK/qs7/mdmesh/install/lib"
+  printf 'touch "%s/PWNED"\n' "$WORK" > "$WORK/qs7/mdmesh/install/lib/db.sh"
+  : > "$WORK/qs7/mdmesh/.quickstart-unfinished"
+}
+qs_run() {  # qs_run [NAME=VALUE...]: quickstart.sh in $WORK/qs7 (stdin empty), the release served by the stub
+  : > "$WORK/docker.log"; rm -f -- "$WORK/PWNED"
+  (cd "$WORK/qs7" && env -i PATH="$WORK/stubs-rel:$WORK/stubs:$PATH" HOME="$WORK" STUB_LOG="$WORK/docker.log" STUB_DOCKER_OK=1 \
+    MDMESH_RELEASE_PUBKEY="$(sed -n 2p "$FIX/k.pub")" "$@" bash "$REPO/quickstart.sh" < /dev/null > "$WORK/out/o" 2> "$WORK/out/e") || true
+}
+# Resumed: verified again, the tampered db.sh replaced by the release's (never sourced), then on to `docker compose pull`.
+qs_dir; qs_env > "$WORK/qs7/mdmesh/.env"; chmod 600 "$WORK/qs7/mdmesh/.env"
+qs_run MDMESH_MODE=proxy
 { grep -qF 'finishing the install in' "$WORK/out/o" && grep -qF 'answers are not used' "$WORK/out/o" \
-  && grep -q '/docker compose pull$' "$WORK/docker.log" && grep -qxF DB_PASSWORD=keepme "$WORK/qs6/mdmesh/.env" \
-  && grep -qF 'MDMESH_DIR=' "$WORK/out/e"; } || { fail "quickstart.sh does not resume an unfinished install with its .env"; show; }
-rm -f -- "$WORK/qs6/mdmesh/.quickstart-unfinished"
-(cd "$WORK/qs6" && env -i PATH="$WORK/stubs:$PATH" HOME="$WORK" STUB_LOG="$WORK/docker.log" STUB_DOCKER_OK=1 \
-  bash "$REPO/quickstart.sh" < /dev/null > "$WORK/out/o" 2> "$WORK/out/e") || true
-{ grep -qF "Don't delete that .env" "$WORK/out/e" && grep -qxF DB_PASSWORD=keepme "$WORK/qs6/mdmesh/.env"; } \
+  && grep -qF 'Verifying release v0.6.0 of me/fork' "$WORK/out/o" && [ ! -e "$WORK/PWNED" ] \
+  && cmp -s "$REPO/install/lib/db.sh" "$WORK/qs7/mdmesh/install/lib/db.sh" && grep -q '/docker compose pull$' "$WORK/docker.log" \
+  && grep -qxF DB_PASSWORD=keepme "$WORK/qs7/mdmesh/.env" && grep -qF 'MDMESH_DIR=' "$WORK/out/e"; } \
+  || { fail "quickstart.sh does not resume an unfinished install by verifying the release again and replacing its files"; show; }
+ok
+# Refused before anything is sourced or run: a value .env must not hold, image pins that aren't the manifest's, an .env
+# others may read, a directory or a file in it that others may write.
+for c in 'BASE_URL=https://x.example.com/'"'"';drop' 'BASE_URL=https://a\b.example.com' 'IMAGE_OWNER=Me' 'GITHUB_REPO=../x' \
+         'CURRENT_VERSION=0.6.0;id' 'COMPOSE_FILE=docker-compose.yml:evil.yml' "WEB_VERSION=0.6.0@sha256:$D1" \
+         'perm:.env:644' 'perm:.:775' 'perm:install/lib/db.sh:666'; do
+  qs_dir
+  case "$c" in
+    perm:*) qs_env > "$WORK/qs7/mdmesh/.env"; chmod 600 "$WORK/qs7/mdmesh/.env"
+            p=${c#perm:}; chmod "${p##*:}" "$WORK/qs7/mdmesh/${p%:*}" ;;
+    *) qs_env "$c" > "$WORK/qs7/mdmesh/.env"; chmod 600 "$WORK/qs7/mdmesh/.env" ;;
+  esac
+  qs_run
+  { [ ! -e "$WORK/PWNED" ] && ! grep -q '/docker compose ' "$WORK/docker.log" && grep -qF 'Nothing was changed.' "$WORK/out/e"; } \
+    || { fail "quickstart.sh resumes over a bad install directory or .env ($c)"; show; }
+  ok
+done
+# A directory another user owns (one found on this system, not world-writable), and /tmp itself: refused.
+other=$(find /var /usr /etc -maxdepth 3 -type d ! -user 0 ! -user "$(id -u)" ! -perm -002 -perm -001 -print -quit 2>/dev/null || true)
+for d in /tmp ${other:+"$other"}; do
+  RC=0; (cd "$WORK" && env -i PATH="$WORK/stubs:$PATH" HOME="$WORK" STUB_DOCKER_OK=1 MDMESH_DIR="$d" \
+    bash "$REPO/quickstart.sh" < /dev/null > "$WORK/out/o" 2> "$WORK/out/e") || RC=$?
+  { [ "$RC" != 0 ] && grep -qF 'must belong to you (or root)' "$WORK/out/e"; } || { fail "quickstart.sh installs into $d"; show; }
+  ok
+done
+# Another .env (no marker) is left alone, saying never to delete it while the volumes exist.
+qs_dir; rm -f -- "$WORK/qs7/mdmesh/.quickstart-unfinished"; qs_env > "$WORK/qs7/mdmesh/.env"; chmod 600 "$WORK/qs7/mdmesh/.env"
+qs_run
+{ grep -qF "Don't delete that .env" "$WORK/out/e" && grep -qxF DB_PASSWORD=keepme "$WORK/qs7/mdmesh/.env" && [ ! -e "$WORK/PWNED" ]; } \
   || { fail "quickstart.sh over a finished install does not leave it alone, saying how"; show; }
 ok
 

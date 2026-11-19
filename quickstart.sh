@@ -862,7 +862,155 @@ DIR="${MDMESH_DIR:-mdmesh}"
 # through and the rest would run in the wrong directory.
 mkdir -p -- "$DIR"
 cd -P -- "$DIR"
+# Everything here is read, sourced or handed to docker as this user (often root): the directory and whatever the quick
+# start uses in it must belong to this user or root, and nobody else may write them. A directory someone else made (in
+# /tmp, say) is refused, so they can't plant a .env, a compose file or db.sh, or swap a verified file before it runs.
+for _p in . install install/lib install/sql .env .quickstart-unfinished $MDM_QUICKSTART_FILES docker-compose.yml site.d; do
+  [ -e "$_p" ] || [ -L "$_p" ] || continue
+  if [ -L "$_p" ] || [ -z "$(find "$_p" -prune \( -user "$EUID" -o -user 0 \) ! -perm -020 ! -perm -002 -print 2>/dev/null)" ]; then
+    err "$(pwd)/${_p#./}: the install directory and what is in it must belong to you (or root), not be links, and be"
+    err "writable by nobody else. Install into a directory of your own (MDMESH_DIR). Nothing was changed."
+    exit 1
+  fi
+done
 RESUME_HINT="Fix it, then run the quick start again with MDMESH_DIR=$(pwd): it finishes this install with the same .env. Keep .env: the database has its password."
+# verify_release: RELEASE of GH_REPO, checked against its signed manifest (see "What the quick start trusts" above):
+# the signature, the version, and the image digests under IMAGE_OWNER. Sets MANIFEST, SERVER_TAG, WEB_TAG,
+# SUPERVISOR_TAG and RAW. Stops the quick start when anything does not verify.
+ENV_TMP=''
+verify_release() {
+  say "Verifying release v${RELEASE} of ${GH_REPO}…"
+  VERIFY_DIR=$(mktemp -d)
+  cleanup_verify() {
+    [ -z "$ENV_TMP" ] || rm -f -- "$ENV_TMP"   # a .env write that failed or was interrupted: it holds the new secrets
+    rm -f -- "$VERIFY_DIR/manifest.json" "$VERIFY_DIR/manifest.json.minisig" "$VERIFY_DIR"/dl.*
+    rmdir -- "$VERIFY_DIR" 2>/dev/null || true
+  }
+  trap cleanup_verify EXIT
+  MANIFEST="$VERIFY_DIR/manifest.json"
+  REL_URL="https://github.com/${GH_REPO}/releases/download/v${RELEASE}"
+  if ! curl -fsSL -m 60 "${REL_URL}/manifest.json" -o "$MANIFEST" \
+     || ! curl -fsSL -m 60 "${REL_URL}/manifest.json.minisig" -o "$VERIFY_DIR/manifest.json.minisig"; then
+    err "Could not download manifest.json and manifest.json.minisig from ${REL_URL} (is v${RELEASE} a published release with a signed manifest?)."
+    exit 1
+  fi
+  VERIFY_RC=0
+  mdm_verify_manifest "${MDMESH_RELEASE_PUBKEY:-$MDM_RELEASE_PUBKEY_DEFAULT}" "$MANIFEST" "$VERIFY_DIR/manifest.json.minisig" || VERIFY_RC=$?
+  if [ "$VERIFY_RC" = 2 ]; then
+    err "Checking the release signature needs OpenSSL 3.0+ or minisign (this host: $(openssl version 2>/dev/null || echo 'no openssl'))."
+    err "Install minisign (your distribution's package, or https://github.com/jedisct1/minisign/releases) and re-run. Nothing was installed."
+    exit 1
+  fi
+  if [ "$VERIFY_RC" != 0 ]; then
+    err "The manifest of release v${RELEASE} of ${GH_REPO} is not signed by the release key (reason above). Nothing was installed."
+    if [ "$GH_REPO" != "$REPO" ] && [ -z "${MDMESH_RELEASE_PUBKEY:-}" ]; then
+      err "A fork signs with its own key: run that repository's quickstart.sh, or set MDMESH_RELEASE_PUBKEY to the key line of its release/minisign.pub."
+    fi
+    exit 1
+  fi
+  # Bind the signed manifest to this release: an older release's manifest is signed too.
+  MANIFEST_VERSION=$(mdm_manifest_field "$MANIFEST" version '[0-9A-Za-z.+-]+' || true)
+  if [ "$MANIFEST_VERSION" != "$RELEASE" ]; then
+    err "The signed manifest is for version ${MANIFEST_VERSION:-(none)}, not v${RELEASE}. Nothing was installed."; exit 1
+  fi
+  # The image digests: all three, under the owner chosen above.
+  SERVER_REF=$(mdm_manifest_field "$MANIFEST" server "$MDM_IMAGE_REF_ERE" || true)
+  WEB_REF=$(mdm_manifest_field "$MANIFEST" web "$MDM_IMAGE_REF_ERE" || true)
+  SUPERVISOR_REF=$(mdm_manifest_field "$MANIFEST" supervisor "$MDM_IMAGE_REF_ERE" || true)
+  if [ -n "$SERVER_REF" ] && [ -n "$WEB_REF" ] && [ -n "$SUPERVISOR_REF" ]; then
+    # Each ref must be exactly its own image under this owner (as supervisor/lib.js imagePins and apply.sh require).
+    for _pair in "server $SERVER_REF" "web $WEB_REF" "supervisor $SUPERVISOR_REF"; do
+      _name=${_pair%% *}; _ref=${_pair#* }
+      if [ "${_ref%@*}" != "ghcr.io/${IMAGE_OWNER}/mdmesh-${_name}" ]; then
+        err "Release v${RELEASE} of ${GH_REPO} publishes its ${_name} image as ${_ref%@*}, not ghcr.io/${IMAGE_OWNER}/mdmesh-${_name}. Re-run and enter the image owner it names."
+        exit 1
+      fi
+    done
+    SERVER_TAG="${RELEASE}@${SERVER_REF#*@}"; WEB_TAG="${RELEASE}@${WEB_REF#*@}"; SUPERVISOR_TAG="${RELEASE}@${SUPERVISOR_REF#*@}"
+  else
+    err "The signed manifest of v${RELEASE} does not pin the server, web and supervisor images by digest, so the quick start can't install it."
+    err "(A fork publishing with an older release workflow: update its release/ scripts and .github/workflows/release.yml.)"
+    exit 1
+  fi
+  RAW="https://raw.githubusercontent.com/${GH_REPO}/v${RELEASE}"
+  say "Installing release v${RELEASE} of ${GH_REPO}."
+}
+
+# fetch_release_files: every file of MDM_QUICKSTART_FILES from RAW, each checked against its SHA-256 in the signed
+# manifest, then moved into place over whatever is there (a resumed install's copies too), so nothing unverified is
+# ever sourced or run. docker-compose.proxy.yml only when the release has it (0.6.0 on).
+fetch_release_files() {
+  local n f want got dest FETCHED
+  say "Downloading the pull-only compose + seed…"
+  # Every file is downloaded to a temporary name and checked against its SHA-256 in the signed manifest; only when all of
+  # them match are they moved into place. db.sh is sourced below, so nothing unverified ever runs.
+  n=0; FETCHED=''
+  for f in $MDM_QUICKSTART_FILES; do
+    n=$((n + 1))
+    want=$(mdm_manifest_field "$MANIFEST" "$f" "$MDM_SHA256_ERE" || true)
+    # Before 0.6.0 (proxy mode was refused above for such a release).
+    if [ -z "$want" ] && [ "$f" = docker-compose.proxy.yml ]; then continue; fi
+    [ -n "$want" ] || { err "The signed manifest of v${RELEASE} has no SHA-256 for ${f}, so it can't be verified. Nothing was installed."; exit 1; }
+    curl -fsSL -m 120 "${RAW}/${f}" -o "$VERIFY_DIR/dl.$n" || { err "Could not download ${RAW}/${f}. Nothing was installed."; exit 1; }
+    got=$(mdm_sha256 "$VERIFY_DIR/dl.$n")
+    if [ "$got" != "$want" ]; then
+      err "${f} from ${RAW} does not match the signed release (SHA-256 ${got}, expected ${want}). Nothing was installed."; exit 1
+    fi
+    FETCHED="$FETCHED $n"
+  done
+  n=0
+  for f in $MDM_QUICKSTART_FILES; do
+    n=$((n + 1))
+    case " $FETCHED " in *" $n "*) ;; *) continue ;; esac
+    dest=$f; [ "$f" = docker-compose.release.yml ] && dest=docker-compose.yml
+    mkdir -p -- "$(dirname -- "$dest")"
+    mv -f -- "$VERIFY_DIR/dl.$n" "$dest"
+  done
+}
+
+# resume_install: finishes an install this quick start began here (.quickstart-unfinished) with its .env, whose
+# secrets the database already has. Nothing on disk is trusted but that private .env, and each of its values is checked
+# as a fresh run checks it: the release (CURRENT_VERSION) is verified again against its signed manifest, the files are
+# downloaded and checked again over the ones here before db.sh is sourced, and the image pins in .env must be the
+# manifest's.
+resume_install() {
+  local v
+  say "== MDMesh quick start: finishing the install in $(pwd) with its .env =="
+  mdm_any_answered && warn "The MDMESH_* answers are not used: this install's .env is."
+  _mdm_private_file "$(pwd)/.env" || { err "$(pwd)/.env must belong to you (or root) and be private to you (chmod 600). Nothing was changed."; exit 1; }
+  envval() { sed -n "s/^$1=//p" .env | head -1 | sed 's/^"\(.*\)"$/\1/'; }
+  RELEASE=$(envval CURRENT_VERSION); GH_REPO=$(envval GITHUB_REPO); IMAGE_OWNER=$(envval IMAGE_OWNER); BASE_URL=$(envval BASE_URL)
+  [[ "$RELEASE" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.+-]+)?$ ]] || { err ".env: CURRENT_VERSION is not a release version. Nothing was changed."; exit 1; }
+  for v in "GITHUB_REPO|$GH_REPO|github-repo" "IMAGE_OWNER|$IMAGE_OWNER|image-owner"; do
+    _MDM_V=${v#*|}; _MDM_V=${_MDM_V%|*}
+    _mdm_answer_check "${v##*|}"
+    { [ -z "$_MDM_WHY" ] && [ -n "$_MDM_V" ]; } || { err ".env: ${v%%|*} ${_MDM_WHY:-is empty}. Nothing was changed."; exit 1; }
+  done
+  mdm_check_base_url BASE_URL || { err ".env: BASE_URL is not valid (why above). Nothing was changed."; exit 1; }
+  HOST=${BASE_URL#*://}; HOST=${HOST%%/*}
+  mdm_check_host HOST || { err ".env: BASE_URL's host is not valid (why above). Nothing was changed."; exit 1; }
+  COMPOSE_FILE=$(envval COMPOSE_FILE); COMPOSE_PROFILES=$(envval COMPOSE_PROFILES)
+  case "$COMPOSE_FILE|$COMPOSE_PROFILES" in
+    'docker-compose.yml|cloudflare'|'docker-compose.yml:docker-compose.domain.yml|'|'docker-compose.yml:docker-compose.proxy.yml|') ;;
+    *) err ".env: COMPOSE_FILE and COMPOSE_PROFILES are not a hosting mode the quick start writes. Nothing was changed."; exit 1 ;;
+  esac
+  MODE=$(mdm_mode_of_env)
+  PROXY_BIND=$(envval MDMESH_BIND); ORIGIN_TLS=$(envval MDMESH_ORIGIN_TLS)
+  if [ "$MODE" = 3 ]; then
+    _mdm_bind_ok "$PROXY_BIND" || { err ".env: MDMESH_BIND is not an address and port. Nothing was changed."; exit 1; }
+  fi
+  verify_release
+  for v in "SERVER_VERSION|$SERVER_TAG" "WEB_VERSION|$WEB_TAG" "SUPERVISOR_VERSION|$SUPERVISOR_TAG"; do
+    [ "$(envval "${v%%|*}")" = "${v#*|}" ] || { err ".env: ${v%%|*} is not the image release v${RELEASE}'s signed manifest pins. Nothing was changed."; exit 1; }
+  done
+  fetch_release_files
+  # shellcheck source=install/lib/db.sh
+  . ./install/lib/db.sh
+  mdm_mode_settings "$MODE" rerun
+  ADMIN_PASSWORD=$(rand); RESET_TOKEN=$(openssl rand -hex 16)
+  finish_install
+}
+
 # finish_install: pull, start, seed and report, with the .env in this directory. A new install runs it once .env is
 # written; a run that stopped after that (.quickstart-unfinished is still there) is resumed with it, keeping .env:
 # the database volume already has its password.
@@ -942,19 +1090,8 @@ finish_install() {
 # An .env here: an install. One the quick start didn't finish is resumed; any other is left alone (never delete .env
 # while its volumes exist: the database keeps the password in it).
 if [ -e .env ] || [ -L .env ]; then
-  if [ -f .quickstart-unfinished ] && [ -f .env ] && [ ! -L .env ] && [ -f install/lib/db.sh ]; then
-    say "== MDMesh quick start: finishing the install in $(pwd) with its .env =="
-    mdm_any_answered && warn "The MDMESH_* answers are not used: this install's .env is."
-    envval() { sed -n "s/^$1=//p" .env | head -1 | sed 's/^"\(.*\)"$/\1/'; }
-    BASE_URL=$(envval BASE_URL); IMAGE_OWNER=$(envval IMAGE_OWNER); RELEASE=$(envval CURRENT_VERSION)
-    HOST=${BASE_URL#*://}; HOST=${HOST%%/*}
-    COMPOSE_FILE=$(envval COMPOSE_FILE) COMPOSE_PROFILES=$(envval COMPOSE_PROFILES) MODE=$(mdm_mode_of_env)
-    PROXY_BIND=$(envval MDMESH_BIND); ORIGIN_TLS=$(envval MDMESH_ORIGIN_TLS)
-    mdm_mode_settings "$MODE" rerun
-    ADMIN_PASSWORD=$(rand); RESET_TOKEN=$(openssl rand -hex 16)
-    # shellcheck source=install/lib/db.sh
-    . ./install/lib/db.sh
-    finish_install
+  if [ -f .quickstart-unfinished ] && [ -f .env ] && [ ! -L .env ]; then
+    resume_install
     exit 0
   fi
   err "An .env already exists in $(pwd): an install is here, so the quick start leaves it alone. Don't delete that .env"
@@ -1005,62 +1142,7 @@ if [ -z "$RELEASE" ]; then
   exit 1
 fi
 [ -z "${MDMESH_RELEASE_PUBKEY:-}" ] || warn "Using MDMESH_RELEASE_PUBKEY: a custom release signing key, not MDMesh's."
-say "Verifying release v${RELEASE} of ${GH_REPO}…"
-VERIFY_DIR=$(mktemp -d)
-ENV_TMP=''
-cleanup_verify() {
-  [ -z "$ENV_TMP" ] || rm -f -- "$ENV_TMP"   # a .env write that failed or was interrupted: it holds the new secrets
-  rm -f -- "$VERIFY_DIR/manifest.json" "$VERIFY_DIR/manifest.json.minisig" "$VERIFY_DIR"/dl.*
-  rmdir -- "$VERIFY_DIR" 2>/dev/null || true
-}
-trap cleanup_verify EXIT
-MANIFEST="$VERIFY_DIR/manifest.json"
-REL_URL="https://github.com/${GH_REPO}/releases/download/v${RELEASE}"
-if ! curl -fsSL -m 60 "${REL_URL}/manifest.json" -o "$MANIFEST" \
-   || ! curl -fsSL -m 60 "${REL_URL}/manifest.json.minisig" -o "$VERIFY_DIR/manifest.json.minisig"; then
-  err "Could not download manifest.json and manifest.json.minisig from ${REL_URL} (is v${RELEASE} a published release with a signed manifest?)."
-  exit 1
-fi
-VERIFY_RC=0
-mdm_verify_manifest "${MDMESH_RELEASE_PUBKEY:-$MDM_RELEASE_PUBKEY_DEFAULT}" "$MANIFEST" "$VERIFY_DIR/manifest.json.minisig" || VERIFY_RC=$?
-if [ "$VERIFY_RC" = 2 ]; then
-  err "Checking the release signature needs OpenSSL 3.0+ or minisign (this host: $(openssl version 2>/dev/null || echo 'no openssl'))."
-  err "Install minisign (your distribution's package, or https://github.com/jedisct1/minisign/releases) and re-run. Nothing was installed."
-  exit 1
-fi
-if [ "$VERIFY_RC" != 0 ]; then
-  err "The manifest of release v${RELEASE} of ${GH_REPO} is not signed by the release key (reason above). Nothing was installed."
-  if [ "$GH_REPO" != "$REPO" ] && [ -z "${MDMESH_RELEASE_PUBKEY:-}" ]; then
-    err "A fork signs with its own key: run that repository's quickstart.sh, or set MDMESH_RELEASE_PUBKEY to the key line of its release/minisign.pub."
-  fi
-  exit 1
-fi
-# Bind the signed manifest to this release: an older release's manifest is signed too.
-MANIFEST_VERSION=$(mdm_manifest_field "$MANIFEST" version '[0-9A-Za-z.+-]+' || true)
-if [ "$MANIFEST_VERSION" != "$RELEASE" ]; then
-  err "The signed manifest is for version ${MANIFEST_VERSION:-(none)}, not v${RELEASE}. Nothing was installed."; exit 1
-fi
-# The image digests: all three, under the owner chosen above.
-SERVER_REF=$(mdm_manifest_field "$MANIFEST" server "$MDM_IMAGE_REF_ERE" || true)
-WEB_REF=$(mdm_manifest_field "$MANIFEST" web "$MDM_IMAGE_REF_ERE" || true)
-SUPERVISOR_REF=$(mdm_manifest_field "$MANIFEST" supervisor "$MDM_IMAGE_REF_ERE" || true)
-if [ -n "$SERVER_REF" ] && [ -n "$WEB_REF" ] && [ -n "$SUPERVISOR_REF" ]; then
-  # Each ref must be exactly its own image under this owner (as supervisor/lib.js imagePins and apply.sh require).
-  for _pair in "server $SERVER_REF" "web $WEB_REF" "supervisor $SUPERVISOR_REF"; do
-    _name=${_pair%% *}; _ref=${_pair#* }
-    if [ "${_ref%@*}" != "ghcr.io/${IMAGE_OWNER}/mdmesh-${_name}" ]; then
-      err "Release v${RELEASE} of ${GH_REPO} publishes its ${_name} image as ${_ref%@*}, not ghcr.io/${IMAGE_OWNER}/mdmesh-${_name}. Re-run and enter the image owner it names."
-      exit 1
-    fi
-  done
-  SERVER_TAG="${RELEASE}@${SERVER_REF#*@}"; WEB_TAG="${RELEASE}@${WEB_REF#*@}"; SUPERVISOR_TAG="${RELEASE}@${SUPERVISOR_REF#*@}"
-else
-  err "The signed manifest of v${RELEASE} does not pin the server, web and supervisor images by digest, so the quick start can't install it."
-  err "(A fork publishing with an older release workflow: update its release/ scripts and .github/workflows/release.yml.)"
-  exit 1
-fi
-RAW="https://raw.githubusercontent.com/${GH_REPO}/v${RELEASE}"
-say "Installing release v${RELEASE} of ${GH_REPO}."
+verify_release
 
 DB_PASSWORD=$(rand); HASH_SECRET=$(rand); ADMIN_PASSWORD=$(rand); RESET_TOKEN=$(openssl rand -hex 16)
 
@@ -1069,31 +1151,7 @@ if [ "$MODE" = 3 ] && ! mdm_manifest_field "$MANIFEST" docker-compose.proxy.yml 
 fi
 mdm_mode_questions
 
-say "Downloading the pull-only compose + seed…"
-# Every file is downloaded to a temporary name and checked against its SHA-256 in the signed manifest; only when all of
-# them match are they moved into place. db.sh is sourced below, so nothing unverified ever runs.
-n=0; FETCHED=''
-for f in $MDM_QUICKSTART_FILES; do
-  n=$((n + 1))
-  want=$(mdm_manifest_field "$MANIFEST" "$f" "$MDM_SHA256_ERE" || true)
-  # Before 0.6.0 (proxy mode was refused above for such a release).
-  if [ -z "$want" ] && [ "$f" = docker-compose.proxy.yml ]; then continue; fi
-  [ -n "$want" ] || { err "The signed manifest of v${RELEASE} has no SHA-256 for ${f}, so it can't be verified. Nothing was installed."; exit 1; }
-  curl -fsSL -m 120 "${RAW}/${f}" -o "$VERIFY_DIR/dl.$n" || { err "Could not download ${RAW}/${f}. Nothing was installed."; exit 1; }
-  got=$(mdm_sha256 "$VERIFY_DIR/dl.$n")
-  if [ "$got" != "$want" ]; then
-    err "${f} from ${RAW} does not match the signed release (SHA-256 ${got}, expected ${want}). Nothing was installed."; exit 1
-  fi
-  FETCHED="$FETCHED $n"
-done
-n=0
-for f in $MDM_QUICKSTART_FILES; do
-  n=$((n + 1))
-  case " $FETCHED " in *" $n "*) ;; *) continue ;; esac
-  dest=$f; [ "$f" = docker-compose.release.yml ] && dest=docker-compose.yml
-  mkdir -p -- "$(dirname -- "$dest")"
-  mv -f -- "$VERIFY_DIR/dl.$n" "$dest"
-done
+fetch_release_files
 # Shared seed rules with setup.sh / the native installer (seed gate, verified seed, post-seed repairs).
 # Version coupling: this script may be newer than the release it installs (MDMESH_VERSION, or a copy from main), but
 # db.sh (like the compose file and the seed) comes from the release tag being installed, so it matches the images. Call only db.sh functions, with only the arguments and output, that the

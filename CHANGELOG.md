@@ -29,6 +29,9 @@ Fixes
   stopped mid-wipe (HyperOS, #222).
 - Agent: Lock on a device with no screen lock set still turns the screen off, and its result now says the device isn't
   protected.
+- Agent: after a boot or an agent update, the agent re-applies the newest configuration the server sent, not the last
+  one it applied in full. Before, a configuration with one failed setting could have its other settings undone by a
+  reboot. Until such a configuration applies in full, the device reports it as not in sync, so the server re-sends it.
 
 ## v0.5.0 — 2026-11-17
 

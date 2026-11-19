@@ -7,6 +7,7 @@ import com.mdmesh.core.kiosk.KioskHomeSwitch
 import com.mdmesh.core.store.ConfigStateStore
 import com.mdmesh.core.store.InMemoryConfigStateStore
 import com.mdmesh.core.store.InMemoryKioskStateStore
+import com.mdmesh.core.store.reportedRevision
 import com.mdmesh.core.testing.fixedToggles
 import com.mdmesh.kiosk.KioskController
 import com.mdmesh.kiosk.KioskResult
@@ -341,6 +342,98 @@ class ConfigApplierTest {
         assertNull(empty.reapplyPersisted())
     }
 
+    /** Records what the configuration asked of it, in order. */
+    private class RecordingReleasable(override val capabilityKey: String = "r") : TogglePolicy, ReleasablePolicy {
+        val calls = mutableListOf<String>()
+        override fun isSupported() = true
+        override fun setEnabled(enabled: Boolean): PolicyOutcome {
+            calls += "set $enabled"
+            return PolicyOutcome.Applied
+        }
+        override fun release(): PolicyOutcome { calls += "release"; return PolicyOutcome.Applied }
+    }
+
+    /** Fails the location section: the document is delivered, applied in part, and never saved. */
+    private val failLocation: (String) -> Unit = { check(it != FAIL) { "location refused" } }
+
+    @Test fun `the boot re-apply releases a key only the saved document managed`() = runTest {
+        val r = RecordingReleasable(); val store = InMemoryConfigStateStore()
+        store.save(ConfigApplyPayload(revision = "A", policies = mapOf("r" to false)))
+        store.delivered = ConfigApplyPayload(revision = "B", location = ConfigLocation(FAIL))
+
+        applier(fixedToggles("r" to r), kiosk(FakeController()), failLocation, store).reapplyPersisted()
+
+        assertEquals("the saved Block is not put back", listOf("release"), r.calls)
+        assertEquals("A", store.revision())
+    }
+
+    @Test fun `the boot re-apply exits a configured kiosk the newest delivered document turned off`() = runTest {
+        val c = FakeController(); val kioskStore = InMemoryKioskStateStore(); val store = InMemoryConfigStateStore()
+        val configured = KioskApplyPayload(mode = "single", pinPackage = "com.a")
+        kioskStore.save(configured) // entered by the saved configuration
+        store.save(ConfigApplyPayload(revision = "A", kiosk = configured))
+        store.delivered = ConfigApplyPayload(revision = "B", location = ConfigLocation(FAIL))
+
+        applier(fixedToggles(), kiosk(c, kioskStore), failLocation, store).reapplyPersisted()
+
+        assertEquals(0, c.enters)
+        assertEquals(1, c.exits)
+    }
+
+    @Test fun `the boot re-apply of a delivered document that was saved releases nothing and keeps the revision`() =
+        runTest {
+            val r = RecordingReleasable(); val store = InMemoryConfigStateStore()
+            val a = applier(fixedToggles("r" to r), kiosk(FakeController()), failLocation, store)
+            a.apply(ConfigApplyPayload(revision = "A", policies = mapOf("r" to false)))
+            r.calls.clear()
+
+            a.reapplyPersisted()
+
+            assertEquals(listOf("set false"), r.calls)
+            assertEquals("A", store.revision())
+            assertEquals("A", store.reportedRevision())
+        }
+
+    @Test fun `with no delivered document (an older store) the boot replays the saved one`() = runTest {
+        val r = RecordingReleasable(); val store = InMemoryConfigStateStore()
+        store.save(ConfigApplyPayload(revision = "A", policies = mapOf("r" to false)))
+        assertNull(store.delivered)
+
+        val result = applier(fixedToggles("r" to r), kiosk(FakeController()), {}, store).reapplyPersisted()
+
+        assertEquals("A", result?.revision)
+        assertEquals(listOf("set false"), r.calls)
+    }
+
+    /**
+     * PR #227 review: the device saved A, B arrived with a failed section, then the admin reverted to exactly A. Were
+     * A reported, the server would see it in sync and never re-send A, while every boot replays B. Stale until the
+     * newest delivered document is the saved one; the saved revision itself stays (applyAfterInstall reads it).
+     */
+    @Test fun `the revision is reported stale while the newest delivered document isn't saved`() = runTest {
+        val store = InMemoryConfigStateStore()
+        val a = applier(fixedToggles(), kiosk(FakeController()), failLocation, store)
+        val docA = ConfigApplyPayload(revision = "A")
+        a.apply(docA)
+        assertEquals("A", store.reportedRevision())
+
+        val docB = ConfigApplyPayload(revision = "B", location = ConfigLocation(FAIL))
+        assertFalse(ConfigApplier.succeeded(a.apply(docB)))
+        assertEquals("A", store.revision())
+        assertEquals(ConfigStateStore.STALE_REVISION, store.reportedRevision())
+
+        a.apply(docA) // the server re-sends A after the revert
+        assertEquals("A", store.reportedRevision())
+    }
+
+    @Test fun `a store that never saved a document reports the stale revision once one is delivered`() = runTest {
+        val store = InMemoryConfigStateStore()
+        assertNull(store.reportedRevision())
+        applier(fixedToggles(), kiosk(FakeController()), failLocation, store)
+            .apply(ConfigApplyPayload(revision = "B", location = ConfigLocation(FAIL)))
+        assertEquals(ConfigStateStore.STALE_REVISION, store.reportedRevision())
+    }
+
     private class FakeReleasable(private val outcome: PolicyOutcome) : TogglePolicy, ReleasablePolicy {
         override val capabilityKey = "wifiRadio"
         var releases = 0
@@ -435,6 +528,7 @@ class ConfigApplierTest {
         assertTrue(resent.outcomes["policies.wifiRadio"]!!.startsWith("deferred: no connection to the server"))
         assertEquals(true, radio.on)
         a.reapplyPersisted() // boot: replays B, the newest delivered, which does not end the hold either
+        assertEquals(true, radio.on)
         assertTrue(a.apply(b).outcomes["policies.wifiRadio"]!!.startsWith("deferred"))
         assertEquals(true, radio.on)
 
@@ -550,5 +644,9 @@ class ConfigApplierTest {
         assertEquals(ConfigOutcome.UNSUPPORTED, r.outcomes["connectivity"])
         assertTrue(modes.isEmpty())
         assertEquals("unsupported is final: the document is saved", "c5", store.revision())
+    }
+
+    private companion object {
+        const val FAIL = "fail"
     }
 }

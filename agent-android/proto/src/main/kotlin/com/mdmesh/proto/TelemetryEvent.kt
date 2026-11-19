@@ -20,7 +20,9 @@ object EventType {
     const val LOW_BATTERY = "lowBattery"
     const val ENROLLED = "enrolled"
 
-    /** A store the storage corrupted was recovered; detail "<store> from <mirror|configuration|empty>" (#220). */
+    /**
+     * A store the storage damaged was recovered; detail "<store> from <mirror|configuration|lock task|empty>" (#220).
+     */
     const val STORAGE_RECOVERED = "storageRecovered"
 
     /** The boot/update re-apply of the saved configuration failed in part; detail names what failed. */

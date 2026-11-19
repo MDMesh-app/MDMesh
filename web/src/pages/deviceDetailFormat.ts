@@ -209,9 +209,17 @@ export function commandStatus(status: string): { kind: StatusKind; label?: strin
   }
 }
 
+/** Device events the agent reports as something to look at (#220's storage recovery, a failed boot re-apply). */
+export const WARN_EVENTS: ReadonlySet<string> = new Set([
+  'lowBattery',
+  'kioskCrashLoop',
+  'storageRecovered',
+  'configReapplyFailed',
+]);
+
 export function eventTone(type: string): StatusTone {
   if (type === 'kioskPinLockout') return 'alert';
-  if (type === 'lowBattery' || type === 'kioskCrashLoop') return 'warn';
+  if (WARN_EVENTS.has(type)) return 'warn';
   if (type === 'enrolled' || type === 'appInstalled') return 'ok';
   return 'idle';
 }

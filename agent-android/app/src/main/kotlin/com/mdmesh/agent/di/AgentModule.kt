@@ -85,6 +85,7 @@ import com.mdmesh.policy.CapabilityRegistry
 import com.mdmesh.policy.AppRuntimePermissions
 import com.mdmesh.policy.DeviceOwnerAppRuntimePermissions
 import com.mdmesh.policy.factoryreset.FactoryResetWipeHold
+import com.mdmesh.policy.factoryreset.SharedPrefsWipeHoldStore
 import com.mdmesh.policy.wifi.AndroidWifiRadio
 import com.mdmesh.policy.wifi.DpmHandle
 import com.mdmesh.policy.wifi.SharedPrefsWifiRadioOffState
@@ -128,7 +129,8 @@ object AgentModule {
 
     @Provides
     @Singleton
-    fun provideFactoryResetWipeHold(): FactoryResetWipeHold = FactoryResetWipeHold()
+    fun provideFactoryResetWipeHold(@ApplicationContext context: Context): FactoryResetWipeHold =
+        FactoryResetWipeHold(SharedPrefsWipeHoldStore(context)) { Boot.count(context) }
 
     @Provides
     @Singleton

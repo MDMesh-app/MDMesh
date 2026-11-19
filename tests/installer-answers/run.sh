@@ -223,12 +223,14 @@ dry() {
     install-native.sh) script="$WORK/src/install/install-native.sh" ;;
   esac
   RC=0
-  (cd "$WORK/qs" && env -i PATH="$WORK/stubs:$PATH" HOME="$WORK" MDMESH_DRY_RUN=1 "$@" bash ${XTRACE:+-x} "$script" < /dev/null > "$WORK/out/o" 2> "$WORK/out/e") || RC=$?
+  (cd "$WORK/qs" && env -i PATH="$WORK/stubs:$PATH" HOME="$WORK" MDMESH_DRY_RUN=1 "$@" bash ${XTRACE:+-x} "$script" \
+    ${DRY_ARGS[@]+"${DRY_ARGS[@]}"} < /dev/null > "$WORK/out/o" 2> "$WORK/out/e") || RC=$?
 }
+DRY_ARGS=()   # command-line arguments for dry's runs (the mode flags)
 show() { sed 's/^/    | /' "$WORK/out/o" "$WORK/out/e" >&2; }
 # plan_field ID: "<value> <source>" from the plan line of ID.
 plan_field() { awk -v id="$1" '$1 == id { print $2, $NF; exit }' "$WORK/out/o"; }
-modes_of() { if options_of "$1" | grep -qx mode; then echo tunnel domain; else echo -; fi; }
+modes_of() { if options_of "$1" | grep -qx mode; then opt mode '.allowed[]'; else echo -; fi; }
 # opt_m ID MODE: y when option ID is asked in MODE ("-": an installer without modes), else n.
 opt_m() { jq -r --arg o "$1" --arg m "$2" '.options[] | select(.id == $o) | if .when == null or $m == "-" then "y" elif .when.mode == $m then "y" else "n" end' "$CONTRACT"; }
 # answers INSTALLER MODE [required]: NAME=VALUE for each answer (the first valid example; mode = MODE), all or only the
@@ -502,6 +504,121 @@ dry install-native.sh BASE_URL=https://old.example.com MDMESH_BASE_URL=https://n
 dry install-native.sh MDMESH_NONINTERACTIVE=1 MDMESH_BASE_URL=https://mdm.example.com
 { [ "$RC" != 0 ] && grep -q 'MDMESH_ASSUME_YES' "$WORK/out/e"; } || fail "a non-interactive native run without MDMESH_ASSUME_YES is not refused"
 CHECKS=$((CHECKS + 9))
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Hosting modes (install/lib/modes.sh): the flags, the menu, answers from 0.5.x, and the .env each mode writes.
+# Each flag the contract names picks its mode, in every installer that has the mode question, and is one it accepts.
+for inst in quickstart.sh setup.sh; do
+  for flag in $(jq -r '.options[] | select(.id == "mode") | .flags | keys[]' "$CONTRACT"); do
+    m=$(jq -r --arg f "$flag" '.options[] | select(.id == "mode") | .flags[$f]' "$CONTRACT")
+    jq -e --arg i "$inst" --arg f "$flag" '.installers[] | select(.id == $i) | .flags | index($f)' "$CONTRACT" > /dev/null \
+      || fail "$inst: options.json's mode flag $flag is not among its flags"
+    DRY_ARGS=("$flag"); dry "$inst" MDMESH_NONINTERACTIVE=1 MDMESH_HOST=mdm.example.com MDMESH_TUNNEL_TOKEN=eyJhIjoiYWJjIn0=
+    { [ "$RC" = 0 ] && [ "$(plan_field mode)" = "$m [MDMESH_MODE]" ]; } || { fail "$inst $flag: the plan's mode is not $m"; show; }
+    # The same mode in MDMESH_MODE (either form) agrees with it; another one is refused before anything happens.
+    dry "$inst" MDMESH_MODE="$m" MDMESH_HOST=mdm.example.com
+    [ "$RC" = 0 ] || { fail "$inst $flag with MDMESH_MODE=$m is refused"; show; }
+    other=tunnel; [ "$m" != tunnel ] || other=domain
+    dry "$inst" MDMESH_MODE="$other" MDMESH_HOST=mdm.example.com
+    { [ "$RC" != 0 ] && grep -qF 'name different hosting modes' "$WORK/out/e"; } || { fail "$inst $flag with MDMESH_MODE=$other is not refused"; show; }
+    DRY_ARGS=("$flag" "--$other"); dry "$inst" MDMESH_HOST=mdm.example.com
+    { [ "$RC" = 2 ] && grep -qF 'name different hosting modes' "$WORK/out/e"; } || { fail "$inst $flag --$other is not refused"; show; }
+    DRY_ARGS=(); ok
+  done
+done
+DRY_ARGS=(--docker); dry quickstart.sh
+{ [ "$RC" = 2 ] && grep -qF 'Unknown option: --docker' "$WORK/out/e"; } || { fail "quickstart.sh accepts an unknown option"; show; }
+DRY_ARGS=(--native --proxy); dry setup.sh
+{ [ "$RC" = 2 ] && grep -qF 'hosting mode of the Docker install' "$WORK/out/e"; } || { fail "setup.sh --native --proxy is not refused"; show; }
+DRY_ARGS=(); ok
+# 0.5.x answers keep their meaning: MDMESH_MODE=1 and 2 (an answers file from then, too); 3 is the proxy mode.
+printf '%s\n' MDMESH_MODE=2 MDMESH_HOST=mdm.example.com MDMESH_ACME_EMAIL=ops@example.com > "$WORK/answers.env"
+chmod 600 "$WORK/answers.env"
+for inst in quickstart.sh setup.sh; do
+  dry "$inst" MDMESH_NONINTERACTIVE=1 MDMESH_ANSWERS="$WORK/answers.env"
+  { [ "$RC" = 0 ] && [ "$(plan_field mode)" = "domain [MDMESH_MODE]" ] && [ "$(plan_field acme-email)" = "ops@example.com [MDMESH_ACME_EMAIL]" ] \
+    && [ "$(plan_field bind)" = "- [unused]" ] && [ "$(plan_field trusted-proxies)" = "- [unused]" ]; } \
+    || { fail "$inst: a 0.5.x domain answers file reads differently"; show; }
+  for c in 1:tunnel 2:domain 3:proxy; do
+    dry "$inst" MDMESH_MODE="${c%%:*}" MDMESH_HOST=mdm.example.com
+    [ "$(plan_field mode)" = "${c#*:} [MDMESH_MODE]" ] || { fail "$inst: MDMESH_MODE=${c%%:*} is not ${c#*:}"; show; }
+  done
+  # An answer of another mode is not used, saying so.
+  dry "$inst" MDMESH_MODE=domain MDMESH_HOST=mdm.example.com MDMESH_BIND=127.0.0.1:9090 MDMESH_TUNNEL_TOKEN=eyJhIjoiYWJjIn0=
+  { [ "$RC" = 0 ] && grep -qF 'MDMESH_BIND is not used in domain mode' "$WORK/out/e" \
+    && grep -qF 'MDMESH_TUNNEL_TOKEN is not used in domain mode' "$WORK/out/e"; } || { fail "$inst: another mode's answers are not reported unused"; show; }
+  dry "$inst" MDMESH_ORIGIN_TLS=yes
+  { [ "$RC" != 0 ] && grep -qF 'MDMESH_ORIGIN_TLS must be 1 or 0' "$WORK/out/e"; } || { fail "$inst: MDMESH_ORIGIN_TLS=yes is not refused"; show; }
+  ok
+done
+
+# The menu, as the design has it (plain text: what each choice is for), its footer, and the hint when ports 80/443 are
+# taken (an ss stub that lists a listener on :443). A wrong choice is asked again; the run then goes on to the repo
+# question and stops at the curl stub.
+mkdir -p "$WORK/stubs-ss" "$WORK/qs5"
+printf '#!/bin/sh\necho "LISTEN 0 511 0.0.0.0:443 0.0.0.0:*"\n' > "$WORK/stubs-ss/ss"; chmod +x "$WORK/stubs-ss/ss"
+for ports in free busy; do
+  p="$WORK/stubs:$PATH"; [ "$ports" = free ] || p="$WORK/stubs-ss:$p"
+  (cd "$WORK/qs5" && printf '%s\n' 4 3 '' '' | env -i PATH="$p" HOME="$WORK" STUB_LOG="$WORK/children.log" STUB_DOCKER_OK=1 \
+    bash "$REPO/quickstart.sh" > "$WORK/out/o" 2> "$WORK/out/e") || true
+  menu=$(sed -n '/^How will your phones reach MDMesh?$/,/^Without Docker/p' "$WORK/out/o")
+  want="How will your phones reach MDMesh?
+  1) Cloudflare Tunnel       easiest: no ports to open (domain on Cloudflare)
+  2) Your own domain         MDMesh gets its own HTTPS (ports 80/443 must reach this machine)
+  3) Behind your own proxy   your nginx/Apache/Caddy/Traefik does HTTPS; MDMesh listens on 127.0.0.1:8080"
+  [ "$ports" = free ] || want="$want
+  Ports 80/443 are already in use on this machine. If that is your own web server, pick 3."
+  want="$want
+Without Docker? See Native in DEPLOY.md (github.com/MDMesh-app/MDMesh)."
+  { [ "$menu" = "$want" ] && grep -qF 'Please enter 1, 2 or 3.' "$WORK/out/o" \
+    && grep -qF 'Could not resolve the latest release of MDMesh-app/MDMesh' "$WORK/out/e"; } \
+    || { fail "quickstart.sh's menu (ports $ports) is not as designed: $(diff <(echo "$want") <(echo "$menu") | tr '\n' ' ')"; show; }
+  ok
+done
+
+# What setup.sh writes and runs per mode: a real run in a copy, stopping at the docker stub (`up`). Behind your proxy:
+# the overlay, where the edge listens and whom it believes, in .env and on compose's command line; site.d made and its
+# absolute path in .env.
+setup_run() {  # setup_run DIR [NAME=VALUE...]: ./setup.sh in DIR (a copy), stdin empty; docker calls in $WORK/docker.log
+  local d=$1; shift
+  : > "$WORK/docker.log"
+  (cd "$d" && env -i PATH="$WORK/stubs:$PATH" HOME="$WORK" STUB_LOG="$WORK/docker.log" STUB_DOCKER_OK=1 "$@" \
+    bash ./setup.sh ${SETUP_ARGS[@]+"${SETUP_ARGS[@]}"} < /dev/null > "$WORK/out/o" 2> "$WORK/out/e") || true
+}
+up_args() { sed -n 's#^\S*/docker compose \(.*\) up -d --build$#\1#p' "$WORK/docker.log" | head -1; }
+SETUP_ARGS=()
+mkdir -p "$WORK/src6/install"; cp -- "$REPO/setup.sh" "$WORK/src6/"; cp -R -- "$REPO/install/lib" "$WORK/src6/install/"
+SETUP_ARGS=(--proxy)
+setup_run "$WORK/src6" MDMESH_NONINTERACTIVE=1 MDMESH_HOST=mdm.example.com MDMESH_TRUSTED_PROXIES='192.0.2.10, host'
+for l in 'COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml' 'COMPOSE_PROFILES=' 'SITE_ADDRESS=:8080' \
+         'MDMESH_BIND=127.0.0.1:8080' 'TRUSTED_PROXIES="192.0.2.10 host"' 'MDMESH_ORIGIN_TLS=0' "MDMESH_SITE_DIR=$WORK/src6/site.d" \
+         'ACME_EMAIL=' 'TUNNEL_TOKEN=' 'BASE_URL=https://mdm.example.com'; do
+  grep -qxF -- "$l" "$WORK/src6/.env" || { fail "setup.sh --proxy: .env has no line $l"; show; }
+done
+{ [ "$(up_args)" = '-f docker-compose.yml -f docker-compose.proxy.yml' ] && [ -f "$WORK/src6/site.d/README" ] \
+  && [ "$(stat -c %a "$WORK/src6/site.d")" = 755 ]; } || { fail "setup.sh --proxy: compose args \"$(up_args)\", or no site.d"; show; }
+ok
+# A re-run keeps the mode .env has, whatever mode is asked for now (saying so), and keeps .env's own values.
+cp "$WORK/src6/.env" "$WORK/env6.before"
+SETUP_ARGS=(--domain); setup_run "$WORK/src6"; SETUP_ARGS=()
+{ [ "$(up_args)" = '-f docker-compose.yml -f docker-compose.proxy.yml' ] && grep -qF 'runs in proxy mode, and a re-run keeps it' "$WORK/out/o" \
+  && cmp -s <(grep -v '_VERSION=\|^VITE_\|^APPLY_SUPPORTED=' "$WORK/env6.before") <(grep -v '_VERSION=\|^VITE_\|^APPLY_SUPPORTED=' "$WORK/src6/.env"); } \
+  || { fail "a setup.sh re-run does not keep the proxy mode and its .env"; show; diff "$WORK/env6.before" "$WORK/src6/.env" >&2; }
+ok
+# Installs from before 0.6.0 keep their compose command (tunnel: COMPOSE_FILE from .env; domain: the domain overlay),
+# gain MDMESH_SITE_DIR, and keep their other .env values (SITE_ADDRESS, TRUSTED_PROXIES as the operator set them).
+for c in 'cloudflare|:80|--profile cloudflare' '|mdm.example.com, www.example.com|-f docker-compose.yml -f docker-compose.domain.yml'; do
+  IFS='|' read -r prof site want <<< "$c"
+  rm -rf -- "$WORK/src7"; mkdir -p "$WORK/src7/install"; cp -- "$REPO/setup.sh" "$WORK/src7/"; cp -R -- "$REPO/install/lib" "$WORK/src7/install/"
+  printf '%s\n' DB_PASSWORD=x HASH_SECRET=y BASE_URL=https://mdm.example.com "SITE_ADDRESS=\"$site\"" \
+    'TRUSTED_PROXIES="203.0.113.0/24"' "COMPOSE_PROFILES=$prof" IMAGE_OWNER=local > "$WORK/src7/.env"
+  setup_run "$WORK/src7"
+  { [ "$(up_args)" = "$want" ] && grep -qxF "MDMESH_SITE_DIR=$WORK/src7/site.d" "$WORK/src7/.env" \
+    && grep -qxF "SITE_ADDRESS=\"$site\"" "$WORK/src7/.env" && grep -qxF 'TRUSTED_PROXIES="203.0.113.0/24"' "$WORK/src7/.env" \
+    && grep -qxF "SITE_ADDRESS=$site" "$WORK/docker.log"; } \
+    || { fail "a 0.5.x .env (COMPOSE_PROFILES=$prof) re-run: compose args \"$(up_args)\", want \"$want\", or .env changed"; show; }
+  ok
+done
 
 if [ -e "$WORK/stubs.called" ]; then fail "a dry run ran a command that changes the host: $(cat "$WORK/stubs.called")"; fi
 

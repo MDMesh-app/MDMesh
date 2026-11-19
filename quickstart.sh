@@ -7,6 +7,9 @@
 #
 #   bash <(curl -fsSL https://github.com/MDMesh-app/MDMesh/releases/latest/download/quickstart.sh)
 #
+# It first asks how phones will reach MDMesh (install/lib/modes.sh): through a Cloudflare Tunnel, on your own domain, or
+# behind your own proxy. --tunnel, --domain or --proxy after the command answers that (as MDMESH_MODE does).
+#
 # Each question can be answered in advance with an environment variable (MDMESH_MODE, MDMESH_HOST, …) or an answers
 # file (MDMESH_ANSWERS); MDMESH_NONINTERACTIVE=1 never asks, MDMESH_DRY_RUN=1 only checks the answers and prints the
 # plan. The variables are listed in install/options.json and DEPLOY.md.
@@ -123,8 +126,10 @@ mdm_manifest_field() {
 MDM_SHA256_ERE='[0123456789abcdef]{64}'
 MDM_IMAGE_REF_ERE='[abcdefghijklmnopqrstuvwxyz0123456789._/-]+@sha256:[0123456789abcdef]{64}'
 
-# The files downloaded from the release's tag, as named in the manifest's "files" (release/build-manifest.sh).
-MDM_QUICKSTART_FILES="docker-compose.release.yml docker-compose.domain.yml install/sql/hmdm_init.en.sql install/sql/post_seed.sql install/lib/db.sh"
+# The files downloaded from the release's tag, as named in the manifest's "files" (release/build-manifest.sh). A release
+# before 0.6.0 has no docker-compose.proxy.yml: it is fetched when the manifest lists it, and needed only behind your
+# own proxy.
+MDM_QUICKSTART_FILES="docker-compose.release.yml docker-compose.domain.yml docker-compose.proxy.yml install/sql/hmdm_init.en.sql install/sql/post_seed.sql install/lib/db.sh"
 
 # mdm_sha256 FILE: its SHA-256 in lowercase hex.
 mdm_sha256() { openssl dgst -sha256 -r "$1" | cut -d' ' -f1; }
@@ -226,14 +231,14 @@ mdm_check_host() {
 # between the markers, for the same reason as url.sh's above. CI (t0-fast, edge entry) fails if the copies differ.
 # >>> answers.sh functions (quickstart.sh keeps a verbatim copy) >>>
 # The keys an answers file may set: every answer and setting in install/options.json (CI checks the two match).
-_MDM_ANSWER_KEYS=" MDMESH_MODE MDMESH_REPO MDMESH_IMAGE_OWNER MDMESH_HOST MDMESH_TUNNEL_TOKEN MDMESH_ACME_EMAIL MDMESH_BASE_URL MDMESH_HTTP_PORT MDMESH_REPLACE_DATA MDMESH_ASSUME_YES MDMESH_DIR MDMESH_VERSION MDMESH_RELEASE_PUBKEY MDMESH_NONINTERACTIVE MDMESH_DRY_RUN "
+_MDM_ANSWER_KEYS=" MDMESH_MODE MDMESH_REPO MDMESH_IMAGE_OWNER MDMESH_HOST MDMESH_TUNNEL_TOKEN MDMESH_ACME_EMAIL MDMESH_BIND MDMESH_TRUSTED_PROXIES MDMESH_BASE_URL MDMESH_HTTP_PORT MDMESH_REPLACE_DATA MDMESH_ASSUME_YES MDMESH_DIR MDMESH_VERSION MDMESH_RELEASE_PUBKEY MDMESH_ORIGIN_TLS MDMESH_NONINTERACTIVE MDMESH_DRY_RUN "
 _MDM_SECRET_KEYS=" MDMESH_TUNNEL_TOKEN "
 _MDM_ANS_GIVEN=" "       # ids of the questions answered in advance
 _MDM_ANS_FROM_FILE=" "   # keys set from the answers file
 _mdm_answer_fail() { printf 'MDMesh installer: %s\n' "$*" >&2; exit 1; }
 
 # mdm_answers_load: reads the answers file MDMESH_ANSWERS names, if any (keys already in the environment are left
-# alone), then checks MDMESH_NONINTERACTIVE and MDMESH_DRY_RUN. Stops the installer on any error. xtrace stays off
+# alone), then checks the 0/1 settings (MDMESH_NONINTERACTIVE, MDMESH_DRY_RUN, MDMESH_ORIGIN_TLS). Stops the installer on any error. xtrace stays off
 # while it runs (the file may hold a secret).
 mdm_answers_load() { local _mdm_x=$-; set +x; _mdm_answers_load; case "$_mdm_x" in *x*) set -x ;; esac; }
 # _mdm_private_file FILE: FILE belongs to this user (or root) and nobody else may read, write or run it. Fails closed:
@@ -276,7 +281,7 @@ _mdm_answers_load() {
       if [ -z "${!key+x}" ]; then printf -v "$key" '%s' "$val"; _MDM_ANS_FROM_FILE="$_MDM_ANS_FROM_FILE$key "; fi
     done < "$f"
   fi
-  for key in MDMESH_NONINTERACTIVE MDMESH_DRY_RUN; do
+  for key in MDMESH_NONINTERACTIVE MDMESH_DRY_RUN MDMESH_ORIGIN_TLS; do
     v=${!key-}
     case "$v" in ''|0|1) ;; *) _mdm_answer_fail "$key must be 1 or 0." ;; esac
   done
@@ -288,9 +293,9 @@ _mdm_answer_check() {
   local v=$_MDM_V u l d
   _MDM_WHY=''; _MDM_SHOW=$v
   case "$1" in
-    mode)
+    mode)   # the hosting modes of install/lib/modes.sh
       case "$v" in tunnel|1) _MDM_V=1; _MDM_SHOW=tunnel ;; domain|2) _MDM_V=2; _MDM_SHOW=domain ;;
-        *) _MDM_WHY='must be tunnel or domain' ;; esac ;;
+        proxy|3) _MDM_V=3; _MDM_SHOW=proxy ;; *) _MDM_WHY='must be tunnel, domain or proxy' ;; esac ;;
     hostname)
       u="https://$v"
       { mdm_check_host _MDM_V && mdm_check_base_url u; } || _MDM_WHY=' ' ;;
@@ -335,6 +340,10 @@ _mdm_answer_check() {
         *[!${_MDM_DIGITS}]*) _MDM_WHY='must be a number' ;;
         *) { [ "${#u}" -le 5 ] && [ "$u" -ge 1 ] && [ "$u" -le 65535 ]; } || _MDM_WHY='must be 1-65535' ;;
       esac ;;
+    bind)
+      [ -z "$v" ] || _mdm_bind_ok "$v" || _MDM_WHY='must be an IP address and a port, e.g. 127.0.0.1:8080 or [::1]:8080' ;;
+    proxies)
+      _mdm_proxies_check "$v"; _MDM_SHOW=$_MDM_V ;;
     yes-no)
       case "$v" in yes|no) ;; *) _MDM_WHY='must be yes or no' ;; esac ;;
     flag)
@@ -343,8 +352,59 @@ _mdm_answer_check() {
   esac
 }
 
+# _mdm_ipv4 ADDR: ADDR is a dotted IPv4 address (four numbers 0-255, no leading zeros).
+_mdm_ipv4() {
+  local a=$1. o n=0
+  case "$1" in ''|*[!${_MDM_DIGITS}.]*|.*|*.|*..*) return 1 ;; esac
+  while [ -n "$a" ]; do
+    o=${a%%.*}; a=${a#*.}; n=$((n + 1))
+    case "$o" in 0?*) return 1 ;; esac
+    { [ "${#o}" -le 3 ] && [ "$o" -le 255 ]; } || return 1
+  done
+  [ "$n" = 4 ]
+}
+# _mdm_ipv6 ADDR: ADDR (no brackets) looks like an IPv6 address: hex digits, ":" and ".", at least two ":", at most one
+# "::". (Not checked further, as for a hostname's [IPv6]: whatever reads it next refuses a wrong one.)
+_mdm_ipv6() {
+  case "$1" in ''|*[!${_MDM_HEX}:.]*|*:::*|*::*::*) return 1 ;; *:*:*) return 0 ;; esac
+  return 1
+}
+# _mdm_bind_ok IP:PORT: an address to listen on: an IPv4 address or an [IPv6] one, then :port (1-65535).
+_mdm_bind_ok() {
+  local a
+  case "$1" in
+    \[*\]:*) a=${1%\]:*}; _mdm_ipv6 "${a#\[}" || return 1 ;;
+    *:*) _mdm_ipv4 "${1%:*}" || return 1 ;;
+    *) return 1 ;;
+  esac
+  [ -z "$(_mdm_hostport_problem "[::1]:${1##*:}")" ]
+}
+# _mdm_proxies_check LIST: the proxy addresses in LIST (separated by spaces or commas). Each is "host" (a proxy on this
+# machine: MDMesh's edge sees it at its Docker network's gateway), an IP address, or a range (CIDR) no wider than an IPv4
+# /8 or an IPv6 /16, which would trust far more than a proxy. Names and Caddy's private_ranges are refused. On success
+# _MDM_V is the list with one space between entries; else _MDM_WHY says why. Empty: the default, host.
+_mdm_proxies_check() {
+  local t a l min max out='' list
+  IFS=', ' read -r -a list <<< "$1"
+  for t in ${list[@]+"${list[@]}"}; do
+    case "$t" in '') continue ;; host) out="$out $t"; continue ;; esac
+    a=${t%/*}
+    if _mdm_ipv4 "$a"; then min=8; max=32
+    elif _mdm_ipv6 "$a"; then min=16; max=128
+    else _MDM_WHY="has \"$t\", which is not an IP address, a range (CIDR) or host"; return; fi
+    case "$t" in
+      */*) l=${t#*/}
+           case "$l" in ''|*[!${_MDM_DIGITS}]*|0?*) _MDM_WHY="has \"$t\", whose range is not a prefix length"; return ;; esac
+           { [ "${#l}" -le 3 ] && [ "$l" -ge "$min" ] && [ "$l" -le "$max" ]; } \
+             || { _MDM_WHY="has \"$t\": a range must be /$min to /$max (a wider one trusts far more than your proxy)"; return; } ;;
+    esac
+    out="$out $t"
+  done
+  _MDM_V=${out# }
+}
+
 # _mdm_answer_rule_has_default RULE: an empty or missing answer means the question's default (Enter at the prompt).
-_mdm_answer_rule_has_default() { case "$1" in github-repo|image-owner|port|email|yes-no) return 0 ;; esac; return 1; }
+_mdm_answer_rule_has_default() { case "$1" in github-repo|image-owner|port|email|yes-no|bind|proxies) return 0 ;; esac; return 1; }
 
 # mdm_answer ID VAR RULE ENV [ALIAS]: if ENV (or ALIAS, the installer's older name for it) is set, in the environment or
 # the answers file, checks its value by RULE and stores it in VAR: question ID is then answered. Stops the installer when
@@ -387,12 +447,14 @@ _mdm_answer() {
 }
 
 # mdm_prompt_ok ID VAR: checks the answer just typed at question ID (in VAR) with the rule a pre-set answer gets. Fails,
-# saying why (never the value of a secret), so the caller asks again. xtrace is off while it holds the value.
+# saying why (never the value of a secret), so the caller asks again; otherwise VAR holds the answer as the rule writes it
+# (a list of proxies with one space between entries, say). xtrace is off while it holds the value.
 mdm_prompt_ok() { local _mdm_x=$- _mdm_rc=0; set +x; _mdm_prompt_ok "$@" || _mdm_rc=1; case "$_mdm_x" in *x*) set -x ;; esac; return "$_mdm_rc"; }
 _mdm_prompt_ok() {
   local r="_MDM_ANS_RULE_${1//-/_}"
   _MDM_V=${!2-}
   _mdm_answer_check "${!r}"
+  [ -n "$_MDM_WHY" ] || printf -v "$2" '%s' "$_MDM_V"
   _MDM_V=''
   [ -n "$_MDM_WHY" ] || return 0
   case "$_MDM_WHY" in ' ') printf 'Enter it again.\n' >&2 ;; *) printf 'That answer %s. Enter it again.\n' "$_MDM_WHY" >&2 ;; esac
@@ -469,17 +531,179 @@ mdm_plan_line() {
 mdm_plan_row() { printf '  %-13s %-32s [%s]\n' "$1" "$2" "$3"; }
 # <<< answers.sh functions <<<
 
+# The hosting modes (install/lib/modes.sh): a verbatim copy of the functions between the markers, for the same reason as
+# url.sh's above. CI (t0-fast, edge entry) fails if the copies differ.
+# >>> modes.sh functions (quickstart.sh keeps a verbatim copy) >>>
+# number|name|menu label|who should pick it
+_MDM_MODES='1|tunnel|Cloudflare Tunnel|easiest: no ports to open (domain on Cloudflare)
+2|domain|Your own domain|MDMesh gets its own HTTPS (ports 80/443 must reach this machine)
+3|proxy|Behind your own proxy|your nginx/Apache/Caddy/Traefik does HTTPS; MDMesh listens on 127.0.0.1:8080'
+# The answers only one mode asks: number|answer id|its default in the dry-run plan.
+_MDM_MODE_ANSWERS='1|tunnel-token|
+2|acme-email|
+3|bind|127.0.0.1:8080
+3|trusted-proxies|host'
+MDM_PROXY_BIND_DEFAULT=127.0.0.1:8080
+MDM_PROXY_TRUSTED_DEFAULT=host
+
+# mdm_mode_name NUMBER: the mode's name (tunnel, domain, proxy).
+mdm_mode_name() { printf '%s\n' "$_MDM_MODES" | awk -F'|' -v n="$1" '$1 == n { print $2 }'; }
+
+# mdm_mode_menu FOOTER: the hosting-mode question's text (the caller reads the answer). When something on this host
+# already listens on port 80 or 443 (often a web server of your own), it says so and points at the proxy mode.
+mdm_mode_menu() {
+  echo "How will your phones reach MDMesh?"
+  printf '%s\n' "$_MDM_MODES" | awk -F'|' '{ printf "  %s) %-23s %s\n", $1, $3, $4 }'
+  if mdm_web_ports_busy; then
+    echo "  Ports 80/443 are already in use on this machine. If that is your own web server, pick 3."
+  fi
+  echo "$1"
+}
+
+# mdm_web_ports_busy: succeeds when a TCP listener on this host holds port 80 or 443 (ss from iproute2; without it,
+# nothing is said).
+mdm_web_ports_busy() {
+  command -v ss > /dev/null 2>&1 || return 1
+  ss -Hltn 2> /dev/null | awk '{ n = split($4, a, ":"); if (a[n] == "80" || a[n] == "443") f = 1 } END { exit !f }'
+}
+
+# mdm_mode_from_flag NAME: the mode flag given on the command line (--NAME: --tunnel, --domain or --proxy; the
+# installers' argument loops take only these) answers MDMESH_MODE, as the environment or an answers file would. Called
+# after mdm_answers_load. Stops the installer when MDMESH_MODE names another mode. No NAME: nothing to do.
+mdm_mode_from_flag() {
+  local given=${MDMESH_MODE-} n
+  [ -n "$1" ] || return 0
+  if [ -n "$given" ]; then
+    n=$(printf '%s\n' "$_MDM_MODES" | awk -F'|' -v v="$given" '$1 == v || $2 == v { print $2 }')
+    [ "$n" = "$1" ] || _mdm_answer_fail "--$1 and MDMESH_MODE=$given name different hosting modes: give one."
+  fi
+  MDMESH_MODE=$1
+}
+
+# mdm_mode_answers_unused: once the mode is known, an answer given for another mode's question is ignored, saying so.
+mdm_mode_answers_unused() {
+  local m id
+  while IFS='|' read -r m id _; do
+    [ "$m" = "$MODE" ] || mdm_unused "$id" "in $(mdm_mode_name "$MODE") mode"
+  done <<EOF
+$_MDM_MODE_ANSWERS
+EOF
+}
+
+# mdm_mode_plan: the dry-run plan's lines for the answers only one mode asks: asked (or answered) in the mode given,
+# "unused" in the others, and all of them when the mode isn't known yet.
+mdm_mode_plan() {
+  local m id def
+  while IFS='|' read -r m id def; do
+    if ! mdm_given mode || [ "$m" = "$MODE" ]; then mdm_plan_line "$id" "$def"; else mdm_plan_row "$id" - unused; fi
+  done <<EOF
+$_MDM_MODE_ANSWERS
+EOF
+}
+
+# mdm_mode_of_env: the mode of an existing .env (already loaded): tunnel when COMPOSE_PROFILES lists cloudflare, proxy
+# when COMPOSE_FILE lists docker-compose.proxy.yml, else domain.
+mdm_mode_of_env() {
+  case ",$(printf '%s' "${COMPOSE_PROFILES:-}" | tr -d ' ')," in *,cloudflare,*) echo 1; return ;; esac
+  case ":${COMPOSE_FILE:-}:" in *:docker-compose.proxy.yml:*) echo 3; return ;; esac
+  echo 2
+}
+
+# mdm_mode_settings NUMBER [rerun]: the mode's settings, from HOST (and, behind your proxy, PROXY_BIND and ORIGIN_TLS):
+# COMPOSE_ARGS (its compose files and profile, for a command line) and EXTRA_NOTE (what to do next); and, for a new .env,
+# SITE_ADDRESS (the edge's site; behind your proxy the edge sets its own), COMPOSE_FILE and COMPOSE_PROFILES (compose and
+# the updater read them from .env), with another mode's answers cleared so they never reach .env. With rerun (an
+# existing .env, already loaded and exported) only the first two: its own values stay as they are.
+mdm_mode_settings() {
+  local f site file profiles=''
+  case "$1" in
+    1) site=':80'; file='docker-compose.yml'; profiles='cloudflare'
+       EXTRA_NOTE="In Cloudflare, route the tunnel's public hostname ($HOST) to http://caddy:80." ;;
+    2) site=$HOST; file='docker-compose.yml:docker-compose.domain.yml'
+       EXTRA_NOTE="Make sure ${HOST} resolves to this server and ports 80/443 are open." ;;
+    3) site=':8080'; file='docker-compose.yml:docker-compose.proxy.yml'
+       if [ "${ORIGIN_TLS:-0}" = 1 ]; then
+         EXTRA_NOTE="Point your proxy at https://${PROXY_BIND} (certificate name $(mdm_host_name "$HOST"), issued by MDMesh's own CA; DEPLOY.md, Behind your own proxy)."
+       else
+         EXTRA_NOTE="Point your proxy at http://${PROXY_BIND} (ready configurations: DEPLOY.md, Behind your own proxy)."
+       fi ;;
+    *) _mdm_answer_fail "internal: unknown hosting mode $1" ;;
+  esac
+  COMPOSE_ARGS=''
+  # compose's own default file is left to COMPOSE_FILE (.env), as setup.sh always did in tunnel mode.
+  [ "$file" = docker-compose.yml ] || for f in $(printf '%s' "$file" | tr ':' ' '); do COMPOSE_ARGS="$COMPOSE_ARGS -f $f"; done
+  [ -z "$profiles" ] || COMPOSE_ARGS="$COMPOSE_ARGS --profile $profiles"
+  COMPOSE_ARGS=${COMPOSE_ARGS# }
+  [ "${2:-}" != rerun ] || return 0
+  SITE_ADDRESS=$site; COMPOSE_FILE=$file; COMPOSE_PROFILES=$profiles
+  [ "$1" = 1 ] || TUNNEL_TOKEN=''
+  [ "$1" = 2 ] || ACME_EMAIL=''
+}
+
+# mdm_host_name HOSTPORT: the host of a checked host[:port] (an [IPv6] keeps its brackets).
+mdm_host_name() {
+  case "$1" in
+    \[*) printf '%s]\n' "${1%%]*}" ;;
+    *) printf '%s\n' "${1%%:*}" ;;
+  esac
+}
+
+# mdm_site_dir: makes ./site.d, for your own Caddy rules (the edge imports site.d/*.caddy into its site; updates never
+# touch it), with a short README, and sets MDMESH_SITE_DIR to its absolute path for .env: compose mounts it from there,
+# also when the updater runs compose from inside its own container. A directory whose path .env can't hold as it is
+# (a space, a quote, a $) is left out, saying so: the edge then mounts an empty volume instead.
+mdm_site_dir() {
+  local d
+  MDMESH_SITE_DIR=''
+  mkdir -p site.d && chmod 755 site.d || { warn "Could not make site.d here: your own edge rules can't be added."; return 0; }
+  if [ ! -e site.d/README ]; then
+    printf '%s\n' "Your own rules for MDMesh's edge (Caddy). Every *.caddy file here is imported into the edge's site," \
+      "after MDMesh's own settings. Updates never change this directory. Make each file readable by everyone" \
+      "(chmod 644), check it, then restart the edge (from the install directory):" \
+      "  docker compose exec caddy caddy validate --config /etc/caddy/Caddyfile && docker compose restart caddy" \
+      "See DEPLOY.md, Your own edge rules." > site.d/README
+    chmod 644 site.d/README
+  fi
+  d=$(pwd -P)
+  case "$d" in
+    *[!${_MDM_ALNUM}._/+@-]*) warn "site.d is not connected to the edge: its path ($d) has a character .env can't hold as it is (DEPLOY.md, Your own edge rules)." ;;
+    *) MDMESH_SITE_DIR="$d/site.d" ;;
+  esac
+}
+
+# mdm_mode_env: the .env lines only this mode writes (behind your proxy: where the edge listens, whom it believes, and
+# whether it speaks HTTPS to your proxy).
+mdm_mode_env() {
+  [ "$MODE" = 3 ] || return 0
+  printf '%s\n' "MDMESH_BIND=${PROXY_BIND}" "TRUSTED_PROXIES=\"${PROXY_TRUSTED}\"" "MDMESH_ORIGIN_TLS=${ORIGIN_TLS:-0}"
+}
+# <<< modes.sh functions <<<
+
+# The only arguments: one hosting mode, which answers the first question. Nothing else runs before the answers are
+# loaded (the tunnel token would be in its environment), so this only takes note.
+MODE_FLAG=''
+for a in "$@"; do
+  case "$a" in
+    --tunnel|--domain|--proxy)
+      [ -z "$MODE_FLAG" ] || [ "$MODE_FLAG" = "${a#--}" ] || { err "--${MODE_FLAG} and $a name different hosting modes: give one."; exit 2; }
+      MODE_FLAG=${a#--} ;;
+    *) err "Unknown option: $a (quickstart.sh takes one of --tunnel, --domain or --proxy)."; exit 2 ;;
+  esac
+done
+
 # Every answer is checked here, before anything else happens.
 mdm_answers_load
+mdm_mode_from_flag "$MODE_FLAG"
 mdm_answer mode MODE mode MDMESH_MODE
 mdm_answer repo GH_REPO github-repo MDMESH_REPO
 mdm_answer image-owner IMAGE_OWNER image-owner MDMESH_IMAGE_OWNER
 mdm_answer host HOST hostname MDMESH_HOST
 mdm_answer tunnel-token TUNNEL_TOKEN tunnel-token MDMESH_TUNNEL_TOKEN
 mdm_answer acme-email ACME_EMAIL email MDMESH_ACME_EMAIL
-if mdm_given mode; then
-  if [ "$MODE" = 1 ]; then mdm_unused acme-email "in tunnel mode"; else mdm_unused tunnel-token "in domain mode"; fi
-fi
+mdm_answer bind PROXY_BIND bind MDMESH_BIND
+mdm_answer trusted-proxies PROXY_TRUSTED proxies MDMESH_TRUSTED_PROXIES
+ORIGIN_TLS=${MDMESH_ORIGIN_TLS:-0}
+if mdm_given mode; then mdm_mode_answers_unused; fi
 mdm_need mode; mdm_need host
 if mdm_given mode && [ "$MODE" = 1 ]; then mdm_need tunnel-token; fi
 if [ "${MDMESH_DRY_RUN:-0}" = 1 ]; then
@@ -489,9 +713,7 @@ if [ "${MDMESH_DRY_RUN:-0}" = 1 ]; then
   mdm_plan_line repo "$REPO"
   mdm_plan_line image-owner "$IMAGE_OWNER_DEFAULT"
   mdm_plan_line host ''
-  if ! mdm_given mode; then mdm_plan_line tunnel-token ''; mdm_plan_line acme-email ''
-  elif [ "$MODE" = 1 ]; then mdm_plan_line tunnel-token ''; mdm_plan_row acme-email - unused
-  else mdm_plan_row tunnel-token - unused; mdm_plan_line acme-email ''; fi
+  mdm_mode_plan
   [ -z "${MDMESH_RELEASE_PUBKEY:-}" ] || mdm_plan_row release-pubkey '(custom)' MDMESH_RELEASE_PUBKEY
   _dir=${MDMESH_DIR:-mdmesh}; case "$_dir" in /*) ;; *) _dir="$PWD/$_dir" ;; esac
   _repo=$REPO; if mdm_given repo && [ -n "$GH_REPO" ]; then _repo=$GH_REPO; fi
@@ -517,13 +739,11 @@ say "== MDMesh quick start (published images) =="
 echo "Installing into: $(pwd)"
 echo
 if ! mdm_answered mode; then
-  echo "Hosting mode:"
-  echo "  1) Cloudflare Tunnel   (no open ports; Cloudflare manages TLS — needs a domain in Cloudflare)"
-  echo "  2) Your own domain     (open 80/443; Caddy auto-provisions a Let's Encrypt cert)"
+  mdm_mode_menu "Without Docker? See Native in DEPLOY.md (github.com/${REPO})."
   MODE=""
-  while [ "$MODE" != "1" ] && [ "$MODE" != "2" ]; do
-    read -rp "Choose [1/2]: " MODE || { err "No selection (non-interactive run?). Aborting."; exit 1; }   # answer: mode
-    case "$MODE" in 1|2) ;; *) warn "Please enter 1 or 2." ;; esac
+  while :; do
+    read -rp "Choose [1/2/3]: " MODE || { err "No selection (non-interactive run?). Aborting."; exit 1; }   # answer: mode
+    case "$MODE" in 1|2|3) break ;; *) warn "Please enter 1, 2 or 3." ;; esac
   done
 fi
 
@@ -623,46 +843,61 @@ say "Installing release v${RELEASE} of ${GH_REPO}."
 
 DB_PASSWORD=$(rand); HASH_SECRET=$(rand); ADMIN_PASSWORD=$(rand); RESET_TOKEN=$(openssl rand -hex 16)
 
-if [ "$MODE" = "1" ]; then
-  mdm_answered host || read -rp "Public hostname devices will use (e.g. mdm.example.com): " HOST   # answer: host
-  mdm_check_host HOST || { err "Enter the hostname only, e.g. mdm.example.com, then re-run."; exit 1; }
-  while :; do
-    mdm_answered tunnel-token || read -rp "Cloudflare Tunnel token (Zero Trust → Tunnels → your tunnel): " TUNNEL_TOKEN   # answer: tunnel-token
-    mdm_prompt_ok tunnel-token TUNNEL_TOKEN && break
-  done
-  BASE_URL="https://${HOST}"; SITE_ADDRESS=":80"; ACME_EMAIL=""
-  COMPOSE_FILE="docker-compose.yml"; COMPOSE_PROFILES="cloudflare"
-  EXTRA_NOTE="In Cloudflare, route the tunnel's public hostname ($HOST) to http://caddy:80."
-else
-  mdm_answered host || read -rp "Your domain (DNS already pointing here, e.g. mdm.example.com): " HOST   # answer: host
-  mdm_check_host HOST || { err "Enter the hostname only, e.g. mdm.example.com, then re-run."; exit 1; }
-  while :; do
-    mdm_answered acme-email || read -rp "Email for Let's Encrypt: " ACME_EMAIL   # answer: acme-email
-    mdm_prompt_ok acme-email ACME_EMAIL && break
-  done
-  BASE_URL="https://${HOST}"; SITE_ADDRESS="${HOST}"; TUNNEL_TOKEN=""
-  COMPOSE_FILE="docker-compose.yml:docker-compose.domain.yml"; COMPOSE_PROFILES=""
-  EXTRA_NOTE="Make sure ${HOST} resolves to this server and ports 80/443 are open."
+if ! mdm_answered host; then
+  case "$MODE" in
+    1) read -rp "Public hostname devices will use (e.g. mdm.example.com): " HOST ;;   # answer: host
+    2) read -rp "Your domain (DNS already pointing here, e.g. mdm.example.com): " HOST ;;   # answer: host
+    3) read -rp "Public hostname your proxy serves (e.g. mdm.example.com): " HOST ;;   # answer: host
+  esac
 fi
+mdm_check_host HOST || { err "Enter the hostname only, e.g. mdm.example.com, then re-run."; exit 1; }
+BASE_URL="https://${HOST}"
 mdm_check_base_url BASE_URL || { err "Check the hostname you entered (the name only, e.g. mdm.example.com), then re-run."; exit 1; }
+case "$MODE" in
+  1) while :; do
+       mdm_answered tunnel-token || read -rp "Cloudflare Tunnel token (Zero Trust → Tunnels → your tunnel): " TUNNEL_TOKEN   # answer: tunnel-token
+       mdm_prompt_ok tunnel-token TUNNEL_TOKEN && break
+     done ;;
+  2) while :; do
+       mdm_answered acme-email || read -rp "Email for Let's Encrypt: " ACME_EMAIL   # answer: acme-email
+       mdm_prompt_ok acme-email ACME_EMAIL && break
+     done ;;
+  3) while :; do
+       mdm_answered bind || read -rp "Address MDMesh listens on for your proxy [127.0.0.1:8080]: " PROXY_BIND   # answer: bind
+       mdm_prompt_ok bind PROXY_BIND && break
+     done
+     PROXY_BIND=${PROXY_BIND:-$MDM_PROXY_BIND_DEFAULT}
+     while :; do
+       mdm_answered trusted-proxies || read -rp "Your proxy's IP address as MDMesh sees it (host = a proxy on this machine) [host]: " PROXY_TRUSTED   # answer: trusted-proxies
+       mdm_prompt_ok trusted-proxies PROXY_TRUSTED && break
+     done
+     PROXY_TRUSTED=${PROXY_TRUSTED:-$MDM_PROXY_TRUSTED_DEFAULT} ;;
+esac
+mdm_mode_settings "$MODE"
 
 say "Downloading the pull-only compose + seed…"
 # Every file is downloaded to a temporary name and checked against its SHA-256 in the signed manifest; only when all of
 # them match are they moved into place. db.sh is sourced below, so nothing unverified ever runs.
-n=0
+n=0; FETCHED=''
 for f in $MDM_QUICKSTART_FILES; do
   n=$((n + 1))
   want=$(mdm_manifest_field "$MANIFEST" "$f" "$MDM_SHA256_ERE" || true)
+  if [ -z "$want" ] && [ "$f" = docker-compose.proxy.yml ]; then
+    [ "$MODE" != 3 ] && continue
+    err "Release v${RELEASE} has no proxy mode (it came in 0.6.0): install 0.6.0 or later, or pick another mode. Nothing was installed."; exit 1
+  fi
   [ -n "$want" ] || { err "The signed manifest of v${RELEASE} has no SHA-256 for ${f}, so it can't be verified. Nothing was installed."; exit 1; }
   curl -fsSL -m 120 "${RAW}/${f}" -o "$VERIFY_DIR/dl.$n" || { err "Could not download ${RAW}/${f}. Nothing was installed."; exit 1; }
   got=$(mdm_sha256 "$VERIFY_DIR/dl.$n")
   if [ "$got" != "$want" ]; then
     err "${f} from ${RAW} does not match the signed release (SHA-256 ${got}, expected ${want}). Nothing was installed."; exit 1
   fi
+  FETCHED="$FETCHED $n"
 done
 n=0
 for f in $MDM_QUICKSTART_FILES; do
   n=$((n + 1))
+  case " $FETCHED " in *" $n "*) ;; *) continue ;; esac
   dest=$f; [ "$f" = docker-compose.release.yml ] && dest=docker-compose.yml
   mkdir -p -- "$(dirname -- "$dest")"
   mv -f -- "$VERIFY_DIR/dl.$n" "$dest"
@@ -678,6 +913,7 @@ done
 # Owner-only from the start: written to a new mode-600 file (mktemp), then renamed to .env, so no other user can read
 # the secrets at any moment.
 trap 'exit 130' INT; trap 'exit 143' TERM   # so an interrupt runs cleanup_verify too
+mdm_site_dir
 ENV_TMP=$(mktemp .env.new.XXXXXX)
 cat > "$ENV_TMP" <<EOF
 DB_NAME=mdmesh
@@ -702,6 +938,8 @@ AUTO_UPDATE=0
 COMPOSE_PROJECT_NAME=mdmesh
 COMPOSE_FILE=${COMPOSE_FILE}
 COMPOSE_PROFILES=${COMPOSE_PROFILES}
+MDMESH_SITE_DIR=${MDMESH_SITE_DIR}
+$(mdm_mode_env)
 SMTP_HOST=
 SMTP_PORT=25
 SMTP_FROM=mdm@${HOST}
@@ -777,4 +1015,7 @@ echo "  Directory:      $(pwd)   (run 'docker compose' commands from here)"
 echo
 warn "Save that password now — it is not stored anywhere in clear text."
 echo "Next: $EXTRA_NOTE"
+if [ "$MODE" = 3 ] && [ "$ORIGIN_TLS" = 1 ]; then
+  echo "      Your proxy trusts MDMesh's CA: docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt ./mdmesh-origin-ca.crt"
+fi
 echo "Enroll devices from the console's Enroll page (it builds the QR with ${BASE_URL})."

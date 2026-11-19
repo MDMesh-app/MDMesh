@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.test.core.app.ApplicationProvider
 import com.mdmesh.core.telemetry.EventLog
+import com.mdmesh.kiosk.StubKioskController
 import com.mdmesh.proto.KioskApplyPayload
 import com.mdmesh.proto.ProtocolJson
 import kotlinx.coroutines.CoroutineScope
@@ -47,7 +48,8 @@ class AgentDataStoresUpgradeTest {
         legacyJob.cancelAndJoin() // the old process ends
 
         val config = InMemoryConfigStateStore()
-        val stores = AgentDataStores(context, config, EventLog(context)) // the production constructor
+        // The production constructor.
+        val stores = AgentDataStores(context, config, EventLog(context), StubKioskController())
         assertEquals("dev_1", DeviceIdStore(stores.identity).current())
         assertEquals("secret-1", DeviceIdStore(stores.identity).secret())
         assertEquals("tok-1", EnrollTokenStore(stores.enroll).token())

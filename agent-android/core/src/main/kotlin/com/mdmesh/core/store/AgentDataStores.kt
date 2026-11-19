@@ -9,9 +9,12 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.preferencesDataStoreFile
+import com.mdmesh.core.kiosk.SharedPrefsExitJournal
 import com.mdmesh.core.telemetry.EventLog
 import com.mdmesh.core.telemetry.EventSink
+import com.mdmesh.kiosk.KioskController
 import com.mdmesh.proto.EventType
+import com.mdmesh.proto.KioskApplyPayload
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
@@ -29,6 +32,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -55,12 +59,24 @@ class AgentDataStores(
     private val configStore: ConfigStateStore,
     private val events: EventSink,
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob()),
+    /**
+     * The apps the device is locked to now, when it was left in a kiosk: lock task's allowlist, which only a kiosk
+     * sets and every finished exit clears. Null when it is empty or an exit is in progress (the exit journal).
+     */
+    private val lockedApps: () -> List<String>? = { null },
 ) {
     @Inject constructor(
         @ApplicationContext context: Context,
         configStore: ConfigStateStore,
         events: EventLog,
-    ) : this({ name -> context.preferencesDataStoreFile(name) }, configStore, events)
+        kioskController: KioskController,
+    ) : this(
+        { name -> context.preferencesDataStoreFile(name) }, configStore, events,
+        lockedApps = {
+            val exiting = { SharedPrefsExitJournal(context).pending() != null }
+            kioskController.allowedPackages().takeIf { it.isNotEmpty() && !exiting() }?.minus(context.packageName)
+        },
+    )
 
     // Recovery rule per store, applied to a damaged primary (the first that has something wins):
 
@@ -72,11 +88,14 @@ class AgentDataStores(
 
     /**
      * The kiosk the device is in ([DataStoreKioskStateStore]). Recovery: mirror (also when it says "no kiosk": an
-     * exit, on-device or remote, is kept), else the kiosk the configuration sets ([configuredKiosk]), so a device
-     * whose configuration sets a kiosk fails closed into it, else no kiosk. The re-sent configuration settles the rest.
+     * exit, on-device or remote, is kept), else the kiosk the configuration sets ([configuredKiosk]), else, when the
+     * device is still locked to apps ([lockedApps]: a `kiosk.enter` kiosk not in the configuration), a kiosk of those
+     * apps that only the server can end, else no kiosk. Fail closed: a power loss that takes both files never unpins a
+     * kiosk device. The re-sent configuration settles the rest.
      */
     val kiosk: MirroredDataStore = mirrored(KIOSK) {
         configStore.configuredKiosk()?.let { DataStoreKioskStateStore.prefsOf(it) to FROM_CONFIGURATION }
+            ?: lockedApps()?.let { DataStoreKioskStateStore.prefsOf(lockedKiosk(it)) to FROM_LOCK_TASK }
     }
 
     private val all = listOf(IDENTITY to identity, ENROLL to enroll, KIOSK to kiosk)
@@ -109,7 +128,8 @@ class AgentDataStores(
             emptyPreferences()
         }
         val restore: suspend () -> Preferences = { restore(name, mirror, fallback) }
-        store = MirroredDataStore(open(name, restore), mirror, name, restore)
+        val sealMark = file(name).resolveSibling(name + SEALED_SUFFIX)
+        store = MirroredDataStore(open(name, restore), mirror, name, restore, sealMark)
         return store
     }
 
@@ -170,9 +190,17 @@ class AgentDataStores(
         const val KIOSK = "mdm_kiosk"
         const val MIRROR_SUFFIX = "_mirror"
 
+        /** Next to a store's file once this agent has written it whole ([MirroredDataStore]). */
+        const val SEALED_SUFFIX = ".sealed"
+
         const val FROM_MIRROR = "mirror"
         const val FROM_CONFIGURATION = "configuration"
         const val FROM_EMPTY = "empty"
+        const val FROM_LOCK_TASK = "lock task"
+
+        /** A kiosk of the apps lock task allows, its exit left to the server (no PIN to guess). */
+        internal fun lockedKiosk(apps: List<String>) =
+            KioskApplyPayload(mode = "launcher", allowedPackages = apps, exitMode = "remote")
 
         fun stores(context: Context): Stores =
             EntryPointAccessors.fromApplication(context.applicationContext, Stores::class.java)
@@ -214,17 +242,25 @@ internal object Integrity {
  * Writes run one at a time under one lock. A mirror that can't be written fails the write, before the primary is
  * touched, so the mirror can never fall behind.
  *
- * A primary that reads short, or uncounted while its mirror is counted (cut before its count), is damaged: reads and
- * writes see it [restore]d first, inside the primary's own update, so it is restored once however many read it.
- * Uncounted with no counted mirror is an install from before counts (0.5.0), kept as it is.
+ * A primary that reads short is damaged, and so is one without a count once this agent has written the store
+ * ([sealMark], a file kept apart from both, written after the first counted write), or whose mirror is counted (cut
+ * before its count). Reads and writes see a damaged primary [restore]d first, inside the primary's own update, so it
+ * is restored once however many read it. Uncounted, never sealed and with no counted mirror is an install from before
+ * counts (0.5.0), kept as it is; with both files emptied after a seal, the store's own recovery rule applies (the
+ * configured kiosk for the kiosk store: fail closed).
  */
 class MirroredDataStore internal constructor(
     private val primary: DataStore<Preferences>,
     private val mirror: DataStore<Preferences>,
     private val name: String,
     private val restore: suspend () -> Preferences,
+    /** Null for a store opened bare (tests with faults). */
+    private val sealMark: File? = null,
 ) : DataStore<Preferences> {
     private val writeLock = Mutex()
+
+    /** Once true, stays true: the mark is never removed. */
+    @Volatile private var sealed = false
 
     override val data: Flow<Preferences> = primary.data.map { if (damaged(it)) primary.updateData(::intact) else it }
 
@@ -232,13 +268,26 @@ class MirroredDataStore internal constructor(
         writeLock.withLock {
             val next = Integrity.sealed(transform(data.first()))
             mirror.updateData { next }
-            primary.updateData { next }
+            primary.updateData { next }.also { markSealed() }
         }
+
+    private fun wasSealed(): Boolean = sealed || (sealMark?.exists() == true).also { sealed = it }
+
+    /** After the first counted write; synced, so a power loss after it can't undo it. Best effort. */
+    private fun markSealed() {
+        val mark = sealMark
+        if (sealed || mark == null) return
+        runCatching {
+            if (!mark.exists()) FileOutputStream(mark).use { it.fd.sync() }
+            sealed = true
+        }.onFailure { warn("$name seal mark not written", it) }
+    }
 
     private suspend fun intact(current: Preferences): Preferences = if (damaged(current)) restore() else current
 
     private suspend fun damaged(p: Preferences): Boolean = when {
         Integrity.isCounted(p) -> Integrity.isShort(p)
+        wasSealed() -> true
         else -> try {
             Integrity.isUsable(mirror.data.first())
         } catch (e: IOException) {

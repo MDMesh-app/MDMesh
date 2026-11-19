@@ -19,4 +19,6 @@ object EventType {
     const val CONNECTIVITY = "connectivityChange"
     const val LOW_BATTERY = "lowBattery"
     const val ENROLLED = "enrolled"
+    /** The buffer was full, so older events were dropped; the detail starts with how many. */
+    const val EVENTS_DROPPED = "eventsDropped"
 }

@@ -120,6 +120,11 @@ is re-posted every check-in (cheap, keeps the token set fresh as the OS/agent ch
 takes at most 1000 per check-in). The agent drops those and keeps the rest for its next check-in. Absent (an older
 server) means all of them were taken.
 
+`events` are the agent's buffered lifecycle events, oldest first. The server stores at most the first 500 of a
+check-in (servers before 0.5.2: 100) and drops the rest without saying so, so an agent sends at most 100 and leaves the
+rest of a backlog for its next check-ins. An agent keeps at most 500 while it can't deliver them; past that it drops the
+oldest and puts one `eventsDropped` event in front, whose `detail` starts with how many it dropped.
+
 An agent runs its commands inside a check-in, one check-in at a time, and reports each result in a later check-in. So
 when a check-in arrives without the result of a `config.apply` delivered before it, and the server would send the
 configuration again (the device's applied revision differs from the current one, or its agent version changed), the

@@ -184,6 +184,22 @@ class CheckInCoordinatorTest {
     }
 
     @Test
+    fun `an offline backlog reaches the server over several check-ins, none of it lost`() = runTest {
+        // Servers keep the first 100 events of a check-in; the agent used to send its whole buffer (up to 500) and
+        // count all of it delivered.
+        val store = FakeEventStore()
+        val log = com.mdmesh.core.telemetry.EventLog(store)
+        repeat(250) { log.record("e$it") }
+        val api = FakeMdmApi()
+        val coordinator = coordinator(api, PendingResults(), events = log)
+
+        repeat(3) { coordinator.runOnce() }
+
+        assertEquals(listOf(100, 100, 50), api.checkInRequests.map { it.events.size })
+        assertEquals((0 until 250).map { "e$it" }, api.checkInRequests.flatMap { it.events }.map { it.type })
+    }
+
+    @Test
     fun `follows the server's installIntegrity on every check-in`() = runTest {
         val policy = InstallIntegrityPolicy()
         val api = FakeMdmApi().apply {

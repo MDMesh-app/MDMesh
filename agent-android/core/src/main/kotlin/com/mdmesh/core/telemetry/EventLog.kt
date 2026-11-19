@@ -1,6 +1,8 @@
 package com.mdmesh.core.telemetry
 
 import android.content.Context
+import androidx.annotation.VisibleForTesting
+import com.mdmesh.proto.EventType
 import com.mdmesh.proto.TelemetryEventDto
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.serialization.builtins.ListSerializer
@@ -20,8 +22,9 @@ interface EventSink {
 
 /**
  * Persistent buffer of device lifecycle events. SharedPreferences-backed so events survive offline
- * AND process restart. Capped to avoid unbounded growth. Delivery is at least once: a process death after the server
- * took a batch but before [delivered] sends it again.
+ * AND process restart. Capped at [CAP] to avoid unbounded growth: a full buffer drops its oldest events and counts them
+ * in one [EventType.EVENTS_DROPPED] marker at the front, so the timeline shows the gap. Delivery is at least once: a
+ * process death after the server took a batch but before [delivered] sends it again.
  * Lightweight enough to construct directly from a BroadcastReceiver (no Hilt) as well as via DI.
  */
 @Singleton
@@ -67,14 +70,16 @@ class EventLog internal constructor(private val store: Store) : EventSink {
     // asynchronous.
 
     /**
-     * Take everything for the check-in about to run. The batch stays stored (in flight) until [delivered] or
-     * [restore], like [com.mdmesh.core.sync.PendingResults], so a process death mid-check-in sends it again rather
-     * than losing it. Whatever a dead process left in flight is older, so it goes first.
+     * Take the oldest [MAX_BATCH] events for the check-in about to run; the rest wait for the next ones. The batch
+     * stays stored (in flight) until [delivered] or [restore], like [com.mdmesh.core.sync.PendingResults], so a process
+     * death mid-check-in sends it again rather than losing it. Whatever a dead process left in flight is older, so it
+     * goes first.
      */
     override fun drain(): List<TelemetryEventDto> {
         val batch = synchronized(LOCK) {
-            cap(load(IN_FLIGHT) + load(KEY)).also { batch ->
-                store.put(IN_FLIGHT to batch.takeIf { it.isNotEmpty() }?.let(::encode), KEY to null)
+            val all = cap(load(IN_FLIGHT) + load(KEY))
+            all.take(MAX_BATCH).also { batch ->
+                store.put(IN_FLIGHT to encodeOrNull(batch), KEY to encodeOrNull(all.drop(MAX_BATCH)))
             }
         }
         store.flush()
@@ -84,8 +89,7 @@ class EventLog internal constructor(private val store: Store) : EventSink {
     /** The check-in failed: put the drained [events] back in front of anything recorded since. */
     override fun restore(events: List<TelemetryEventDto>) {
         synchronized(LOCK) {
-            val list = cap(events + load(KEY))
-            store.put(KEY to list.takeIf { it.isNotEmpty() }?.let(::encode), IN_FLIGHT to null)
+            store.put(KEY to encodeOrNull(cap(events + load(KEY))), IN_FLIGHT to null)
         }
         store.flush()
     }
@@ -95,6 +99,10 @@ class EventLog internal constructor(private val store: Store) : EventSink {
         store.flush()
     }
 
+    /** Everything kept, in flight included, oldest first; for tests, which must not take a batch away. */
+    @VisibleForTesting
+    fun buffered(): List<TelemetryEventDto> = synchronized(LOCK) { load(IN_FLIGHT) + load(KEY) }
+
     private fun load(key: String): List<TelemetryEventDto> = decode(store.get(key))
 
     companion object {
@@ -103,15 +111,41 @@ class EventLog internal constructor(private val store: Store) : EventSink {
         private const val KEY = "events"
         /** Drained for a check-in that has not been confirmed yet. */
         private const val IN_FLIGHT = "events_in_flight"
-        private const val CAP = 500
+        /** Events kept, the [EventType.EVENTS_DROPPED] marker included. */
+        const val CAP = 500
+        /**
+         * Events per check-in. A server stores only the first 100 (500 from 0.5.2 on) and ignores the rest without
+         * saying so, so a bigger batch would lose the rest once [delivered].
+         */
+        const val MAX_BATCH = 100
         private val json = Json { ignoreUnknownKeys = true }
 
-        /** Keep the most recent [CAP] events. */
-        fun cap(list: List<TelemetryEventDto>): List<TelemetryEventDto> =
-            if (list.size <= CAP) list else list.takeLast(CAP)
+        /**
+         * Keep the most recent [CAP] - 1 events behind one [EventType.EVENTS_DROPPED] marker counting what was dropped
+         * (earlier markers' counts included), dated like the newest dropped event.
+         */
+        fun cap(list: List<TelemetryEventDto>): List<TelemetryEventDto> {
+            if (list.size <= CAP) return list
+            val dropped = list.dropLast(CAP - 1)
+            val count = dropped.sumOf { if (it.type == EventType.EVENTS_DROPPED) droppedCount(it) else 1 }
+            val marker = TelemetryEventDto(
+                EventType.EVENTS_DROPPED,
+                dropped.last().ts,
+                "$count older ${if (count == 1) "event" else "events"} dropped: the device keeps at most $CAP " +
+                    "while it can't reach the server",
+            )
+            return listOf(marker) + list.takeLast(CAP - 1)
+        }
+
+        /** How many events an [EventType.EVENTS_DROPPED] marker counts. */
+        fun droppedCount(marker: TelemetryEventDto): Int =
+            marker.detail?.substringBefore(' ')?.toIntOrNull()?.coerceAtLeast(1) ?: 1
 
         fun encode(list: List<TelemetryEventDto>): String =
             json.encodeToString(ListSerializer(TelemetryEventDto.serializer()), list)
+
+        private fun encodeOrNull(list: List<TelemetryEventDto>): String? =
+            list.takeIf { it.isNotEmpty() }?.let(::encode)
 
         fun decode(s: String?): List<TelemetryEventDto> =
             if (s.isNullOrBlank()) emptyList()

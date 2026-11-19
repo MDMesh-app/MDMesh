@@ -16,6 +16,7 @@ import com.hmdm.rest.json.agent.AgentCapabilities;
 import com.hmdm.rest.json.agent.AgentCheckInRequest;
 import com.hmdm.rest.json.agent.AgentCommandResult;
 import com.hmdm.rest.json.agent.AgentDeviceState;
+import com.hmdm.rest.json.agent.AgentTelemetryEvent;
 import com.hmdm.rest.resource.support.AppReconciler;
 import com.hmdm.rest.resource.support.ConfigAppInstaller;
 import com.hmdm.rest.resource.support.ConfigReconciler;
@@ -58,6 +59,7 @@ public class AgentCheckInLimitsTest {
 
     private static final class FakeCommandDAO extends AgentCommandDAO {
         final List<String> details = new ArrayList<>();
+        final List<String> events = new ArrayList<>();
         final List<String> statuses = new ArrayList<>();
         final List<String> storedCaps = new ArrayList<>();
         final List<DeviceLocation> locations = new ArrayList<>();
@@ -81,6 +83,7 @@ public class AgentCheckInLimitsTest {
         @Override public void upsertState(DeviceState s) { telemetry = s.getTelemetry(); }
         @Override public void updateAndroidVersion(String n, String v) { }
         @Override public void recordLocation(DeviceLocation l) { locations.add(l); }
+        @Override public void insertEvent(String n, String type, Long ts, String detail) { events.add(type); }
     }
 
     private static final class NoopReconciler extends ConfigReconciler {
@@ -173,6 +176,37 @@ public class AgentCheckInLimitsTest {
 
         assertEquals(AgentResource.MAX_RESULTS_PER_CHECKIN, accepted(checkin(req)));
         assertEquals(0, commands.details.size());
+    }
+
+    private static List<AgentTelemetryEvent> events(int count) {
+        List<AgentTelemetryEvent> events = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            AgentTelemetryEvent e = new AgentTelemetryEvent();
+            e.setType("e" + i);
+            e.setTs((long) i);
+            events.add(e);
+        }
+        return events;
+    }
+
+    @Test
+    public void storesAWholeOfflineBufferFromAnOlderAgent() {
+        // Agents before 0.5.2 send their whole buffer, up to 500 events, in one check-in and count all of it delivered.
+        AgentCheckInRequest req = new AgentCheckInRequest();
+        req.setEvents(events(500));
+
+        assertEquals(Response.ResponseStatus.OK, checkin(req).getStatus());
+        assertEquals(500, commands.events.size());
+        assertEquals("e499", commands.events.get(499));
+    }
+
+    @Test
+    public void capsTheEventsStoredPerCheckIn() {
+        AgentCheckInRequest req = new AgentCheckInRequest();
+        req.setEvents(events(10_000));
+
+        assertEquals(Response.ResponseStatus.OK, checkin(req).getStatus());
+        assertEquals(AgentResource.MAX_EVENTS_PER_CHECKIN, commands.events.size());
     }
 
     @Test

@@ -94,10 +94,13 @@ public class AgentResource {
 
     // Ingestion caps: an authenticated device is still untrusted input. These bound what a single
     // check-in (potentially every 5s in foreground mode) can write into the database.
-    private static final int MAX_EVENTS_PER_CHECKIN = 100;
+    // Events past this count are dropped without telling the agent, so it must never send more. Agents from 0.5.2 send
+    // at most 100 (what servers before 0.5.2 keep) and the rest of a backlog on the next check-ins; older agents send
+    // their whole buffer, up to 500, and count all of it delivered.
+    static final int MAX_EVENTS_PER_CHECKIN = 500;
     private static final int MAX_EVENT_DETAIL_CHARS = 4000;
     private static final int MAX_TELEMETRY_CHARS = 256 * 1024;
-    // Each result is one UPDATE. Current agents send at most 100 per check-in; the rest of a backlog follows on the
+    // Each result is one UPDATE. Current agents send at most 1000 per check-in; the rest of a backlog follows on the
     // next ones. Past this count the server stops and reports how many it took (resultsAccepted), so the agent
     // resends the remainder rather than losing it. Older agents that send everything at once never get near it.
     static final int MAX_RESULTS_PER_CHECKIN = 1000;
@@ -454,7 +457,7 @@ public class AgentResource {
                     continue;
                 }
                 if (++ingested > MAX_EVENTS_PER_CHECKIN) {
-                    logger.warn("Device {} sent >{} events in one check-in — rest dropped",
+                    logger.warn("Device {} sent >{} events in one check-in: rest dropped",
                             deviceNumber, MAX_EVENTS_PER_CHECKIN);
                     break;
                 }

@@ -129,16 +129,10 @@ class OfflineKioskReturnTest {
         click("Return to kiosk")
         awaitCondition { locked() && store.load() == payload && node("Exit kiosk") != null }
         assertEquals(payload, config.configuredKiosk())
-        // Use the persistent event buffer's drain/restore API without discarding earlier test events.
-        val eventLog = EventLog(context)
-        val events = eventLog.drain()
-        try {
-            assertEquals(1, events.count {
-                it.type == "kioskReturn" && it.detail == "returned on-device" && it.ts >= returnStartedAt
-            })
-        } finally {
-            eventLog.restore(events)
-        }
+        // Read the persistent event buffer without taking a batch away from the check-in.
+        assertEquals(1, EventLog(context).buffered().count {
+            it.type == "kioskReturn" && it.detail == "returned on-device" && it.ts >= returnStartedAt
+        })
     }
 
     @Test

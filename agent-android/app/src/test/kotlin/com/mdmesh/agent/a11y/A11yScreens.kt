@@ -30,7 +30,9 @@ import com.mdmesh.agent.ui.KioskRenderer
 import com.mdmesh.agent.ui.KioskScreen
 import com.mdmesh.agent.ui.StatusCopy
 import com.mdmesh.agent.ui.StatusScreen
+import com.mdmesh.agent.StatusViewModel
 import com.mdmesh.agent.ui.StatusUiState
+import androidx.lifecycle.ViewModelProvider
 import com.mdmesh.core.config.ServerConfigStore
 import com.mdmesh.core.store.AgentDataStores
 import com.mdmesh.core.store.SharedPrefsConfigStateStore
@@ -114,10 +116,23 @@ class A11yScreens {
         if (kiosk == null) store.clear() else store.save(ConfigApplyPayload(revision = "a".repeat(64), kiosk = kiosk))
         val a = start(Robolectric.buildActivity(MainActivity::class.java))
         if (state != null) {
+            // The screen's own state loads from storage on other threads; drawn after [state], it would undo it.
+            awaitLoaded(a)
             StatusScreen(a, {}, {}).render(state)
             idle()
         }
         return a
+    }
+
+    /** Waits until the status screen's own state has its device id from storage: nothing more is coming to draw. */
+    private fun awaitLoaded(a: MainActivity) {
+        val model = ViewModelProvider(a)[StatusViewModel::class.java]
+        repeat(LOAD_ROUNDS) {
+            idle()
+            if (model.state.value.deviceId !is StatusUiState.DeviceIdUi.Loading) return
+            Thread.sleep(LOAD_POLL_MS)
+        }
+        error("the status screen didn't load its device id")
     }
 
     @Suppress("LongParameterList")
@@ -288,6 +303,8 @@ class A11yScreens {
         const val MAX_TRIES = 12
         const val UNAVAILABLE_WAIT_STEPS = 80
         const val UNAVAILABLE_WAIT_STEP_MS = 25L
+        const val LOAD_ROUNDS = 400
+        const val LOAD_POLL_MS = 10L
     }
 }
 

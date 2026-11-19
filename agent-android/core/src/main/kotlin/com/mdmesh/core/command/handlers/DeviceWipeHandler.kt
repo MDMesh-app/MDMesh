@@ -4,6 +4,7 @@ import android.os.Build
 import android.os.UserManager
 import com.mdmesh.core.command.CommandHandler
 import com.mdmesh.core.command.CommandResults
+import com.mdmesh.policy.factoryreset.FactoryResetWipeHold
 import com.mdmesh.policy.wifi.DpmHandle
 import com.mdmesh.proto.CommandEnvelope
 import com.mdmesh.proto.CommandResult
@@ -17,11 +18,14 @@ import com.mdmesh.proto.DeviceAction
  * The restrictions in [WipeRestrictions] (Factory reset: Block) are lifted first, since some vendor
  * recoveries enforce them (#222), and put back if the wipe call fails.
  *
- * [exclusive] holds off every configuration apply from the lift until the wipe is under way, so a
- * boot re-apply can't put the block back in between (check-in commands already run one at a time).
+ * [exclusive] holds off every configuration apply from the lift until the wipe call, so a boot
+ * re-apply can't put the block back in between (check-in commands already run one at a time). The
+ * wipe call can return before the reboot, so [hold] is set first and keeps every later apply from
+ * putting it back for the rest of this process; it is released only if the wipe call throws.
  */
 class DeviceWipeHandler(
     private val target: WipeTarget,
+    private val hold: FactoryResetWipeHold = FactoryResetWipeHold(),
     private val exclusive: suspend (suspend () -> CommandResult) -> CommandResult = { it() },
 ) : CommandHandler {
 
@@ -49,9 +53,13 @@ class DeviceWipeHandler(
 
     private fun wipeLifted(command: CommandEnvelope, lifted: List<String>): CommandResult =
         runCatching {
+            hold.hold()
             target.wipe()
             CommandResults.done(command)
-        }.getOrElse { failed(command, it.message, WipeRestrictions.restore(target, lifted)) }
+        }.getOrElse {
+            hold.release()
+            failed(command, it.message, WipeRestrictions.restore(target, lifted))
+        }
 
     private fun failed(command: CommandEnvelope, detail: String?, notRestored: List<String>): CommandResult {
         val reason = detail ?: "wipe failed"

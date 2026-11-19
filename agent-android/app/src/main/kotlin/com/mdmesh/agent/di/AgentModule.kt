@@ -84,6 +84,7 @@ import com.mdmesh.oem.OemAdapter
 import com.mdmesh.policy.CapabilityRegistry
 import com.mdmesh.policy.AppRuntimePermissions
 import com.mdmesh.policy.DeviceOwnerAppRuntimePermissions
+import com.mdmesh.policy.factoryreset.FactoryResetWipeHold
 import com.mdmesh.policy.wifi.AndroidWifiRadio
 import com.mdmesh.policy.wifi.DpmHandle
 import com.mdmesh.policy.wifi.SharedPrefsWifiRadioOffState
@@ -118,8 +119,16 @@ object AgentModule {
 
     @Provides
     @Singleton
-    fun provideCapabilityRegistry(@ApplicationContext context: Context, handle: DpmHandle): CapabilityRegistry =
-        CapabilityRegistry(handle, AndroidWifiRadio.from(context), SharedPrefsWifiRadioOffState(context))
+    fun provideCapabilityRegistry(
+        @ApplicationContext context: Context,
+        handle: DpmHandle,
+        wipeHold: FactoryResetWipeHold,
+    ): CapabilityRegistry =
+        CapabilityRegistry(handle, AndroidWifiRadio.from(context), SharedPrefsWifiRadioOffState(context), wipeHold)
+
+    @Provides
+    @Singleton
+    fun provideFactoryResetWipeHold(): FactoryResetWipeHold = FactoryResetWipeHold()
 
     @Provides
     @Singleton
@@ -359,8 +368,9 @@ object AgentModule {
         @ApplicationContext context: Context,
         handle: DpmHandle,
         applier: ConfigApplier,
+        wipeHold: FactoryResetWipeHold,
     ): CommandHandler =
-        DeviceWipeHandler(DpmWipeTarget(handle, context.getSystemService(UserManager::class.java))) { wipe ->
+        DeviceWipeHandler(DpmWipeTarget(handle, context.getSystemService(UserManager::class.java)), wipeHold) { wipe ->
             applier.exclusive(wipe)
         }
 

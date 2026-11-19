@@ -1,7 +1,16 @@
+# shellcheck shell=sh
 # Sourced (POSIX sh) by docker/web-entrypoint.sh, and by scripts/edge-check.sh to test it. Sets what docker/Caddyfile's
 # :80 listener believes about a client's address ({client_ip}, which the server records as a device's public IP):
 #   HTTP_TRUSTED_PEERS     the peers whose header is believed
 #   HTTP_CLIENT_IP_HEADER  that header
+# Behind your own proxy (MDMESH_EXPOSURE=proxy, which docker-compose.proxy.yml sets), the :8080 listener's instead:
+#   PROXY_TRUSTED_PEERS    EDGE_TRUSTED_PROXIES (.env's TRUSTED_PROXIES) as Caddy's list: addresses and ranges, `host`
+#                          made this container's default gateway(s), where Docker delivers every connection from this
+#                          machine to a published port. Empty, a range wider than an IPv4 /8 or an IPv6 /16, a name or
+#                          private_ranges stops the edge (it would trust nobody, or far more than your proxy).
+#   SITE_ADDRESS, EDGE_TLS, EDGE_ORIGIN_NAME
+#                          ":8080", or with MDMESH_ORIGIN_TLS=1 "https://<BASE_URL's host>:8080" with a certificate
+#                          from Caddy's own CA (EDGE_TLS=internal; EDGE_ORIGIN_NAME is that host).
 #   Cloudflare tunnel  any private peer, CF-Connecting-IP. cloudflared's address on the stack's network is not fixed,
 #                      and the mode publishes no port, so only the stack's own containers reach the listener.
 #   anything else      TRUSTED_PROXIES (unset or empty: loopback, which no Docker peer is), X-Forwarded-For. A forged
@@ -69,6 +78,73 @@ edge_tunnel_mode() {
     sleep 1
   done
 }
+
+edge_refuse() {
+  echo "MDMesh edge: $* (DEPLOY.md, Behind your own proxy). Not starting." >&2
+  exit 1
+}
+
+# edge_gateways: this container's default gateway(s), IPv4 and IPv6.
+edge_gateways() {
+  { ip -4 route show default; ip -6 route show default; } 2>/dev/null | awk '$1 == "default" && $2 == "via" { print $3 }'
+}
+
+# edge_proxy_list LIST: LIST (addresses and ranges, separated by spaces or commas, and `host`), checked as the
+# installers check it (install/lib/answers.sh, rule proxies), as Caddy's static list. Refuses (exits) on anything else.
+edge_proxy_list() {
+  _out=''
+  set -f   # no pathname expansion of the entries (this runs in a command substitution: it ends with it)
+  for _t in $(printf '%s' "$1" | tr ',' ' '); do
+    case "$_t" in
+      host)
+        _gw=$(edge_gateways)
+        [ -n "$_gw" ] || edge_refuse "TRUSTED_PROXIES says host, but this container has no default gateway"
+        for _g in $_gw; do case "$_g" in *:*) _out="$_out $_g/128" ;; *) _out="$_out $_g/32" ;; esac; done
+        continue ;;
+    esac
+    _a=${_t%/*}; _l=''
+    case "$_t" in */*) _l=${_t#*/}; case "$_l" in ''|*[!0-9]*|0?*) edge_refuse "TRUSTED_PROXIES: \"$_t\" has no valid prefix length" ;; esac ;; esac
+    if ipv4_int "$_a" >/dev/null; then
+      _min=8; _max=32
+    else
+      case "$_a" in
+        *:*:*) case "$_a" in *[!0-9A-Fa-f:.]*|*:::*) edge_refuse "TRUSTED_PROXIES: \"$_t\" is not an address or range" ;; esac
+               _min=16; _max=128 ;;
+        *) edge_refuse "TRUSTED_PROXIES: \"$_t\" is not an address or range (no names, no private_ranges)" ;;
+      esac
+    fi
+    if [ -n "$_l" ]; then
+      { [ "${#_l}" -le 3 ] && [ "$_l" -ge "$_min" ] && [ "$_l" -le "$_max" ]; } \
+        || edge_refuse "TRUSTED_PROXIES: \"$_t\": a range must be /$_min to /$_max (a wider one trusts far more than your proxy)"
+    else
+      _t="$_t/$_max"
+    fi
+    _out="$_out $_t"
+  done
+  _out=${_out# }
+  [ -n "$_out" ] || edge_refuse "TRUSTED_PROXIES is empty: list your proxy's address (host for a proxy on this machine)"
+  printf '%s\n' "$_out"
+}
+
+# edge_url_host URL: the host of URL, without scheme, port or path (an [IPv6] keeps its brackets).
+edge_url_host() {
+  _h=${1#*://}; _h=${_h%%/*}
+  case "$_h" in \[*) printf '%s]\n' "${_h%%]*}" ;; *) printf '%s\n' "${_h%%:*}" ;; esac
+}
+
+if [ "${MDMESH_EXPOSURE:-}" = proxy ]; then
+  PROXY_TRUSTED_PEERS=$(edge_proxy_list "${EDGE_TRUSTED_PROXIES:-}") || exit 1
+  if [ "${MDMESH_ORIGIN_TLS:-0}" = 1 ]; then
+    EDGE_ORIGIN_NAME=$(edge_url_host "${BASE_URL:-}")
+    case "$EDGE_ORIGIN_NAME" in ''|*[!0-9A-Za-z.:\[\]-]*) edge_refuse "MDMESH_ORIGIN_TLS=1 needs BASE_URL's host for the certificate (BASE_URL=${BASE_URL:-unset})" ;; esac
+    EDGE_TLS=internal
+    SITE_ADDRESS="https://$EDGE_ORIGIN_NAME:8080"
+  else
+    EDGE_TLS=off
+    SITE_ADDRESS=":8080"
+  fi
+  export PROXY_TRUSTED_PEERS EDGE_TLS EDGE_ORIGIN_NAME SITE_ADDRESS
+fi
 
 if edge_tunnel_mode; then
   HTTP_TRUSTED_PEERS=private_ranges

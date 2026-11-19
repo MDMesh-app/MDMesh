@@ -7,6 +7,7 @@
 #   # CF-Connecting-IP (docker/edge-peers.sh)
 #   docker compose -f docker-compose.release.yml --profile cloudflare up -d                 # tunnel
 #   docker compose -f docker-compose.release.yml -f docker-compose.domain.yml up -d         # own domain
+#   docker compose -f docker-compose.release.yml -f docker-compose.proxy.yml up -d          # behind your own proxy
 #
 # Pin SERVER_VERSION/WEB_VERSION/SUPERVISOR_VERSION in .env for production; they default to :latest. The quick start
 # and every update pin them by digest from the signed release manifest (0.5.0@sha256:…: docker pulls by the digest).
@@ -76,6 +77,10 @@ services:
     volumes:
       - caddy_data:/data
       - caddy_config:/config
+      # Your own edge rules (DEPLOY.md, "Your own edge rules"): .env's MDMESH_SITE_DIR, the install directory's site.d
+      # as an absolute path (so the updater's compose, run from inside its container, mounts the same directory).
+      # Unset: an empty volume.
+      - ${MDMESH_SITE_DIR:-caddy_site}:/etc/caddy/site.d:ro
 
   supervisor:
     image: ghcr.io/${IMAGE_OWNER:-mdmesh-app}/mdmesh-supervisor:${SUPERVISOR_VERSION:-latest}
@@ -114,4 +119,5 @@ volumes:
   mdmeshdata:
   caddy_data:
   caddy_config:
+  caddy_site:
   backups:

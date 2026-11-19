@@ -38,7 +38,8 @@ COPY --from=web /web/dist /srv
 COPY docker/Caddyfile /etc/caddy/Caddyfile
 COPY docker/web-entrypoint.sh /web-entrypoint.sh
 COPY docker/edge-peers.sh /edge-peers.sh
-RUN chmod +x /web-entrypoint.sh && chown -R caddy:caddy /srv /etc/caddy /data /config
-EXPOSE 80 443
+# /etc/caddy/site.d: where compose mounts your own rules (the install directory's site.d/, read-only); empty in the image.
+RUN mkdir -p /etc/caddy/site.d && chmod +x /web-entrypoint.sh && chown -R caddy:caddy /srv /etc/caddy /data /config
+EXPOSE 80 443 8080
 ENTRYPOINT ["/web-entrypoint.sh"]
 CMD ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]

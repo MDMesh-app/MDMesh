@@ -3,8 +3,11 @@
 # Edge check: does the edge config the stack ships actually load, and do its health routes tell the truth?
 #   1. `caddy validate` docker/Caddyfile in every hosting mode, using the SAME caddy image the web image is built
 #      FROM (read from docker/web.Dockerfile, so CI and production cannot disagree). validate, not adapt: adapt
-#      accepts values (e.g. a bad TRUSTED_PROXIES) that only fail when the config is provisioned.
-#   2. `docker compose config -q` for every compose file / overlay / profile combination the installers use.
+#      accepts values (e.g. a bad TRUSTED_PROXIES) that only fail when the config is provisioned. Your own rules
+#      (site.d/*.caddy) are imported, and a broken one is an error. Behind your own proxy, the TRUSTED_PROXIES list
+#      docker/edge-peers.sh makes (`host`, single addresses) and the lists it refuses.
+#   2. `docker compose config -q` for every compose file / overlay / profile combination the installers use; what the
+#      proxy overlay publishes and passes to the edge.
 #   2b. A digest pin comes out of `docker compose config --images` whole, as supervisor/apply.sh requires of it.
 #   3. /healthz and /healthz/supervisor (with or without a trailing slash), served by that caddy against stub upstreams:
 #      503 + reason while the upstream is down or failing (not the SPA's or the recovery page's catch-all 200), 200 "ok"
@@ -14,12 +17,15 @@
 #      publishes no port and gets its mode from COMPOSE_PROFILES; every other setup, the dev stack included, does not.
 #   3c. Ambiguous server paths (";", encoded ";", "/" or "\") are refused with 400, and every response carries the
 #      browser security headers (HSTS only over HTTPS).
+#   3d. Behind your own proxy (:8080, plain HTTP and the HTTPS origin): the client address from your proxy only, path
+#      checks, headers, and the origin certificate with and without a server name. Uses a throwaway internal network.
 #   4. The dev stack (docker-compose.dev.yml over docker-compose.yml) with docker/dev.env alone, and that the overlay
 #      refuses to load without it.
 # Guards the v0.3.1 Cloudflare-mode break: `email {$ACME_EMAIL}` with the empty ACME_EMAIL that setup.sh and
 # quickstart.sh write made the edge refuse to start, and nothing in CI parsed the Caddyfile.
-# Needs only a Docker daemon (+ compose plugin). Throwaway --rm containers, no network, no ports (3b adds test
-# addresses to its own container's loopback, so it runs with NET_ADMIN).
+# Needs only a Docker daemon (+ compose plugin). Throwaway --rm containers, no network, no ports (3b and 3d add test
+# addresses to their own container's loopback, so they run with NET_ADMIN; 3d's two containers share an --internal
+# network named mdmesh-edgecheck-<pid>, removed at the end).
 #
 # Usage: scripts/edge-check.sh [caddyfile]      (default: docker/Caddyfile)
 set -euo pipefail
@@ -51,6 +57,10 @@ MODES=(
   "behind a proxy|SITE_ADDRESS=:80 ACME_EMAIL= COMPOSE_PROFILES= TRUSTED_PROXIES=private_ranges"
   "own-domain, empty TRUSTED_PROXIES (as the compose files pass it)|SITE_ADDRESS=mdm.example.com ACME_EMAIL=ops@example.com COMPOSE_PROFILES= TRUSTED_PROXIES="
   ":80, empty TRUSTED_PROXIES|SITE_ADDRESS=:80 ACME_EMAIL= COMPOSE_PROFILES= TRUSTED_PROXIES="
+  # Behind your own proxy, as docker-compose.proxy.yml passes it (TRUSTED_PROXIES reaches the edge as
+  # EDGE_TRUSTED_PROXIES; `host` needs a gateway, which --network none lacks: it has its own check below).
+  "behind your own proxy|SITE_ADDRESS=:8080 ACME_EMAIL= COMPOSE_PROFILES= TRUSTED_PROXIES= MDMESH_EXPOSURE=proxy EDGE_TRUSTED_PROXIES=192.0.2.10,2001:db8::/32 BASE_URL=https://mdm.example.com MDMESH_ORIGIN_TLS=0"
+  "behind your own proxy, HTTPS origin|SITE_ADDRESS=:8080 ACME_EMAIL= COMPOSE_PROFILES= TRUSTED_PROXIES= MDMESH_EXPOSURE=proxy EDGE_TRUSTED_PROXIES=10.0.0.0/8 BASE_URL=https://mdm.example.com:8443 MDMESH_ORIGIN_TLS=1"
 )
 for mode in "${MODES[@]}"; do
   label="${mode%%|*}"
@@ -67,14 +77,76 @@ for mode in "${MODES[@]}"; do
   fi
 done
 
+# Your own rules: each site.d/*.caddy is imported into the site (its header is in the adapted config), and a broken one
+# is an error, not ignored. The directory is mounted read-only, as the compose files mount it.
+SITE_D="$(mktemp -d)"
+chmod 755 "$SITE_D"
+printf 'header X-Own-Rule "from site.d"\n' > "$SITE_D/own.caddy"; chmod 644 "$SITE_D/own.caddy"
+if out="$(docker run --rm --network none -e SITE_ADDRESS=:80 -e ACME_EMAIL= -v "$CADDYFILE:/etc/caddy/Caddyfile:ro" \
+    -v "$SITE_D:/etc/caddy/site.d:ro" "$CADDY_IMAGE" caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile 2>&1)" \
+   && grep -qF 'X-Own-Rule' <<<"$out"; then
+  pass "site.d/*.caddy is imported into the site"
+else
+  fail "site.d/*.caddy is not imported into the site"; printf '%s\n' "$out" | tail -3 | sed 's/^/         /'
+fi
+printf 'no_such_directive here\n' > "$SITE_D/own.caddy"
+if docker run --rm --network none -e SITE_ADDRESS=:80 -e ACME_EMAIL= -v "$CADDYFILE:/etc/caddy/Caddyfile:ro" \
+    -v "$SITE_D:/etc/caddy/site.d:ro" "$CADDY_IMAGE" caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; then
+  fail "a broken site.d/*.caddy passes caddy validate"
+else
+  pass "a broken site.d/*.caddy fails caddy validate"
+fi
+rm -f "$SITE_D/own.caddy"; rmdir "$SITE_D"
+
+# Behind your own proxy, docker/edge-peers.sh turns TRUSTED_PROXIES into Caddy's list: `host` is this container's
+# default gateway(s) (`ip` stubbed here: --network none has none), a lone address a /32 or /128; and it stops the edge on
+# what would trust nobody or far more than a proxy, saying why.
+echo "Behind your own proxy: TRUSTED_PROXIES as the edge reads it (docker/edge-peers.sh):"
+# shellcheck disable=SC2016  # expanded by the container's shell
+PEERS_PROBE='ip() { case "$*" in "-4 route show default") echo "default via 172.19.0.1 dev eth0" ;; "-6 route show default") [ -z "${V6:-}" ] || echo "default via fd00::1 dev eth0 metric 1024" ;; esac; }
+. /edge-peers.sh && printf "%s|%s|%s|%s\n" "$PROXY_TRUSTED_PEERS" "$SITE_ADDRESS" "$EDGE_TLS" "${EDGE_ORIGIN_NAME:-}"'
+# EDGE_TRUSTED_PROXIES | extra env | want ("refused" or the probe's output)
+PEER_CASES=(
+  "host||172.19.0.1/32|:8080|off|"
+  "host|V6=1|172.19.0.1/32 fd00::1/128|:8080|off|"
+  "192.0.2.10, 2001:db8::1 10.0.0.0/8|MDMESH_ORIGIN_TLS=1|192.0.2.10/32 2001:db8::1/128 10.0.0.0/8|https://mdm.example.com:8080|internal|mdm.example.com"
+  "host||refused"
+  "0.0.0.0/0||refused"
+  "::/0||refused"
+  "10.0.0.0/7||refused"
+  "private_ranges||refused"
+  "proxy.example.com||refused"
+  "192.0.2.10/033||refused"
+  "||refused"
+)
+for c in "${PEER_CASES[@]}"; do
+  IFS='|' read -r list extra want <<< "$c"
+  envs=(-e MDMESH_EXPOSURE=proxy -e "EDGE_TRUSTED_PROXIES=$list" -e BASE_URL=https://mdm.example.com -e SITE_ADDRESS=:8080)
+  [ -z "$extra" ] || envs+=(-e "$extra")
+  probe=$PEERS_PROBE
+  # The "host" case that must be refused: no gateway at all (`ip` answers nothing).
+  if [ "$list|$want" = "host|refused" ]; then probe=${probe/default via 172.19.0.1 dev eth0/}; fi
+  rc=0; out="$(docker run --rm --network none "${envs[@]}" -v "$EDGE_PEERS:/edge-peers.sh:ro" "$CADDY_IMAGE" sh -c "$probe" 2>&1)" || rc=$?
+  if [ "$want" = refused ]; then
+    if [ "$rc" != 0 ] && grep -qF 'MDMesh edge:' <<<"$out" && grep -qF 'Not starting' <<<"$out"; then pass "TRUSTED_PROXIES='$list': the edge refuses to start"
+    else fail "TRUSTED_PROXIES='$list': not refused (rc $rc: $out)"; fi
+  elif [ "$rc" = 0 ] && [ "$out" = "${c#*|*|}" ]; then pass "TRUSTED_PROXIES='$list'${extra:+ $extra}: $out"
+  else fail "TRUSTED_PROXIES='$list'${extra:+ $extra}: got '$out', want '${c#*|*|}'"; fi
+done
+
 # --- 2. Compose files, each combination setup.sh / quickstart.sh / DEPLOY.md / DEV.md use. ---
 # A fixed env file with the required (:?) variables, so a developer's own .env or shell cannot change the result.
 ENVF="$(mktemp)"
 ENVF_CF="$(mktemp)"   # the same, plus the COMPOSE_PROFILES line setup.sh / quickstart.sh write for tunnel mode
-trap 'rm -f "$ENVF" "$ENVF_CF"' EXIT
+ENVF_PX="$(mktemp)"   # the same, plus the lines they write behind your own proxy (install/lib/modes.sh, mdm_mode_env)
+ENVF_NOTP="$(mktemp)"   # that, without TRUSTED_PROXIES
+trap 'rm -f "$ENVF" "$ENVF_CF" "$ENVF_PX" "$ENVF_NOTP"' EXIT
 printf 'DB_PASSWORD=x\nBASE_URL=https://mdm.example.com\nHASH_SECRET=x\n' > "$ENVF"
 { cat "$ENVF"; echo COMPOSE_PROFILES=cloudflare; } > "$ENVF_CF"
-unset COMPOSE_FILE COMPOSE_PROFILES COMPOSE_PROJECT_NAME
+{ cat "$ENVF"; echo MDMESH_BIND=127.0.0.1:8080; echo 'TRUSTED_PROXIES="host"'; echo MDMESH_ORIGIN_TLS=0
+  echo MDMESH_SITE_DIR=/srv/mdmesh/site.d; } > "$ENVF_PX"
+grep -v '^TRUSTED_PROXIES=' "$ENVF_PX" > "$ENVF_NOTP"
+unset COMPOSE_FILE COMPOSE_PROFILES COMPOSE_PROJECT_NAME MDMESH_BIND TRUSTED_PROXIES MDMESH_ORIGIN_TLS MDMESH_SITE_DIR
 
 echo "Compose (docker compose config -q):"
 COMBOS=(
@@ -84,15 +156,37 @@ COMBOS=(
   "-f docker-compose.release.yml"
   "-f docker-compose.release.yml --profile cloudflare"
   "-f docker-compose.release.yml -f docker-compose.domain.yml"
+  "PX -f docker-compose.yml -f docker-compose.proxy.yml"
+  "PX -f docker-compose.release.yml -f docker-compose.proxy.yml"
 )
 for combo in "${COMBOS[@]}"; do
+  envf=$ENVF; case "$combo" in "PX "*) envf=$ENVF_PX; combo=${combo#PX } ;; esac
   read -r -a args <<< "$combo"
-  if out="$(docker compose --env-file "$ENVF" "${args[@]}" config -q 2>&1)"; then
+  if out="$(docker compose --env-file "$envf" "${args[@]}" config -q 2>&1)"; then
     pass "compose $combo"
   else
     fail "compose $combo"
     printf '%s\n' "$out" | tail -5 | sed 's/^/         /'
   fi
+done
+# Behind your own proxy, the edge publishes exactly MDMESH_BIND (127.0.0.1:8080 by default) to its :8080, believes
+# TRUSTED_PROXIES under another name (an older web image, after a rollback, sees an empty TRUSTED_PROXIES), and mounts
+# site.d from MDMESH_SITE_DIR. Without TRUSTED_PROXIES the overlay refuses to load.
+for file in docker-compose.yml docker-compose.release.yml; do
+  if ! out="$(docker compose --env-file "$ENVF_PX" -f "$file" -f docker-compose.proxy.yml config --format json caddy 2>&1)"; then
+    fail "compose -f $file -f docker-compose.proxy.yml config caddy"; printf '%s\n' "$out" | tail -5 | sed 's/^/         /'; continue
+  fi
+  got="$(python3 -c 'import json,sys; c=json.load(sys.stdin)["services"]["caddy"]; e=c["environment"]
+print(" ".join(sorted("%s:%s->%s" % (p.get("host_ip",""), p["published"], p["target"]) for p in c.get("ports", []))),
+      e.get("MDMESH_EXPOSURE"), e.get("EDGE_TRUSTED_PROXIES"), repr(e.get("TRUSTED_PROXIES")), e.get("SITE_ADDRESS"),
+      [v["source"] for v in c["volumes"] if v["target"] == "/etc/caddy/site.d"])' <<<"$out" 2>&1)"
+  want="127.0.0.1:8080->8080 proxy host '' :8080 ['/srv/mdmesh/site.d']"
+  if [ "$got" = "$want" ]; then pass "$file + proxy overlay: caddy $got"; else fail "$file + proxy overlay: caddy '$got', want '$want'"; fi
+  out="$(docker compose --env-file "$ENVF_NOTP" -f "$file" -f docker-compose.proxy.yml config -q 2>&1)" && rc=0 || rc=$?
+  if [ "$rc" = 0 ]; then
+    fail "$file + proxy overlay loads without TRUSTED_PROXIES"
+  elif grep -qF 'TRUSTED_PROXIES' <<<"$out"; then pass "$file + proxy overlay refuses to load without TRUSTED_PROXIES"
+  else fail "$file + proxy overlay failed without TRUSTED_PROXIES, but not naming it: $(tail -1 <<<"$out")"; fi
 done
 
 echo "Pinned images (docker compose config --images, as supervisor/apply.sh asks it):"
@@ -277,7 +371,7 @@ SETUPS=(
   ":80, compose file from before v0.3.5, a cloudflared off caddy's network|http|SITE_ADDRESS=:80 CLOUDFLARED_WAIT=1|--add-host cloudflared:198.51.100.7"
   "dev stack (:80, no tunnel)|http|SITE_ADDRESS=:80 COMPOSE_PROFILES=|"
   ":80, compose file from before v0.3.5, no cloudflared|http|SITE_ADDRESS=:80 CLOUDFLARED_WAIT=1|"
-  "behind your own proxy at 172.18.0.1|proxy|SITE_ADDRESS=:80 COMPOSE_PROFILES= TRUSTED_PROXIES=172.18.0.1/32|"
+  "a proxy in front of :80 at 172.18.0.1 (TRUSTED_PROXIES, no proxy mode)|proxy|SITE_ADDRESS=:80 COMPOSE_PROFILES= TRUSTED_PROXIES=172.18.0.1/32|"
   "own-domain, empty TRUSTED_PROXIES (as the compose files pass it)|own-domain|SITE_ADDRESS=localhost COMPOSE_PROFILES= TRUSTED_PROXIES=|"
   "dev stack, empty TRUSTED_PROXIES|http|SITE_ADDRESS=:80 COMPOSE_PROFILES= TRUSTED_PROXIES=|"
 )
@@ -381,6 +475,110 @@ for setup in "own domain (HTTPS)|https|SITE_ADDRESS=localhost" ":80 (tunnel, LAN
   if [ "$rc" -ne 0 ] && [ "$n" -eq 0 ]; then fail "ambiguous paths and headers ($label): probe container exited $rc"; fi
 done
 
+# --- 3d. Behind your own proxy (docker-compose.proxy.yml): the edge on :8080, in plain HTTP and as the HTTPS origin
+# (Caddy's own CA). The edge listens on :8080 like the server, so the stub server (echoing the forwarding headers it gets,
+# and the supervisor) runs in a second container, on an internal network of this check's own. Clients connect from
+# addresses on the edge container's loopback: 192.0.2.1 is your proxy (TRUSTED_PROXIES), 203.0.113.1 anyone else.
+PROXY_PROBE="$(cat <<'PROBE'
+set -u
+F=0
+command -v curl >/dev/null || { echo "  FAIL no curl in the caddy image"; exit 1; }
+ip addr add 192.0.2.1/32 dev lo && ip addr add 203.0.113.1/32 dev lo || { echo "  FAIL could not add test addresses"; exit 1; }
+. /edge-peers.sh
+mkdir -p /srv && echo spa > /srv/index.html
+caddy start --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1 || { echo "  FAIL edge did not start"; exit 1; }
+if [ "$KIND" = https ]; then
+  CA=/data/caddy/pki/authorities/local/root.crt
+  for _ in $(seq 1 100); do [ -s "$CA" ] && break; sleep 0.1; done
+  BASE=https://mdm.example.com:8080; CURL="curl -s -m 5 --path-as-is --cacert $CA --resolve mdm.example.com:8080:127.0.0.1"
+else
+  BASE=http://127.0.0.1:8080; CURL="curl -s -m 5 --path-as-is"
+fi
+for _ in $(seq 1 100); do case "$($CURL "$BASE/rest/echo" 2>/dev/null || true)" in xff=*) break ;; esac; sleep 0.1; done
+expect() { # expect <label> <from address> <path> <want> [curl args...]
+  label="$1"; from="$2"; path="$3"; want="$4"; shift 4
+  got="$($CURL --interface "$from" "$@" "$BASE$path" 2>/dev/null || true)"
+  if [ "$got" = "$want" ]; then echo "  ok   $MODE: $label"
+  else echo "  FAIL $MODE: $label (expected '$want', got '${got:-no response}')"; F=$((F + 1)); fi
+}
+echoed() { echo "xff=[$1] xri=[$1] cf=[]"; }
+expect "from your proxy: the last X-Forwarded-For entry, not a CF-Connecting-IP or X-Real-IP" 192.0.2.1 /rest/echo \
+  "$(echoed 198.51.100.4)" -H 'CF-Connecting-IP: 6.6.6.6' -H 'X-Real-IP: 7.7.7.7' -H 'X-Forwarded-For: 6.6.6.6, 198.51.100.4'
+expect "from anyone else: the peer, whatever it sends" 203.0.113.1 /rest/echo "$(echoed 203.0.113.1)" \
+  -H 'X-Forwarded-For: 198.51.100.4' -H 'CF-Connecting-IP: 6.6.6.6'
+expect "/healthz: the same headers reach the server" 192.0.2.1 /healthz ok -H 'X-Forwarded-For: 6.6.6.6, 198.51.100.4'
+code="$($CURL --interface 192.0.2.1 -o /dev/null -w '%{http_code}' "$BASE/rest/private;x/users/current" 2>/dev/null || true)"
+if [ "$code" = 400 ]; then echo "  ok   $MODE: a ; path: 400"; else echo "  FAIL $MODE: a ; path: $code, want 400"; F=$((F + 1)); fi
+h="$($CURL --interface 192.0.2.1 -D - -o /dev/null -H 'X-Forwarded-Proto: https' "$BASE/" 2>/dev/null | tr -d '\r')"
+if printf '%s\n' "$h" | grep -qix 'x-frame-options: DENY' && printf '%s\n' "$h" | grep -qix 'strict-transport-security: max-age=15552000'; then
+  echo "  ok   $MODE: security headers, HSTS behind HTTPS"
+else echo "  FAIL $MODE: security headers missing: $(printf '%s' "$h" | tr '\n' ' ')"; F=$((F + 1)); fi
+if [ "$KIND" = https ]; then
+  got="$(curl -s -m 5 --cacert "$CA" --interface 192.0.2.1 --connect-to mdm.example.com:8080:127.0.0.1:8080 \
+    https://mdm.example.com:8080/rest/echo 2>/dev/null || true)"
+  [ -n "$got" ] && echo "  ok   $MODE: the certificate is for mdm.example.com and chains to Caddy's root" \
+    || { echo "  FAIL $MODE: no answer for mdm.example.com with Caddy's root"; F=$((F + 1)); }
+  # A proxy that sends no server name (nginx without proxy_ssl_server_name) still gets the certificate (default_sni).
+  # Like every proxy in front of this origin it sends the public Host, which the site matches.
+  got="$(curl -sk -m 5 --interface 192.0.2.1 -H 'Host: mdm.example.com' -H 'X-Forwarded-For: 198.51.100.4' \
+    https://127.0.0.1:8080/rest/echo 2>/dev/null || true)"
+  if [ "$got" = "$(echoed 198.51.100.4)" ]; then echo "  ok   $MODE: no server name sent: still served"
+  else echo "  FAIL $MODE: no server name sent: '${got:-no response}'"; F=$((F + 1)); fi
+  code="$(curl -s -m 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:80/ 2>/dev/null || true)"
+  [ "$code" = 000 ] && echo "  ok   $MODE: no HTTP listener on :80 (no redirect server)" \
+    || { echo "  FAIL $MODE: something answers on :80 ($code)"; F=$((F + 1)); }
+fi
+exit "$F"
+PROBE
+)"
+STUB_NET="mdmesh-edgecheck-$$"
+STUB_CT="mdmesh-edgecheck-stub-$$"
+STUB_FILE="$(mktemp)"
+cleanup_stub() { docker rm -f "$STUB_CT" >/dev/null 2>&1 || true; docker network rm "$STUB_NET" >/dev/null 2>&1 || true; rm -f "$STUB_FILE"; }
+trap 'cleanup_stub; rm -f "$ENVF" "$ENVF_CF" "$ENVF_PX" "$ENVF_NOTP"' EXIT
+cat > "$STUB_FILE" <<'STUB'
+{
+	admin off
+}
+:8080 {
+	@right {
+		path /rest/public/name
+		header X-Forwarded-For 198.51.100.4
+		header X-Real-IP 198.51.100.4
+		header !CF-Connecting-IP
+	}
+	route {
+		respond @right "ok" 200
+		respond /rest/public/name "wrong forwarding headers" 500
+		respond "xff=[{header.X-Forwarded-For}] xri=[{header.X-Real-IP}] cf=[{header.CF-Connecting-IP}]" 200
+	}
+}
+:9000 {
+	respond "supervisor" 200
+}
+STUB
+chmod 644 "$STUB_FILE"
+if docker network create --internal "$STUB_NET" >/dev/null \
+   && docker run -d --name "$STUB_CT" --network "$STUB_NET" --network-alias server --network-alias supervisor \
+        -v "$STUB_FILE:/etc/caddy/Caddyfile:ro" "$CADDY_IMAGE" >/dev/null; then
+  for setup in "behind your own proxy|http|0" "behind your own proxy, HTTPS origin|https|1"; do
+    IFS='|' read -r label kind tls <<< "$setup"
+    echo "Behind your own proxy ($label):"
+    out="$(docker run --rm --network "$STUB_NET" --cap-add NET_ADMIN -e "MODE=$label" -e "KIND=$kind" -e ACME_EMAIL= \
+        -e MDMESH_EXPOSURE=proxy -e SITE_ADDRESS=:8080 -e EDGE_TRUSTED_PROXIES=192.0.2.1 -e TRUSTED_PROXIES= \
+        -e BASE_URL=https://mdm.example.com -e "MDMESH_ORIGIN_TLS=$tls" -e COMPOSE_PROFILES= \
+        -v "$CADDYFILE:/etc/caddy/Caddyfile:ro" -v "$EDGE_PEERS:/edge-peers.sh:ro" "$CADDY_IMAGE" sh -c "$PROXY_PROBE" 2>&1)" \
+      && rc=0 || rc=$?
+    printf '%s\n' "$out"
+    n="$(grep -c '^  FAIL' <<<"$out" || true)"
+    FAILED=$((FAILED + n))
+    if [ "$rc" -ne 0 ] && [ "$n" -eq 0 ]; then fail "behind your own proxy ($label): probe container exited $rc"; fi
+  done
+else
+  fail "behind your own proxy: could not start the stub server on network $STUB_NET"
+fi
+cleanup_stub
+
 # What the caddy service gets from each compose combination. Tunnel mode believes CF-Connecting-IP from any private
 # peer, which holds only because it publishes no port (a device reaches Caddy through cloudflared alone) and because
 # only it passes COMPOSE_PROFILES=cloudflare. Everything that publishes a port, the dev stack included, must not.
@@ -392,6 +590,8 @@ PORT_COMBOS=(
   "$ENVF_CF|-f docker-compose.release.yml --profile cloudflare|no|cloudflare"
   "$ENVF|-f docker-compose.yml -f docker-compose.domain.yml|some|"
   "$ENVF|-f docker-compose.release.yml -f docker-compose.domain.yml|some|"
+  "$ENVF_PX|-f docker-compose.yml -f docker-compose.proxy.yml|some|"
+  "$ENVF_PX|-f docker-compose.release.yml -f docker-compose.proxy.yml|some|"
   "docker/dev.env||some|"
 )
 for combo in "${PORT_COMBOS[@]}"; do

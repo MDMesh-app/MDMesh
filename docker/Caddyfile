@@ -2,7 +2,24 @@
 # SITE_ADDRESS is set by the setup wizard:
 #   own-domain  → "mdm.example.com" (Caddy auto-provisions + renews a Let's Encrypt cert)
 #   cloudflare  → ":80" (Cloudflare terminates TLS; cloudflared connects to this internally)
+#   your proxy  → ":8080" (docker-compose.proxy.yml: your proxy terminates TLS and forwards here; no ACME). With
+#                 MDMESH_ORIGIN_TLS=1, docker/edge-peers.sh makes it "https://<BASE_URL's host>:8080", with a
+#                 certificate from Caddy's own CA (edge_tls_internal below), for a proxy on another machine.
+
+# The global options of the proxy mode's HTTPS origin, when docker/edge-peers.sh sets EDGE_TLS=internal; none otherwise.
+# (Snippets precede the global options so they can be imported there.) default_sni: a proxy that sends no TLS server
+# name (nginx without proxy_ssl_server_name) still gets the certificate. No trust store to install into, and no
+# HTTP->HTTPS redirect: only your proxy connects, on the one published port.
+(edge_global_off) {
+}
+(edge_global_internal) {
+	default_sni {$EDGE_ORIGIN_NAME}
+	skip_install_trust
+	auto_https disable_redirects
+}
+
 {
+	import edge_global_{$EDGE_TLS:off}
 	email "{$ACME_EMAIL}"
 	# Who Caddy believes about a client's address ({client_ip}, which the server records as a device's public IP).
 	# Set per listener, so each hosting mode gets its own rule. Strict mode reads a header list from the right, so an
@@ -23,6 +40,22 @@
 		client_ip_headers {$HTTP_CLIENT_IP_HEADER:X-Forwarded-For}
 		trusted_proxies_strict
 	}
+	#   :8080 behind your own proxy (docker-compose.proxy.yml). Only your proxy may set X-Forwarded-For (and
+	#         X-Forwarded-Proto): PROXY_TRUSTED_PEERS, which docker/edge-peers.sh makes from .env's TRUSTED_PROXIES (`host`
+	#         = this machine, as the edge sees it). Unset: loopback only, which no Docker peer is, so nothing is believed.
+	servers :8080 {
+		trusted_proxies static {$PROXY_TRUSTED_PEERS:127.0.0.1/32 ::1/128}
+		trusted_proxies_strict
+	}
+}
+
+# The proxy mode's HTTPS origin (EDGE_TLS=internal): a certificate for the site's name from Caddy's own CA, kept in the
+# caddy_data volume (your proxy trusts its root, /data/caddy/pki/authorities/local/root.crt). Otherwise nothing: a site
+# with a name gets a public certificate (own domain), and ":80" or ":8080" none.
+(edge_tls_off) {
+}
+(edge_tls_internal) {
+	tls internal
 }
 
 # Every reverse_proxy to the server imports this. The server reads the client's address from X-Forwarded-For (and
@@ -61,6 +94,11 @@
 	encode gzip
 	@https expression `{http.request.scheme} == "https" || {http.request.header.X-Forwarded-Proto} == "https"`
 	import security_headers
+	import edge_tls_{$EDGE_TLS:off}
+
+	# Your own rules (DEPLOY.md, "Your own edge rules"): every *.caddy file in the install directory's site.d/, mounted
+	# read-only at /etc/caddy/site.d (MDMESH_SITE_DIR in .env). Updates never touch it. None there: nothing is imported.
+	import /etc/caddy/site.d/*.caddy
 
 	# A server path that the server's routing would read differently from its security filters: a ";" path
 	# parameter, or an encoded ";", "/" or "\" (or a raw "\"), anywhere in the path of /rest, /files or /agent (the

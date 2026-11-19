@@ -12,18 +12,19 @@ import com.mdmesh.policy.UserRestrictions
  * that fails to start leaves the device as locked down as before.
  *
  * Only what our admin holds is cleared and restored, so a restore never adds a block the
- * configuration didn't set. One that stays in force from another source refuses the wipe.
+ * configuration didn't set. One that stays in force from another source is reported, not a reason to
+ * refuse: stock Android wipes past it, and refusing would stop wiping a lost device.
  */
 internal object WipeRestrictions {
 
     val keys: List<String> = listOf(UserRestrictions.DISALLOW_FACTORY_RESET)
 
     sealed interface Lift {
-        /** Every restriction in [keys] is off now; [lifted] were ours and must be restored if the wipe fails. */
-        data class Ready(val lifted: List<String>) : Lift
-
-        /** [key] stays in force from another admin or source. Ours are restored, except [notRestored]. */
-        data class StillSet(val key: String, val notRestored: List<String>) : Lift
+        /**
+         * Ours are off now; [lifted] must be restored if the wipe fails. [setElsewhere] stay in force from another
+         * admin or source.
+         */
+        data class Ready(val lifted: List<String>, val setElsewhere: List<String>) : Lift
 
         /** A restriction call threw. Ours are restored, except [notRestored]. */
         data class Error(val cause: Throwable, val notRestored: List<String>) : Lift
@@ -32,23 +33,20 @@ internal object WipeRestrictions {
     /** [beforeClear] runs once, before the first restriction is cleared (nothing to clear: never). */
     fun lift(target: WipeTarget, beforeClear: () -> Unit = {}): Lift {
         val lifted = mutableListOf<String>()
-        val stillSet = runCatching { liftEach(target, lifted, beforeClear) }
-            .getOrElse { return Lift.Error(it, restore(target, lifted)) }
-        return if (stillSet == null) Lift.Ready(lifted) else Lift.StillSet(stillSet, restore(target, lifted))
+        return runCatching { Lift.Ready(lifted, liftEach(target, lifted, beforeClear)) }
+            .getOrElse { Lift.Error(it, restore(target, lifted)) }
     }
 
-    /** Clears ours among [keys] into [lifted]; returns the first key still in force afterwards, if any. */
-    private fun liftEach(target: WipeTarget, lifted: MutableList<String>, beforeClear: () -> Unit): String? {
-        for (key in keys) {
+    /** Clears ours among [keys] into [lifted]; returns the keys still in force afterwards. */
+    private fun liftEach(target: WipeTarget, lifted: MutableList<String>, beforeClear: () -> Unit): List<String> =
+        keys.filter { key ->
             if (target.holdsRestriction(key)) {
                 if (lifted.isEmpty()) beforeClear()
                 target.clearRestriction(key)
                 lifted += key
             }
-            if (target.hasRestriction(key)) return key
+            target.hasRestriction(key)
         }
-        return null
-    }
 
     /** Puts [lifted] back; returns the keys that could not be restored. */
     fun restore(target: WipeTarget, lifted: List<String>): List<String> =

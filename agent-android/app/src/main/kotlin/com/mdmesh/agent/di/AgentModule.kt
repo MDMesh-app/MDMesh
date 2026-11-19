@@ -46,6 +46,7 @@ import com.mdmesh.core.kiosk.SharedPrefsExitJournal
 import com.mdmesh.core.command.handlers.PolicyApplyHandler
 import com.mdmesh.core.device.AppInventoryCollector
 import com.mdmesh.core.device.HardwareIdCollector
+import com.mdmesh.core.sync.ConfigReapplyWorker
 import com.mdmesh.core.sync.HardwareIdSource
 import com.mdmesh.core.sync.LastCheckIn
 import com.mdmesh.core.sync.SharedPrefsLastCheckIn
@@ -137,6 +138,9 @@ object AgentModule {
             nowMs = SystemClock::elapsedRealtime,
             onExpired = {
                 events.record(EventType.WIPE_NOT_STARTED, "the device did not reset within 10 minutes; resumed")
+                // Puts Factory reset: Block back now; the server's re-send can wait an hour. Only scheduled: this
+                // runs inside a read of the hold, possibly under the configuration lock the re-apply takes.
+                ConfigReapplyWorker.scheduleNow(context)
             },
         )
 

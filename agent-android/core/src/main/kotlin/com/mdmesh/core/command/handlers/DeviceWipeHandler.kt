@@ -16,16 +16,17 @@ import com.mdmesh.proto.DeviceAction
  * usually torn down before the ack is sent.
  *
  * The restrictions in [WipeRestrictions] (Factory reset: Block) are lifted first, since some vendor
- * recoveries enforce them (#222), and put back if the wipe call fails.
+ * recoveries enforce them (#222), and put back if the wipe call fails. A block another admin or
+ * source keeps doesn't stop the wipe (stock Android wipes past it); the result says so.
  *
- * [exclusive] holds off every configuration apply from the lift until the wipe call, so a boot
- * re-apply can't put the block back in between (check-in commands already run one at a time). The
- * wipe call can return before the reboot, so [hold] is set first and keeps every later apply from
- * putting it back for the rest of this boot; it is released only if the wipe call throws.
+ * [hold] is set before anything is lifted and released on every path that doesn't reach a wipe, so
+ * no apply can put the block back once it is lifted: the wipe call can return before the reboot, and
+ * the process can die between the lift and the call. If no reboot follows, the hold expires and the
+ * agent re-applies its configuration ([FactoryResetWipeHold]). [exclusive] keeps applies out from the
+ * hold to the wipe call (check-in commands already run one at a time).
  *
- * [markConfigStale] (`ConfigStateStore.markStale`) runs before anything is lifted: if the process
- * dies before the wipe call, the next check-in reports drift and the server re-sends the
- * configuration, which puts the block back.
+ * [markConfigStale] (`ConfigStateStore.markStale`) runs before anything is lifted, so the server
+ * re-sends the configuration too.
  */
 class DeviceWipeHandler(
     private val target: WipeTarget,
@@ -44,27 +45,28 @@ class DeviceWipeHandler(
     }
 
     private fun wipe(command: CommandEnvelope): CommandResult {
+        hold.hold()
         return when (val lift = WipeRestrictions.lift(target, beforeClear = markConfigStale)) {
-            is WipeRestrictions.Lift.Ready -> wipeLifted(command, lift.lifted)
-            is WipeRestrictions.Lift.StillSet -> failed(
-                command,
-                "Another admin or source blocks factory reset on the device (${lift.key}), " +
-                    "so the wipe was not started",
-                lift.notRestored,
-            )
-            is WipeRestrictions.Lift.Error -> failed(command, lift.cause.message, lift.notRestored)
+            is WipeRestrictions.Lift.Ready -> wipeLifted(command, lift)
+            is WipeRestrictions.Lift.Error -> {
+                hold.release()
+                failed(command, lift.cause.message, lift.notRestored)
+            }
         }
     }
 
-    private fun wipeLifted(command: CommandEnvelope, lifted: List<String>): CommandResult =
+    private fun wipeLifted(command: CommandEnvelope, lift: WipeRestrictions.Lift.Ready): CommandResult =
         runCatching {
-            hold.hold()
             target.wipe()
-            CommandResults.done(command)
+            CommandResults.done(command, lift.setElsewhere.takeIf { it.isNotEmpty() }?.let { elsewhere(it) })
         }.getOrElse {
             hold.release()
-            failed(command, it.message, WipeRestrictions.restore(target, lifted))
+            failed(command, it.message, WipeRestrictions.restore(target, lift.lifted))
         }
+
+    private fun elsewhere(keys: List<String>) =
+        "another admin or source also blocks factory reset (${keys.joinToString()}); " +
+            "some vendor recoveries may refuse it"
 
     private fun failed(command: CommandEnvelope, detail: String?, notRestored: List<String>): CommandResult {
         val reason = detail ?: "wipe failed"

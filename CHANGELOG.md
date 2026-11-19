@@ -21,7 +21,8 @@ Fixes
 - Agent: app installs and agent updates no longer fail with `apk fetch failed: timeout` on slow Wi-Fi. A download now
   waits up to a minute for data, not 10 seconds, and has no limit on its total time (#174).
 - Factory reset from the console lifts the configuration's Factory reset: Block for the wipe, and puts it back if the
-  wipe can't start. Some vendor recoveries honour the block and stopped mid-wipe (HyperOS, #222).
+  wipe can't start or the device hasn't reset within 10 minutes. Some vendor recoveries honour the block and stopped
+  mid-wipe (HyperOS, #222).
 - Lock on a device with no screen lock set still turns the screen off, and its result now says the device isn't
   protected.
 

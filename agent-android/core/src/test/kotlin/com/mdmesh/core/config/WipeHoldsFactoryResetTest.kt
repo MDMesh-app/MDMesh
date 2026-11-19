@@ -115,6 +115,31 @@ class WipeHoldsFactoryResetTest {
         assertFalse(KEY in device.restrictions)
     }
 
+    /**
+     * No reboot came: the hold expires and the agent re-applies on its own (the server's re-send can wait an hour).
+     * The expiry is seen inside an apply, under the configuration lock, so it only schedules the re-apply.
+     */
+    @Test
+    fun `an expired hold schedules a re-apply that puts the block back`() = runTest {
+        val device = Device(blocked = true)
+        var nowMs = 0L
+        var scheduled = 0
+        val hold = FactoryResetWipeHold(nowMs = { nowMs }, onExpired = { scheduled++ })
+        val applier = applier(device, hold)
+        applier.apply(block)
+        wipeHandler(device, hold, applier).handle(wipeCommand)
+
+        nowMs = FactoryResetWipeHold.MAX_HOLD_MS
+        assertFalse(hold.held) // the next command's check (CommandDispatcher) sees the expiry
+
+        assertEquals(1, scheduled)
+        assertFalse("nothing put it back yet", KEY in device.restrictions)
+        // What the scheduled ConfigReapplyWorker then runs.
+        val reapply = applier.reapplyPersisted()!!
+        assertEquals(ConfigOutcome.APPLIED, reapply.outcomes["policies.factoryReset"])
+        assertTrue(KEY in device.restrictions)
+    }
+
     @Test
     fun `policy apply after an accepted wipe defers the block too`() = runTest {
         val device = Device(blocked = true)

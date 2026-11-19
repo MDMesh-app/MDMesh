@@ -60,6 +60,17 @@ class FactoryResetWipeHoldTest {
     }
 
     @Test
+    fun `a boot count that can't be read once keeps the saved hold`() {
+        newProcess().hold()
+        boot = 0L
+
+        assertFalse(newProcess().held)
+        boot = 7L
+
+        assertTrue(newProcess().held)
+    }
+
+    @Test
     fun `still holds just within the bound`() {
         val hold = newProcess()
         hold.hold()

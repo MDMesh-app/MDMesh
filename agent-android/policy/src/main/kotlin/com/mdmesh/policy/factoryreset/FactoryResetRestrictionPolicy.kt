@@ -19,7 +19,8 @@ import com.mdmesh.policy.wifi.DpmHandle
  *    (`adb reboot recovery`), `fastboot -w` and unlocking the bootloader are out of any DPC's reach.
  *  - AOSP lets a Device Owner wipe past it (`wipeDevice`/`wipeData`), but some vendor recoveries
  *    enforce it too and refuse to format (HyperOS, #222). So the console's `device.wipe` lifts it
- *    first and puts it back only if the wipe call fails (`DeviceWipeHandler`).
+ *    first and puts it back only if the wipe call fails or no reboot follows (`DeviceWipeHandler`,
+ *    `FactoryResetWipeHold`).
  */
 internal class FactoryResetRestrictionPolicy(
     private val handle: DpmHandle,

@@ -11,11 +11,17 @@ import com.mdmesh.policy.PolicyOutcome
  *
  * The hold is saved with the boot it was set in ([bootId], `Settings.Global.BOOT_COUNT`), so it
  * outlives a restart of the agent process but not a reboot: a saved hold from another boot is
- * ignored and cleared. Without a boot count (0: the ROM doesn't keep it) it lasts only for this
- * process. Either way it ends after [MAX_HOLD_MS] of uptime ([nowMs], `elapsedRealtime`, which
- * clock changes don't move): a wipe that hasn't rebooted the device by then isn't coming. Commands
- * run again, the configuration (marked stale before the lift) is re-sent and puts the block back,
- * and [onExpired] reports it. One instance per process (Hilt singleton).
+ * ignored and cleared. Without a boot count (0: the ROM doesn't keep it, or the read failed) it
+ * lasts only for this process, and a saved one is left for a later read. Either way it ends after
+ * [MAX_HOLD_MS] of uptime ([nowMs], `elapsedRealtime`, which clock changes don't move): a wipe that
+ * hasn't rebooted the device by then isn't coming. The expiry is noticed on the next read of [held]
+ * (each command, each apply), commands run again, and [onExpired] re-applies the saved configuration
+ * on the device (the agent enqueues `ConfigReapplyWorker`), which puts the block back. The server's
+ * re-send of the stale configuration is only a fallback: it can wait an hour after an earlier
+ * attempt. One instance per process (Hilt singleton).
+ *
+ * [onExpired] runs while [held] is being read, possibly under the configuration lock: it must only
+ * schedule work, never apply the configuration itself.
  */
 class FactoryResetWipeHold(
     private val store: WipeHoldStore = InMemoryWipeHoldStore(),
@@ -55,13 +61,13 @@ class FactoryResetWipeHold(
         store.saved = null
     }
 
-    /** The saved hold's uptime if it was set in this boot; one from another boot is cleared. */
+    /** The saved hold's uptime if it was set in this boot; one from another boot is cleared, none if unknown. */
     private fun savedForThisBoot(): Long? {
-        val saved = store.saved ?: return null
+        val saved = store.saved
         val boot = bootId()
-        val current = boot != 0L && saved.boot == boot
-        if (!current) store.saved = null
-        return saved.atMs.takeIf { current }
+        if (saved == null || boot == 0L) return null
+        if (saved.boot != boot) store.saved = null
+        return saved.atMs.takeIf { saved.boot == boot }
     }
 
     companion object {

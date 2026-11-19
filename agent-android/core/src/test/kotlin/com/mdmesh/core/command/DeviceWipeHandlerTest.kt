@@ -4,6 +4,7 @@ import com.mdmesh.core.command.handlers.DeviceWipeHandler
 import com.mdmesh.core.command.handlers.WipeRestrictions
 import com.mdmesh.core.command.handlers.WipeTarget
 import com.mdmesh.policy.UserRestrictions
+import com.mdmesh.policy.factoryreset.FactoryResetWipeHold
 import com.mdmesh.proto.CommandEnvelope
 import com.mdmesh.proto.CommandResult
 import com.mdmesh.proto.CommandStatus
@@ -34,6 +35,7 @@ class DeviceWipeHandlerTest {
         /** Ours only. */
         val restrictions = if (blocked) mutableSetOf(KEY) else mutableSetOf()
         val calls = mutableListOf<String>()
+        var onClear: () -> Unit = {}
 
         override fun isDeviceOwner() = deviceOwner
         override fun holdsRestriction(key: String) = key in restrictions
@@ -47,6 +49,7 @@ class DeviceWipeHandlerTest {
             restrictions += key
         }
         override fun clearRestriction(key: String) {
+            onClear()
             calls += "clear $key"
             restrictions -= key
         }
@@ -96,43 +99,73 @@ class DeviceWipeHandlerTest {
         assertFalse(KEY in device.restrictions)
     }
 
+    /** Stock Android wipes past another admin's block; refusing would stop wiping a lost device. */
     @Test
-    fun `does not wipe and fails clearly when ours and another source both block`() = runTest {
+    fun `lifts ours and still wipes when another source also blocks, and says so`() = runTest {
         val device = FakeDevice(blocked = true, blockedElsewhere = true)
 
         val result = wipe(device)
 
-        assertEquals(CommandStatus.FAILED, result.status)
+        assertEquals(CommandStatus.DONE, result.status)
         assertEquals(
-            "Another admin or source blocks factory reset on the device ($KEY), so the wipe was not started",
+            "another admin or source also blocks factory reset ($KEY); some vendor recoveries may refuse it",
             result.detail,
         )
-        // Ours is put back, so the device ends up exactly as configured; no wipe was started.
-        assertEquals(listOf("clear $KEY", "add $KEY"), device.calls)
-        assertTrue(KEY in device.restrictions)
+        assertEquals(listOf("clear $KEY", "wipe blocked=true"), device.calls)
     }
 
     @Test
-    fun `touches nothing and fails clearly when only another source blocks`() = runTest {
+    fun `wipes without touching our restrictions when only another source blocks`() = runTest {
         val device = FakeDevice(blocked = false, blockedElsewhere = true)
 
         val result = wipe(device)
 
-        assertEquals(CommandStatus.FAILED, result.status)
-        assertTrue(result.detail.orEmpty().contains("Another admin or source blocks factory reset"))
+        assertEquals(CommandStatus.DONE, result.status)
+        assertTrue(result.detail.orEmpty().startsWith("another admin or source also blocks factory reset"))
         // Never cleared, so never restored: no block of ours is added that the configuration didn't set.
-        assertTrue(device.calls.isEmpty())
+        assertEquals(listOf("wipe blocked=true"), device.calls)
         assertFalse(KEY in device.restrictions)
     }
 
     @Test
-    fun `says so when our block can't be put back after another source refuses the wipe`() = runTest {
-        val device = FakeDevice(blocked = true, blockedElsewhere = true, addFails = true)
+    fun `says so when our block can't be put back after the lift failed`() = runTest {
+        val device = FakeDevice(blocked = true, checkFailsAfterClear = true, addFails = true)
 
         val result = wipe(device)
 
         assertEquals(CommandStatus.FAILED, result.status)
-        assertTrue(result.detail.orEmpty().endsWith("so the wipe was not started; could not restore $KEY"))
+        assertEquals("user manager gone; could not restore $KEY", result.detail)
+    }
+
+    /** No apply may put the block back once it is lifted, even if the process dies before the wipe call. */
+    @Test
+    fun `holds before lifting the block`() = runTest {
+        val hold = FactoryResetWipeHold()
+        val heldAtClear = mutableListOf<Boolean>()
+        val device = FakeDevice(blocked = true).apply { onClear = { heldAtClear += hold.held } }
+
+        DeviceWipeHandler(device, hold).handle(command)
+
+        assertEquals(listOf(true), heldAtClear)
+        assertTrue(hold.held)
+    }
+
+    @Test
+    fun `releases the hold when the lift fails`() = runTest {
+        val hold = FactoryResetWipeHold()
+
+        DeviceWipeHandler(FakeDevice(blocked = true, checkFailsAfterClear = true), hold).handle(command)
+
+        assertFalse(hold.held)
+    }
+
+    @Test
+    fun `releases the hold when the wipe call throws`() = runTest {
+        val hold = FactoryResetWipeHold()
+
+        DeviceWipeHandler(FakeDevice(blocked = true, wipeError = SecurityException("no")), hold).handle(command)
+
+        assertFalse(hold.held)
     }
 
     @Test

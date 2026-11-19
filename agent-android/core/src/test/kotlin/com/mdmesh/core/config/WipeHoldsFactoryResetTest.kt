@@ -17,6 +17,7 @@ import com.mdmesh.policy.TogglePolicyResolver
 import com.mdmesh.policy.UserRestrictions
 import com.mdmesh.policy.factoryreset.FactoryResetPolicy
 import com.mdmesh.policy.factoryreset.FactoryResetWipeHold
+import com.mdmesh.policy.factoryreset.InMemoryWipeHoldStore
 import com.mdmesh.policy.factoryreset.WipeHeldFactoryResetPolicy
 import com.mdmesh.proto.CommandEnvelope
 import com.mdmesh.proto.CommandStatus
@@ -138,6 +139,71 @@ class WipeHoldsFactoryResetTest {
         val reapply = applier.reapplyPersisted()!!
         assertEquals(ConfigOutcome.APPLIED, reapply.outcomes["policies.factoryReset"])
         assertTrue(KEY in device.restrictions)
+    }
+
+    /**
+     * PR #227 review: no command, no apply and no server after the wipe (the device went offline). The check the hold
+     * scheduled (WipeHoldExpiryWorker) ends it, reports it once, and the re-apply puts the block back.
+     */
+    @Test
+    fun `with nothing else after the wipe the scheduled check puts the block back and reports it once`() = runTest {
+        val device = Device(blocked = true)
+        var nowMs = 0L
+        var reported = 0
+        val checks = mutableListOf<Long>()
+        val hold = FactoryResetWipeHold(nowMs = { nowMs }, onHold = { checks += FactoryResetWipeHold.MAX_HOLD_MS }) {
+            reported++
+        }
+        val applier = applier(device, hold)
+        applier.apply(block)
+        wipeHandler(device, hold, applier).handle(wipeCommand)
+        assertEquals("one check at the deadline, asked by the wipe", listOf(FactoryResetWipeHold.MAX_HOLD_MS), checks)
+
+        nowMs = FactoryResetWipeHold.MAX_HOLD_MS
+        assertEquals(null, hold.remainingMs) // what the worker reads
+        applier.reapplyPersisted() // what it, and onExpired, schedule
+
+        assertTrue(KEY in device.restrictions)
+        assertFalse(hold.held) // a later command's read
+        assertEquals("wipeNotStarted once", 1, reported)
+    }
+
+    /** The wipe threw: the hold is released, so the check that comes later neither reports nor holds anything. */
+    @Test
+    fun `a wipe that throws leaves the scheduled check nothing to end`() = runTest {
+        val device = Device(blocked = true, wipeError = SecurityException("wipe refused"))
+        var nowMs = 0L
+        var reported = 0
+        val hold = FactoryResetWipeHold(nowMs = { nowMs }) { reported++ }
+        wipeHandler(device, hold, applier(device, hold)).handle(wipeCommand)
+
+        nowMs = FactoryResetWipeHold.MAX_HOLD_MS
+        assertEquals(null, hold.remainingMs)
+
+        assertEquals(0, reported)
+        assertTrue(KEY in device.restrictions)
+    }
+
+    /** A reboot without the wipe ends the per-boot hold: the boot re-apply puts the block back, no server needed. */
+    @Test
+    fun `a reboot that did not wipe gets the block back from the boot re-apply`() = runTest {
+        val device = Device(blocked = true)
+        val saved = InMemoryWipeHoldStore()
+        var boot = 3L
+        var reported = 0
+        val before = FactoryResetWipeHold(saved, bootId = { boot }, nowMs = { 500_000L })
+        val applierBefore = applier(device, before)
+        applierBefore.apply(block)
+        wipeHandler(device, before, applierBefore).handle(wipeCommand)
+        assertFalse(KEY in device.restrictions)
+
+        boot = 4L // the new process after the reboot, early in its uptime
+        val after = FactoryResetWipeHold(saved, bootId = { boot }, nowMs = { 1_000L }) { reported++ }
+        val reapply = applier(device, after).reapplyPersisted()!!
+
+        assertEquals(ConfigOutcome.APPLIED, reapply.outcomes["policies.factoryReset"])
+        assertTrue(KEY in device.restrictions)
+        assertEquals("a reboot is not wipeNotStarted", 0, reported)
     }
 
     @Test

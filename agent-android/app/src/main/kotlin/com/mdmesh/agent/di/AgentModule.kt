@@ -6,6 +6,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.os.SystemClock
 import android.os.UserManager
+import android.util.Log
 import com.mdmesh.agent.BuildConfig
 import com.mdmesh.agent.admin.AdminReceiver
 import com.mdmesh.core.capability.CapabilityCollector
@@ -50,6 +51,7 @@ import com.mdmesh.core.sync.ConfigReapplyWorker
 import com.mdmesh.core.sync.HardwareIdSource
 import com.mdmesh.core.sync.LastCheckIn
 import com.mdmesh.core.sync.SharedPrefsLastCheckIn
+import com.mdmesh.core.sync.WipeHoldExpiryWorker
 import com.mdmesh.core.install.InstallManager
 import com.mdmesh.core.state.DeviceStateCollector
 import com.mdmesh.core.state.DeviceStateSource
@@ -136,6 +138,12 @@ object AgentModule {
             SharedPrefsWipeHoldStore(context),
             bootId = { Boot.count(context) },
             nowMs = SystemClock::elapsedRealtime,
+            // Ends the hold at its deadline even if no command, apply or server comes. A failure to schedule doesn't
+            // stop the wipe: each command and apply still reads the hold.
+            onHold = {
+                runCatching { WipeHoldExpiryWorker.schedule(context) }
+                    .onFailure { Log.w("FactoryResetWipeHold", "expiry check not scheduled", it) }
+            },
             onExpired = {
                 events.record(EventType.WIPE_NOT_STARTED, "the device did not reset within 10 minutes; resumed")
                 // Puts Factory reset: Block back now; the server's re-send can wait an hour. Only scheduled: this

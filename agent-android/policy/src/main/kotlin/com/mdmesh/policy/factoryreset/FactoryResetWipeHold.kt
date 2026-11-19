@@ -11,22 +11,28 @@ import com.mdmesh.policy.PolicyOutcome
  *
  * The hold is saved with the boot it was set in ([bootId], `Settings.Global.BOOT_COUNT`), so it
  * outlives a restart of the agent process but not a reboot: a saved hold from another boot is
- * ignored and cleared. Without a boot count (0: the ROM doesn't keep it, or the read failed) it
- * lasts only for this process, and a saved one is left for a later read. Either way it ends after
- * [MAX_HOLD_MS] of uptime ([nowMs], `elapsedRealtime`, which clock changes don't move): a wipe that
- * hasn't rebooted the device by then isn't coming. The expiry is noticed on the next read of [held]
- * (each command, each apply), commands run again, and [onExpired] re-applies the saved configuration
- * on the device (the agent enqueues `ConfigReapplyWorker`), which puts the block back. The server's
- * re-send of the stale configuration is only a fallback: it can wait an hour after an earlier
- * attempt. One instance per process (Hilt singleton).
+ * ignored and cleared (as is one whose uptime is ahead of the current uptime: a reboot the boot count
+ * missed). Without a boot count (0: the ROM doesn't keep it, or the read failed) it lasts only for
+ * this process, and a saved one is left for a later read. A reboot is the wipe, or its failure; the
+ * boot re-apply then puts the block back.
  *
- * [onExpired] runs while [held] is being read, possibly under the configuration lock: it must only
- * schedule work, never apply the configuration itself.
+ * Either way it ends after [MAX_HOLD_MS] of uptime ([nowMs], `elapsedRealtime`, which clock changes
+ * don't move): a wipe that hasn't rebooted the device by then isn't coming. The expiry is noticed on
+ * the first read of [held] or [remainingMs] after the deadline, whichever comes first, and only
+ * once: [hold] calls [onHold], which schedules such a read at the deadline (`WipeHoldExpiryWorker`),
+ * so the hold ends with no command, apply or server; each command and each apply reads it too. Then
+ * commands run again and [onExpired] re-applies the saved configuration on the device (the agent
+ * enqueues `ConfigReapplyWorker`), which puts the block back. One instance per process (Hilt
+ * singleton).
+ *
+ * [onHold] and [onExpired] run inside this object's lock, [onExpired] possibly under the
+ * configuration lock too: they must only schedule work, never apply the configuration themselves.
  */
 class FactoryResetWipeHold(
     private val store: WipeHoldStore = InMemoryWipeHoldStore(),
     private val bootId: () -> Long = { 0L },
     private val nowMs: () -> Long = { System.nanoTime() / NANOS_PER_MS },
+    private val onHold: () -> Unit = {},
     private val onExpired: () -> Unit = {},
 ) {
 
@@ -34,22 +40,30 @@ class FactoryResetWipeHold(
     private var heldAtMs: Long? = null
 
     val held: Boolean
+        get() = remainingMs != null
+
+    /** The hold's time left, null when not held. Like [held], ends a hold past its deadline. */
+    val remainingMs: Long?
         @Synchronized get() {
-            val at = heldAtMs ?: savedForThisBoot() ?: return false
-            val current = nowMs() - at < MAX_HOLD_MS
-            if (!current) {
-                clear()
-                onExpired()
+            val at = heldAtMs ?: savedForThisBoot() ?: return null
+            val elapsed = nowMs() - at
+            if (elapsed < 0) {
+                clear() // uptime restarted: a reboot, not an expiry
+                return null
             }
-            return current
+            if (elapsed < MAX_HOLD_MS) return MAX_HOLD_MS - elapsed
+            clear()
+            onExpired()
+            return null
         }
 
-    /** Called by `device.wipe` just before the wipe call, under the configuration lock. */
+    /** Called by `device.wipe` before anything is lifted, under the configuration lock. */
     @Synchronized
     fun hold() {
         val at = nowMs()
         heldAtMs = at
         bootId().takeIf { it != 0L }?.let { store.saved = SavedWipeHold(it, at) }
+        onHold()
     }
 
     /** Called by `device.wipe` when the wipe call threw: the device is not resetting. */

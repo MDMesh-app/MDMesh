@@ -16,6 +16,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -87,10 +89,11 @@ class AgentDataStoresTest {
         MirroredDataStore(primary, mirror, "mdm_identity", restore = { error("the primary is not damaged") })
 
     @Test
-    fun `a primary one write behind its mirror (cut off, or its rename lost) is restored from the mirror`() {
+    fun `a write whose primary fails after the mirror commit succeeds, and the next read restores it`() {
         enrolled()
         val cutOff = identity(DiesOnWrite(bare("mdm_identity")), bare("mdm_identity_mirror"))
-        runBlocking { assertTrue(runCatching { cutOff.edit { it[newSecret] = "secret-2" } }.isFailure) }
+        // The mirror is the commit point: the write happened, though its primary failed (twice).
+        runBlocking { assertTrue(runCatching { cutOff.edit { it[newSecret] = "secret-2" } }.isSuccess) }
         close()
 
         assertEquals("the newest state written", "dev_1" to "secret-2", identityAfterReopen())
@@ -147,6 +150,43 @@ class AgentDataStoresTest {
         assertEquals(emptyList<String>(), events.recovered())
         file("mdm_identity").writeBytes(ByteArray(0))
         assertEquals("dev_1" to "secret-1", identityAfterReopen())
+    }
+
+    @Test
+    fun `a reader during writes never takes a write in progress for damage`() = runBlocking {
+        enrolled()
+        val stores = open()
+        val ids = DeviceIdStore(stores.identity)
+        val reader = launch(Dispatchers.Default) {
+            while (isActive) stores.identity.data.first()
+        }
+        repeat(100) { ids.saveCredentials("dev_1", "secret-$it") }
+        reader.cancelAndJoin()
+        close()
+        assertEquals(emptyList<String>(), events.recovered())
+        assertEquals("dev_1" to "secret-99", identityAfterReopen())
+    }
+
+    @Test
+    fun `a fallback is sealed above a stale mirror and written to it, so the two match`() = runBlocking {
+        val kiosk = KioskApplyPayload(mode = "single", pinPackage = "com.example.pos")
+        config.save(ConfigApplyPayload(revision = "r1", kiosk = kiosk))
+        // A mirror the storage cut short (its count says more entries than it holds), at generation 7.
+        bare("mdm_kiosk_mirror").edit {
+            it[stringPreferencesKey("kiosk_payload")] = "{}"
+            it[Integrity.ENTRIES] = 5
+            it[Integrity.GENERATION] = 7
+        }
+        close()
+        file("mdm_kiosk").apply { parentFile!!.mkdirs(); writeBytes(ByteArray(32) { 0xFF.toByte() }) }
+
+        val stores = open()
+        assertEquals(kiosk, DataStoreKioskStateStore(stores.kiosk).load())
+        val restored = stores.kiosk.data.first()
+        close()
+        assertEquals(8L, Integrity.generationOf(restored))
+        assertTrue(file("mdm_kiosk_mirror").readBytes().contentEquals(file("mdm_kiosk").readBytes()))
+        assertEquals(listOf("mdm_kiosk from configuration"), events.recovered())
     }
 
     @Test
@@ -241,7 +281,7 @@ class AgentDataStoresTest {
     }
 
     @Test
-    fun `both files corrupt, identity starts empty and both recoveries are recorded`() {
+    fun `both files corrupt, identity starts empty and the loss is recorded once`() {
         enrolled()
         file("mdm_identity").writeBytes(ByteArray(16))
         file("mdm_identity_mirror").writeBytes(ByteArray(16) { 0xFF.toByte() })
@@ -348,6 +388,11 @@ class AgentDataStoresTest {
             AgentDataStores.lockedAppsOf(apps, own) { exit(failed = true) })
         assertEquals("an exit already tried settles in kiosk", listOf("com.example.pos"),
             AgentDataStores.lockedAppsOf(apps, own) { exit(attempts = 1) })
+        assertEquals("a journal that can't be read is no exit", listOf("com.example.pos"),
+            AgentDataStores.lockedAppsOf(apps, own) { throw IllegalStateException("unreadable") })
+        assertEquals("an allowlist that can't be read fails closed", emptyList<String>(),
+            AgentDataStores.lockedAppsOf(null, own) { null })
+        assertNull(AgentDataStores.lockedAppsOf(null, own) { exit() })
     }
 
     @Test

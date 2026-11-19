@@ -97,7 +97,9 @@ class AgentDataStores(
      * exit, on-device or remote, is kept), else the kiosk the configuration sets ([configuredKiosk]), else, when the
      * device is still locked to apps ([lockedApps]: a `kiosk.enter` kiosk not in the configuration), a kiosk of those
      * apps that only the server can end, else no kiosk. Fail closed: a power loss that takes both files never unpins a
-     * kiosk device. The re-sent configuration settles the rest.
+     * kiosk device. The re-sent configuration settles the rest. Lock task's allowlist can only be read on API 26+
+     * ([KioskController.allowedPackages]): below it that step finds nothing, and the configured kiosk is the last
+     * evidence.
      */
     val kiosk: MirroredDataStore = mirrored(KIOSK) {
         configStore.configuredKiosk()?.let { DataStoreKioskStateStore.prefsOf(it) to FROM_CONFIGURATION }
@@ -139,22 +141,36 @@ class AgentDataStores(
         return store
     }
 
-    /** What a damaged primary [name] is replaced by, recorded. */
+    /**
+     * What a damaged primary [name] is replaced by, recorded. The mirror's copy as it is; a fallback is sealed one
+     * generation above anything the mirror holds and written to the mirror too, so the two match and an older mirror
+     * can never later be taken for the newer state.
+     */
     private suspend fun restore(
         name: String,
         mirror: DataStore<Preferences>,
         fallback: () -> Pair<Preferences, String>?,
     ): Preferences {
-        val (prefs, source) = readMirror(mirror, name)?.let { it to FROM_MIRROR }
-            ?: runCatching(fallback).onFailure { warn("$name fallback failed", it) }.getOrNull()
+        val mirrored = readMirror(mirror, name)
+        if (mirrored != null && Integrity.isUsable(mirrored)) {
+            recovered(name, FROM_MIRROR)
+            return mirrored
+        }
+        val (prefs, source) = runCatching(fallback).onFailure { warn("$name fallback failed", it) }.getOrNull()
             ?: (emptyPreferences() to FROM_EMPTY)
+        val restored = Integrity.sealed(prefs, (mirrored?.let(Integrity::generationOf) ?: 0L) + 1)
+        try {
+            mirror.updateData { restored }
+        } catch (e: IOException) {
+            warn("$name mirror not written after recovering from $source", e)
+        }
         recovered(name, source)
-        return Integrity.sealed(prefs)
+        return restored
     }
 
-    /** The mirror's contents when it was written by this agent and is whole ([Integrity.isUsable]). */
+    /** The mirror's contents, whatever they are; null when it can't be read. */
     private suspend fun readMirror(mirror: DataStore<Preferences>, name: String): Preferences? = try {
-        mirror.data.first().takeIf(Integrity::isUsable)
+        mirror.data.first()
     } catch (e: IOException) {
         warn("$name mirror unreadable while recovering", e)
         null
@@ -207,16 +223,19 @@ class AgentDataStores(
         /**
          * The apps of [allowlist] besides the agent's own, when the device was left in a kiosk; null when there are
          * none, or when an authorised exit was under way ([pending] untried, not failed): the device was on its way
-         * out. An exit that failed or was already tried settles back in kiosk ([ExitJournal]), so it doesn't count.
+         * out. An exit that failed or was already tried settles back in kiosk ([ExitJournal]), so it doesn't count,
+         * and neither does a journal that can't be read. An allowlist that couldn't be read (null) fails closed: the
+         * agent's own launcher, with no apps, until the server says otherwise.
          */
         internal fun lockedAppsOf(
-            allowlist: List<String>,
+            allowlist: List<String>?,
             ownPackage: String,
             pending: () -> ExitJournal.Pending?,
         ): List<String>? {
-            val apps = allowlist - ownPackage
-            if (apps.isEmpty()) return null
-            val exiting = pending()?.let { !it.failed && it.attempts == 0 } == true
+            val apps = allowlist?.minus(ownPackage) ?: emptyList()
+            if (allowlist != null && apps.isEmpty()) return null
+            val journal = runCatching(pending).onFailure { warn("exit journal unreadable; taken as no exit", it) }
+            val exiting = journal.getOrNull()?.let { !it.failed && it.attempts == 0 } == true
             return apps.takeUnless { exiting }
         }
 
@@ -265,19 +284,24 @@ internal object Integrity {
 }
 
 /**
- * A DataStore whose every write is sealed ([Integrity]) and written to a mirror file first, then to the primary, so
- * a damaged primary is restored ([AgentDataStores]) to the newest state ever written: the mirror never lags. A mirror
- * exactly one generation ahead of an intact primary (a write cut off between the files, or a primary whose last
- * rename the storage lost) is the newer state, and the primary is restored from it.
- * Writes run one at a time under one lock. A mirror that can't be written fails the write, before the primary is
- * touched, so the mirror can never fall behind.
+ * A DataStore whose every write is sealed ([Integrity]) and written to a mirror file first, then to the primary. The
+ * mirror is the commit point, like a write-ahead log: once it is written (and its directory synced) the write has
+ * happened. The primary is written next, and tried once more if that fails; if it still fails the write is not
+ * failed, only logged, and the next read or [AgentDataStores.check] restores the primary from the mirror, recorded as
+ * a recovery (which it is). A mirror that can't be written fails the write, before the primary is touched. So the
+ * mirror is never behind a write that returned, and a damaged primary is restored ([AgentDataStores]) to the newest
+ * write that did.
+ *
+ * Writes, and every restore, run one at a time under one lock. A reader that sees a primary damaged (short, or a
+ * generation behind the mirror) confirms it under that lock before restoring, so a write in progress (mirror written,
+ * primary not yet) is never taken for damage. A mirror exactly one generation ahead of an intact primary (a write
+ * whose primary write failed, was cut off, or whose rename the storage lost) is the newer state.
  *
  * A primary that reads short is damaged, and so is one without a count once this agent has written the store
  * ([sealMark], a file kept apart from both, written and synced with its directory after the first counted write), or
- * whose mirror is counted (cut before its count). Reads and writes see a damaged primary [restore]d first, inside
- * the primary's own update, so it is restored once however many read it. Uncounted, never sealed and with no counted
- * mirror is an install from before counts (0.5.0), kept as it is; with both files emptied after a seal, the store's
- * own recovery rule applies (for the kiosk store: fail closed).
+ * whose mirror is counted (cut before its count). Uncounted, never sealed and with no counted mirror is an install
+ * from before counts (0.5.0), kept as it is; with both files emptied after a seal, the store's own recovery rule
+ * applies (for the kiosk store: fail closed).
  */
 class MirroredDataStore internal constructor(
     private val primary: DataStore<Preferences>,
@@ -292,11 +316,13 @@ class MirroredDataStore internal constructor(
     /** Once true, stays true: the mark is never removed. */
     @Volatile private var sealed = false
 
-    override val data: Flow<Preferences> = primary.data.map { if (damaged(it)) primary.updateData(::intact) else it }
+    /** A damaged-looking value is confirmed, and restored, under the write lock ([intactLocked]). */
+    override val data: Flow<Preferences> =
+        primary.data.map { if (damaged(it)) writeLock.withLock { intactLocked() } else it }
 
     override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences =
         writeLock.withLock {
-            val current = data.first()
+            val current = intactLocked()
             val changed = transform(current)
             // Unchanged (check() at every start): no new generation, only the mirror and the seal made sure of.
             val next = if (Integrity.sealed(changed, Integrity.generationOf(current)) == current) {
@@ -305,8 +331,29 @@ class MirroredDataStore internal constructor(
                 Integrity.sealed(changed, Integrity.generationOf(current) + 1)
             }
             mirror.updateData { next }
-            primary.updateData { next }.also { markSealed() }
+            syncDirectory() // the commit point: from here the write has happened
+            writePrimary(next)
+            markSealed()
+            next
         }
+
+    /** The primary as it should be, restored when damaged; only under [writeLock] (a Mutex isn't re-entrant). */
+    private suspend fun intactLocked(): Preferences {
+        val current = primary.data.first()
+        return if (damaged(current)) primary.updateData { if (damaged(it)) restore() else it } else current
+    }
+
+    /** After the mirror commit: tried twice; a failure is left to the next read, which restores from the mirror. */
+    private suspend fun writePrimary(next: Preferences) {
+        repeat(PRIMARY_TRIES) { attempt ->
+            try {
+                primary.updateData { next }
+                return
+            } catch (e: IOException) {
+                warn("$name primary not written (try ${attempt + 1}); the mirror holds the write", e)
+            }
+        }
+    }
 
     private suspend fun wasSealed(): Boolean =
         sealed || withContext(Dispatchers.IO) { sealMark?.exists() == true }.also { sealed = it }
@@ -321,26 +368,29 @@ class MirroredDataStore internal constructor(
         withContext(Dispatchers.IO) {
             runCatching {
                 if (!mark.exists()) FileOutputStream(mark).use { it.fd.sync() }
-                syncDirectory(mark.parentFile)
                 sealed = true
             }.onFailure { warn("$name seal mark not written", it) }
         }
+        syncDirectory()
     }
 
-    /** The directory's entry for a new file is durable only once the directory is synced (Linux). */
-    private fun syncDirectory(dir: File?) {
-        if (dir == null) return
-        runCatching {
-            val fd = Os.open(dir.path, OsConstants.O_RDONLY, 0)
-            try {
-                Os.fsync(fd)
-            } finally {
-                Os.close(fd)
-            }
-        }.onFailure { warn("$name: directory not synced", it) } // the JVM unit tests have no android.system.Os
+    /**
+     * The store's directory (the mirror's and the mark's renames are durable only once it is synced, on Linux). Off the
+     * caller's thread; best effort (the JVM unit tests have no android.system.Os).
+     */
+    private suspend fun syncDirectory() {
+        val dir = sealMark?.parentFile ?: return
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val fd = Os.open(dir.path, OsConstants.O_RDONLY, 0)
+                try {
+                    Os.fsync(fd)
+                } finally {
+                    Os.close(fd)
+                }
+            }.onFailure { warn("$name: directory not synced", it) }
+        }
     }
-
-    private suspend fun intact(current: Preferences): Preferences = if (damaged(current)) restore() else current
 
     private suspend fun damaged(p: Preferences): Boolean = when {
         Integrity.isCounted(p) -> Integrity.isShort(p) || mirrorAhead(p)
@@ -366,14 +416,19 @@ class MirroredDataStore internal constructor(
     suspend fun syncMirror() {
         try {
             writeLock.withLock {
-                val now = data.first()
+                val now = intactLocked()
                 mirror.updateData { now }
             }
+            syncDirectory()
         } catch (e: CancellationException) {
             throw e
         } catch (e: IOException) {
             warn("$name mirror not updated", e)
         }
+    }
+
+    private companion object {
+        const val PRIMARY_TRIES = 2
     }
 }
 

@@ -29,6 +29,22 @@ export interface CommandTemplate {
   request: QueueCommandRequest;
 }
 
+/** Why a command type isn't sent to several devices at once (isBulkForbidden). */
+export const BULK_FORBIDDEN_TEXT = 'Wipe, passcode reset and app uninstall are sent from the device’s page only.';
+
+const commandMessages: Record<string, string> = {
+  'error.agent.command.wiped': 'The device was wiped, so it takes no more commands.',
+  'error.agent.command.noConfiguration': 'The device has no configuration, so there is no configured kiosk to return to.',
+  'error.agent.command.serverOwned': 'The server sends the configuration itself. Use Retry apply on the device page.',
+  'error.agent.command.bulkForbidden': BULK_FORBIDDEN_TEXT,
+  'error.agent.device.unknown': 'The server has no device with this number. It may have been deleted.',
+};
+/** What a refused command (or Install configuration apps, or Retry apply) says, by the server's error key. */
+export function commandErrorText(e: unknown): string {
+  const message = e instanceof Error ? e.message : '';
+  return commandMessages[message] ?? message;
+}
+
 export async function queueCommand(
   deviceId: number | string,
   req: QueueCommandRequest,
@@ -46,8 +62,11 @@ export interface BulkCommandResult {
   skipped: number[];
 }
 
-/** What the bulk endpoint refuses (AgentAdminResource.BULK_FORBIDDEN_TYPES), lowercase: wipe and passcode reset. */
-const BULK_FORBIDDEN_TYPES: readonly string[] = ['device.wipe', 'device.passcodereset'];
+/**
+ * What the bulk endpoint refuses (AdminCommandPolicy.BULK_FORBIDDEN_TYPES), lowercase: wipe, passcode reset, and an
+ * app's uninstall or hide (app.setHidden is reserved: no agent handles it yet).
+ */
+const BULK_FORBIDDEN_TYPES: readonly string[] = ['device.wipe', 'device.passcodereset', 'app.uninstall', 'app.sethidden'];
 
 /** Whether the bulk endpoint refuses this command type, compared as the server compares it (trimmed, any case). */
 export const isBulkForbidden = (type: string): boolean => BULK_FORBIDDEN_TYPES.includes(type.trim().toLowerCase());

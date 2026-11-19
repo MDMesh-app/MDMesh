@@ -10,6 +10,7 @@ import {
 import { getTelemetry, type TelemetrySnapshot } from '../api/telemetry';
 import { getConfigStatus, summarizeStatus, type ConfigStatus } from '../api/configSync';
 import {
+  commandErrorText,
   forceSync,
   retryConfigApply,
   getDeviceState,
@@ -627,7 +628,7 @@ export function DeviceDetailPage() {
       else if (connected === false) toast.push('warn', ...notConnected(number, 'command'));
       else toast.push('ok', 'Configuration sent again', result === 'alreadyQueued' ? 'It was already on its way; the device was woken.' : '');
     } catch (e) {
-      toast.push('err', 'Retry failed', e instanceof Error ? e.message : '');
+      toast.push('err', 'Retry failed', commandErrorText(e));
     } finally {
       setBusy(false);
     }
@@ -641,7 +642,7 @@ export function DeviceDetailPage() {
       toast.push('ok', 'Install configuration apps queued', `${res.queued} install command${res.queued === 1 ? '' : 's'} queued.`);
       refresh();
     } catch (e) {
-      toast.push('err', 'Install configuration apps failed', e instanceof Error ? e.message : '');
+      toast.push('err', 'Install configuration apps failed', commandErrorText(e));
     } finally {
       setBusy(false);
     }
@@ -668,7 +669,7 @@ export function DeviceDetailPage() {
         refresh();
         return true;
       } catch (e) {
-        toast.push('err', `${label} failed`, e instanceof Error ? e.message : '');
+        toast.push('err', `${label} failed`, commandErrorText(e));
         return false;
       }
     },

@@ -437,7 +437,7 @@ describe('list.column, list.rowAction, list.bulkAction on Devices', () => {
     expect(JSON.parse(String(post[1]?.body))).toEqual({ deviceIds: [7, 8], command: { type: 'demo.ping' } });
   });
 
-  it('refuses wipe and passcode reset for any number of devices, one included, before any request', async () => {
+  it('refuses wipe, passcode reset and uninstall for any number of devices, one included, before any request', async () => {
     const sent: boolean[] = [];
     const destructive = ext('destructive', [
       {
@@ -460,6 +460,18 @@ describe('list.column, list.rowAction, list.bulkAction on Devices', () => {
         run: (devices, { sendCommand }) =>
           sendCommand(devices, { label: 'Reset', request: { type: ' Device.PasscodeReset' } }).then((ok) => void sent.push(ok)),
       },
+      {
+        slot: 'list.bulkAction',
+        id: 'uninstall',
+        list: 'devices',
+        order: 1001,
+        label: 'Uninstall POS',
+        run: (devices, { sendCommand }) =>
+          sendCommand(devices, {
+            label: 'Uninstall',
+            request: { type: 'app.uninstall', payload: JSON.stringify({ packageName: 'com.example.pos' }) },
+          }).then((ok) => void sent.push(ok)),
+      },
     ]);
     const fetch = open('/devices', { registry: registryOf(destructive) });
     await main().findByRole('link', { name: /Front desk/ });
@@ -468,7 +480,9 @@ describe('list.column, list.rowAction, list.bulkAction on Devices', () => {
     fireEvent.click(main().getByRole('checkbox', { name: 'Select all on this page' }));
     fireEvent.click(await main().findByRole('button', { name: 'Reset passcodes' }));
     expect(await screen.findByText('Reset failed')).toBeTruthy();
-    expect(sent).toEqual([false, false]);
+    fireEvent.click(await main().findByRole('button', { name: 'Uninstall POS' }));
+    expect(await screen.findByText('Uninstall failed')).toBeTruthy();
+    expect(sent).toEqual([false, false, false]);
     expect(fetch.mock.calls.filter(([url]) => String(url).includes('/commands'))).toEqual([]);
   });
 

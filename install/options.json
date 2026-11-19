@@ -28,7 +28,7 @@
     {
       "id": "version", "env": "MDMESH_VERSION", "type": "string", "default": null, "regex": "^v?[0-9]+\\.[0-9]+\\.[0-9]+([-+][0-9A-Za-z.+-]+)?$",
       "installers": ["quickstart.sh"],
-      "description": "The release to install (X.Y.Z, 0.4.0 or later). Default: the latest published release of the repo."
+      "description": "The release to install (X.Y.Z, 0.5.0 or later). Default: the latest published release of the repo."
     },
     {
       "id": "release-pubkey", "env": "MDMESH_RELEASE_PUBKEY", "type": "string", "default": null, "installers": ["quickstart.sh"],

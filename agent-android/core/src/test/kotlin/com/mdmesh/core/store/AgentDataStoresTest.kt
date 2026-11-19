@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.mdmesh.core.kiosk.ExitJournal
 import com.mdmesh.core.telemetry.EventSink
 import com.mdmesh.proto.ConfigApplyPayload
 import com.mdmesh.proto.EventType
@@ -86,16 +87,31 @@ class AgentDataStoresTest {
         MirroredDataStore(primary, mirror, "mdm_identity", restore = { error("the primary is not damaged") })
 
     @Test
-    fun `a write cut off after the mirror keeps the intact primary, and a later recovery gets the newer write`() {
+    fun `a primary one write behind its mirror (cut off, or its rename lost) is restored from the mirror`() {
         enrolled()
         val cutOff = identity(DiesOnWrite(bare("mdm_identity")), bare("mdm_identity_mirror"))
         runBlocking { assertTrue(runCatching { cutOff.edit { it[newSecret] = "secret-2" } }.isFailure) }
         close()
 
-        assertEquals("the unfinished write isn't taken", "dev_1" to "secret-1", identityAfterReopen())
-        assertEquals(emptyList<String>(), events.recovered())
+        assertEquals("the newest state written", "dev_1" to "secret-2", identityAfterReopen())
+        assertEquals(listOf("mdm_identity from mirror"), events.recovered())
         file("mdm_identity").writeBytes(ByteArray(0))
         assertEquals("never an older state than written", "dev_1" to "secret-2", identityAfterReopen())
+    }
+
+    @Test
+    fun `an intact primary is kept over a mirror more than one write ahead (not a lost write)`() {
+        enrolled()
+        val cutOff = identity(DiesOnWrite(bare("mdm_identity")), bare("mdm_identity_mirror"))
+        runBlocking { runCatching { cutOff.edit { it[newSecret] = "secret-2" } } }
+        val mirror = file("mdm_identity_mirror").readBytes()
+        close()
+        val twice = identity(bare("mdm_identity_mirror"), bare("unused"))
+        runBlocking { twice.edit { it[newSecret] = "secret-3" } } // the mirror file, two generations ahead
+        close()
+        assertTrue(!mirror.contentEquals(file("mdm_identity_mirror").readBytes()))
+        assertEquals("dev_1" to "secret-1", identityAfterReopen())
+        assertEquals(emptyList<String>(), events.recovered())
     }
 
     @Test
@@ -108,7 +124,7 @@ class AgentDataStoresTest {
     }
 
     @Test
-    fun `check copies an intact primary over a mirror an unfinished write left ahead`() {
+    fun `after a cut-off write check leaves the primary and its mirror the same`() {
         enrolled()
         val cutOff = identity(DiesOnWrite(bare("mdm_identity")), bare("mdm_identity_mirror"))
         runBlocking { runCatching { cutOff.edit { it[newSecret] = "secret-2" } } }
@@ -318,6 +334,21 @@ class AgentDataStoresTest {
             assertNull(DataStoreKioskStateStore(open().kiosk).load())
             assertEquals(listOf("mdm_kiosk from empty"), events.recovered())
         }
+
+    @Test
+    fun `lock task counts as a kiosk unless an untried, authorised exit was under way`() {
+        val own = "com.mdmesh.agent"
+        val apps = listOf(own, "com.example.pos")
+        fun exit(failed: Boolean = false, attempts: Int = 0) =
+            ExitJournal.Pending(handBackHome = true, force = false, kiosk = "k", failed = failed, attempts = attempts)
+        assertEquals(listOf("com.example.pos"), AgentDataStores.lockedAppsOf(apps, own) { null })
+        assertNull("only the agent itself", AgentDataStores.lockedAppsOf(listOf(own), own) { null })
+        assertNull("an exit on its way out", AgentDataStores.lockedAppsOf(apps, own) { exit() })
+        assertEquals("a failed relock stays in kiosk", listOf("com.example.pos"),
+            AgentDataStores.lockedAppsOf(apps, own) { exit(failed = true) })
+        assertEquals("an exit already tried settles in kiosk", listOf("com.example.pos"),
+            AgentDataStores.lockedAppsOf(apps, own) { exit(attempts = 1) })
+    }
 
     @Test
     fun `kiosk with nothing to recover from is no kiosk`() = runBlocking {

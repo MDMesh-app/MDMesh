@@ -1,6 +1,8 @@
 package com.mdmesh.core.store
 
 import android.content.Context
+import android.system.Os
+import android.system.OsConstants
 import android.util.Log
 import androidx.datastore.core.DataStore
 import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
@@ -8,7 +10,9 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.preferencesDataStoreFile
+import com.mdmesh.core.kiosk.ExitJournal
 import com.mdmesh.core.kiosk.SharedPrefsExitJournal
 import com.mdmesh.core.telemetry.EventLog
 import com.mdmesh.core.telemetry.EventSink
@@ -29,6 +33,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
@@ -61,7 +66,7 @@ class AgentDataStores(
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob()),
     /**
      * The apps the device is locked to now, when it was left in a kiosk: lock task's allowlist, which only a kiosk
-     * sets and every finished exit clears. Null when it is empty or an exit is in progress (the exit journal).
+     * sets and every finished exit clears ([lockedAppsOf]).
      */
     private val lockedApps: () -> List<String>? = { null },
 ) {
@@ -73,8 +78,9 @@ class AgentDataStores(
     ) : this(
         { name -> context.preferencesDataStoreFile(name) }, configStore, events,
         lockedApps = {
-            val exiting = { SharedPrefsExitJournal(context).pending() != null }
-            kioskController.allowedPackages().takeIf { it.isNotEmpty() && !exiting() }?.minus(context.packageName)
+            lockedAppsOf(kioskController.allowedPackages(), context.packageName) {
+                SharedPrefsExitJournal(context).pending()
+            }
         },
     )
 
@@ -198,6 +204,22 @@ class AgentDataStores(
         const val FROM_EMPTY = "empty"
         const val FROM_LOCK_TASK = "lock task"
 
+        /**
+         * The apps of [allowlist] besides the agent's own, when the device was left in a kiosk; null when there are
+         * none, or when an authorised exit was under way ([pending] untried, not failed): the device was on its way
+         * out. An exit that failed or was already tried settles back in kiosk ([ExitJournal]), so it doesn't count.
+         */
+        internal fun lockedAppsOf(
+            allowlist: List<String>,
+            ownPackage: String,
+            pending: () -> ExitJournal.Pending?,
+        ): List<String>? {
+            val apps = allowlist - ownPackage
+            if (apps.isEmpty()) return null
+            val exiting = pending()?.let { !it.failed && it.attempts == 0 } == true
+            return apps.takeUnless { exiting }
+        }
+
         /** A kiosk of the apps lock task allows, its exit left to the server (no PIN to guess). */
         internal fun lockedKiosk(apps: List<String>) =
             KioskApplyPayload(mode = "launcher", allowedPackages = apps, exitMode = "remote")
@@ -208,27 +230,35 @@ class AgentDataStores(
 }
 
 /**
- * Each store's record of how many entries it holds, written with every write. A file cut short parses (protobuf has
- * no end marker): cut at zero it is empty, cut between entries it holds fewer. Either way the count is gone or more
- * than the entries left, whichever entries were lost, so the file is known to be damaged. More entries than the count
- * is an older agent (a downgrade) that added keys and kept the count: the file is kept and counted again.
+ * Each store's record of how many entries it holds, and of its generation (one more on every write), written with
+ * every write. A file cut short parses (protobuf has no end marker): cut at zero it is empty, cut between entries it
+ * holds fewer. Either way the count is gone or more than the entries left, whichever entries were lost, so the file
+ * is known to be damaged. More entries than the count is an older agent (a downgrade) that added keys and kept the
+ * count: the file is kept and counted again. The generation tells a mirror one write ahead of its primary.
  */
 internal object Integrity {
     val ENTRIES = intPreferencesKey("__mdmesh_entries")
+    val GENERATION = longPreferencesKey("__mdmesh_generation")
+    private val MARKS: Set<Preferences.Key<*>> = setOf(ENTRIES, GENERATION)
 
-    /** [p] with its count. */
-    fun sealed(p: Preferences): Preferences {
+    /** [p] with its count and [generation]. */
+    fun sealed(p: Preferences, generation: Long = generationOf(p)): Preferences {
         val m = p.toMutablePreferences()
-        m.remove(ENTRIES)
+        MARKS.forEach { m.remove(it) }
         m[ENTRIES] = m.asMap().size
+        m[GENERATION] = generation
         return m.toPreferences()
     }
+
+    fun generationOf(p: Preferences): Long = p[GENERATION] ?: 0L
+
+    private fun entries(p: Preferences): Int = p.asMap().keys.count { it !in MARKS }
 
     /** Written by this agent (counted). */
     fun isCounted(p: Preferences): Boolean = p[ENTRIES] != null
 
     /** Counted, but fewer entries than the count: cut short. */
-    fun isShort(p: Preferences): Boolean = p[ENTRIES]?.let { p.asMap().size - 1 < it } ?: false
+    fun isShort(p: Preferences): Boolean = p[ENTRIES]?.let { entries(p) < it } ?: false
 
     /** A copy to restore from: counted and not short. */
     fun isUsable(p: Preferences): Boolean = isCounted(p) && !isShort(p)
@@ -236,18 +266,18 @@ internal object Integrity {
 
 /**
  * A DataStore whose every write is sealed ([Integrity]) and written to a mirror file first, then to the primary, so
- * a damaged primary is restored ([AgentDataStores]) to the newest state ever written: the mirror never lags. A write
- * cut off between the files leaves the primary older but intact, and it is kept: the write never completed (its
- * caller got no answer), and the next write or [AgentDataStores.check] copies the primary to the mirror again.
+ * a damaged primary is restored ([AgentDataStores]) to the newest state ever written: the mirror never lags. A mirror
+ * exactly one generation ahead of an intact primary (a write cut off between the files, or a primary whose last
+ * rename the storage lost) is the newer state, and the primary is restored from it.
  * Writes run one at a time under one lock. A mirror that can't be written fails the write, before the primary is
  * touched, so the mirror can never fall behind.
  *
  * A primary that reads short is damaged, and so is one without a count once this agent has written the store
- * ([sealMark], a file kept apart from both, written after the first counted write), or whose mirror is counted (cut
- * before its count). Reads and writes see a damaged primary [restore]d first, inside the primary's own update, so it
- * is restored once however many read it. Uncounted, never sealed and with no counted mirror is an install from before
- * counts (0.5.0), kept as it is; with both files emptied after a seal, the store's own recovery rule applies (the
- * configured kiosk for the kiosk store: fail closed).
+ * ([sealMark], a file kept apart from both, written and synced with its directory after the first counted write), or
+ * whose mirror is counted (cut before its count). Reads and writes see a damaged primary [restore]d first, inside
+ * the primary's own update, so it is restored once however many read it. Uncounted, never sealed and with no counted
+ * mirror is an install from before counts (0.5.0), kept as it is; with both files emptied after a seal, the store's
+ * own recovery rule applies (for the kiosk store: fail closed).
  */
 class MirroredDataStore internal constructor(
     private val primary: DataStore<Preferences>,
@@ -266,27 +296,54 @@ class MirroredDataStore internal constructor(
 
     override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences =
         writeLock.withLock {
-            val next = Integrity.sealed(transform(data.first()))
+            val current = data.first()
+            val changed = transform(current)
+            // Unchanged (check() at every start): no new generation, only the mirror and the seal made sure of.
+            val next = if (Integrity.sealed(changed, Integrity.generationOf(current)) == current) {
+                current
+            } else {
+                Integrity.sealed(changed, Integrity.generationOf(current) + 1)
+            }
             mirror.updateData { next }
             primary.updateData { next }.also { markSealed() }
         }
 
-    private fun wasSealed(): Boolean = sealed || (sealMark?.exists() == true).also { sealed = it }
+    private suspend fun wasSealed(): Boolean =
+        sealed || withContext(Dispatchers.IO) { sealMark?.exists() == true }.also { sealed = it }
 
-    /** After the first counted write; synced, so a power loss after it can't undo it. Best effort. */
-    private fun markSealed() {
+    /**
+     * After the first counted write: the mark, then its directory, synced, so a power loss after it can't undo it.
+     * Off the caller's thread. Best effort: without it a store emptied with its mirror reads as never written.
+     */
+    private suspend fun markSealed() {
         val mark = sealMark
         if (sealed || mark == null) return
+        withContext(Dispatchers.IO) {
+            runCatching {
+                if (!mark.exists()) FileOutputStream(mark).use { it.fd.sync() }
+                syncDirectory(mark.parentFile)
+                sealed = true
+            }.onFailure { warn("$name seal mark not written", it) }
+        }
+    }
+
+    /** The directory's entry for a new file is durable only once the directory is synced (Linux). */
+    private fun syncDirectory(dir: File?) {
+        if (dir == null) return
         runCatching {
-            if (!mark.exists()) FileOutputStream(mark).use { it.fd.sync() }
-            sealed = true
-        }.onFailure { warn("$name seal mark not written", it) }
+            val fd = Os.open(dir.path, OsConstants.O_RDONLY, 0)
+            try {
+                Os.fsync(fd)
+            } finally {
+                Os.close(fd)
+            }
+        }.onFailure { warn("$name: directory not synced", it) } // the JVM unit tests have no android.system.Os
     }
 
     private suspend fun intact(current: Preferences): Preferences = if (damaged(current)) restore() else current
 
     private suspend fun damaged(p: Preferences): Boolean = when {
-        Integrity.isCounted(p) -> Integrity.isShort(p)
+        Integrity.isCounted(p) -> Integrity.isShort(p) || mirrorAhead(p)
         wasSealed() -> true
         else -> try {
             Integrity.isUsable(mirror.data.first())
@@ -294,6 +351,15 @@ class MirroredDataStore internal constructor(
             warn("$name mirror unreadable; the primary is taken as it is", e)
             false
         }
+    }
+
+    /** The mirror holds the write after [p]'s, which the primary lost. */
+    private suspend fun mirrorAhead(p: Preferences): Boolean = try {
+        val m = mirror.data.first()
+        Integrity.isUsable(m) && Integrity.generationOf(m) == Integrity.generationOf(p) + 1
+    } catch (e: IOException) {
+        warn("$name mirror unreadable; the primary is taken as it is", e)
+        false
     }
 
     /** Copies the primary's current value to the mirror (a damaged primary is restored first, never copied). */

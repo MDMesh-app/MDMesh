@@ -11,7 +11,11 @@ import com.mdmesh.proto.ConfigApplyPayload
 import com.mdmesh.proto.EventType
 import com.mdmesh.proto.KioskApplyPayload
 import com.mdmesh.proto.TelemetryEventDto
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
@@ -274,6 +278,34 @@ class AgentDataStoresTest {
         close()
         assertTrue(!mirror.contentEquals(file("mdm_identity_mirror").readBytes()))
         assertEquals("dev_1" to "secret-1", identityAfterReopen())
+        assertEquals(emptyList<String>(), events.recovered())
+    }
+
+    /** [cancelCaller] runs the moment the mirror has committed (a worker stopped mid-write). */
+    private class CancelsAfterCommit(
+        private val inner: DataStore<Preferences>,
+        private val cancelCaller: () -> Unit,
+    ) : DataStore<Preferences> by inner {
+        override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences =
+            inner.updateData(transform).also { cancelCaller() }
+    }
+
+    @Test
+    fun `a write cancelled after its mirror commit still finishes, and the caller still sees the cancellation`() {
+        enrolled()
+        val primary = bare("mdm_identity")
+        lateinit var write: Deferred<Preferences>
+        val store = identity(primary, CancelsAfterCommit(bare("mdm_identity_mirror")) { write.cancel() })
+        val result = runBlocking {
+            write = async(Dispatchers.Default, start = CoroutineStart.LAZY) {
+                store.edit { it[newSecret] = "secret-2" }
+            }
+            runCatching { write.await() }
+        }
+        assertTrue("cancelled: ${result.exceptionOrNull()}", result.exceptionOrNull() is CancellationException)
+        val written = runBlocking { primary.data.first()[newSecret] }
+        assertEquals("the primary holds the committed write", "secret-2", written)
+        close()
         assertEquals(emptyList<String>(), events.recovered())
     }
 

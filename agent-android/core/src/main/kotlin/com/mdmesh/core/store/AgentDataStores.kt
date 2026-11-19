@@ -27,7 +27,10 @@ import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
@@ -406,14 +409,20 @@ class MirroredDataStore internal constructor(
             } else {
                 Integrity.sealed(changed, Integrity.generationOf(current) + 1)
             }
-            try {
-                mirror.updateData { next }
-            } catch (e: IOException) {
-                throw MirrorUnwritable(name, e)
+            // From the mirror write on, not cancellable: DataStore may commit the mirror even for a caller cancelled
+            // while it waits, and once committed the write has happened, so the primary (or, failing that, the open
+            // collectors through [repairs]) must get it too. A cancellation meanwhile is rethrown afterwards.
+            withContext(NonCancellable) {
+                try {
+                    mirror.updateData { next }
+                } catch (e: IOException) {
+                    throw MirrorUnwritable(name, e)
+                }
+                syncDirectory() // the commit point: from here the write has happened
+                writePrimary(next)
+                markSealed()
             }
-            syncDirectory() // the commit point: from here the write has happened
-            writePrimary(next)
-            markSealed()
+            currentCoroutineContext().ensureActive()
             next
         }
 

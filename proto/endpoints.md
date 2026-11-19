@@ -121,12 +121,14 @@ takes at most 1000 per check-in). The agent drops those and keeps the rest for i
 server) means all of them were taken.
 
 `events` are the agent's buffered lifecycle events, oldest first. `eventsAccepted` (protocol 1.12) is how many of
-them, counted from the first, the server consumed: it stores at most 500 per check-in, and skips an event whose `type`
-isn't 1 to 64 of `A-Z a-z 0-9 . _ -` or that the database refuses (those count as consumed). The agent drops those and
-sends the rest on its next check-in. A server without `eventsAccepted` stores the first 100 and drops the rest without
-saying so, so an agent sends at most 100 until a response carries the field, and then up to 500. An agent keeps at most
-500 events waiting besides the batch a check-in is sending; past that it drops the oldest and puts one `eventsDropped`
-event in front, whose `detail` starts with how many it dropped.
+them, counted from the first, the server consumed; the agent drops those and sends the rest on its next check-in. The
+server stores at most 500 per check-in. It skips an event whose `type` isn't 1 to 64 of `A-Z a-z 0-9 . _ -`, or whose
+data the database refuses (SQL state class 22 or 23), and counts it as consumed. Any other database error (a lost
+connection, a failover) stops the events there, uncounted, so the agent sends that event and the ones after it again.
+A server without `eventsAccepted` stores the first 100 and drops the rest without saying so, so an agent sends at most
+100 until a response carries the field, and then up to 500. An agent keeps at most 500 events waiting besides the
+batch a check-in is sending; past that it drops the oldest and puts one `eventsDropped` event in front, whose `detail`
+starts with how many it dropped.
 
 An agent runs its commands inside a check-in, one check-in at a time, and reports each result in a later check-in. So
 when a check-in arrives without the result of a `config.apply` delivered before it, and the server would send the

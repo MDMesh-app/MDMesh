@@ -340,6 +340,14 @@ public class AgentCheckInLimitsTest {
     }
 
     @Test
+    public void logsADeviceSentTypeOnOneLineWithoutSplittingACharacter() {
+        assertEquals("a?b?c?d", AgentResource.loggable("a\nb\u2028c\u2029d", 40));
+        String emoji = "\uD83D\uDE00";
+        assertEquals("ab" + emoji + "…", AgentResource.loggable("ab" + emoji + "cd", 3));
+        assertEquals("ab" + emoji, AgentResource.loggable("ab" + emoji, 3));
+    }
+
+    @Test
     public void ignoresAHardwareIdWithControlCharacters() {
         for (String id : Arrays.asList("hw\0x", "hw\u0001x", "hw\nx", "hw\u007fx")) {
             AgentCheckInRequest req = new AgentCheckInRequest();

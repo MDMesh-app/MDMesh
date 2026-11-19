@@ -212,7 +212,7 @@ public class AgentResource {
             return Response.ERROR("error.agent.token.used");
         }
 
-        String hardwareId = validHardwareId(request.getHardwareId());
+        String hardwareId = validHardwareId(request.getHardwareId(), "Enroll with token " + token.getId());
         // Enrolls of one code wait on its lock one after another, each holding a pooled connection: past a few, turn
         // the rest away now (retryable) instead of letting one code's burst take the pool.
         if (!enrollsPerCode.tryEnter(token.getId())) {
@@ -392,7 +392,7 @@ public class AgentResource {
         }
 
         // Backfill the stable hardware id for already-enrolled devices (set once / when it changes).
-        String hardwareId = validHardwareId(request.getHardwareId());
+        String hardwareId = validHardwareId(request.getHardwareId(), "Device " + deviceNumber);
         if (hardwareId != null && !hardwareId.equals(device.getHardwareId())) {
             commandDAO.updateHardwareId(deviceNumber, hardwareId);
         }
@@ -636,10 +636,8 @@ public class AgentResource {
             kioskLockoutAlert.onEvent(device, e.getType(), detail);
         }
         if (invalid > 0) {
-            String shown = firstInvalid == null ? null
-                    : firstInvalid.length() > 40 ? firstInvalid.substring(0, 40) + "…" : firstInvalid;
             logger.warn("Device {} sent {} events without a valid type, skipped (the first: {})", deviceNumber,
-                    invalid, shown == null ? "no type" : "\"" + shown.replaceAll("\\p{Cntrl}", "?") + "\"");
+                    invalid, firstInvalid == null ? "no type" : "\"" + loggable(firstInvalid, 40) + "\"");
         }
         return consumed;
     }
@@ -649,18 +647,42 @@ public class AgentResource {
         return s == null || s.indexOf('\0') < 0 ? s : s.replace("\0", "");
     }
 
-    /** The trimmed hardware id, or null when there is none, it carries a control character or it wouldn't fit. */
-    private static String validHardwareId(String raw) {
+    /**
+     * A device-sent value safe to log on one line: at most {@code max} code points (a surrogate pair is never split),
+     * control characters and line or paragraph separators shown as "?".
+     */
+    static String loggable(String s, int max) {
+        StringBuilder out = new StringBuilder();
+        int count = 0;
+        for (int i = 0; i < s.length(); i += Character.charCount(s.codePointAt(i))) {
+            if (count++ == max) {
+                return out.append('…').toString();
+            }
+            int cp = s.codePointAt(i);
+            if (Character.isISOControl(cp) || cp == '\u2028' || cp == '\u2029') {
+                out.append('?');
+            } else {
+                out.appendCodePoint(cp);
+            }
+        }
+        return out.toString();
+    }
+
+    /**
+     * The trimmed hardware id, or null when there is none, it carries a control character or it wouldn't fit.
+     * {@code who} names the sender in the log: the device, or the enrollment's token.
+     */
+    private static String validHardwareId(String raw, String who) {
         String id = raw == null ? null : raw.trim();
         if (id == null || id.isEmpty()) {
             return null;
         }
         if (id.chars().anyMatch(Character::isISOControl)) {
-            logger.warn("Hardware id with a control character ignored");
+            logger.warn("{}: hardware id with a control character ignored", who);
             return null;
         }
         if (id.length() > MAX_HARDWARE_ID_CHARS) {
-            logger.warn("Hardware id of {} characters ignored: at most {} are stored", id.length(),
+            logger.warn("{}: hardware id of {} characters ignored, at most {} are stored", who, id.length(),
                     MAX_HARDWARE_ID_CHARS);
             return null;
         }

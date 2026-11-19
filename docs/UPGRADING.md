@@ -67,7 +67,8 @@ update ([v0.5.0](#v050)); every update from then on is pinned. If you set `SUPER
 `sudo apt-get install git curl openssl`); as root with `--native` it installs them itself. It comes with 0.5.0: a clone from 0.4.x moves to it once
 with `git fetch --tags && git checkout v0.5.0 && ./setup.sh --update` ([v0.5.0](#v050)). A clone that is on `main` and
 already has `--update` can be ahead of the newest release: over an install, `--update` then stops rather than run
-older code. Wait for the next release and run it then, or pass `--allow-downgrade` to go to the release now.
+older code. Wait for the next release and run it then, or pass `--allow-downgrade` to go to the release now. A clone
+still on a release branch (`release/vX.Y.Z`, squash-merged into the release) is not ahead: `--update` moves it on.
 
 setup.sh takes no backup, so dump the database first ([command](OPERATIONS.md#backups-and-restore)). Don't use
 `docker compose up -d --build` alone: only setup.sh updates `CURRENT_VERSION` and the image tags from the
@@ -91,12 +92,17 @@ sudo ./setup.sh --update --native
 
 From 0.4.x, move the clone to 0.5.0 once with `git fetch --tags && git checkout v0.5.0 && sudo ./setup.sh --update --native` ([v0.5.0](#v050)): 0.4.x has no `--update`.
 
-Choose **Keep** (the default) or **Erase** (type `ERASE`). Keep runs migrations and leaves all data and the
-enrollment secret alone, after a `pg_dump` to `/opt/mdmesh/backups/` ([restore](OPERATIONS.md#backups-and-restore)).
+Over an install, `--update` asks nothing. It shows `MDMesh · native update, <from> → <to>` and keeps the data, the
+base URL and the port, as `-y` does. From 0.5.0 it still asks once, because 0.5.0's `--update` doesn't tell the
+installer it is an update: add `-y` to skip the questions.
+
+Run without `--update` (`sudo ./setup.sh --native`), the installer asks you to type `yes`, then for the base URL and
+the port, then to choose **Keep** (the default) or **Erase** (type `ERASE`). Keep runs migrations and leaves all data
+and the enrollment secret alone, after a `pg_dump` to `/opt/mdmesh/backups/` ([restore](OPERATIONS.md#backups-and-restore)).
 
 - **Base URL:** kept from the last run (`base.url` in `ROOT.xml`). An interactive run offers it as the default, and
-  `-y` uses it. Set `BASE_URL` to change it.
-- **Unattended (`-y`):** never erases unless you set `REPLACE_DATA=yes`. It keeps the current port unless you set
+  `--update` and `-y` use it. Set `BASE_URL` to change it.
+- **Unattended (`--update`, `-y`):** never erases unless you set `REPLACE_DATA=yes`. It keeps the current port unless you set
   `HTTP_PORT`.
 - **Interrupted run:** run the same command again. It picks up where the last run stopped.
 - **Settings:** SMTP, `LEGACY_DEVICE_API`, `PROXY_ADDRESSES`, `GITHUB_REPO` and `GITHUB_TOKEN` carry over from earlier runs, Erase

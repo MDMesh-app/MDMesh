@@ -140,7 +140,7 @@ CI runs this loop as tier T1 (see [CI](../CONTRIBUTING.md#ci)). The one step tha
 
 ```bash
 tests/native/run.sh debian-12 fresh       # distros: debian-12, debian-13, ubuntu-24.04
-tests/native/run.sh debian-12 upgrade     # scenarios: fresh, upgrade, killed
+tests/native/run.sh debian-12 upgrade     # scenarios: fresh, upgrade, killed, update
 T2_KILL_POINTS=mid-deploy,migrating tests/native/run.sh debian-12 killed
 ```
 
@@ -154,6 +154,7 @@ again without `BASE_URL` and `HTTP_PORT`, which it must keep.
 | `fresh` | The change installs on a clean host and the admin can sign in. |
 | `upgrade` | The release in `T2_FROM_REF`, then the change over it. The upgrade succeeds and keeps the data: a device enrolled before checks in after with its original secret; secrets, counts and the admin password are unchanged. Run without `HTTP_PORT`, `BASE_URL`, `GITHUB_REPO` or `GITHUB_TOKEN`, it keeps the port, the base URL and the updater settings. |
 | `killed` | The same upgrade, SIGKILLed at each kill point and re-run once without `HTTP_PORT` or `BASE_URL`: it must converge, keep the base URL and the updater settings, and pass every check. The points are listed in `tests/native/lib/guest.sh` (`bash tests/native/lib/guest.sh kill-points`). |
+| `update` | The change installed, then `sudo ./setup.sh --update --native` over it, without `-y` and with stdin closed: it asks nothing, says it is an update, and keeps the port, the base URL, the data and the updater settings. The release it finds is the change itself as `v99.0.0`, from a local origin, signed with a throwaway key. |
 
 After every install the same checks run: the services are active, `/rest/public/name` answers 200, admin signs in,
 and that version's `scripts/agent-v1-e2e.sh` passes.

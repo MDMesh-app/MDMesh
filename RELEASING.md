@@ -65,8 +65,8 @@
    ```
 
    `n=$(…) &&` stops if the script fails (`git tag -F <(…)` would make an empty tag instead), and
-   `--cleanup=whitespace` keeps lines that start with `#`. Then approve the `release` environment's deployment once
-   the `gate` job is green (setup step 4).
+   `--cleanup=whitespace` keeps lines that start with `#`. Then approve the `release` environment's deployment twice
+   (setup step 4): the `apk` job once the `gate` job is green, and the `publish` job once the image builds are.
 7. **Verify the published release** ([below](#verifying-a-published-release)): asset SHA-256 against the
    manifest, the minisign signature, the APK's signing certificate, its versionCode, `quickstart.sh`, and the GHCR
    images.
@@ -137,14 +137,17 @@ release workflow can't catch this, since it can only check the manifest against 
 
 The tag must point at a commit on `main` (its first-parent history), be newer than every earlier release, and carry
 the tagged commit's CHANGELOG.md section as its annotation (`release/changelog-section.sh --check vX.Y.Z`, which
-you can also run locally): the workflow's `gate` job checks that first, and the `release` job (the only one with the
-signing secrets) waits for a reviewer's approval in the `release` environment (setup step 4). The release job runs the
-changelog check again when it starts and just before it publishes, and fails if the tag no longer points at the
-commit it checked out.
+you can also run locally): the workflow's `gate` job checks that first. The `apk` and `publish` jobs (the only ones
+with the signing secrets) each wait for a reviewer's approval in the `release` environment (setup step 4). Each runs
+the changelog check again when it starts, `publish` once more just before it publishes, and fails if the tag no
+longer points at the commit it checked out.
 
-`.github/workflows/release.yml` then: runs the agent unit tests + builds the **signed** release APK,
-builds & pushes the **server**, **web**, and **supervisor** images to GHCR as `:VERSION`, reads back each image's
-digest (`release/image-digest.sh`), builds a **minisign-signed manifest**, and publishes a **GitHub Release** with
+`.github/workflows/release.yml` then: runs the agent unit tests + builds the **signed** release APK (`apk`); builds
+the **server**, **web**, and **supervisor** images for `linux/amd64` and `linux/arm64`, each on its own GitHub runner
+(`ubuntu-24.04` and `ubuntu-24.04-arm`, no emulation), pushes them by digest, untagged, and smoke-tests the pushed
+supervisor on both (`images`); then (`publish`) joins each image's two builds into one multi-platform index tagged
+`:VERSION`, reads back each index's digest and checks it holds exactly one image per platform
+(`release/image-digest.sh`), builds a **minisign-signed manifest**, and publishes a **GitHub Release** with
 `mdmesh-agent.apk`, `manifest.json`, `manifest.json.minisig` and `quickstart.sh` (the tagged commit's copy, which the
 README's install command downloads from the latest release). Before the upload it checks that `quickstart.sh` is the
 file the signed manifest hashes, and after it reads the published asset back and checks it again. The fleet auto-updater consumes that signed manifest
@@ -183,9 +186,10 @@ digest, registry-side, no rebuild), then verify all three digests. It first chec
 digest the signed manifest pins. A failure anywhere earlier leaves
 `:latest` — and so every quick-start install — on the previous release.
 
-**If a changelog check fails**, re-tag. In the `gate` job or at the start of the `release` job nothing was built or
-published; just before publishing (the tag changed during the run) the `:VERSION` images are pushed but there is no
-Release, and the new tag's run pushes them again. Delete the tag and tag again from the changelog (deleting a `v*` tag
+**If a changelog check fails**, re-tag. In the `gate` job or at the start of the `apk` job nothing was built or
+published; at the start of `publish` only untagged image builds were pushed, which nothing pulls; just before
+publishing (the tag changed during the run) the `:VERSION` images are tagged but there is no Release, and the new
+tag's run tags them again. Delete the tag and tag again from the changelog (deleting a `v*` tag
 needs the tag ruleset's bypass). Take the commit from the release PR's merge commit, not from the tag, which may be
 the stale or the moved one. If the section itself is wrong, fix it in a PR to `main` first and tag that PR's merge
 commit instead.
@@ -204,10 +208,10 @@ own copy over it
 (`gh release upload vX.Y.Z quickstart.sh --clobber -R MDMesh-app/MDMesh` from the tagged commit, then check its
 SHA-256 against the manifest) and find out who changed it; then move `:latest` by hand as below.
 
-**If the job goes red after the GitHub Release step** (the quickstart.sh readback, or "Move :latest to this release"): the
-Release and its `:VERSION` images are published and fine, but `:latest` may point at the previous release
-for some or all of the three images. Don't re-run the whole job (it would rebuild and re-push `:VERSION`
-and try to recreate the Release). Fix `:latest` by hand, logged in to GHCR with `write:packages`:
+**If the `publish` job goes red after the GitHub Release step** (the quickstart.sh readback, or "Move :latest to this
+release"): the Release and its `:VERSION` images are published and fine, but `:latest` may point at the previous
+release for some or all of the three images. Don't re-run the job (it would re-tag `:VERSION` and try to recreate the
+Release). Fix `:latest` by hand, logged in to GHCR with `write:packages`:
 
 ```bash
 V=1.2.3                   # edit: the release version, no leading v
@@ -269,7 +273,9 @@ to work anonymously, set each package to public: **org → Packages → `mdmesh-
 manifest **anonymously** and fails the release with instructions if any package is still private.
 
 ### 4. Release environment and tag protection
-The release job runs in the `release` environment, so the repo settings decide who can publish:
+The `apk` and `publish` jobs run in the `release` environment, so the repo settings decide who can publish. (The
+`images` job builds Arm64 on `ubuntu-24.04-arm`, a GitHub-hosted runner that is free for public repositories; a
+private fork needs a paid Arm runner there.)
 
 - **Settings → Environments → New environment `release`:**
   - **Required reviewers:** at least one maintainer; tick **Prevent self-review**. Before approving, the reviewer
@@ -331,6 +337,7 @@ release/version.sh "$V"                           # = its versionCode, and the A
 aapt2 dump badging "$d/mdmesh-agent.apk" | grep -o "versionCode='[0-9]*'"
 for img in mdmesh-server mdmesh-web mdmesh-supervisor; do   # :V and :latest print the same digest
   for t in "$V" latest; do docker buildx imagetools inspect --format "$img:$t {{.Manifest.Digest}}{{println}}" "ghcr.io/mdmesh-app/$img:$t"; done
+  release/image-digest.sh "ghcr.io/mdmesh-app/$img:$V" linux/amd64 linux/arm64 >/dev/null && echo "$img:$V: amd64 + arm64"   # 0.6.0+
 done
 python3 -c 'import json,sys; print(*json.load(open(sys.argv[1]))["components"]["images"].values(), sep="\n")' "$d/manifest.json"   # = those digests
 python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["files"]["quickstart.sh"])' "$d/manifest.json"

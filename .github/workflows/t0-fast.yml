@@ -9,7 +9,8 @@
 # routes against stub upstreams, plus `docker compose config` for every compose file/overlay/profile combination; then
 # it builds the web image (docker/web.Dockerfile), which nothing else builds before a release. When the installers change,
 # the edge entry also checks that quickstart.sh's inline BASE_URL check and answers functions are still install/lib's,
-# byte for byte, and that install/options.json (the installers' answers contract) matches the scripts.
+# byte for byte, and that install/options.json (the installers' answers contract) matches the scripts. The arm64 job
+# builds the three release images on GitHub's Arm runner when their Dockerfiles or build context change.
 name: t0-fast
 
 on:
@@ -52,6 +53,8 @@ jobs:
             # Listed explicitly: the kit's fail-closed **/Dockerfile* does not match docker/web.Dockerfile. web/**,
             # web-entrypoint.sh, edge-peers.sh, CHANGELOG.md and .dockerignore are the web image build's inputs.
             edge: docker/Caddyfile, docker/web.Dockerfile, docker/web-entrypoint.sh, docker/edge-peers.sh, web/**, CHANGELOG.md, .dockerignore, docker-compose*.yml, docker/dev.env, scripts/edge-check.sh, supervisor/apply.sh
+            # The release images' Dockerfiles and build context (web/package-lock.json and .github/** are fail-closed).
+            images: docker/**, .dockerignore
             # The installer scripts, and the signed manifest they and the supervisor read. Only the edge entry's cheap
             # quickstart.sh checks run on these, not its image work. README.md and DEPLOY.md carry the install commands
             # release-manifest-check.sh checks.
@@ -257,6 +260,33 @@ jobs:
       - if: always() && matrix.name == 'edge'
         name: Remove the per-run web image
         run: docker rmi -f "$WEB_IMG" >/dev/null 2>&1 || true
+
+  # The release images on Arm64, built on GitHub's Arm runner as release.yml builds them: a base image, Alpine package
+  # or npm binary without an arm64 build would otherwise first fail in a release. The supervisor also runs its unit
+  # tests and smoke there. (The x86_64 builds are the build job's supervisor and edge entries, and T1's server.)
+  arm64:
+    name: arm64 ${{ matrix.image }}
+    needs: paths
+    if: needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).images
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    env:
+      IMG: mdmesh-${{ matrix.image }}:ci-arm64-${{ github.run_id }}-${{ github.run_attempt }}
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [server, web, supervisor]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Build the ${{ matrix.image }} image for linux/arm64
+        env:
+          IMAGE: ${{ matrix.image }}
+        run: docker build --platform linux/arm64 -f "docker/${IMAGE}.Dockerfile" -t "$IMG" .
+      - if: matrix.image == 'supervisor'
+        name: Supervisor unit tests + compose-shaped smoke on arm64
+        run: |
+          docker run --rm -w /app "$IMG" node --test test.js
+          scripts/supervisor-smoke.sh "$IMG"
 
   # The console's accessibility sweep in a real browser: axe (WCAG 2.0-2.2 A/AA) on every page and its key states
   # (dialogs, menus, errors, empty lists), plus horizontal scroll, page titles and text spacing, in the light theme

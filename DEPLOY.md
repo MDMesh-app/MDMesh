@@ -13,6 +13,9 @@ passwords, and the admin must set its own password on first login.
 | [B. From source](#option-b--from-source-clone--build) | Docker with Compose v2, a clone, and for `./setup.sh --update`: `git`, `curl`, `openssl` 3.0+ (or an older `openssl` and `minisign`). `python3` to verify the release for the QR (optional) | You want to build the images yourself. |
 | [C. Native](#option-c--native-no-docker) | Debian 12/13 or Ubuntu 24.04, root, `git` (`--update` installs `curl` and `openssl` when they are missing) | You don't want Docker, and you run your own TLS proxy. |
 
+All three run on x86_64 and Arm64 (aarch64): the published images hold both from 0.6.0 on, and docker pulls the
+host's. 32-bit Arm is not supported.
+
 Options A and B ask for the public hostname and set `BASE_URL=https://<hostname>`. Option C asks for the full base
 URL (`https://…`; `http://` is accepted too). See the [rules](docs/OPERATIONS.md#base-url-and-hostname-rules).
 
@@ -152,7 +155,9 @@ and `openssl` when they are missing, to check the release). Two runtimes the dis
 - **JDK 17**, unless one is found under `/usr/lib/jvm` or `/opt`, or at `JAVA17_HOME`, or apt has `openjdk-17-jdk`.
   Where apt has none (Debian 13), the installer downloads Temurin 17.
 
-Both downloads cover x86_64 and arm64. On other architectures, install both runtimes yourself first.
+Both downloads are pinned for x86_64 and Arm64 (aarch64), and the apt packages the installer uses are built for both.
+CI tests the native install on x86_64. On another 64-bit architecture, install both runtimes yourself first; it is
+untested there. 32-bit Arm is not supported.
 
 Use PostgreSQL 15 or newer, as on the tested distros. With an older one already installed, the installer
 warns: the install works, but [restoring a backup](docs/OPERATIONS.md#backups-and-restore) needs 15 or newer.

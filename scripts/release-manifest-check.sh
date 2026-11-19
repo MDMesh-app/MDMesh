@@ -5,6 +5,7 @@
 #     refuse it tampered with or signed by another key;
 #   - they read the version, the three image digests and each downloaded file's SHA-256 from it;
 #   - supervisor/lib.js imagePins (what apply.sh is handed) reads the same three refs;
+#   - release/image-digest.sh pins an index only when it holds one image per platform asked for (docker stubbed);
 #   - the fields older supervisors and the installers read (components.serverImage/webImage/apk) are unchanged;
 #   - quickstart.sh's copy of the release key and its file list match release/minisign.pub and build-manifest.sh;
 #   - securityReleases is CHANGELOG.md's list (release/security-releases.py: a version with a Security heading), the
@@ -18,8 +19,9 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 T=$(mktemp -d)
 cleanup() {
   rm -f -- "$T/manifest.json" "$T/manifest.json.minisig" "$T/k.pub" "$T/k.key" "$T/x.pub" "$T/x.key" \
-    "$T/agent.apk" "$T/tampered.json" "$T/qs.sh" "$T/changelog.md" "$T/sec.json" "$T/sec.out"
-  rmdir -- "$T" 2>/dev/null || true
+    "$T/agent.apk" "$T/tampered.json" "$T/qs.sh" "$T/changelog.md" "$T/sec.json" "$T/sec.out" "$T/inspect.json" \
+    "$T/bin/docker"
+  rmdir -- "$T/bin" "$T" 2>/dev/null || true
 }
 trap cleanup EXIT
 fail() { echo "release-manifest-check: $*" >&2; exit 1; }
@@ -36,6 +38,30 @@ head -c 4096 /dev/urandom > "$T/agent.apk"
 ( cd "$T" && ! "$ROOT/release/build-manifest.sh" 9.8.7 stable "ghcr.io/$O/mdmesh-server:9.8.7" "ghcr.io/$O/mdmesh-web:9.8.7" \
     agent.apk 90807 CKSUM 1.5 "ghcr.io/$O/mdmesh-server:9.8.7" "ghcr.io/$O/mdmesh-web@$D2" "ghcr.io/$O/mdmesh-supervisor@$D3" ) 2>/dev/null \
   || fail "build-manifest.sh accepted a tag where a digest belongs"
+
+# The digests release.yml pins come from release/image-digest.sh: a registry index (docker stubbed with its inspect
+# output) is pinned only when it holds exactly one image for each platform asked for.
+mkdir "$T/bin"
+# shellcheck disable=SC2016  # the stub expands it when it runs
+printf '#!/bin/sh\ncat "$MDM_FAKE_INSPECT"\n' > "$T/bin/docker"; chmod +x "$T/bin/docker"
+plat() { printf '{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"sha256:%s","platform":{"os":"%s","architecture":"%s"%s}}' \
+  "$(printf %064d 0 | tr 0 "$1")" "$2" "$3" "${4:+,\"variant\":\"$4\"}"; }
+index() { local IFS=,; printf '{"mediaType":"application/vnd.oci.image.index.v1+json","digest":"%s","manifests":[%s]}' "$D1" "$*"; }
+digest_of() { MDM_FAKE_INSPECT="$T/inspect.json" PATH="$T/bin:$PATH" "$ROOT/release/image-digest.sh" "ghcr.io/$O/mdmesh-server:9.8.7" "$@"; }
+index "$(plat a linux amd64)" "$(plat b linux arm64 v8)" > "$T/inspect.json"
+[ "$(digest_of linux/amd64 linux/arm64)" = "$D1" ] || fail "image-digest.sh refused an amd64 + arm64 index"
+[ "$(digest_of)" = "$D1" ] || fail "image-digest.sh without platforms refused an index"
+index "$(plat a linux amd64)" "$(plat c unknown unknown)" > "$T/inspect.json"
+! digest_of linux/amd64 linux/arm64 2>/dev/null || fail "image-digest.sh pinned an index without arm64"
+index "$(plat a linux amd64)" "$(plat b linux amd64)" "$(plat c linux arm64)" > "$T/inspect.json"
+! digest_of linux/amd64 linux/arm64 2>/dev/null || fail "image-digest.sh pinned an index with two amd64 images"
+printf '{"mediaType":"application/vnd.docker.distribution.manifest.v2+json","digest":"%s"}' "$D2" > "$T/inspect.json"
+! digest_of linux/amd64 linux/arm64 2>/dev/null || fail "image-digest.sh pinned a single-platform image as multi-platform"
+[ "$(digest_of)" = "$D2" ] || fail "image-digest.sh without platforms refused a single-platform image"
+printf '{"digest":"sha256:abc"}' > "$T/inspect.json"
+! digest_of 2>/dev/null || fail "image-digest.sh accepted a malformed digest"
+: > "$T/inspect.json"
+! digest_of 2>/dev/null || fail "image-digest.sh printed a digest for a failed inspect"
 
 # securityReleases: derived from CHANGELOG.md by build-manifest.sh, and checked by release.yml.
 [ "$(python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1]))["securityReleases"]))' "$T/manifest.json")" \

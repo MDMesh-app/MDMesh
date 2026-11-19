@@ -13,6 +13,10 @@ Upgrading
 - Quick start: `MDMESH_VERSION` now takes 0.5.0 or later; for 0.4.0 it stops and names that release's own
   `quickstart.sh`, as it already did for earlier releases.
 
+New
+- Arm64: the server, web and supervisor images are built for linux/amd64 and linux/arm64, so the quick start and
+  one-click updates run on Arm64 hosts such as Oracle Ampere (#205, thanks @sgofferj).
+
 Fixes
 - Commands: the server refuses a command, Install configuration apps and Retry apply for a device marked Wiped
   (`error.agent.command.wiped`), and a bulk command skips it. Only the console's greyed-out buttons stopped them before.

@@ -54,7 +54,8 @@ class DeviceWipeHandlerTest {
             restrictions -= key
         }
         override fun wipe() {
-            calls += "wipe blocked=${hasRestriction(KEY)}"
+            // Not through hasRestriction: that one may be set to throw.
+            calls += "wipe blocked=${KEY in restrictions || blockedElsewhere}"
             wipeError?.let { throw it }
         }
     }
@@ -127,14 +128,49 @@ class DeviceWipeHandlerTest {
         assertFalse(KEY in device.restrictions)
     }
 
+    /**
+     * PR #227 review: a lost device is always wiped. A check that throws after ours was cleared doesn't stop the wipe,
+     * and ours stays off for it: putting it back first is what stopped HyperOS recovery (#222).
+     */
     @Test
-    fun `says so when our block can't be put back after the lift failed`() = runTest {
-        val device = FakeDevice(blocked = true, checkFailsAfterClear = true, addFails = true)
+    fun `still wipes with ours lifted when checking the block throws, and says so`() = runTest {
+        val device = FakeDevice(blocked = true, checkFailsAfterClear = true)
+
+        val result = wipe(device)
+
+        assertEquals(CommandStatus.DONE, result.status)
+        assertEquals("could not lift the factory reset block (user manager gone); wiped anyway", result.detail)
+        assertEquals(listOf("clear $KEY", "wipe blocked=false"), device.calls)
+    }
+
+    @Test
+    fun `still wipes when clearing the block throws`() = runTest {
+        val device = FakeDevice(blocked = true).apply { onClear = { throw SecurityException("clear refused") } }
+
+        val result = wipe(device)
+
+        assertEquals(CommandStatus.DONE, result.status)
+        assertEquals("could not lift the factory reset block (clear refused); wiped anyway", result.detail)
+        assertEquals(listOf("wipe blocked=true"), device.calls)
+    }
+
+    @Test
+    fun `reports the lift error, the wipe error and what it could not put back`() = runTest {
+        val device = FakeDevice(
+            blocked = true,
+            checkFailsAfterClear = true,
+            addFails = true,
+            wipeError = SecurityException("wipe refused"),
+        )
 
         val result = wipe(device)
 
         assertEquals(CommandStatus.FAILED, result.status)
-        assertEquals("user manager gone; could not restore $KEY", result.detail)
+        assertEquals(
+            "wipe refused; could not lift the factory reset block (user manager gone); could not restore $KEY",
+            result.detail,
+        )
+        assertEquals(listOf("clear $KEY", "wipe blocked=false", "add $KEY"), device.calls)
     }
 
     /** No apply may put the block back once it is lifted, even if the process dies before the wipe call. */
@@ -151,12 +187,12 @@ class DeviceWipeHandlerTest {
     }
 
     @Test
-    fun `releases the hold when the lift fails`() = runTest {
+    fun `keeps the hold when the lift check fails and the wipe goes ahead`() = runTest {
         val hold = FactoryResetWipeHold()
 
         DeviceWipeHandler(FakeDevice(blocked = true, checkFailsAfterClear = true), hold).handle(command)
 
-        assertFalse(hold.held)
+        assertTrue(hold.held)
     }
 
     @Test
@@ -178,14 +214,14 @@ class DeviceWipeHandlerTest {
     }
 
     @Test
-    fun `restores the block and fails when checking it throws after the clear`() = runTest {
-        val device = FakeDevice(blocked = true, checkFailsAfterClear = true)
+    fun `restores the block when checking it throws after the clear and the wipe throws too`() = runTest {
+        val device = FakeDevice(blocked = true, checkFailsAfterClear = true, wipeError = SecurityException("no"))
 
         val result = wipe(device)
 
         assertEquals(CommandStatus.FAILED, result.status)
-        assertEquals("user manager gone", result.detail)
-        assertEquals(listOf("clear $KEY", "add $KEY"), device.calls)
+        assertEquals(listOf("clear $KEY", "wipe blocked=false", "add $KEY"), device.calls)
+        assertTrue(KEY in device.restrictions)
     }
 
     @Test

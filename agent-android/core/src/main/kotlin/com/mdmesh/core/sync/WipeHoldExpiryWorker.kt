@@ -41,7 +41,7 @@ class WipeHoldExpiryWorker @AssistedInject constructor(
     }
 
     companion object {
-        private const val UNIQUE_NAME = "wipe-hold-expiry"
+        internal const val UNIQUE_NAME = "wipe-hold-expiry"
         private const val ENQUEUE_TIMEOUT_S = 5L
 
         /**

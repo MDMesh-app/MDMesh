@@ -18,15 +18,17 @@ import com.mdmesh.policy.PolicyOutcome
  *
  * Either way it ends after [MAX_HOLD_MS] of uptime ([nowMs], `elapsedRealtime`, which clock changes
  * don't move): a wipe that hasn't rebooted the device by then isn't coming. The expiry is noticed on
- * the first read of [held] or [remainingMs] after the deadline, whichever comes first, and only
- * once: [hold] calls [onHold], which schedules such a read at the deadline (`WipeHoldExpiryWorker`),
- * so the hold ends with no command, apply or server; each command and each apply reads it too. Then
- * commands run again and [onExpired] re-applies the saved configuration on the device (the agent
- * enqueues `ConfigReapplyWorker`), which puts the block back. One instance per process (Hilt
+ * the first read of [held] or [remainingMs] (or [expireIfDue]) after the deadline, whichever comes
+ * first, and only once: [hold] calls [onHold], which schedules such a read at the deadline
+ * (`WipeHoldExpiryWorker`), so the hold ends with no command, apply or server; each check-in, command
+ * and apply reads it too. Then [onExpired] re-applies the saved configuration on the device (the
+ * agent enqueues `ConfigReapplyWorker`), which puts the block back. One instance per process (Hilt
  * singleton).
  *
  * [onHold] and [onExpired] run inside this object's lock, [onExpired] possibly under the
  * configuration lock too: they must only schedule work, never apply the configuration themselves.
+ * Whatever they throw is dropped: a read of the hold (a command, a policy write) or the wipe never
+ * fails because of them.
  */
 class FactoryResetWipeHold(
     private val store: WipeHoldStore = InMemoryWipeHoldStore(),
@@ -53,9 +55,14 @@ class FactoryResetWipeHold(
             }
             if (elapsed < MAX_HOLD_MS) return MAX_HOLD_MS - elapsed
             clear()
-            onExpired()
+            runCatching(onExpired)
             return null
         }
+
+    /** Ends the hold if it is past its deadline; for callers that need nothing else from it. */
+    fun expireIfDue() {
+        remainingMs
+    }
 
     /** Called by `device.wipe` before anything is lifted, under the configuration lock. */
     @Synchronized
@@ -63,7 +70,7 @@ class FactoryResetWipeHold(
         val at = nowMs()
         heldAtMs = at
         bootId().takeIf { it != 0L }?.let { store.saved = SavedWipeHold(it, at) }
-        onHold()
+        runCatching(onHold)
     }
 
     /** Called by `device.wipe` when the wipe call threw: the device is not resetting. */

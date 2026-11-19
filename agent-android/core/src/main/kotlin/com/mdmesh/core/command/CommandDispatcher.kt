@@ -1,7 +1,9 @@
 package com.mdmesh.core.command
 
+import com.mdmesh.core.command.handlers.PolicyApplyHandler
 import com.mdmesh.proto.CommandEnvelope
 import com.mdmesh.proto.CommandResult
+import com.mdmesh.proto.DeviceAction
 
 /**
  * Routes a [CommandEnvelope] to the [CommandHandler] registered for its `type`.
@@ -16,10 +18,12 @@ import com.mdmesh.proto.CommandResult
  * fetched twice (e.g. a push wake and the reconcile floor racing within the delivered->done
  * window) runs its handler exactly once; the duplicate returns `done` without re-running.
  *
- * Wiping: once a wipe is accepted ([wiping], the per-boot `FactoryResetWipeHold`), nothing else
- * runs this boot. A command after it, e.g. a `config.apply` the server queued in the same response,
- * could put Factory reset: Block back before recovery starts (#222). It is reported `expired`
- * (not run), not `failed`.
+ * Wiping: once a wipe is accepted ([wiping], the per-boot `FactoryResetWipeHold`), only
+ * [RUN_WHILE_WIPING] runs until the device reboots or the hold ends; the rest is reported `expired`
+ * (not run), not `failed` (#222). `config.apply` and `policy.apply` run: the factory reset policy
+ * defers Block itself while the hold lasts, and the document is saved, so the re-apply at the
+ * hold's end puts the newest one in force (an Allow sent meanwhile isn't lost). Another `device.wipe`
+ * runs: a lost device is always wiped.
  */
 class CommandDispatcher(
     handlers: List<CommandHandler>,
@@ -34,7 +38,7 @@ class CommandDispatcher(
         if (isExpired(command)) {
             return CommandResults.expired(command, "command past ttl")
         }
-        if (wiping()) {
+        if (command.type !in RUN_WHILE_WIPING && wiping()) {
             return CommandResults.expired(command, NOT_RUN_WIPING)
         }
 
@@ -61,5 +65,6 @@ class CommandDispatcher(
 
     companion object {
         const val NOT_RUN_WIPING = "not run: a factory reset is under way"
+        val RUN_WHILE_WIPING = setOf(DeviceAction.WIPE, DeviceAction.CONFIG_APPLY, PolicyApplyHandler.TYPE)
     }
 }

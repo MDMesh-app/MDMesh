@@ -1,6 +1,8 @@
 package com.mdmesh.core.config
 
 import android.content.ComponentName
+import com.mdmesh.core.command.CommandDispatcher
+import com.mdmesh.core.command.handlers.ConfigApplyHandler
 import com.mdmesh.core.command.handlers.DeviceWipeHandler
 import com.mdmesh.core.command.handlers.PolicyApplyHandler
 import com.mdmesh.core.command.handlers.WipeTarget
@@ -23,6 +25,8 @@ import com.mdmesh.proto.CommandEnvelope
 import com.mdmesh.proto.CommandStatus
 import com.mdmesh.proto.ConfigApplyPayload
 import com.mdmesh.proto.ConfigOutcome
+import com.mdmesh.proto.ProtocolJson
+import kotlinx.serialization.json.jsonObject
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -49,7 +53,9 @@ class WipeHoldsFactoryResetTest {
         override fun clearRestriction(key: String) {
             restrictions -= key
         }
+        var wipes = 0
         override fun wipe() {
+            wipes++
             wipeError?.let { throw it } // otherwise returns, as wipeDevice can before the reboot
         }
     }
@@ -168,6 +174,97 @@ class WipeHoldsFactoryResetTest {
         assertEquals("wipeNotStarted once", 1, reported)
     }
 
+    /**
+     * PR #227 review, scenario A: the admin sets Factory reset to Allow while a wipe that didn't start is held. The
+     * config.apply runs (it isn't dropped as not run), so the expiry re-applies Allow, not the older Block.
+     */
+    @Test
+    fun `a config apply during the hold runs, and the expiry re-applies the newest document`() = runTest {
+        val device = Device(blocked = true)
+        var nowMs = 0L
+        val hold = FactoryResetWipeHold(nowMs = { nowMs })
+        val applier = applier(device, hold)
+        applier.apply(block)
+        val dispatcher = dispatcher(device, hold, applier)
+        dispatcher.dispatch(wipeCommand)
+
+        val allow = dispatcher.dispatch(configApply("c2", block.copy(revision = "r2", policies = ALLOW)))
+        nowMs = FactoryResetWipeHold.MAX_HOLD_MS
+        assertFalse(hold.held)
+        applier.reapplyPersisted() // what the expiry schedules
+
+        assertEquals(CommandStatus.DONE, allow.status)
+        assertEquals("r2", store.revision())
+        assertFalse("Allow, as last set", KEY in device.restrictions)
+    }
+
+    /** A Block sent during the hold is deferred but saved: the expiry puts it in force. */
+    @Test
+    fun `a Block sent during the hold is saved and put in force at the expiry`() = runTest {
+        val device = Device(blocked = false)
+        var nowMs = 0L
+        val hold = FactoryResetWipeHold(nowMs = { nowMs })
+        val applier = applier(device, hold)
+        val dispatcher = dispatcher(device, hold, applier)
+        dispatcher.dispatch(wipeCommand)
+
+        val sent = dispatcher.dispatch(configApply("c2", block.copy(revision = "r2")))
+        assertFalse(KEY in device.restrictions)
+        nowMs = FactoryResetWipeHold.MAX_HOLD_MS
+        assertFalse(hold.held)
+        applier.reapplyPersisted()
+
+        assertEquals(CommandStatus.DONE, sent.status)
+        assertEquals("r2", store.revision())
+        assertTrue(KEY in device.restrictions)
+    }
+
+    /** Scenario B: a repeat wipe of a lost device isn't refused while the first one's hold lasts. */
+    @Test
+    fun `a repeat wipe during the hold wipes again and restarts the hold`() = runTest {
+        val device = Device(blocked = true)
+        var nowMs = 0L
+        val checks = mutableListOf<Long>()
+        val hold = FactoryResetWipeHold(nowMs = { nowMs }, onHold = { checks += nowMs })
+        val applier = applier(device, hold)
+        applier.apply(block)
+        val dispatcher = dispatcher(device, hold, applier)
+        dispatcher.dispatch(wipeCommand)
+
+        nowMs = 300_000L
+        val again = dispatcher.dispatch(wipeCommand.copy(commandId = "w2"))
+        nowMs = FactoryResetWipeHold.MAX_HOLD_MS // the first hold's deadline, not the second's
+
+        assertEquals(CommandStatus.DONE, again.status)
+        assertEquals(2, device.wipes)
+        assertEquals(listOf(0L, 300_000L), checks)
+        assertTrue(hold.held)
+        assertFalse(KEY in device.restrictions)
+    }
+
+    /** Recording the event throws (a full disk): the read that saw the expiry still returns, and the hold ends once. */
+    @Test
+    fun `an expiry whose report throws still ends the hold and lets the apply through`() = runTest {
+        val device = Device(blocked = true)
+        var nowMs = 0L
+        var scheduled = 0
+        val hold = FactoryResetWipeHold(nowMs = { nowMs }) {
+            scheduled++ // the re-apply is scheduled first
+            error("event log unwritable")
+        }
+        val applier = applier(device, hold)
+        applier.apply(block)
+        wipeHandler(device, hold, applier).handle(wipeCommand)
+
+        nowMs = FactoryResetWipeHold.MAX_HOLD_MS
+        val apply = applier.apply(block.copy(revision = "r2"))
+
+        assertEquals(ConfigOutcome.APPLIED, apply.outcomes["policies.factoryReset"])
+        assertTrue(KEY in device.restrictions)
+        assertFalse(hold.held)
+        assertEquals(1, scheduled)
+    }
+
     /** The wipe threw: the hold is released, so the check that comes later neither reports nor holds anything. */
     @Test
     fun `a wipe that throws leaves the scheduled check nothing to end`() = runTest {
@@ -260,7 +357,21 @@ class WipeHoldsFactoryResetTest {
         assertTrue(KEY in device.restrictions)
     }
 
+    private fun dispatcher(device: Device, hold: FactoryResetWipeHold, applier: ConfigApplier) =
+        CommandDispatcher(
+            listOf(wipeHandler(device, hold, applier), ConfigApplyHandler(applier)),
+            wiping = { hold.held },
+        )
+
+    private fun configApply(id: String, doc: ConfigApplyPayload) = CommandEnvelope(
+        commandId = id,
+        issuedAt = "2026-01-01T00:00:00Z",
+        type = "config.apply",
+        payload = ProtocolJson.json.encodeToJsonElement(ConfigApplyPayload.serializer(), doc).jsonObject,
+    )
+
     private companion object {
         const val KEY = UserRestrictions.DISALLOW_FACTORY_RESET
+        val ALLOW = mapOf("factoryReset" to true)
     }
 }

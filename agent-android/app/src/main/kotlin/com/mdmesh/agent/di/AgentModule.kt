@@ -115,6 +115,9 @@ import kotlinx.coroutines.Dispatchers
 @InstallIn(SingletonComponent::class)
 object AgentModule {
 
+    private const val WIPE_NOT_STARTED_DETAIL =
+        "The device didn't reset within 10 minutes. It is back in use, and its configuration is applied again."
+
     @Provides
     @Singleton
     fun provideDpmHandle(@ApplicationContext context: Context): DpmHandle {
@@ -144,11 +147,14 @@ object AgentModule {
                 runCatching { WipeHoldExpiryWorker.schedule(context) }
                     .onFailure { Log.w("FactoryResetWipeHold", "expiry check not scheduled", it) }
             },
+            // The re-apply first, each on its own: a failure to record the event must not cost the block.
             onExpired = {
-                events.record(EventType.WIPE_NOT_STARTED, "the device did not reset within 10 minutes; resumed")
                 // Puts Factory reset: Block back now; the server's re-send can wait an hour. Only scheduled: this
                 // runs inside a read of the hold, possibly under the configuration lock the re-apply takes.
-                ConfigReapplyWorker.scheduleNow(context)
+                runCatching { ConfigReapplyWorker.scheduleNow(context) }
+                    .onFailure { Log.w("FactoryResetWipeHold", "re-apply not scheduled", it) }
+                runCatching { events.record(EventType.WIPE_NOT_STARTED, WIPE_NOT_STARTED_DETAIL) }
+                    .onFailure { Log.w("FactoryResetWipeHold", "wipeNotStarted not recorded", it) }
             },
         )
 

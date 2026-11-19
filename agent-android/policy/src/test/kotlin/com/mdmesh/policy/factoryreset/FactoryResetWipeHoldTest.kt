@@ -151,4 +151,31 @@ class FactoryResetWipeHoldTest {
         assertNull(store.saved)
         assertEquals("a reboot is not an expiry", 0, expired)
     }
+
+    @Test
+    fun `an expiry callback that throws doesn't escape the read, and the hold still ends once`() {
+        var calls = 0
+        val hold = FactoryResetWipeHold(store, { boot }, { nowMs }) {
+            calls++
+            error("event log unwritable")
+        }
+        hold.hold()
+        nowMs += FactoryResetWipeHold.MAX_HOLD_MS
+
+        assertFalse(hold.held)
+        assertFalse(hold.held)
+        assertEquals(1, calls)
+        assertNull(store.saved)
+    }
+
+    @Test
+    fun `expireIfDue ends a hold past its deadline, for callers that need nothing else`() {
+        newProcess().hold()
+        nowMs += FactoryResetWipeHold.MAX_HOLD_MS
+
+        newProcess().expireIfDue()
+
+        assertEquals(1, expired)
+        assertNull(store.saved)
+    }
 }

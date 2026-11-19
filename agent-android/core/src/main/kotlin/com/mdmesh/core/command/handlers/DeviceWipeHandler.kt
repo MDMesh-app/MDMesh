@@ -16,12 +16,13 @@ import com.mdmesh.proto.DeviceAction
  * usually torn down before the ack is sent.
  *
  * The restrictions in [WipeRestrictions] (Factory reset: Block) are lifted first, since some vendor
- * recoveries enforce them (#222), and put back if the wipe call fails. A block another admin or
- * source keeps doesn't stop the wipe (stock Android wipes past it); the result says so.
+ * recoveries enforce them (#222), and put back if the wipe call fails. Nothing in the lift stops the
+ * wipe of a lost device: a block another admin or source keeps (stock Android wipes past it) and a
+ * restriction call that threw are reported in the result, and the wipe is still made.
  *
- * [hold] is set before anything is lifted and released on every path that doesn't reach a wipe, so
- * no apply can put the block back once it is lifted: the wipe call can return before the reboot, and
- * the process can die between the lift and the call. If no reboot follows, the hold expires and the
+ * [hold] is set before anything is lifted and released when the wipe call throws, so no apply can
+ * put the block back once it is lifted: the wipe call can return before the reboot, and the process
+ * can die between the lift and the call. If no reboot follows, the hold expires and the
  * agent re-applies its configuration ([FactoryResetWipeHold]). [exclusive] keeps applies out from the
  * hold to the wipe call (check-in commands already run one at a time).
  *
@@ -46,35 +47,32 @@ class DeviceWipeHandler(
 
     private fun wipe(command: CommandEnvelope): CommandResult {
         hold.hold()
-        return when (val lift = WipeRestrictions.lift(target, beforeClear = markConfigStale)) {
-            is WipeRestrictions.Lift.Ready -> wipeLifted(command, lift)
-            is WipeRestrictions.Lift.Error -> {
-                hold.release()
-                failed(command, lift.cause.message, lift.notRestored)
-            }
+        val lift = WipeRestrictions.lift(target, beforeClear = markConfigStale)
+        return runCatching {
+            target.wipe()
+            val notes = listOfNotNull(
+                liftError(lift)?.let { "$it; wiped anyway" },
+                lift.setElsewhere.takeIf { it.isNotEmpty() }?.let(::elsewhere),
+            )
+            CommandResults.done(command, notes.joinToString("; ").ifEmpty { null })
+        }.getOrElse { error ->
+            hold.release()
+            val notRestored = WipeRestrictions.restore(target, lift.lifted)
+            val notes = listOfNotNull(
+                error.message ?: "wipe failed",
+                liftError(lift),
+                notRestored.takeIf { it.isNotEmpty() }?.let { "could not restore ${it.joinToString()}" },
+            )
+            CommandResults.failed(command, notes.joinToString("; "))
         }
     }
 
-    private fun wipeLifted(command: CommandEnvelope, lift: WipeRestrictions.Lift.Ready): CommandResult =
-        runCatching {
-            target.wipe()
-            CommandResults.done(command, lift.setElsewhere.takeIf { it.isNotEmpty() }?.let { elsewhere(it) })
-        }.getOrElse {
-            hold.release()
-            failed(command, it.message, WipeRestrictions.restore(target, lift.lifted))
-        }
+    private fun liftError(lift: WipeRestrictions.Lift) =
+        lift.error?.let { "could not lift the factory reset block (${it.message})" }
 
     private fun elsewhere(keys: List<String>) =
         "another admin or source also blocks factory reset (${keys.joinToString()}); " +
             "some vendor recoveries may refuse it"
-
-    private fun failed(command: CommandEnvelope, detail: String?, notRestored: List<String>): CommandResult {
-        val reason = detail ?: "wipe failed"
-        return CommandResults.failed(
-            command,
-            if (notRestored.isEmpty()) reason else "$reason; could not restore ${notRestored.joinToString()}",
-        )
-    }
 }
 
 /** The device calls a wipe makes; [DpmWipeTarget] on a device, a fake in tests. */

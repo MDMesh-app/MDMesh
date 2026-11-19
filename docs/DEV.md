@@ -178,3 +178,17 @@ Everything a run creates is named `mdmesh-t2-…` and removed on exit; see the h
 `KILL_POINTS` in `tests/native/lib/guest.sh`, and `run.sh`.
 
 CI runs the rig as tier T2 (see [CI](../CONTRIBUTING.md#ci)).
+
+## Behind your own proxy (Docker), end to end
+
+```bash
+for n in server web supervisor; do docker build -f docker/$n.Dockerfile -t ghcr.io/local/mdmesh-$n:px-e2e .; done
+tests/proxy-e2e/run.sh                     # phases: nginx tls proxies update (default: all)
+```
+
+It installs the proxy mode as the quick start writes it, in a throwaway docker:dind with a registry that answers as
+ghcr.io, puts each configuration in [`docs/proxies`](proxies/) in front, and checks from a client on another machine:
+the console, sign-in, the client address the server records (forged headers refused), the agent's wake socket, large
+uploads, the HTTPS origin, then an update and a Roll back. Run it after changing `docker/Caddyfile`,
+`docker/edge-peers.sh`, `docker-compose.proxy.yml` or `docs/proxies`. About 15 minutes; the rest is in the script's
+header. `scripts/edge-check.sh` (CI, T0) covers the edge's side of the mode without a stack.

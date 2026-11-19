@@ -271,7 +271,8 @@ export interface DeviceActionHelpers extends RowActionHelpers {
   /**
    * Queue a command on these devices and toast the outcome ("Ring queued", "Ring failed"): one device as the device
    * page sends it (queued, then nudged to sync), several as one bulk request. It refuses what the bulk endpoint
-   * refuses, wipe and passcode reset, for any number of devices: those go from the device page only. `values` feed
+   * refuses, wipe, passcode reset and an app's uninstall or hide, for any number of devices: those go from the device
+   * page only. `values` feed
    * `build`. It shows no confirmation: ask first when the command needs it. Resolves, once the nudge is sent, to
    * whether it was queued.
    */

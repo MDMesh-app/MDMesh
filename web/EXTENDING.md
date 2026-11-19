@@ -380,8 +380,9 @@ column stays last.
 An entry in a row's "More actions" menu, on Devices or Apps. `item(row, helpers)` returns a menu item
 (`{ key, label, onSelect, icon?, danger?, disabled?, textValue? }`; `textValue` when `label` isn't plain text), or
 null to leave it out for that row. Helpers are `toast` and `refresh()`, and on Devices `sendCommand(devices, command,
-values?)`. That sends one device as the device page does and several as one bulk request. It refuses wipe and
-passcode reset for any number of devices: those are sent from the device page only. On Devices, from
+values?)`. That sends one device as the device page does and several as one bulk request. It refuses wipe,
+passcode reset and an app's uninstall or hide (`app.uninstall`, `app.setHidden`) for any number of devices: those are
+sent from the device page only. On Devices, from
 `ORDER.devicesRowAction.move` on an entry joins the group below the separator. Place Apps entries with
 `ORDER.appsRowAction`.
 

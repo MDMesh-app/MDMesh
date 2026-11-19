@@ -7,7 +7,8 @@
 # Checks that --update checks out the newest signed stable release tag (a detached HEAD) and then runs that release's
 # setup.sh; skips a newest tag whose release has no published manifest, saying so; refuses a bad or foreign signature,
 # a replayed manifest, a manifest naming another commit or none; refuses local changes, and going back from a newer
-# checkout over an install unless --allow-downgrade; moves on from a detached release checkout (an annotated tag);
+# checkout over an install unless --allow-downgrade, but not from an older release's branch the release squashed;
+# moves on from a detached release checkout (an annotated tag);
 # that MDMESH_DRY_RUN=1 (also from an answers file) fetches and changes nothing; and that the tunnel token reaches no
 # program --update runs.
 #
@@ -209,6 +210,10 @@ expect_refused_env() {  # NAME RELEASES WHAT TEXT ENV...
   ok
 }
 expect_refused_env nat-ahead ok "going back from main over a native install" "would run older code"
+# --allow-downgrade counts with --native too (here in a dry run, which needs no root).
+upd nat-ahead ok MDMESH_DRY_RUN=1 -- --native --allow-downgrade
+{ [ "$RC" = 0 ] && grep -q 'v9.1.0 verifies' "$WORK/out"; } || { fail "--update --native --allow-downgrade does not go back"; show; }
+ok
 clone nat-older v9.1.0 "$WORK/origin2"
 expect_refused_env nat-older nosig "walking below the release of a native install" "No release newer than this clone"
 rmdir -- "$WORK/native-tc"
@@ -278,10 +283,20 @@ upd capped ok
 { [ "$RC" != 0 ] && head_is capped "$c900" && grep -q 'None of the 5 newest release tags' "$WORK/out" && ! grep -q 'v9.1.0' "$WORK/out"; } \
   || { fail "--update does not stop after the 5 newest tags"; show; }
 ok
-# From a detached release checkout with an install: forward to the newest, no git pull involved.
+# From a detached release checkout with an install: forward to the newest, no git pull involved. The release's setup.sh
+# is told it runs an update, and from which release (MDMESH_UPDATING, MDMESH_UPDATE_FROM: the native installer then asks
+# nothing); a fresh clone's is not. (Seen in the environment of the docker stub, which that setup.sh runs.)
 clone detached v9.0.0; : > "$WORK/detached/.env"
 upd detached ok
 head_is detached "$c910" || { fail "--update from v9.0.0 (detached) did not move to v9.1.0"; show; }
+ok
+{ grep -qx 'MDMESH_UPDATING=1' "$WORK/env.log" && grep -qx 'MDMESH_UPDATE_FROM=9.0.0' "$WORK/env.log"; } \
+  || { fail "--update over an install does not tell the release's setup.sh it updates from 9.0.0"; show; }
+ok
+clone fresh2
+upd fresh2 ok
+{ head_is fresh2 "$c910" && grep -q '^PATH=' "$WORK/env.log" && ! grep -q '^MDMESH_UPDAT' "$WORK/env.log"; } \
+  || { fail "--update of a fresh clone tells its setup.sh it is an update"; show; }
 ok
 # Already on the newest release: says so and runs setup.sh.
 upd detached ok
@@ -294,6 +309,21 @@ expect_refused ahead ok "going back from main over an install" "would run older 
 upd ahead ok -- --allow-downgrade
 head_is ahead "$c910" || { fail "--allow-downgrade does not go back to v9.1.0"; show; }
 ok
+# A clone on a release branch before its squash merge, with an install: v9.0.0 plus commits of its own, which the
+# release v9.1.0 holds under other hashes, so they are not its ancestors. Its version is older than v9.1.0: an upgrade.
+clone squash v9.0.0; : > "$WORK/squash/.env"; "${G[@]}" -C "$WORK/squash" commit -q --allow-empty -m pre-squash
+upd squash ok
+{ head_is squash "$c910" && grep -q 'Checked out v9.1.0' "$WORK/out"; } \
+  || { fail "a clone on a release branch before its squash merge is refused as going back"; show; }
+ok
+# v9.1.0 plus a commit of its own, with an install: the release's own version, with code the release doesn't have.
+clone same v9.1.0; : > "$WORK/same/.env"; "${G[@]}" -C "$WORK/same" commit -q --allow-empty -m local
+expect_refused same ok "going back from v9.1.0 plus a commit over an install" "would run older code"
+# The same with stale local tags (v9.1.0 not fetched yet, so the clone's own tags say v9.0.0): its version is read once
+# the release's tag is fetched, and it is refused all the same.
+clone stale v9.1.0; : > "$WORK/stale/.env"; "${G[@]}" -C "$WORK/stale" commit -q --allow-empty -m local
+"${G[@]}" -C "$WORK/stale" tag -d v9.1.0 > "$WORK/tagd.out"
+expect_refused stale ok "going back from v9.1.0 plus a commit, with stale local tags, over an install" "would run older code"
 # Local changes: stop, change nothing.
 clone dirty; echo x >> "$WORK/dirty/note"
 expect_refused dirty ok "a clone with local changes" "commit or stash them"

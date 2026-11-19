@@ -9,9 +9,13 @@ passwords, and the admin must set its own password on first login.
 
 | Method | Needs | Choose it when |
 |--------|-------|----------------|
-| [A. Quick start](#option-a--quick-start-no-clone-published-images) | Docker with Compose v2, `curl`, `minisign` to check the script, `openssl` 3.0+ (or an older `openssl` and `minisign`) | You want the fastest path, with one-click updates and rollback. |
+| [A. Quick start](#option-a--quick-start-no-clone-published-images) | An x86_64 host, Docker with Compose v2, `curl`, `minisign` to check the script, `openssl` 3.0+ (or an older `openssl` and `minisign`) | You want the fastest path, with one-click updates and rollback. |
 | [B. From source](#option-b--from-source-clone--build) | Docker with Compose v2, a clone, and for `./setup.sh --update`: `git`, `curl`, `openssl` 3.0+ (or an older `openssl` and `minisign`). `python3` to verify the release for the QR (optional) | You want to build the images yourself. |
-| [C. Native](#option-c--native-no-docker) | Debian 12/13 or Ubuntu 24.04, root, `git` (`--update` installs `curl` and `openssl` when they are missing) | You don't want Docker, and you run your own TLS proxy. |
+| [C. Native](#option-c--native-no-docker) | Debian 12/13 or Ubuntu 24.04 on x86_64 or Arm64, root, `git` (`--update` installs `curl` and `openssl` when they are missing) | You don't want Docker, and you run your own TLS proxy. |
+
+Native runs on x86_64 and Arm64 (aarch64). The published Docker images (Option A, and updates from Settings →
+Updates) are x86_64 (amd64) only for now; Arm64 images are planned. Option B builds the images on your host from base
+images that cover both, but it is not tested on Arm64. 32-bit Arm is not supported.
 
 Options A and B ask for the public hostname and set `BASE_URL=https://<hostname>`. Option C asks for the full base
 URL (`https://…`; `http://` is accepted too). See the [rules](docs/OPERATIONS.md#base-url-and-hostname-rules).
@@ -152,20 +156,23 @@ and `openssl` when they are missing, to check the release). Two runtimes the dis
 - **JDK 17**, unless one is found under `/usr/lib/jvm` or `/opt`, or at `JAVA17_HOME`, or apt has `openjdk-17-jdk`.
   Where apt has none (Debian 13), the installer downloads Temurin 17.
 
-Both downloads cover x86_64 and arm64. On other architectures, install both runtimes yourself first.
+Both downloads are pinned for x86_64 and Arm64 (aarch64), and the apt packages the installer uses are built for both.
+CI tests the native install on x86_64. On another 64-bit architecture, install both runtimes yourself first; it is
+untested there. 32-bit Arm is not supported.
 
 Use PostgreSQL 15 or newer, as on the tested distros. With an older one already installed, the installer
 warns: the install works, but [restoring a backup](docs/OPERATIONS.md#backups-and-restore) needs 15 or newer.
 
-The installer asks you to type `yes`, then asks for the base URL and the HTTP port. `-y` skips these
-questions (and answers Keep on an upgrade), and `-v` shows the full output:
+The installer asks you to type `yes`, then asks for the base URL and the HTTP port. `-y` skips these questions (and
+answers Keep on an upgrade), and so does `--update` over an install. `-v` shows the full output:
 
 - **Base URL:** set `MDMESH_BASE_URL=https://mdm.example.com` to answer it in advance. `-y` requires it on a fresh
   install; re-runs keep the current one unless you set it ([Upgrading](docs/UPGRADING.md#native-installs)).
 - **Port:** set `MDMESH_HTTP_PORT=9090` to answer it in advance. The default is the port the install already uses
   (8080 on a fresh install), and `-y` takes that default.
 
-`--reset` and `--allow-downgrade` are Docker-only, and `--native` ignores them. To wipe a native install, choose
+`--reset` is Docker-only, and `--native` ignores it. So is `--allow-downgrade`, except with `--update`, where it lets
+the clone go back to the newest release ([Upgrading](docs/UPGRADING.md#from-source-docker-installs)). To wipe a native install, choose
 Erase or set `MDMESH_REPLACE_DATA=yes`. In Docker mode, setup.sh rejects options it doesn't know. The older names
 `BASE_URL`, `HTTP_PORT`, `REPLACE_DATA` and `ASSUME_YES` still work ([all the answers](#answering-the-questions-in-advance)).
 

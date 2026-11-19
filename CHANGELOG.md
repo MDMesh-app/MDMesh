@@ -9,9 +9,21 @@ Unreleased.
 
 ## Unreleased
 
+Upgrading
+- Quick start: `MDMESH_VERSION` now takes 0.5.0 or later; for 0.4.0 it stops and names that release's own
+  `quickstart.sh`, as it already did for earlier releases.
+
 Fixes
+- Commands: the server refuses a command, Install configuration apps and Retry apply for a device marked Wiped
+  (`error.agent.command.wiped`), and a bulk command skips it. Only the console's greyed-out buttons stopped them before.
+- Bulk commands refuse `app.uninstall` and `app.setHidden` as they refuse wipe and passcode reset: one device at a time,
+  from its page.
 - Agent: app installs and agent updates no longer fail with `apk fetch failed: timeout` on slow Wi-Fi. A download now
   waits up to a minute for data, not 10 seconds, and has no limit on its total time (#174).
+- Native: `sudo ./setup.sh --update --native` over an install asks nothing: it keeps the data, base URL and port, and
+  says `native update, <from> → <to>`. The update from 0.5.0 still asks once (add `-y` to skip).
+- `./setup.sh --update` no longer refuses a clone on a release branch (`release/vX.Y.Z`) as "ahead" of that release
+  once it is squash-merged: a clone on an older release moves on; only one newer than the release needs `--allow-downgrade`.
 - Agent: a settings file damaged by the device's storage (after a power loss) no longer makes every kiosk and
   configuration command fail with "Unable to parse preferences proto." or crash the kiosk screen. The agent keeps a
   copy of each file and restores it, or the configured kiosk, and the device page shows a `storageRecovered` event

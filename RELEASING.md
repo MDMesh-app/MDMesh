@@ -166,9 +166,8 @@ Who reads what:
 
 - A 0.5.0+ **supervisor** runs exactly those digests, and refuses a manifest without them or with them under another
   owner than its `IMAGE_OWNER`.
-- The **quick start** does the same and checks each downloaded file against `files`. The one release it takes
-  without them is v0.4.0, whose file hashes it carries itself: it runs that release's `:0.4.0` server and web tags
-  and the `:latest` supervisor.
+- The **quick start** does the same and checks each downloaded file against `files`. For a release before 0.5.0 it
+  stops and names that release's own `quickstart.sh`.
 - **`./setup.sh --update`** (and `--update --native`) reads the signature, `version` and `commit`, and moves the
   clone only to a tag whose signed manifest names that tag's commit, so it never moves to a release before 0.5.0. It
   builds from that checkout and reads neither `images` nor `files`.

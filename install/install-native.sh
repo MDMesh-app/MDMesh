@@ -58,6 +58,14 @@ for a in "$@"; do
     *) echo "Unknown option: $a (the native installer takes -y and -v; from setup.sh: --update, --native)." >&2; exit 2 ;;
   esac
 done
+# MDMESH_UPDATING=1 (and MDMESH_UPDATE_FROM, the release it leaves): `./setup.sh --update` hands over. Over an install
+# (its ROOT.xml) that is an update: nothing to confirm, and the base URL, the port and the data are kept, as with -y
+# (an answer given in advance still counts). On a host without one it is an install, with its questions.
+UPDATING=0
+if [ "${MDMESH_UPDATING:-0}" = 1 ] \
+   && { [ -e /opt/mdmesh-tc/conf/Catalina/localhost/ROOT.xml ] || [ -L /opt/mdmesh-tc/conf/Catalina/localhost/ROOT.xml ]; }; then
+  UPDATING=1; ASSUME_YES=1
+fi
 # Without -y the run starts with the confirmation, which MDMESH_NONINTERACTIVE=1 can't answer.
 [ "$ASSUME_YES" = 1 ] || mdm_ask assume-yes
 if [ "${MDMESH_DRY_RUN:-0}" = 1 ]; then
@@ -156,7 +164,14 @@ run() {
 }
 
 # ------------------------------------------------------------------------------------------------------
-printf '\n  %sMDMesh · native install%s\n' "$c_bold" "$c_reset"
+if [ "$UPDATING" = 1 ]; then
+  # Versions only (the setting comes from the environment): anything else shows as "?".
+  _from=${MDMESH_UPDATE_FROM:-}; [[ "$_from" =~ ^[0-9A-Za-z.+-]{1,40}$ ]] || _from='?'
+  _to=$(mdm_repo_version "$REPO"); [ -n "$_to" ] || _to='?'
+  printf '\n  %sMDMesh · native update, %s → %s%s\n' "$c_bold" "$_from" "$_to" "$c_reset"
+else
+  printf '\n  %sMDMesh · native install%s\n' "$c_bold" "$c_reset"
+fi
 cat <<WARN
 
   ${c_yel}⚠  This will modify THIS host:${c_reset}
@@ -485,7 +500,7 @@ if [ -z "$BASE_URL" ]; then
     [ "$ASSUME_YES" = 1 ] || { mdm_ask base-url; read -rp "  Public base URL [keep the current one]: " BASE_URL; }   # answer: base-url
     [ -n "$BASE_URL" ] || { _url_deferred=1; info "Keeping the base URL in ROOT.xml (read once this run has handed the tree back)"; }
   else
-    [ "$ASSUME_YES" = 1 ] && { echo "  BASE_URL must be set when running with -y (e.g. BASE_URL=https://mdm.example.com)."; exit 1; }
+    [ "$ASSUME_YES" = 1 ] && { echo "  BASE_URL must be set when running with -y or from --update, which ask nothing (e.g. BASE_URL=https://mdm.example.com)."; exit 1; }
     mdm_ask base-url
     read -rp "  Public base URL (e.g. https://mdm.example.com): " BASE_URL   # answer: base-url
   fi
@@ -1309,7 +1324,8 @@ done
 rm -rf "$RUNTIME_DIR"/.fetch.??????   # a failed download's leftovers
 
 trap - ERR
-printf '\n  %s%s✓ MDMesh installed (native)%s\n\n' "$c_grn" "$c_bold" "$c_reset"
+if [ "$UPDATING" = 1 ]; then printf '\n  %s%s✓ MDMesh updated (native)%s\n\n' "$c_grn" "$c_bold" "$c_reset"
+else printf '\n  %s%s✓ MDMesh installed (native)%s\n\n' "$c_grn" "$c_bold" "$c_reset"; fi
 printf '  %sConsole%s        %s\n' "$c_dim" "$c_reset" "${BASE_URL}"
 printf '  %sREST API%s       %s/rest\n' "$c_dim" "$c_reset" "${BASE_URL}"
 if [ "$SEED" = yes ]; then

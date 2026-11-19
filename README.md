@@ -42,7 +42,8 @@ APK.
   only sends it commands it reports it supports, and the agent protocol (`/agent/v1`) only ever adds fields. A test
   in CI checks this.
 - **One command installs the server.** It runs on Docker Compose with automatic HTTPS (Caddy) or a Cloudflare Tunnel,
-  or natively on Debian 12/13 and Ubuntu 24.04.
+  or natively on Debian 12/13 and Ubuntu 24.04, on x86_64 or Arm64. The published Docker images are x86_64 only for
+  now; Arm64 images are planned.
 
 ## ■ Features
 
@@ -85,8 +86,9 @@ APK.
 
 ## ■ Quick start
 
-On a Linux host with Docker, Docker Compose v2, `curl`, `openssl` 3.0+ (or an older `openssl` and `minisign`), and
-either a domain in Cloudflare (for a Cloudflare Tunnel) or a domain pointed at the host with ports 80 and 443 open:
+On an x86_64 Linux host with Docker, Docker Compose v2, `curl`, `openssl` 3.0+ (or an older `openssl` and
+`minisign`), and either a domain in Cloudflare (for a Cloudflare Tunnel) or a domain pointed at the host with ports 80
+and 443 open:
 
 ```bash
 bash <(curl -fsSL https://github.com/MDMesh-app/MDMesh/releases/latest/download/quickstart.sh)
@@ -104,9 +106,9 @@ git clone https://github.com/MDMesh-app/MDMesh.git && cd MDMesh
 ./setup.sh --update      # checks out the newest signed release, then sets it up
 ```
 
-Without Docker, run `sudo ./setup.sh --update --native` from the clone on Debian 12/13 or Ubuntu 24.04. It only needs `git`
-and brings the rest ([native install](DEPLOY.md#option-c--native-no-docker)). Each installer prints the console URL
-and a temporary admin password. Then enroll a device:
+Without Docker, run `sudo ./setup.sh --update --native` from the clone on Debian 12/13 or Ubuntu 24.04 (x86_64 or
+Arm64). It only needs `git` and brings the rest ([native install](DEPLOY.md#option-c--native-no-docker)). Each
+installer prints the console URL and a temporary admin password. Then enroll a device:
 
 1. Sign in and set your own password.
 2. Open **Enroll** and choose a configuration. The page shows its QR code.

@@ -12,6 +12,22 @@ const ARROW_MIN_PX = 20;
 const ARROW_SPACING_PX = 72;
 const POINT_GAP_PX = 14;
 
+/**
+ * The console's icons (icons.tsx) as markup, for the controls Leaflet draws itself: IconPlus, its minus, and
+ * IconClose, same viewBox, paths and stroke (LocationMap.test.tsx keeps them in step).
+ */
+const svg = (viewBox: string, size: number, stroke: number, d: string) =>
+  `<svg width="${size}" height="${size}" viewBox="${viewBox}" fill="none" stroke="currentColor" ` +
+  `stroke-width="${stroke}" aria-hidden="true" focusable="false"><path d="${d}"></path></svg>`;
+export const MAP_ICONS = {
+  zoomIn: svg('0 0 16 16', 15, 1.8, 'M8 2.5v11M2.5 8h11'),
+  zoomOut: svg('0 0 16 16', 15, 1.8, 'M2.5 8h11'),
+  close: svg('0 0 12 12', 12, 1.6, 'M3 3l6 6M9 3l-6 6'),
+};
+
+/** A fix's popup: the console's popover, no tip, a few px off its marker. */
+const POPUP: L.PopupOptions = { offset: [0, 12], closeButton: true };
+
 /** A text-only popup body (never parsed as HTML). */
 function popupText(text: string): HTMLElement {
   const el = document.createElement('span');
@@ -74,10 +90,28 @@ export function LocationMap({
     const el = elRef.current;
     if (!el) return;
     if (!mapRef.current) {
-      const map = L.map(el, { worldCopyJump: true });
+      const map = L.map(el, { worldCopyJump: true, zoomControl: false });
+      // Zoom in and out as the console's icon buttons, with its plus and minus icons (LocationMap.css).
+      L.control
+        .zoom({
+          zoomInText: MAP_ICONS.zoomIn,
+          zoomOutText: MAP_ICONS.zoomOut,
+          zoomInTitle: 'Zoom in',
+          zoomOutTitle: 'Zoom out',
+        })
+        .addTo(map);
+      // The credit OpenStreetMap's licence asks for, linked to its copyright page; no Leaflet prefix (or its flag).
+      map.attributionControl.setPrefix(false);
+      // A popup's close button: the console's close icon in place of Leaflet's "×".
+      map.on('popupopen', (e) => {
+        const close = e.popup.getElement()?.querySelector<HTMLElement>('.leaflet-popup-close-button');
+        if (close && !close.querySelector('svg')) close.innerHTML = MAP_ICONS.close;
+      });
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
-        attribution: '© OpenStreetMap contributors',
+        attribution:
+          '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">' +
+          'OpenStreetMap</a> contributors',
         // The edge sends Referrer-Policy: same-origin, so tiles would go without a Referer, which OpenStreetMap's
         // tile policy requires. Send the origin only (never the console path), as browsers do by default.
         referrerPolicy: 'strict-origin-when-cross-origin',
@@ -113,15 +147,16 @@ export function LocationMap({
     const line = { interactive: false, lineCap: 'round', lineJoin: 'round', opacity: 1 } as const;
     L.polyline(pts, { ...line, className: 'v2-locmap__halo', weight: 8 }).addTo(layer);
     L.polyline(pts, { ...line, className: 'v2-locmap__line', weight: 4 }).addTo(layer);
-    const end = { pane: 'v2-trail-ends', weight: 3, fillOpacity: 1 };
+    // Rings 2 px, the dots' 1.5 px: the console icons' strokes, a size up for the map.
+    const end = { pane: 'v2-trail-ends', weight: 2, fillOpacity: 1 };
     if (chrono.length > 1) {
       L.circleMarker(pts[0], { ...end, className: 'v2-locmap__oldest', radius: 6 })
         // A DOM node, not a string: Leaflet renders popup strings as HTML, and `provider` comes from the device.
-        .bindPopup(popupFor(chrono[0], 'Oldest'))
+        .bindPopup(popupFor(chrono[0], 'Oldest'), POPUP)
         .addTo(layer);
     }
     L.circleMarker(pts[pts.length - 1], { ...end, className: 'v2-locmap__latest', radius: 8 })
-      .bindPopup(popupFor(fixes[0], 'Latest'))
+      .bindPopup(popupFor(fixes[0], 'Latest'), POPUP)
       .addTo(layer);
 
     // The dots are rebuilt only when they come or go (a pan must not close a dot's open popup); the arrows after
@@ -136,7 +171,7 @@ export function LocationMap({
         zoomed.dots.clearLayers();
         for (let i = 1; dots && i < chrono.length - 1; i++) {
           L.circleMarker(pts[i], { className: 'v2-locmap__point', radius: 3.5, weight: 1.5, fillOpacity: 1 })
-            .bindPopup(popupFor(chrono[i]))
+            .bindPopup(popupFor(chrono[i]), POPUP)
             .addTo(zoomed.dots);
         }
       }
@@ -177,24 +212,29 @@ export function LocationMap({
       <div ref={elRef} className="v2-locmap" role="region" aria-label={label} />
       {/* What the marks mean (each fix's time is in its popup and in the list below). */}
       <ul className="v2-locmap-key" aria-label="Map key">
+        {/* Swatches on the console's 16 px icon grid, drawn as the marks on the map. */}
         {trail ? (
           <li>
-            <svg className="v2-locmap-key__path" viewBox="0 0 28 12" width="28" height="12" aria-hidden="true">
-              <path className="v2-locmap-key__halo" d="M3 6 H25" />
-              <path className="v2-locmap-key__line" d="M3 6 H25" />
-              <path className="v2-locmap-key__arrow" d="M9 1.5 L20 6 L9 10.5 L12 6 Z" />
+            <svg className="v2-locmap-key__swatch" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+              <path className="v2-locmap-key__halo" d="M2 8h12" />
+              <path className="v2-locmap-key__line" d="M2 8h12" />
+              <path className="v2-locmap-key__arrow" d="M5.5 4.5 L12 8 L5.5 11.5 L7.5 8 Z" />
             </svg>
             Path, oldest to latest
           </li>
         ) : null}
         {trail ? (
           <li>
-            <span className="v2-locmap-key__oldest" aria-hidden="true" />
+            <svg className="v2-locmap-key__swatch" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+              <circle className="v2-locmap-key__oldest" cx="8" cy="8" r="4.5" />
+            </svg>
             Oldest
           </li>
         ) : null}
         <li>
-          <span className="v2-locmap-key__latest" aria-hidden="true" />
+          <svg className="v2-locmap-key__swatch" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+            <circle className="v2-locmap-key__latest" cx="8" cy="8" r="5.5" />
+          </svg>
           Latest
         </li>
       </ul>

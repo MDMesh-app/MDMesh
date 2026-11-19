@@ -3,7 +3,9 @@
 import { render } from '@testing-library/react';
 import L from 'leaflet';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { LocationMap } from './LocationMap';
+import type { ReactElement } from 'react';
+import { IconClose, IconPlus } from './icons';
+import { LocationMap, MAP_ICONS } from './LocationMap';
 
 const fix = (id: number, lat: number, lon: number) => ({ id, lat, lon, capturedAt: 1_700_000_000_000 + id * 60_000 });
 const FIXES = [fix(3, 37.78, -122.42), fix(2, 37.77, -122.41), fix(1, 37.76, -122.4)];
@@ -32,6 +34,40 @@ describe('LocationMap', () => {
     // Another range: fitted to it.
     rerender(<LocationMap fixes={FIXES.slice(0, 2)} fitKey={24} label="Map" />);
     expect(fitBounds).toHaveBeenCalledTimes(2);
+  });
+
+  it('draws its controls with the console’s icons, and credits OpenStreetMap without Leaflet’s prefix', () => {
+    const { container } = render(<LocationMap fixes={FIXES} label="Map" />);
+    const zoomIn = container.querySelector('a.leaflet-control-zoom-in')!;
+    const zoomOut = container.querySelector('a.leaflet-control-zoom-out')!;
+    expect(zoomIn.getAttribute('aria-label')).toBe('Zoom in');
+    expect(zoomOut.getAttribute('aria-label')).toBe('Zoom out');
+    expect(zoomIn.querySelector('svg path')?.getAttribute('d')).toBe('M8 2.5v11M2.5 8h11');
+    expect(zoomOut.querySelector('svg path')?.getAttribute('d')).toBe('M2.5 8h11');
+    const credit = container.querySelector('.leaflet-control-attribution')!;
+    expect(credit.textContent).toBe('© OpenStreetMap contributors');
+    expect(credit.querySelector('a')?.getAttribute('href')).toBe('https://www.openstreetmap.org/copyright');
+    expect(credit.querySelector('.leaflet-attribution-flag')).toBeNull();
+  });
+
+  it('keeps its icon markup in step with the console’s icon set', () => {
+    const shape = (el: Element | null) => ({
+      viewBox: el?.getAttribute('viewBox'),
+      width: el?.getAttribute('width'),
+      stroke: el?.getAttribute('stroke-width'),
+      d: el?.querySelector('path')?.getAttribute('d'),
+    });
+    const markup = (html: string) => {
+      const box = document.createElement('div');
+      box.innerHTML = html;
+      return box.firstElementChild;
+    };
+    const rendered = (icon: ReactElement) => render(icon).container.firstElementChild;
+    expect(shape(markup(MAP_ICONS.zoomIn))).toEqual(shape(rendered(<IconPlus />)));
+    expect(shape(markup(MAP_ICONS.close))).toEqual(shape(rendered(<IconClose />)));
+    // The minus is the plus without its upright, on the same grid and stroke.
+    const plus = shape(rendered(<IconPlus />));
+    expect({ ...shape(markup(MAP_ICONS.zoomOut)), d: plus.d }).toEqual(plus);
   });
 
   it('puts className on the outer box, around the map and its key', () => {

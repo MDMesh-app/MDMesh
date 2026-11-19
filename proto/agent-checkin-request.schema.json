@@ -16,7 +16,7 @@
     },
     "state": { "type": "object", "additionalProperties": true, "description": "Compact device-state snapshot (AgentDeviceStateDto): battery, charging, locked, kioskActive, androidRelease, lastBootAt, and optional fields such as agentVersion and powerMode." },
     "telemetry": { "type": "object", "additionalProperties": true, "description": "Full device census (TelemetrySnapshot); supersedes state." },
-    "events": { "type": "array", "items": { "type": "object", "additionalProperties": true }, "description": "Buffered lifecycle events (TelemetryEventDto) flushed on this check-in, oldest first. At most 100: servers store the first 500 (before 0.5.2: 100) and drop the rest without saying so." },
+    "events": { "type": "array", "items": { "type": "object", "additionalProperties": true }, "description": "Buffered lifecycle events (TelemetryEventDto) flushed on this check-in, oldest first. The response's eventsAccepted (protocol 1.12) says how many the server consumed; a server without it stores the first 100 and drops the rest, so send at most 100 until a response carries it. A type outside ^[A-Za-z0-9._-]{1,64}$ is skipped." },
     "hardwareId": { "type": "string", "description": "The same stable, permission-free device id as on enroll, so an enrolled device can backfill it." }
   }
 }

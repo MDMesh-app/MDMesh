@@ -59,6 +59,78 @@ class EventLogTest {
         assertEquals("e${EventLog.CAP + 10}", sent.last().type)
     }
 
+    @Test fun `the marker's text keeps its count readable`() {
+        val marker = EventLog.droppedMarker(3, 42)
+        assertEquals(
+            "3 older events dropped: the device keeps at most 500 while it couldn't deliver them",
+            marker.detail,
+        )
+        assertEquals(listOf(marker), EventLog.decode(EventLog.encode(listOf(marker))))
+        assertEquals(3, EventLog.droppedCount(EventLog.decode(EventLog.encode(listOf(marker))).single()))
+        assertEquals("1 older event dropped", EventLog.droppedMarker(1, 0).detail?.substringBefore(':'))
+    }
+
+    @Test fun `a marker whose detail gives no count counts as one`() {
+        for (detail in listOf(null, "", "many dropped", "-4 dropped", "0 dropped", "99999999999 dropped")) {
+            val marker = TelemetryEventDto(EventType.EVENTS_DROPPED, 1, detail)
+            assertEquals(detail.toString(), 1, EventLog.droppedCount(marker))
+        }
+    }
+
+    @Test fun `a record() while a batch is in flight overflows on its own, and a restore merges both markers`() {
+        val store = FakeStore().apply { values["events"] = EventLog.encode(events(1..600)) }
+        val log = EventLog(store)
+        val batch = log.drain(EventLog.CAP) // the oldest 101 already dropped behind a marker
+        assertEquals(EventLog.CAP, batch.size)
+        assertEquals(101, EventLog.droppedCount(batch.first()))
+
+        for (i in 1..600) log.record("w$i") // the check-in is slow: the waiting events overflow too
+        val waiting = log.buffered().drop(batch.size)
+        val second = waiting.first()
+        assertEquals(EventType.EVENTS_DROPPED, second.type)
+        assertEquals(101, EventLog.droppedCount(second))
+
+        log.restore(batch) // the check-in failed
+        val kept = log.buffered()
+        assertEquals(EventLog.CAP, kept.size)
+        assertEquals(1, kept.count { it.type == EventType.EVENTS_DROPPED })
+        // Both markers' counts plus the 499 events of the batch that no longer fit; dated like the newest dropped.
+        assertEquals(101 + 499 + 101, EventLog.droppedCount(kept.first()))
+        assertEquals(second.ts, kept.first().ts)
+        assertEquals("w102", kept[1].type)
+        assertEquals("w600", kept.last().type)
+    }
+
+    @Test fun `an unreadable buffer becomes a marker instead of vanishing`() {
+        val store = FakeStore().apply { values["events"] = "{not json" }
+        val log = EventLog(store)
+        log.record("boot")
+        val sent = log.drain()
+        assertEquals(listOf(EventType.EVENTS_DROPPED, "boot"), sent.map { it.type })
+        assertEquals(EventLog.UNREADABLE_DETAIL, sent.first().detail)
+        assertEquals(1, EventLog.droppedCount(sent.first()))
+    }
+
+    @Test fun `delivered drops what the server consumed and keeps the rest in front`() {
+        val store = FakeStore().apply { values["events"] = EventLog.encode(events(1..300)) }
+        val log = EventLog(store)
+        assertEquals(300, log.drain(EventLog.CAP).size)
+        log.record("new")
+        log.delivered(accepted = 120)
+        val rest = log.buffered()
+        assertEquals((121L..300L).toList(), rest.dropLast(1).map { it.ts })
+        assertEquals("new", rest.last().type)
+    }
+
+    @Test fun `an older server's answer counts as the first 100 taken`() {
+        // A server rolled back below protocol 1.12 keeps the first 100 and drops the rest without saying so.
+        val store = FakeStore().apply { values["events"] = EventLog.encode(events(1..300)) }
+        val log = EventLog(store)
+        log.drain(EventLog.CAP)
+        log.delivered(accepted = null)
+        assertEquals((101L..300L).toList(), log.buffered().map { it.ts })
+    }
+
     @Test fun `a backlog goes out in batches the server takes, oldest first, one check-in after another`() {
         // Servers take at most 100 events per check-in and ignore the rest; a bigger batch marked delivered was lost.
         val store = FakeStore().apply { values["events"] = EventLog.encode(events(1..250)) }

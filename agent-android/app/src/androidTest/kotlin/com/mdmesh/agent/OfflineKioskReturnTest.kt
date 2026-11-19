@@ -129,10 +129,13 @@ class OfflineKioskReturnTest {
         click("Return to kiosk")
         awaitCondition { locked() && store.load() == payload && node("Exit kiosk") != null }
         assertEquals(payload, config.configuredKiosk())
-        // Read the persistent event buffer without taking a batch away from the check-in.
-        assertEquals(1, EventLog(context).buffered().count {
-            it.type == "kioskReturn" && it.detail == "returned on-device" && it.ts >= returnStartedAt
-        })
+        // Read the persistent event buffer without taking a batch away from the check-in. Recorded after the screen
+        // changed, so wait for it too.
+        awaitCondition {
+            EventLog(context).buffered().count {
+                it.type == "kioskReturn" && it.detail == "returned on-device" && it.ts >= returnStartedAt
+            } == 1
+        }
     }
 
     @Test

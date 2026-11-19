@@ -95,6 +95,11 @@ data class AgentCheckInResponse(
      * next check-in. Null (older servers): all of them.
      */
     val resultsAccepted: Int? = null,
+    /**
+     * How many of the request's `events`, counted from the first, the server consumed (stored, or skipped as invalid);
+     * the agent sends the rest on the next check-in. Null (servers before protocol 1.12): the first 100.
+     */
+    val eventsAccepted: Int? = null,
 ) {
     companion object {
         const val INSTALL_INTEGRITY_REQUIRED: String = "required"

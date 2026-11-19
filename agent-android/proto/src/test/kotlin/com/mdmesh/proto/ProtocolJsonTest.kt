@@ -12,6 +12,13 @@ class ProtocolJsonTest {
     private val json = ProtocolJson.json
 
     @Test
+    fun `eventsAccepted is null from servers before protocol 1_12`() {
+        fun decode(raw: String) = ProtocolJson.json.decodeFromString(AgentCheckInResponse.serializer(), raw)
+        assertNull(decode("""{"protocolVersion":"1.11","commands":[],"resultsAccepted":0}""").eventsAccepted)
+        assertEquals(7, decode("""{"protocolVersion":"1.12","commands":[],"eventsAccepted":7}""").eventsAccepted)
+    }
+
+    @Test
     fun `ignores unknown keys for forward compatibility`() {
         val payload = """
             {

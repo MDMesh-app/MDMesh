@@ -88,7 +88,7 @@ class CheckInCoordinatorTest {
     ): CheckInCoordinator {
         val eventSink = events ?: object : com.mdmesh.core.telemetry.EventSink {
             override fun record(type: String, detail: String?) {}
-            override fun drain() = emptyList<com.mdmesh.proto.TelemetryEventDto>()
+            override fun drain(max: Int) = emptyList<com.mdmesh.proto.TelemetryEventDto>()
             override fun restore(events: List<com.mdmesh.proto.TelemetryEventDto>) {}
         }
         // One SyncStatus for both, as in production (a singleton): enrollment reads the check-ins the cycle records.
@@ -197,6 +197,45 @@ class CheckInCoordinatorTest {
 
         assertEquals(listOf(100, 100, 50), api.checkInRequests.map { it.events.size })
         assertEquals((0 until 250).map { "e$it" }, api.checkInRequests.flatMap { it.events }.map { it.type })
+    }
+
+    @Test
+    fun `a server that reports eventsAccepted gets the backlog in larger batches, and what it skipped is resent`() =
+        runTest {
+            val log = com.mdmesh.core.telemetry.EventLog(FakeEventStore())
+            repeat(450) { log.record("e$it") }
+            val api = FakeMdmApi()
+            val coordinator = coordinator(api, PendingResults(), events = log)
+
+            // The first check-in can't know the server yet: 100, as for an older one. It took 30 of them.
+            api.checkInResponse = ResponseEnvelope(status = "OK", data = AgentCheckInResponse(eventsAccepted = 30))
+            coordinator.runOnce()
+            api.checkInResponse = ResponseEnvelope(status = "OK", data = AgentCheckInResponse(eventsAccepted = 420))
+            coordinator.runOnce()
+            // Rolled back to an older server: back to 100, of which it keeps them all.
+            api.checkInResponse = ResponseEnvelope(status = "OK", data = AgentCheckInResponse())
+            coordinator.runOnce()
+
+            assertEquals(listOf(100, 420, 0), api.checkInRequests.map { it.events.size })
+            assertEquals("e30", api.checkInRequests[1].events.first().type)
+            assertEquals("e449", api.checkInRequests[1].events.last().type)
+        }
+
+    @Test
+    fun `after an older server's answer, a check-in sends 100 events again`() = runTest {
+        val log = com.mdmesh.core.telemetry.EventLog(FakeEventStore())
+        repeat(450) { log.record("e$it") }
+        val api = FakeMdmApi()
+        val coordinator = coordinator(api, PendingResults(), events = log)
+
+        api.checkInResponse = ResponseEnvelope(status = "OK", data = AgentCheckInResponse(eventsAccepted = 100))
+        coordinator.runOnce()
+        api.checkInResponse = ResponseEnvelope(status = "OK", data = AgentCheckInResponse())
+        coordinator.runOnce() // up to 500 sent, an older server took the first 100
+        coordinator.runOnce()
+
+        assertEquals(listOf(100, 350, 100), api.checkInRequests.map { it.events.size })
+        assertEquals("e200", api.checkInRequests[2].events.first().type)
     }
 
     @Test

@@ -357,6 +357,7 @@ function EventIcon({ type }: { type: string }) {
     case 'kioskPinLockout':
       return <IconLock size={15} />;
     case 'kioskCrashLoop':
+    case 'eventsDropped':
       return <IconAlert size={15} />;
     default:
       return <IconInfo size={15} />;

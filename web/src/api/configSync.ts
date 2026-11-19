@@ -65,11 +65,28 @@ const STALE_CAUSES: Readonly<Record<string, string>> = {
   configReapplyFailed: 'The device couldn’t fully apply its configuration again after a restart.',
 };
 
-/** Why the configuration is out of date on the device, from the latest event that explains it; null when none does. */
-export function staleCause(events: ReadonlyArray<DeviceEvent> | undefined): string | null {
+/**
+ * How long before the device first reported the configuration out of date an event may be and still explain it. The
+ * agent records the event just before a check-in (the heartbeat's is at most about 10 minutes away), and the event
+ * carries the device's clock while the report time is the server's. An older one (a device offline for hours after it)
+ * names no cause rather than a wrong one.
+ */
+export const STALE_CAUSE_WINDOW_MS = 15 * 60_000;
+
+/**
+ * Why the configuration is out of date on the device: the latest event that explains it, from around [appliedAt] (when
+ * the device first reported it, ConfigStatus.appliedAt) on. Null when none does: the Wi-Fi radio self-heal records no
+ * event, and an older event would mislabel today's state.
+ */
+export function staleCause(
+  events: ReadonlyArray<DeviceEvent> | undefined,
+  appliedAt: number | null | undefined,
+): string | null {
+  if (appliedAt == null) return null;
+  const since = appliedAt - STALE_CAUSE_WINDOW_MS;
   let latest: DeviceEvent | null = null;
   for (const e of events ?? []) {
-    if (e.type in STALE_CAUSES && (!latest || e.ts > latest.ts)) latest = e;
+    if (e.type in STALE_CAUSES && e.ts >= since && (!latest || e.ts > latest.ts)) latest = e;
   }
   return latest ? STALE_CAUSES[latest.type] : null;
 }

@@ -261,10 +261,15 @@ export function ConfigPanel({
     text = <>The device hasn’t reported which revision of {strongName} it runs.</>;
   } else if (verdict.label === DEVICE_RESET_LABEL) {
     title = 'Configuration out of date on the device';
-    const cause = staleCause(events);
-    text = (
+    const cause = staleCause(events, status.appliedAt);
+    text = cause ? (
       <>
-        {cause ? <>{cause} </> : null}The device asked for {strongName} again; the server re-sends it.
+        {cause} The device asked for {strongName} again; the server re-sends it.
+      </>
+    ) : (
+      <>
+        The device asked for {strongName} again; the server re-sends it. If the device turned Wi-Fi back on to stay
+        reachable after Wi-Fi radio turned it off, Wi-Fi stays on until {strongName} changes.
       </>
     );
   } else if (verdict.label === SOME_DEFERRED_LABEL) {

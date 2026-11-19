@@ -174,6 +174,26 @@ class ConfigApplierTest {
         assertEquals(Triple("org.example", "android.permission.CAMERA", "deny"), permissions.calls.last())
     }
 
+    /**
+     * A wipe, storage recovery or the Wi-Fi self-heal marks the revision stale while a newer document waits unsaved:
+     * the install must still apply that document whole, not only the app's rules.
+     */
+    @Test fun `an unsaved document is applied whole after its app's install, even with the revision marked stale`() =
+        runTest {
+            val permissions = FakeAppPermissions()
+            val store = InMemoryConfigStateStore()
+            val a = applier(fixedToggles(), kiosk(FakeController()), {}, store, permissions)
+            a.apply(ConfigApplyPayload(revision = "A"))
+            assertFalse(ConfigApplier.succeeded(a.apply(denyCamera)))
+            store.markStale()
+
+            permissions.installed += "org.example"
+            assertTrue(ConfigApplier.succeeded(a.applyAfterInstall("org.example")!!))
+
+            assertEquals("p1", store.revision())
+            assertEquals("p1", store.load()?.revision)
+        }
+
     @Test fun `an update of an app with rules gets them again and a failure has the server re-send`() = runTest {
         val permissions = FakeAppPermissions().apply { installed += "org.example" }
         val store = InMemoryConfigStateStore()
@@ -364,8 +384,7 @@ class ConfigApplierTest {
         applier(fixedToggles("r" to r), kiosk(FakeController()), failLocation, store).reapplyPersisted()
 
         assertEquals("the saved Block is not put back", listOf("release"), r.calls)
-        // B failed again, but it was never saved: the saved revision stays (applyAfterInstall reads it) and the
-        // check-in reports stale because B isn't the saved one.
+        // B failed again, but it was never saved: the saved revision stays and the check-in reports stale.
         assertEquals("A", store.revision())
         assertEquals(ConfigStateStore.STALE_REVISION, store.reportedRevision())
     }
@@ -443,7 +462,7 @@ class ConfigApplierTest {
     /**
      * PR #227 review: the device saved A, B arrived with a failed section, then the admin reverted to exactly A. Were
      * A reported, the server would see it in sync and never re-send A, while every boot replays B. Stale until the
-     * newest delivered document is the saved one; the saved revision itself stays (applyAfterInstall reads it).
+     * newest delivered document is the saved one; the saved revision itself stays.
      */
     @Test fun `the revision is reported stale while the newest delivered document isn't saved`() = runTest {
         val store = InMemoryConfigStateStore()

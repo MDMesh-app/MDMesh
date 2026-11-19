@@ -92,8 +92,8 @@ class ConfigApplier(
      * not installed; without this they would wait for the server's re-send, an hour later, while the app ran under
      * the device-wide auto-grant. An update may also request a configured permission the old version didn't.
      *
-     * A delivered document that is not applied yet is applied whole, exactly as the server's re-send would, so it is
-     * saved (and reported in sync) when nothing else fails. An applied one gets only this app's rules again; if one
+     * A delivered document that is not saved yet is applied whole, exactly as the server's re-send would, so it is
+     * saved (and reported in sync) when nothing else fails. The saved one gets only this app's rules again; if one
      * fails, the revision is marked stale so the server re-sends the document. Null when no rule names the app.
      */
     suspend fun applyAfterInstall(packageName: String): ConfigApplyResult? = mutex.withLock {
@@ -102,10 +102,9 @@ class ConfigApplier(
             entry.permissions.map { (permission, state) -> AppPermissionRule(packageName, permission, state) }
         }
         if (rules.isEmpty()) return@withLock null
-        val applied = store.revision()
-        if (applied != doc.revision && applied != ConfigStateStore.STALE_REVISION) {
-            return@withLock applyDeliveredLocked(doc)
-        }
+        // Against the saved document, not revision(): a stale mark (a wipe, storage recovery, the Wi-Fi self-heal) must
+        // not cut an unsaved newer document down to this app's rules.
+        if (doc.revision != store.load()?.revision) return@withLock applyDeliveredLocked(doc)
         val outcomes = rules.associate { it.key to setRule(it) }
         if (outcomes.values.any(ConfigOutcome::isFailed)) store.markStale()
         ConfigApplyResult(doc.revision, outcomes)
@@ -327,15 +326,14 @@ class ConfigApplier(
      *
      * A saved document whose re-apply fails in part is marked stale, as [applyAfterInstall] does: the device no
      * longer matches its revision, so the server sees the drift and re-sends it rather than taking the device as
-     * converged. An unsaved delivered one is not: its revision already differs from the saved one, so the check-in
-     * reports it stale anyway (`reportedRevision`), and [applyAfterInstall] must still apply it whole once its app is
-     * installed, which a stale revision would turn into this app's rules alone.
+     * converged. An unsaved delivered one needs no mark: its revision differs from the saved one, so the check-in
+     * reports it stale anyway (`reportedRevision`).
      */
     suspend fun reapplyPersisted(): ConfigApplyResult? = mutex.withLock {
         val saved = store.load()
         val doc = store.delivered ?: saved ?: return@withLock null
         applyLocked(doc, toggles(), listOfNotNull(saved, doc).distinct(), persist = false)
-            .also { if (!succeeded(it) && doc.revision == store.revision()) store.markStale() }
+            .also { if (!succeeded(it) && doc.revision == saved?.revision) store.markStale() }
     }
 
     /**

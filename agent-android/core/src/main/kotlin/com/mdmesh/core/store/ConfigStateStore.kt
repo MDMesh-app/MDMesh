@@ -68,7 +68,7 @@ interface ConfigStateStore {
  * device no longer follows. After a revert to exactly the saved document the server would see it in sync and never
  * re-send it, while every boot replayed the newer one. Stale, the server re-sends its current document: at once when
  * that differs from the last config.apply it sent (a revert), after its usual backoff otherwise.
- * [ConfigStateStore.revision] itself stays the saved one: `applyAfterInstall` compares it with the delivered document.
+ * [ConfigStateStore.revision] itself is left as it is.
  */
 fun ConfigStateStore.reportedRevision(): String? {
     val newest = delivered?.revision

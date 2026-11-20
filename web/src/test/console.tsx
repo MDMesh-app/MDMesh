@@ -71,12 +71,47 @@ export function stubApi(data: (path: string, init?: RequestInit) => unknown = ()
   inFlight = counter;
   vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => {
     counter.count++;
+    let counted = false;
+    const done = () => {
+      if (!counted) counter.count--;
+      counted = true;
+    };
     const answer = fetch(input, init);
-    const done = () => void counter.count--;
-    void answer.then(done, done);
+    void answer.then((res) => answered(res, done), done);
     return answer;
   });
   return fetch;
+}
+
+const BODY_READS = ['text', 'json', 'blob', 'arrayBuffer', 'formData'] as const;
+
+/**
+ * Calls `done` once the app has what `res` carries: when its read of the body settles (the data is in hand, about to
+ * be set as state), or a macrotask after the answer if nothing starts reading it (a 401 or an error status the
+ * client turns into an ApiError without reading). Counting at the bare answer would let settled() pass in the gap
+ * before the body is read and the next request goes out.
+ */
+function answered(res: unknown, done: () => void) {
+  if (!(res instanceof Response)) {
+    done();
+    return;
+  }
+  let reading = false;
+  for (const m of BODY_READS) {
+    const read = res[m].bind(res) as () => Promise<unknown>;
+    Object.defineProperty(res, m, {
+      configurable: true,
+      value: () => {
+        reading = true;
+        const p = read();
+        void p.then(done, done);
+        return p;
+      },
+    });
+  }
+  setTimeout(() => {
+    if (!reading) done();
+  }, 0);
 }
 
 /**
@@ -84,10 +119,18 @@ export function stubApi(data: (path: string, init?: RequestInit) => unknown = ()
  * with this, or with an assertion on the loaded page, so no load is still running when the next test starts.
  */
 export async function settled(timeout = 10_000) {
+  const SKELETONS = '.v2-skel, .v2-skelrows';
+  // Twice, a macrotask apart: an answer's state commits and the effects it triggers (the next request: a row's own
+  // detail, a reload) run in between, so a quiet moment between two chained requests doesn't pass for the end.
+  const quiet = () => {
+    expect(inFlight.count, 'API calls not yet answered').toBe(0);
+    expect(document.querySelector(SKELETONS), 'a placeholder still shows').toBeNull();
+  };
   await waitFor(
-    () => {
-      expect(inFlight.count).toBe(0);
-      expect(document.querySelector('.v2-skel, .v2-skelrows')).toBeNull();
+    async () => {
+      quiet();
+      await new Promise((r) => setTimeout(r, 0));
+      quiet();
     },
     { timeout },
   );

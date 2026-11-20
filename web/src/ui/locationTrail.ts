@@ -6,7 +6,7 @@ export interface Pt {
   y: number;
 }
 
-/** The direction from `a` to `b` on screen, in degrees: 0 is right, clockwise (the sense of CSS rotate()). */
+/** The direction from `a` to `b` on screen, in degrees: 0 is right, clockwise (as the arrows' SVG rotate() turns). */
 export function screenAngle(a: Pt, b: Pt): number {
   return (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
 }

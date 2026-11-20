@@ -45,11 +45,24 @@ function popupFor(f: LocationFix, role?: string): HTMLElement {
   );
 }
 
+/** A map and what is drawn on it (LocationMap's mapRef). */
+interface MapState {
+  map: L.Map;
+  /** The path and its two ends. */
+  layer: L.LayerGroup;
+  /** What depends on the view (the arrows and the fixes' dots), redrawn after every zoom and pan. */
+  zoomed: { dots: L.LayerGroup; arrows: L.LayerGroup; draw: () => void };
+  /** The fixes drawn last (count and newest), and the fitKey the view was last fitted for (null: never fitted). */
+  drawn: string | null;
+  fitted: { key: string | number | undefined } | null;
+}
+
 /** A direction arrow: a notched arrowhead pointing right, turned to its segment (colours in the CSS). */
 function arrowIcon(angle: number): L.DivIcon {
   return L.divIcon({
     className: 'v2-locmap__arrow',
-    html: `<svg viewBox="0 0 16 16" width="16" height="16" style="transform: rotate(${angle.toFixed(1)}deg)" aria-hidden="true"><path d="M3 3 L14 8 L3 13 L6 8 Z"/></svg>`,
+    // Turned by an SVG transform attribute, not an inline style, which a CSP style-src would block.
+    html: `<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path transform="rotate(${angle.toFixed(1)} 8 8)" d="M3 3 L14 8 L3 13 L6 8 Z"/></svg>`,
     iconSize: [16, 16],
   });
 }
@@ -78,13 +91,11 @@ export function LocationMap({
   fitKey?: string | number;
 }) {
   const elRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<L.Map | null>(null);
-  const layerRef = useRef<L.LayerGroup | null>(null);
-  /** What depends on the view (the arrows and the fixes' dots), redrawn after every zoom and pan. */
-  const zoomedRef = useRef<{ dots: L.LayerGroup; arrows: L.LayerGroup; draw: () => void } | null>(null);
-  /** The fixes drawn last (count and newest), and the fitKey the view was last fitted for (null: never fitted). */
-  const drawnRef = useRef<string | null>(null);
-  const fittedRef = useRef<{ key: string | number | undefined } | null>(null);
+  /**
+   * The map and everything drawn on it, made and dropped together: a map made again (StrictMode runs effects twice,
+   * a remount keeps refs) starts with nothing drawn and nothing fitted.
+   */
+  const mapRef = useRef<MapState | null>(null);
 
   useEffect(() => {
     const el = elRef.current;
@@ -119,19 +130,16 @@ export function LocationMap({
       // Over the path (overlayPane, 400), under the popups: the arrows, then the oldest and latest markers.
       map.createPane('v2-trail-arrows').style.zIndex = '450';
       map.createPane('v2-trail-ends').style.zIndex = '460';
-      layerRef.current = L.layerGroup().addTo(map);
       const zoomed = { dots: L.layerGroup().addTo(map), arrows: L.layerGroup().addTo(map), draw: () => {} };
-      zoomedRef.current = zoomed;
       map.on('moveend', () => zoomed.draw());
-      mapRef.current = map;
+      mapRef.current = { map, layer: L.layerGroup().addTo(map), zoomed, drawn: null, fitted: null };
     }
-    const map = mapRef.current;
+    const state = mapRef.current;
+    const { map, layer, zoomed } = state;
     const drawn = `${fixes.length}:${fixes[0]?.id ?? ''}:${fixes[0]?.capturedAt ?? ''}`;
-    const fit = !fittedRef.current || fittedRef.current.key !== fitKey;
-    if (drawn === drawnRef.current && !fit) return;
-    drawnRef.current = drawn;
-    const layer = layerRef.current!;
-    const zoomed = zoomedRef.current!;
+    const fit = !state.fitted || state.fitted.key !== fitKey;
+    if (drawn === state.drawn && !fit) return;
+    state.drawn = drawn;
     layer.clearLayers();
     zoomed.dots.clearLayers();
     zoomed.arrows.clearLayers();
@@ -139,7 +147,7 @@ export function LocationMap({
 
     if (!fixes.length) {
       map.setView([20, 0], 2);
-      fittedRef.current = null;
+      state.fitted = null;
       return;
     }
     const chrono = [...fixes].reverse();
@@ -187,7 +195,7 @@ export function LocationMap({
       }
     };
     if (fit) {
-      fittedRef.current = { key: fitKey };
+      state.fitted = { key: fitKey };
       // Not animated: the view is final at once, and its moveend draws the arrows and dots for it.
       map.fitBounds(L.latLngBounds(pts), { padding: [32, 32], maxZoom: 17, animate: false });
     } else {
@@ -200,7 +208,7 @@ export function LocationMap({
 
   useEffect(
     () => () => {
-      mapRef.current?.remove();
+      mapRef.current?.map.remove();
       mapRef.current = null;
     },
     [],

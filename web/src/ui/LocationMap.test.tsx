@@ -3,7 +3,7 @@
 import { render } from '@testing-library/react';
 import L from 'leaflet';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { ReactElement } from 'react';
+import { StrictMode, type ReactElement } from 'react';
 import { IconClose, IconPlus } from './icons';
 import { LocationMap, MAP_ICONS } from './LocationMap';
 
@@ -34,6 +34,20 @@ describe('LocationMap', () => {
     // Another range: fitted to it.
     rerender(<LocationMap fixes={FIXES.slice(0, 2)} fitKey={24} label="Map" />);
     expect(fitBounds).toHaveBeenCalledTimes(2);
+  });
+
+  it('draws its view and path under StrictMode (effects run, clean up and run again on one set of refs)', () => {
+    const fitBounds = vi.spyOn(L.Map.prototype, 'fitBounds');
+    const { container } = render(
+      <StrictMode>
+        <LocationMap fixes={FIXES} fitKey={0} label="Map" />
+      </StrictMode>,
+    );
+    // The map left standing is the second one: it has its own view and path.
+    expect(fitBounds.mock.contexts.at(-1)).not.toBe(fitBounds.mock.contexts[0]);
+    expect(container.querySelectorAll('.leaflet-container')).toHaveLength(1);
+    expect(container.querySelector('.v2-locmap__line')).not.toBeNull();
+    expect(container.querySelector('.v2-locmap__latest')).not.toBeNull();
   });
 
   it('draws its controls with the console’s icons, and credits OpenStreetMap without Leaflet’s prefix', () => {

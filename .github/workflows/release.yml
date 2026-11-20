@@ -163,6 +163,9 @@ jobs:
           O=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')   # GHCR repo names must be lowercase
           IMG="ghcr.io/${O}/mdmesh-server"
           docker build -f docker/server.Dockerfile -t "$IMG:$VERSION" .
+          # Before the push: the server's JVM, started from this image, runs a JDK without the CVE-2026-114938
+          # (OpenJDK) Base64 bug, or has -XX:-UseBASE64Intrinsics in effect (docker/tomcat-setenv.sh).
+          scripts/server-jvm-check.sh --image "$IMG:$VERSION"
           docker push "$IMG:$VERSION"
           echo "SERVER_IMG=$IMG:$VERSION" >> "$GITHUB_ENV"
           D=$(release/image-digest.sh "$IMG:$VERSION")   # its own line, so a failed lookup fails the step

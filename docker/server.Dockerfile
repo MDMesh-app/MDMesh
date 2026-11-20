@@ -15,7 +15,10 @@ COPY install ./install
 RUN cp server/build.properties.example server/build.properties || true
 RUN mvn -q -B -DskipTests package
 
-FROM tomcat:9.0-jdk17-temurin
+# Pinned by digest (Dependabot bumps it), so a release ships the base it was tested on. This one has JDK 17.0.21, which
+# is affected by CVE-2026-114938 (OpenJDK) on x86_64: tomcat-setenv.sh turns the affected code off, and release.yml
+# checks the built image (scripts/server-jvm-check.sh).
+FROM tomcat:9.0.124-jdk17-temurin@sha256:716ec89cfd66eb8938d0d14b7f276c6c9263660ca998a39798e8cc58a2defc3a
 RUN rm -rf /usr/local/tomcat/webapps/*
 COPY --from=build /src/server/target/launcher.war /usr/local/tomcat/webapps/ROOT.war
 # App base directory (data, plugins, email templates). /opt/mdmesh should be a volume
@@ -24,6 +27,7 @@ RUN mkdir -p /opt/mdmesh/files /opt/mdmesh/plugins \
  && groupadd -r mdmesh && useradd -r -g mdmesh -d /opt/mdmesh -s /usr/sbin/nologin mdmesh
 COPY install/emails /opt/mdmesh/emails
 COPY docker/entrypoint.sh /entrypoint.sh
+COPY docker/tomcat-setenv.sh /usr/local/tomcat/bin/setenv.sh
 RUN chmod +x /entrypoint.sh
 # NOTE: full uploaded-APK metadata parsing uses `aapt`; install android build-tools aapt into the
 # image for the richest parse (the Java apk-parser fallback covers basic package/version otherwise).

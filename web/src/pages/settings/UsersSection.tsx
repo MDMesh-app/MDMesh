@@ -167,6 +167,14 @@ export function UsersSection({
     try {
       if (deleting.kind === 'user') await deleteUser(deleting.id);
       else await deleteRole(deleting.id);
+      // Gone from the list now, not when the reload lands: a failed reload can't leave it listed, nor a second
+      // Delete reach it.
+      const { kind, id } = deleting;
+      setData((d) => {
+        if (!d) return d;
+        if (kind === 'user') return { ...d, users: d.users.filter((u) => u.id !== id) };
+        return { ...d, roles: d.roles.filter((r) => r.id !== id), assignable: d.assignable.filter((r) => r.id !== id) };
+      });
       if (deleting.kind === 'user') saved('User deleted', `${deleting.name} can no longer sign in.`);
       else saved('Role deleted', `${deleting.name} is no longer available.`);
     } catch (e) {

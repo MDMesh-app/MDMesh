@@ -220,10 +220,22 @@ describe('focusPlace', () => {
     expect(document.activeElement).toBe($('b'));
   });
 
-  it('stays in the dialog the list is in when the list empties, not the page behind it', () => {
+  it('stays in the dialog the list is in when the list empties, at its body’s first control as when it opened', () => {
     const $ = dom(
       '<main id="v2-main" tabindex="-1"></main>' +
-        '<div role="dialog" id="outer"><button id="close">Close</button><ul><li id="a"><button id="a-del">Delete</button></li></ul></div>',
+        '<div role="dialog"><button id="close">Close</button><div class="v2-modal__body">' +
+        '<ul><li id="a"><button id="a-del">Delete</button></li></ul><input id="search" /></div></div>',
+    );
+    const place = placeOf($('a-del'));
+    $('a').remove();
+    focusPlace(place);
+    expect(document.activeElement).toBe($('search'));
+  });
+
+  it('in a dialog with nothing left in its body, its first control', () => {
+    const $ = dom(
+      '<div role="dialog"><button id="close">Close</button><div class="v2-modal__body">' +
+        '<ul><li id="a"><button id="a-del">Delete</button></li></ul></div></div>',
     );
     const place = placeOf($('a-del'));
     $('a').remove();

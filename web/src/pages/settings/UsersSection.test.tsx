@@ -282,4 +282,27 @@ describe('Users & roles administration', () => {
     await waitFor(() => expect(row.contains(document.activeElement)).toBe(true));
     await settled();
   });
+
+  it('a deleted user leaves the list at once, even when the reload after it fails', async () => {
+    const packer: ManagedUser = { ...account, id: 21, login: 'packer', name: 'Packer' };
+    const fetch = open({ others: [account, packer] });
+    const base = fetch.getMockImplementation()!;
+    let deleted = false;
+    fetch.mockImplementation(async (input, init) => {
+      if (init?.method === 'DELETE') deleted = true;
+      else if (deleted && String(input).includes('/users/all')) return new Response('', { status: 500 });
+      return base(input, init);
+    });
+    await screen.findByRole('button', { name: 'More actions for operator' }, { timeout: 10_000 });
+    await settled();
+    await rowAction('operator', 'Delete');
+    const dialog = within(await screen.findByRole('alertdialog'));
+    fireEvent.click(dialog.getByRole('button', { name: 'Delete user' }));
+    expect(await screen.findByText('User deleted')).toBeTruthy();
+    await settled();
+    expect(screen.getByText(/Couldn.t load users and roles/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'More actions for operator' })).toBeNull();
+    const row = screen.getByRole('button', { name: 'More actions for packer' }).closest('tr')!;
+    await waitFor(() => expect(row.contains(document.activeElement)).toBe(true));
+  });
 });

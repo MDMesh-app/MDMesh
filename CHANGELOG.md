@@ -13,6 +13,10 @@ Upgrading
 - Quick start: `MDMESH_VERSION` now takes 0.5.0 or later; for 0.4.0 it stops and names that release's own
   `quickstart.sh`, as it already did for earlier releases.
 
+New
+- Console extensions: a menu item (`MenuItem`, as in a list's row actions) can set `movesFocus: true` when its
+  `onSelect` moves focus itself, so the menu leaves focus there rather than returning it to its trigger.
+
 Fixes
 - Commands: the server refuses a command, Install configuration apps and Retry apply for a device marked Wiped
   (`error.agent.command.wiped`), and a bulk command skips it. Only the console's greyed-out buttons stopped them before.
@@ -31,8 +35,8 @@ Fixes
 - Console: an action shows in one place: a configuration card's "…" holds only Delete, and the device page's "…"
   holds Ring and Reboot and then All actions, which opens Remote actions on the Control tab. A lone Delete or Remove
   from library stays in its "…" rather than becoming a button next to the row.
-- Console: after you delete a configuration or remove an app from the library, keyboard focus moves to the next card
-  or row instead of to the top of the page.
+- Console: after you delete a configuration, an app from the library, a user or a role, keyboard focus moves to the
+  next card or row instead of to the top of the page. Any dialog whose opener is gone when it closes does the same.
 - Agent: a settings file damaged by the device's storage (after a power loss) no longer makes every kiosk and
   configuration command fail with "Unable to parse preferences proto." or crash the kiosk screen. The agent keeps a
   copy of each file and restores it, or the configured kiosk, and the device page shows a `storageRecovered` event

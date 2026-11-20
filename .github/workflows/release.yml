@@ -164,7 +164,7 @@ jobs:
           IMG="ghcr.io/${O}/mdmesh-server"
           docker build -f docker/server.Dockerfile -t "$IMG:$VERSION" .
           # Before the push: the server's JVM, started from this image, runs a JDK without the CVE-2026-114938
-          # (OpenJDK) Base64 bug, or has -XX:-UseBASE64Intrinsics in effect (docker/tomcat-setenv.sh).
+          # (OpenJDK) Base64 bug, or has -XX:-UseBASE64Intrinsics in effect (install/tomcat-setenv.sh).
           scripts/server-jvm-check.sh --image "$IMG:$VERSION"
           docker push "$IMG:$VERSION"
           echo "SERVER_IMG=$IMG:$VERSION" >> "$GITHUB_ENV"

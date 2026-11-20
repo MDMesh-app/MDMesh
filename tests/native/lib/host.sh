@@ -231,7 +231,8 @@ check_install() {
   check "Tomcat serves this checkout's build (server WAR + console)" "$(guest deployed)" match
   check "initialized.txt says OK" "$(guest initialized | head -n 1 | cut -c1-2)" OK
   # CVE-2026-114938 (OpenJDK): a version whose installer sets -XX:-UseBASE64Intrinsics runs the server with it.
-  if git -C "$REPO" show "$ref:install/install-native.sh" 2>/dev/null | grep -q -- '-XX:-UseBASE64Intrinsics'; then
+  # Not `grep -q`: its early exit would SIGPIPE git show and, under pipefail, skip the check.
+  if git -C "$REPO" show "$ref:install/install-native.sh" 2>/dev/null | grep -- '-XX:-UseBASE64Intrinsics' > /dev/null; then
     check "server JVM runs with -XX:-UseBASE64Intrinsics" "$(guest base64-flag)" "false {command line}"
   fi
   check "GET /rest/public/name" "$(http_code /rest/public/name)" 200

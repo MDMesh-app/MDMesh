@@ -13,6 +13,13 @@ Upgrading
 - Quick start: `MDMESH_VERSION` now takes 0.5.0 or later; for 0.4.0 it stops and names that release's own
   `quickstart.sh`, as it already did for earlier releases.
 
+Security
+- CVE-2026-114938 (OpenJDK): the server runs with `-XX:-UseBASE64Intrinsics`, in the Docker image and on native
+  installs, which turns off the affected Base64 code of JDK 17.0.6 to 17.0.21 on x86_64. The native installer's own
+  JDK is now 17.0.21.1 on x86_64; it warns about an affected JDK, and `--update` upgrades the distribution's JDK 17.
+  To protect a server before you update: [UPGRADING,
+  v0.5.1](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v051).
+
 Fixes
 - Commands: the server refuses a command, Install configuration apps and Retry apply for a device marked Wiped
   (`error.agent.command.wiped`), and a bulk command skips it. Only the console's greyed-out buttons stopped them before.

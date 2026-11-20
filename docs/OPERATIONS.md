@@ -53,6 +53,7 @@ The wizard writes `SITE_ADDRESS`, `ACME_EMAIL` and `TUNNEL_TOKEN` for the hostin
 | `SUPERVISOR_VERSION` | `.env` | quick start: the installed release by digest | Supervisor image tag. When it is `latest` or a digest pin, each update moves it to the release's signed digest; `docker compose up -d` then starts that supervisor. Any other value is left alone. |
 | `APPLY_SUPPORTED` | `.env` (native: always `0`) | `1` with a registry `IMAGE_OWNER`, else `0` | `1` shows one-click **Update**, `0` shows manual steps. |
 | `AUTO_UPDATE` | `.env` | `0` | `1` applies releases unattended ([details](UPGRADING.md#quick-start-installs)). |
+| `HEALTH_TIMEOUT` | `.env` (not on native) | `180` | Seconds a new server gets to answer after an update or a rollback before it counts as failed (an update is then rolled back). Raise it when a release's database update may take longer on your data. Read from `.env` when an update starts, so adding a line there is enough. |
 
 `./setup.sh` rewrites the version variables and `APPLY_SUPPORTED` from the clone on every run
 ([Upgrading](UPGRADING.md#from-source-docker-installs)).

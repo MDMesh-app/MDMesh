@@ -14,13 +14,27 @@ BACKUP_DIR="${BACKUP_DIR:-/backups}"
 DB_USER="${DB_USER:-mdmesh}"
 DB_NAME="${DB_NAME:-mdmesh}"
 HEALTH_URL="${HEALTH_URL:-http://server:8080/rest/public/name}"
-HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-180}"
 
 phase() { echo "PHASE $1"; }
 errln() { echo "ERR $1" >&2; }
 dc()    { docker compose "$@"; }
 
 cd "$PROJECT_DIR" || { errln "cannot cd $PROJECT_DIR"; phase failed; exit 1; }
+
+# How long the server gets to answer after a recreate, in whole seconds: HEALTH_TIMEOUT in the project .env (read here,
+# so an edit there counts without recreating the supervisor), else the supervisor's environment, else 180. A large
+# database update on the first start can need more (docs/UPGRADING.md).
+health_timeout() {
+  local v
+  for v in "$(grep -E '^HEALTH_TIMEOUT=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '\r"'"'"' ')" \
+           "${HEALTH_TIMEOUT:-}"; do
+    [ -z "$v" ] && continue
+    if [[ "$v" =~ ^[0-9]{1,6}$ ]]; then echo "$((10#$v))"; return; fi
+    echo "HEALTH_TIMEOUT=$v is not a whole number of seconds; ignored" >&2
+  done
+  echo 180
+}
+HEALTH_TIMEOUT="$(health_timeout)"
 
 set_env() {
   local k="$1" v="$2"

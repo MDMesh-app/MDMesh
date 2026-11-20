@@ -14,6 +14,9 @@ Upgrading
   `quickstart.sh`, as it already did for earlier releases.
 - On its first start the server deletes the commands, state, events and locations of devices deleted before this
   release. No screen showed them ([UPGRADING.md](docs/UPGRADING.md#unreleased)).
+- Quick start: `HEALTH_TIMEOUT` in `.env` sets how many seconds an updated server gets to answer before the update is
+  rolled back (default 180). Raise it before an update whose database work may take longer
+  ([OPERATIONS.md](docs/OPERATIONS.md#updater-supervisor)).
 
 Fixes
 - Commands: the server refuses a command, Install configuration apps and Retry apply for a device marked Wiped

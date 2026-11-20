@@ -374,11 +374,23 @@ public class DeviceDAO extends AbstractDAO<Device> {
      * <p>Updates the device data in persistent data store. The reference to related customer account and last update
      * time of the device are not affected by this method.</p>
      *
+     * <p>Its {@link DeviceInfoUpdatedEvent} fires once the update has committed (listeners run asynchronously and
+     * read the device), so they never see it before, or act on one that is rolled back. Called within another
+     * transaction, the event fires when this method returns, before that one commits.</p>
+     *
      * @param device a device to be updated.
      * @throws SecurityException if current user is not authorized to update this device.
      */
-    @Transactional
     public void updateDevice(Device device) {
+        if (applyDeviceUpdate(device)) {
+            this.eventService.fireEvent(new DeviceInfoUpdatedEvent(device.getId()));
+        }
+    }
+
+    /** {@link #updateDevice} in one transaction, without its event. @return false when the device doesn't exist */
+    @Transactional
+    public boolean applyDeviceUpdate(Device device) {
+        boolean[] updated = {false};
         updateById(device.getId(), this::getAccessibleDeviceForUpdate, dbDevice -> {
             // An agent signs in with its device number, which it never learns anew: renamed, it could not check in
             // again. Read under the row's lock, so the number checked is the one this update replaces. Any other
@@ -399,8 +411,9 @@ public class DeviceDAO extends AbstractDAO<Device> {
                         device.getId(), device.getGroups().stream().map(LookupItem::getId).collect(Collectors.toList())
                 );
             }
-            this.eventService.fireEvent(new DeviceInfoUpdatedEvent(device.getId()));
+            updated[0] = true;
         }, SecurityException::onDeviceAccessViolation);
+        return updated[0];
     }
 
     public Device getDeviceById(Integer deviceId) {

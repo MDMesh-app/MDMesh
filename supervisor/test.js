@@ -1074,6 +1074,48 @@ t.test('rollback.sh: restore ok but the old server does not start or stay health
   } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
 });
 
+t.test('HEALTH_TIMEOUT: .env wins over the supervisor environment, and an unusable value is ignored', () => {
+  const fs = require('fs'), path = require('path');
+  const timeoutWith = (envLine, envVar) => {
+    const d = rollbackDeploy();
+    try {
+      if (envLine !== null) fs.appendFileSync(path.join(d.project, '.env'), envLine + '\n');
+      const env = { ...d.env, STUB_CURL_FAIL: '1' };
+      if (envVar === null) delete env.HEALTH_TIMEOUT; else env.HEALTH_TIMEOUT = envVar;
+      const r = runScript('rollback.sh', [], env);
+      const m = /still unhealthy after rollback \((\d+)s\)/.exec(r.err);
+      a.ok(m, r.all);
+      return { seconds: Number(m[1]), err: r.err };
+    } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+  };
+  // Set in .env (an existing install adds a line): used even when the container's environment says otherwise.
+  a.equal(timeoutWith('HEALTH_TIMEOUT=0', '600').seconds, 0);
+  a.equal(timeoutWith('HEALTH_TIMEOUT="0"\r', '600').seconds, 0, 'quotes and a CR are tolerated');
+  // Not in .env: the environment (compose passes it through).
+  a.equal(timeoutWith(null, '0').seconds, 0);
+  // Not a whole number: said, and the next source is used.
+  const bad = timeoutWith('HEALTH_TIMEOUT=ten', '0');
+  a.equal(bad.seconds, 0);
+  a.match(bad.err, /HEALTH_TIMEOUT=ten is not a whole number of seconds; ignored/);
+});
+
+t.test('HEALTH_TIMEOUT: unset everywhere means 180 seconds', () => {
+  // Checked without waiting 180 s: the script's own resolution, run in a shell with its .env and environment.
+  const fs = require('fs'), path = require('path');
+  const d = rollbackDeploy();
+  try {
+    const src = fs.readFileSync(path.join(__dirname, 'rollback.sh'), 'utf8');
+    const fn = /health_timeout\(\) \{[\s\S]*?\n\}\n/.exec(src)[0];
+    const env = { ...d.env };
+    delete env.HEALTH_TIMEOUT;
+    const r = cp.spawnSync('bash', ['-c', `ENV_FILE=${JSON.stringify(path.join(d.project, '.env'))}\n${fn}health_timeout`],
+      { env, encoding: 'utf8' });
+    a.equal(r.stdout.trim(), '180', r.stderr);
+    // apply.sh resolves it the same way.
+    a.ok(fs.readFileSync(path.join(__dirname, 'apply.sh'), 'utf8').includes(fn), 'apply.sh and rollback.sh agree');
+  } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+});
+
 t.test('apply.sh: a failed health check rolls back with the same safe restore; a failed restore fails the apply loudly', () => {
   const fs = require('fs');
   let d = makeDeploy('SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n');

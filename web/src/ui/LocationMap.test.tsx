@@ -44,7 +44,8 @@ describe('LocationMap', () => {
       </StrictMode>,
     );
     // The map left standing is the second one: it has its own view and path.
-    expect(fitBounds.mock.contexts.at(-1)).not.toBe(fitBounds.mock.contexts[0]);
+    const maps = fitBounds.mock.contexts;
+    expect(maps[maps.length - 1]).not.toBe(maps[0]);
     expect(container.querySelectorAll('.leaflet-container')).toHaveLength(1);
     expect(container.querySelector('.v2-locmap__line')).not.toBeNull();
     expect(container.querySelector('.v2-locmap__latest')).not.toBeNull();

@@ -51,7 +51,6 @@ import com.mdmesh.core.state.DeviceStateCollector
 import com.mdmesh.core.state.DeviceStateSource
 import com.mdmesh.core.store.ConfigStateStore
 import com.mdmesh.core.store.configuredKiosk
-import com.mdmesh.core.store.DataStoreKioskStateStore
 import com.mdmesh.core.store.KioskStateStore
 import com.mdmesh.core.store.SharedPrefsConfigStateStore
 import com.mdmesh.core.telemetry.EventLog
@@ -216,11 +215,6 @@ object AgentModule {
     @Singleton
     fun provideKioskController(handle: DpmHandle): KioskController =
         LockTaskKioskController(handle.dpm, handle.admin)
-
-    @Provides
-    @Singleton
-    fun provideKioskStateStore(@ApplicationContext context: Context): KioskStateStore =
-        DataStoreKioskStateStore(context)
 
     @Provides
     @Singleton

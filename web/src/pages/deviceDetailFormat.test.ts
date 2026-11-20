@@ -1,7 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import { DEVICE_RESET_REVISION } from '../api/configSync';
 import { LOCATION_HISTORY_LIMIT } from '../api/deviceLocations';
-import { LOCATION_RANGES, fixesCount, locationSince, rangePhrase, shortRevision } from './deviceDetailFormat';
+import { EVENT_LABELS, EVENT_VERBS } from '../data/deviceActivity';
+import { LOCATION_RANGES, eventTone, fixesCount, locationSince, rangePhrase, shortRevision } from './deviceDetailFormat';
+
+describe('the agent’s storage events (#220)', () => {
+  it('are named and shown as warnings', () => {
+    expect(EVENT_LABELS.storageRecovered).toBe('Storage recovered');
+    expect(EVENT_LABELS.configReapplyFailed).toBe('Config re-apply failed');
+    expect(EVENT_VERBS.storageRecovered).toBe('recovered damaged storage');
+    expect(EVENT_VERBS.configReapplyFailed).toBe('failed to re-apply its configuration');
+    expect(eventTone('storageRecovered')).toBe('warn');
+    expect(eventTone('configReapplyFailed')).toBe('warn');
+    expect(eventTone('kioskCrashLoop')).toBe('warn');
+    expect(eventTone('boot')).toBe('idle');
+  });
+});
 
 describe('the location history range', () => {
   const now = Date.UTC(2026, 10, 4, 12);

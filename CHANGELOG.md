@@ -28,6 +28,10 @@ Fixes
   refused, so the rollout never finished. Versions now compare as numbers (0.10.0 is newer than 0.9.0).
 - Deleting a device, or a customer, now deletes the device's commands, state, events and locations too. Before, a
   device added later with the same number showed them as its own.
+- Agent: a settings file damaged by the device's storage (after a power loss) no longer makes every kiosk and
+  configuration command fail with "Unable to parse preferences proto." or crash the kiosk screen. The agent keeps a
+  copy of each file and restores it, or the configured kiosk, and the device page shows a `storageRecovered` event
+  (#220).
 
 ## v0.5.0 — 2026-11-17
 

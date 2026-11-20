@@ -23,7 +23,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.mdmesh.agent.KioskLauncherActivity
 import com.mdmesh.agent.R
 import com.mdmesh.agent.admin.AdminReceiver
-import com.mdmesh.core.store.DataStoreKioskStateStore
+import com.mdmesh.core.store.AgentDataStores
 import com.mdmesh.core.telemetry.EventLog
 import com.mdmesh.kiosk.CrashLoopGuard
 import com.mdmesh.kiosk.ExitPinGate
@@ -113,7 +113,7 @@ abstract class KioskHarness {
     }
 
     protected fun saveKiosk(k: KioskApplyPayload?) {
-        runBlocking { DataStoreKioskStateStore(app).save(k) }
+        runBlocking { kioskStore().save(k) }
     }
 
     protected fun launch(k: KioskApplyPayload?, saved: Bundle? = null): KioskLauncherActivity {
@@ -235,7 +235,10 @@ abstract class KioskHarness {
 
     protected fun lockTaskState(): Int = app.getSystemService(ActivityManager::class.java).lockTaskModeState
 
-    protected fun storedKiosk(): KioskApplyPayload? = runBlocking { DataStoreKioskStateStore(app).load() }
+    protected fun storedKiosk(): KioskApplyPayload? = runBlocking { kioskStore().load() }
+
+    /** The kiosk store the app reads, over the app's own DataStore. */
+    protected fun kioskStore() = AgentDataStores.stores(app).kioskStateStore()
 
     /** Every activity start recorded since the last call (the pinned app, grid apps, the OEM home...). */
     protected fun drainStarts(): List<Intent> {

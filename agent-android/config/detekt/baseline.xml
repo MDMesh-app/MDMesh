@@ -121,7 +121,6 @@
     <ID>ReturnCount:InstallManager.kt$InstallManager$suspend fun install(req: InstallRequest): InstallOutcome</ID>
     <ID>ReturnCount:LocationCollector.kt$LocationCollector$@SuppressLint("MissingPermission") // gated by collect()'s hasPermission() check private fun currentFix(lm: LocationManager): Location?</ID>
     <ID>ReturnCount:LocationCollector.kt$LocationCollector$fun collect(): LocationDto?</ID>
-    <ID>ReturnCount:LockTaskKioskController.kt$LockTaskKioskController$override fun allowedPackages(): List&lt;String&gt;</ID>
     <ID>ReturnCount:PolicyApplyHandler.kt$PolicyApplyHandler$override suspend fun handle(command: CommandEnvelope): CommandResult</ID>
     <ID>ReturnCount:PolicyManager.kt$PolicyManager$fun applyRestriction(key: String, enabled: Boolean): PolicyOutcome</ID>
     <ID>ReturnCount:PolicyManager.kt$PolicyManager$fun setKeyguardDisabled(disabled: Boolean): PolicyOutcome</ID>
@@ -130,7 +129,6 @@
     <ID>ReturnCount:PolicyManager.kt$PolicyManager$fun setSystemUpdateAutomatic(): PolicyOutcome</ID>
     <ID>ReturnCount:ResetPasswordTokenStore.kt$ResetPasswordTokenStore$fun ensureToken(): ByteArray</ID>
     <ID>ReturnCount:VersionPolicy.kt$VersionPolicy$fun shouldInstall(installedVersionCode: Long?, requestedVersionCode: Long?): Decision</ID>
-    <ID>SwallowedException:LockTaskKioskController.kt$LockTaskKioskController$t: Throwable</ID>
     <ID>TooGenericExceptionCaught:CheckInCoordinator.kt$CheckInCoordinator$t: Throwable</ID>
     <ID>TooGenericExceptionCaught:InstallManager.kt$InstallManager$e: Exception</ID>
     <ID>TooGenericExceptionCaught:KeepAliveReceiver.kt$KeepAliveReceiver$e: Exception</ID>

@@ -11,7 +11,7 @@ import android.os.UserManager
 import com.mdmesh.agent.service.CheckInService
 import com.mdmesh.core.config.ServerConfigStore
 import com.mdmesh.core.location.LocationPermissions
-import com.mdmesh.core.store.EnrollTokenStore
+import com.mdmesh.core.store.AgentDataStores
 import com.mdmesh.core.sync.CheckInWorker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -62,7 +62,7 @@ class AdminReceiver : DeviceAdminReceiver() {
         val pending = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                EnrollTokenStore(context.applicationContext).save(token)
+                AgentDataStores.stores(context).enrollTokenStore().save(token)
             } finally {
                 CheckInWorker.scheduleNow(context)
                 CheckInService.start(context)

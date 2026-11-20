@@ -159,27 +159,10 @@ public interface DeviceMapper {
                                          @Param("filter") String filter,
                                          @Param("limit") int limit);
 
+    /** Its agent history (commands, state, events, locations, rollout canary membership) goes with it: those tables
+     *  reference devices(number) ON DELETE CASCADE, as the rows keyed by id do devices(id). */
     @Delete({"DELETE FROM devices WHERE id = #{id}"})
     void removeDevice(@Param("id") Integer id);
-
-    /** Deletes the agent history of the device with this number: its commands, state, events, locations and rollout
-     *  canary membership. These tables are keyed by number, not by devices.id, so no foreign key cascades them, and a
-     *  device later added with the number would show them as its own. One statement: all or nothing. */
-    @Delete({"WITH c AS (DELETE FROM agentCommand WHERE deviceNumber = #{number}), " +
-            "e AS (DELETE FROM device_event WHERE deviceNumber = #{number}), " +
-            "l AS (DELETE FROM device_location WHERE deviceNumber = #{number}), " +
-            "r AS (DELETE FROM agentRolloutCanary WHERE deviceNumber = #{number}) " +
-            "DELETE FROM device_state WHERE deviceNumber = #{number}"})
-    void removeDeviceHistory(@Param("number") String number);
-
-    /** {@link #removeDeviceHistory} for every device of the customer; run before the customer's devices go. */
-    @Delete({"WITH n AS (SELECT number FROM devices WHERE customerId = #{customerId}), " +
-            "c AS (DELETE FROM agentCommand WHERE deviceNumber IN (SELECT number FROM n)), " +
-            "e AS (DELETE FROM device_event WHERE deviceNumber IN (SELECT number FROM n)), " +
-            "l AS (DELETE FROM device_location WHERE deviceNumber IN (SELECT number FROM n)), " +
-            "r AS (DELETE FROM agentRolloutCanary WHERE deviceNumber IN (SELECT number FROM n)) " +
-            "DELETE FROM device_state WHERE deviceNumber IN (SELECT number FROM n)"})
-    void removeCustomerDeviceHistory(@Param("customerId") int customerId);
 
     @Update({"UPDATE devices SET configurationId = #{configurationId} WHERE id = #{deviceId} " +
             "AND EXISTS (SELECT 1 FROM configurations " +

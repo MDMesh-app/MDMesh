@@ -26,6 +26,7 @@ import java.lang.reflect.Proxy;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Collections;
 import java.util.HashMap;
@@ -34,13 +35,17 @@ import java.util.Properties;
 import java.util.UUID;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 /**
  * A deleted device takes its agent history with it: commands, state, events, locations and rollout-canary membership,
- * all keyed by device number. Otherwise a device later added with the same number (the API, a legacy launcher's
- * on-demand creation) shows the deleted device's history as its own, and in a multi-tenant install that can be another
- * customer's. Deleting a customer does the same for its devices. Real schema, real DAOs, as DeviceLimitPathsTest.
+ * all keyed by device number, each by a foreign key to devices(number). Otherwise a device later added with the same
+ * number (the console, an enrollment, a legacy launcher's on-demand creation) shows the deleted device's history as its
+ * own, and in a multi-tenant install that can be another customer's. Deleting a customer does the same for its
+ * devices; renaming a device carries its history; no row can name a number no device has. Real schema, real DAOs, as
+ * DeviceLimitPathsTest.
  *
  * <p>Runs when MDMESH_TEST_PG_URL is set (see AgentEnrollmentTransactionTest for the docker one-liner); with
  * MDMESH_TEST_PG_REQUIRED it fails without one. Works in its own schema, dropped afterwards.</p>
@@ -243,5 +248,81 @@ public class DeviceHistoryOnDeleteTest {
         }
         assertEquals(1, scalar("SELECT count(*) FROM " + schema + ".devices WHERE id = " + id));
         assertHistory(number, 1);
+    }
+
+    @Test
+    public void aNumberReusedAfterADeleteStartsWithNoHistory() throws Exception {
+        String consoleNumber = "console-" + UUID.randomUUID();
+        String tokenNumber = "token-" + UUID.randomUUID();
+        int consoleId = deviceWithHistory(consoleNumber);
+        int tokenId = deviceWithHistory(tokenNumber);
+
+        SecurityContext.init(Fakes.user(adminId, customerId, "edit_devices", "devices"));
+        try {
+            DeviceDAO devices = injector.getInstance(DeviceDAO.class);
+            devices.removeDeviceById(consoleId);
+            devices.removeDeviceById(tokenId);
+
+            // The console's add, and the device factory every enrollment uses: both insert through
+            // DeviceMapper.insertDevice, as on-demand creation and a new customer's default devices do.
+            com.hmdm.persistence.domain.Device device = new com.hmdm.persistence.domain.Device();
+            device.setNumber(consoleNumber);
+            device.setCustomerId(customerId);
+            device.setConfigurationId(configurationId);
+            device.setLastUpdate(0L);
+            devices.insertDevice(device);
+        } finally {
+            SecurityContext.release();
+        }
+        assertTrue("enrollment's device factory made the device",
+                injector.getInstance(UnsecureDAO.class).createNewDeviceForToken(tokenNumber, customerId, configurationId)
+                        != null);
+
+        AgentCommandDAO agent = injector.getInstance(AgentCommandDAO.class);
+        for (String number : new String[]{consoleNumber, tokenNumber}) {
+            assertHistory(number, 0);
+            assertEquals(number + " commands", 0, agent.listHistory(number, 0, 100).size());
+            assertEquals(number + " events", 0, agent.listEvents(number, 0, 100).size());
+            assertEquals(number + " locations", 0, agent.listLocations(number, 0, 100).size());
+            assertNull(number + " state", agent.getState(number));
+        }
+    }
+
+    @Test
+    public void noHistoryRowCanNameANumberNoDeviceHas() throws Exception {
+        String nobody = "nobody-" + UUID.randomUUID();
+        int rollout = (int) scalar("INSERT INTO " + schema + ".agentRollout (customerId, targetVersion, packageName, "
+                + "apkUrl, stage, createdAt, updatedAt) VALUES (" + customerId + ", '1.0.0', 'p', 'u', 'cancelled', 0, 0) "
+                + "RETURNING id");
+        String[] inserts = {
+                "INSERT INTO " + schema + ".agentCommand (deviceNumber, type, status, createdAt) VALUES ('" + nobody
+                        + "', 'device.lock', 'pending', 0)",
+                "INSERT INTO " + schema + ".device_state (deviceNumber, updatedAt) VALUES ('" + nobody + "', 0)",
+                "INSERT INTO " + schema + ".device_event (deviceNumber, type, ts) VALUES ('" + nobody + "', 'boot', 0)",
+                "INSERT INTO " + schema + ".device_location (deviceNumber, lat, lon, capturedAt, recordedAt) VALUES ('"
+                        + nobody + "', 1, 2, 0, 0)",
+                "INSERT INTO " + schema + ".agentRolloutCanary (rolloutId, deviceNumber) VALUES (" + rollout + ", '"
+                        + nobody + "')"};
+        for (String insert : inserts) {
+            try {
+                sql(insert);
+                fail("stored a row for a number no device has: " + insert);
+            } catch (SQLException e) {
+                assertEquals(insert, "23503", e.getSQLState()); // foreign_key_violation
+            }
+        }
+        // The rollout's canary insert skips such a number instead of failing the rollout.
+        injector.getInstance(RolloutDAO.class).insertCanary(rollout, nobody);
+        assertHistory(nobody, 0);
+    }
+
+    @Test
+    public void renamingADeviceCarriesItsHistory() throws Exception {
+        String before = "before-" + UUID.randomUUID();
+        String after = "after-" + UUID.randomUUID();
+        int id = deviceWithHistory(before);
+        sql("UPDATE " + schema + ".devices SET number = '" + after + "' WHERE id = " + id);
+        assertHistory(before, 0);
+        assertHistory(after, 1);
     }
 }

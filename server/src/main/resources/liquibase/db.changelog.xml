@@ -3236,4 +3236,64 @@
         <rollback/>
     </changeSet>
 
+    <changeSet id="26.11.20-device-history-fk" author="lunacy" context="common">
+        <comment>The agent history tables (agentCommand, device_state, device_event, device_location, agentRolloutCanary)
+            are keyed by device number, with no foreign key: a deleted device left its rows behind, and a device later
+            added with the number (the console, an import, on-demand creation) showed them as its own. Each now
+            references devices(number), which is unique: deleting a device deletes its history, renaming it carries
+            the history to the new number, and no row can name a number no device has. NOT VALID: checked for new rows
+            from now on, without reading the existing ones, so this takes its locks only for a moment. The next two
+            changesets delete the rows of devices already gone, then check the rest.</comment>
+        <sql>
+            ALTER TABLE agentCommand ADD CONSTRAINT agentCommand_device_fk FOREIGN KEY (deviceNumber)
+                REFERENCES devices (number) ON UPDATE CASCADE ON DELETE CASCADE NOT VALID;
+            ALTER TABLE device_state ADD CONSTRAINT device_state_device_fk FOREIGN KEY (deviceNumber)
+                REFERENCES devices (number) ON UPDATE CASCADE ON DELETE CASCADE NOT VALID;
+            ALTER TABLE device_event ADD CONSTRAINT device_event_device_fk FOREIGN KEY (deviceNumber)
+                REFERENCES devices (number) ON UPDATE CASCADE ON DELETE CASCADE NOT VALID;
+            ALTER TABLE device_location ADD CONSTRAINT device_location_device_fk FOREIGN KEY (deviceNumber)
+                REFERENCES devices (number) ON UPDATE CASCADE ON DELETE CASCADE NOT VALID;
+            ALTER TABLE agentRolloutCanary ADD CONSTRAINT agentRolloutCanary_device_fk FOREIGN KEY (deviceNumber)
+                REFERENCES devices (number) ON UPDATE CASCADE ON DELETE CASCADE NOT VALID;
+            CREATE INDEX IF NOT EXISTS agentRolloutCanary_deviceNumber_idx ON agentRolloutCanary (deviceNumber);
+        </sql>
+        <rollback>
+            DROP INDEX IF EXISTS agentRolloutCanary_deviceNumber_idx;
+            ALTER TABLE agentRolloutCanary DROP CONSTRAINT IF EXISTS agentRolloutCanary_device_fk;
+            ALTER TABLE device_location DROP CONSTRAINT IF EXISTS device_location_device_fk;
+            ALTER TABLE device_event DROP CONSTRAINT IF EXISTS device_event_device_fk;
+            ALTER TABLE device_state DROP CONSTRAINT IF EXISTS device_state_device_fk;
+            ALTER TABLE agentCommand DROP CONSTRAINT IF EXISTS agentCommand_device_fk;
+        </rollback>
+    </changeSet>
+
+    <changeSet id="26.11.20-device-history-orphans" author="lunacy" context="common">
+        <comment>Delete the history rows of devices deleted before the foreign keys above (rows whose number no device
+            has, and agentCommand rows with no number): no screen shows them, and a device later added with the number
+            would have. An anti-join per table, one pass over it. Runs after the keys are in place, in its own
+            transaction, so no new such row can appear meanwhile, and a device enrolling meanwhile keeps its rows (they
+            name its number). Only the deleted rows are locked; check-ins and enrollments go on.</comment>
+        <sql>
+            DELETE FROM agentCommand h WHERE NOT EXISTS (SELECT 1 FROM devices d WHERE d.number = h.deviceNumber);
+            DELETE FROM device_state h WHERE NOT EXISTS (SELECT 1 FROM devices d WHERE d.number = h.deviceNumber);
+            DELETE FROM device_event h WHERE NOT EXISTS (SELECT 1 FROM devices d WHERE d.number = h.deviceNumber);
+            DELETE FROM device_location h WHERE NOT EXISTS (SELECT 1 FROM devices d WHERE d.number = h.deviceNumber);
+            DELETE FROM agentRolloutCanary h WHERE NOT EXISTS (SELECT 1 FROM devices d WHERE d.number = h.deviceNumber);
+        </sql>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="26.11.20-device-history-fk-validate" author="lunacy" context="common">
+        <comment>Check the existing history rows against the foreign keys added above, now that the rows of deleted
+            devices are gone. VALIDATE reads each table but blocks no writes to it.</comment>
+        <sql>
+            ALTER TABLE agentCommand VALIDATE CONSTRAINT agentCommand_device_fk;
+            ALTER TABLE device_state VALIDATE CONSTRAINT device_state_device_fk;
+            ALTER TABLE device_event VALIDATE CONSTRAINT device_event_device_fk;
+            ALTER TABLE device_location VALIDATE CONSTRAINT device_location_device_fk;
+            ALTER TABLE agentRolloutCanary VALIDATE CONSTRAINT agentRolloutCanary_device_fk;
+        </sql>
+        <rollback/>
+    </changeSet>
+
 </databaseChangeLog>

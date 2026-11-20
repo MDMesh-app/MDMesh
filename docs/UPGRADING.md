@@ -201,6 +201,14 @@ exited or credentials cleared while the older agent ran.
 
 ## Version notes
 
+### Unreleased
+
+- **The database update deletes the history of deleted devices.** Before, deleting a device left its commands, state,
+  events and locations behind, and a device added later with the same number showed them. On its first start the
+  server deletes those rows (no screen showed them), then links each history table to its device, so deleting a device
+  deletes its history from then on. On a large `device_event` or `device_location` table the first start takes longer:
+  each table is read once. Devices that still exist keep everything. To keep the old rows, back up the database first.
+
 ### v0.5.0
 
 - **Quick start: update the supervisor before you apply 0.5.0.** In the install directory, run

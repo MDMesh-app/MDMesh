@@ -163,16 +163,11 @@ public class DeviceDAO extends AbstractDAO<Device> {
         }
     }
 
-    /** Deletes the device and its agent history (see {@link DeviceMapper#removeDeviceHistory}), together. */
-    @Transactional
     public void removeDeviceById(Integer id) {
         updateById(
                 id,
                 this::getAccessibleDeviceForUpdate,
-                device -> {
-                    this.mapper.removeDevice(device.getId());
-                    this.mapper.removeDeviceHistory(device.getNumber());
-                },
+                device -> this.mapper.removeDevice(device.getId()),
                 SecurityException::onDeviceAccessViolation
         );
     }

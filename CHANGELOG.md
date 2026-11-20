@@ -12,6 +12,8 @@ Unreleased.
 Upgrading
 - Quick start: `MDMESH_VERSION` now takes 0.5.0 or later; for 0.4.0 it stops and names that release's own
   `quickstart.sh`, as it already did for earlier releases.
+- On its first start the server deletes the commands, state, events and locations of devices deleted before this
+  release. No screen showed them ([UPGRADING.md](docs/UPGRADING.md#unreleased)).
 
 Fixes
 - Commands: the server refuses a command, Install configuration apps and Retry apply for a device marked Wiped
@@ -26,8 +28,8 @@ Fixes
   once it is squash-merged: a clone on an older release moves on; only one newer than the release needs `--allow-downgrade`.
 - Agent rollout: a device already on a newer agent counts as updated and is no longer sent the older APK, which it
   refused, so the rollout never finished. Versions now compare as numbers (0.10.0 is newer than 0.9.0).
-- Deleting a device, or a customer, now deletes the device's commands, state, events and locations too. Before, a
-  device added later with the same number showed them as its own.
+- Deleting a device, or a customer, now deletes the device's commands, state, events and locations too, and renaming
+  a device keeps them. Before, a device added later with the same number showed them as its own.
 - Agent: a settings file damaged by the device's storage (after a power loss) no longer makes every kiosk and
   configuration command fail with "Unable to parse preferences proto." or crash the kiosk screen. The agent keeps a
   copy of each file and restores it, or the configured kiosk, and the device page shows a `storageRecovered` event

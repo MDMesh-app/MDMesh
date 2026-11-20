@@ -13,7 +13,8 @@
 #     secret; the same answers from an answers file give another plan;
 #   - a default differs (a dry run with only the required answers and MDMESH_NONINTERACTIVE=1 shows each default);
 #   - a required answer can be left out under MDMESH_NONINTERACTIVE=1, or a question without an answer isn't asked;
-#   - an example value in the contract is accepted or refused differently by the script, or by the contract's regex.
+#   - an example value in the contract is accepted or refused differently by the script, or by the contract's regex;
+#   - install/lib/jdk.sh misjudges a JDK 17 version, or the native installer stops setting -XX:-UseBASE64Intrinsics.
 #
 # Every installer run here is a dry run, in a temporary copy (setup.sh and the native installer) or a temporary working
 # directory (quickstart.sh), with an empty environment and stdin from /dev/null: nothing is installed, and a question
@@ -400,6 +401,25 @@ for line in "${REFUSE[@]}"; do
     || fail "dotenv: $(printf '%q' "$line") is not refused naming line 2 only (rc $RC): $out"
   ok
 done
+
+# install/lib/jdk.sh: which JDK 17 builds have the Base64 decoder bug of CVE-2026-114938 (OpenJDK), 17.0.6 to 17.0.21,
+# as javac -version, java.version or a Temurin image's JAVA_VERSION spell them. And the native installer runs the
+# server with -XX:-UseBASE64Intrinsics (in the CATALINA_OPTS its unit gets; T2 checks the running JVM).
+for c in "17.0.6 affected" "17.0.13 affected" "17.0.21 affected" "jdk-17.0.21+9 affected" "17.0.21.1 fixed" \
+         "jdk-17.0.21.1+2 fixed" "17.0.21.1_2 fixed" "17.0.22 fixed" "17.0.5 fixed" "17.0.4.1 fixed" "17 other" \
+         "21.0.9 other" "11.0.29 other" "'' other" "17.0.x other"; do
+  read -r v want <<< "$c"; [ "$v" != "''" ] || v=""
+  got=$(bash -c '. "$1"; if mdm_jdk17_base64_affected "$2"; then echo affected; elif mdm_jdk17_base64_fixed "$2"; then echo fixed; else echo other; fi' \
+        _ "$REPO/install/lib/jdk.sh" "$v")
+  [ "$got" = "$want" ] || fail "jdk.sh: JDK '$v' is $got, want $want"
+  ok
+done
+grep -qE '^export CATALINA_OPTS="(.* )?-XX:-UseBASE64Intrinsics( |")' "$REPO/install/install-native.sh" \
+  || fail "install-native.sh no longer sets -XX:-UseBASE64Intrinsics in CATALINA_OPTS"
+# shellcheck disable=SC2016  # the installer's own text
+grep -qF 'Environment="CATALINA_OPTS=${CATALINA_OPTS}"' "$REPO/install/install-native.sh" \
+  || fail "install-native.sh's server unit no longer gets CATALINA_OPTS"
+ok
 
 # Answers typed at a question get the same rules as pre-set ones: a wrong one is refused (never echoing a token) and
 # asked again. A real setup.sh run in a copy, answering on stdin; it stops at the docker stub after writing .env.

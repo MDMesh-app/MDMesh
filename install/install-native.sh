@@ -41,6 +41,9 @@ REPO="$PWD"   # repo root — used for absolute paths inside subshells (e.g. exp
 # mdm_apt: apt-get, non-interactive, waiting for another apt run's lock.
 # shellcheck source=lib/apt.sh
 . "$REPO/install/lib/apt.sh"
+# mdm_jdk17_base64_affected: which JDK 17 builds have the Base64 decoder bug of CVE-2026-114938 (OpenJDK).
+# shellcheck source=lib/jdk.sh
+. "$REPO/install/lib/jdk.sh"
 
 # Answers given in advance (install/lib/answers.sh, install/options.json), all checked here, before anything else.
 mdm_answers_load
@@ -235,12 +238,13 @@ TOMCAT_VER=9.0.89
 # to $SVC_USER, since root runs them during the install. NODE_VER moves with web/package.json "engines".
 RUNTIME_DIR=/opt/mdmesh-runtime
 NODE_VER=24.21.0
-JDK17_VER=17.0.20.1+1
+JDK17_VER=17.0.21.1+2
 case "$(uname -m)" in
   x86_64)  NODE_ARCH=x64   NODE_SHA=6e1db87ef58b8819e5d5402eff1536491b18edd8eb7bee5ef7897876e88dc5ff
-           JDK17_ARCH=x64     JDK17_SHA=3808d1d15e3ec6bd5b84057fb5d84c33d8a1536a258146bcea2e603fc726e08e ;;
+           JDK17_ARCH=x64     JDK17_SHA=0b0ac5eab6db6abaec68c9913bcddb31321e5da411c45073d520d9c125e6f7b4 ;;
+  # Temurin has no aarch64 build of 17.0.21.1 yet. The bug it fixes, CVE-2026-114938 (OpenJDK), is x86_64-only.
   aarch64) NODE_ARCH=arm64 NODE_SHA=724282c3b43aec998aa9527380465b45d229e021b58035f5f4f63095eabfe5d5
-           JDK17_ARCH=aarch64 JDK17_SHA=457b57af8f9c93ec39080bb8c764f559dc8c89a6da1a39d718a400b7890d3e41 ;;
+           JDK17_VER=17.0.20.1+1 JDK17_ARCH=aarch64 JDK17_SHA=457b57af8f9c93ec39080bb8c764f559dc8c89a6da1a39d718a400b7890d3e41 ;;
   *)       NODE_ARCH="" JDK17_ARCH="" ;;
 esac
 # Tomcat lifecycle helpers. CATALINA_PID lets `catalina.sh stop -force` actually kill a JVM that ignores
@@ -657,6 +661,34 @@ else
   apt_update
   run "$(IFS=,; echo "${PKGS[*]}" | sed 's/,/, /g')" mdm_apt install -y "${PKGS[@]}"
 fi
+# On an update, a JDK 17 from the distribution's packages gets the upgrade apt has for it (OpenJDK security fixes); the
+# server restart below loads it. Only the openjdk-17 packages already installed, never a removal. Not fatal: the update
+# goes on with the JDK it has.
+distro_jdk17_upgrade() {
+  local jdk pkg pol inst cand
+  local -a pkgs
+  jdk=$(select_jdk17) || return 0
+  pkg=$(dpkg-query -S "$jdk/bin/javac" 2>/dev/null | sed -n '1s/^\(openjdk-17-[a-z0-9-]*\)[:,].*/\1/p') || true
+  [ -n "$pkg" ] || return 0
+  if [ "$APT_UPDATED" != 1 ]; then
+    printf '\n=== Refreshing package lists (JDK 17 updates) ===\n' >> "$LOGFILE"
+    apt_refresh >> "$LOGFILE" 2>&1 || { info "could not refresh the package lists: the JDK 17 packages are not updated"; return 0; }
+    APT_UPDATED=1
+  fi
+  pol=$(apt-cache policy "$pkg" 2>/dev/null) || return 0
+  inst=$(sed -n 's/^ *Installed: //p' <<< "$pol"); cand=$(sed -n 's/^ *Candidate: //p' <<< "$pol")
+  case "$cand" in ''|'(none)'|"$inst") return 0 ;; esac
+  # shellcheck disable=SC2016  # a dpkg-query format, not shell
+  mapfile -t pkgs < <(dpkg-query -W -f='${db:Status-Abbrev} ${Package}\n' 'openjdk-17-*' 2>/dev/null | awk '$1 == "ii" { print $2 }')
+  [ "${#pkgs[@]}" -gt 0 ] || return 0
+  if mdm_apt install -y --only-upgrade --no-remove "${pkgs[@]}" >> "$LOGFILE" 2>&1; then
+    ok "JDK 17 updated: ${pkgs[*]} $inst → $cand"
+  else
+    printf '  %s!%s Could not update the JDK 17 packages (%s → %s; see %s). Continuing with the installed one\n' \
+      "$c_yel" "$c_reset" "$inst" "$cand" "$LOGFILE"
+  fi
+}
+[ "$UPDATING" != 1 ] || distro_jdk17_upgrade
 # minisign verifies release-manifest signatures for the updater supervisor. Best-effort: without it
 # the supervisor still runs but reports releases as unverified (and never mirrors an APK).
 mdm_apt install -y minisign >> "$LOGFILE" 2>&1 || info "minisign unavailable — updater will report releases as unverified"
@@ -686,6 +718,13 @@ JAVA_HOME=$(select_jdk17) || {
 export JAVA_HOME
 export PATH="$JAVA_HOME/bin:$PATH"
 ok "$(javac -version 2>&1) — $JAVA_HOME"
+# CVE-2026-114938 (OpenJDK): the server runs with -XX:-UseBASE64Intrinsics (below), which turns the affected code off,
+# but an affected JDK should still be updated.
+if [ "$(uname -m)" = x86_64 ] && mdm_jdk17_base64_affected "$(javac -version 2>&1 | sed -n 's/^javac //p')"; then
+  printf '  %s!%s This JDK is affected by CVE-2026-114938 (OpenJDK). The server runs with -XX:-UseBASE64Intrinsics as\n' \
+    "$c_yel" "$c_reset"
+  printf '    a mitigation; updating the JDK to 17.0.21.1 or later is still recommended.\n'
+fi
 
 step "Database"
 # Idempotent: every run generates a fresh DB_PASSWORD, so ALWAYS set the role's password to match — ALTER
@@ -1190,7 +1229,10 @@ fi
 
 step "Starting the server"
 # Runs on the same pinned JDK 17 (JAVA_HOME exported above), matching the Docker tomcat:9.0-jdk17 image.
-export CATALINA_OPTS="--add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.lang.reflect=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.text=ALL-UNNAMED --add-opens java.desktop/java.awt.font=ALL-UNNAMED"
+# -XX:-UseBASE64Intrinsics: CVE-2026-114938 (OpenJDK), the AVX-512 Base64 decoder of JDK 17.0.6 to 17.0.21 on x86_64; the
+# Docker image sets it too (docker/tomcat-setenv.sh). catalina.sh puts CATALINA_OPTS after JAVA_OPTS (an operator's
+# drop-in), so it holds whatever that sets. The unit is rewritten on every run, so an update applies it.
+export CATALINA_OPTS="-XX:-UseBASE64Intrinsics --add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.lang.reflect=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.text=ALL-UNNAMED --add-opens java.desktop/java.awt.font=ALL-UNNAMED"
 # Port check (the preflight above already rejected foreign holders; this catches anything that bound since).
 case "$(port_owner)" in
   unit)   info "port ${HTTP_PORT} is held by our own ${SVC_UNIT} unit — restarting it"; stop_tomcat ;;

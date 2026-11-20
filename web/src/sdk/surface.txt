@@ -287,6 +287,8 @@ token --ls-display
 token --ls-eyebrow
 token --ls-h1
 token --main-max
+token --map-halo
+token --map-trail
 token --mobilebar-h
 token --muted
 token --nav-item

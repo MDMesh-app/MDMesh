@@ -34,10 +34,11 @@ import {
   Tooltip,
   useMediaQuery,
   useToast,
-  type MenuEntry,
   type SortDir,
 } from '../ui';
 import { useStickyValue } from '../ui/useStickyValue';
+import { loneButtonItem } from '../ui/loneAction';
+import { useRefocusAfterRemove } from '../ui/useRefocusAfterRemove';
 import { SHA256_HEX, targetVersion } from '../data/apps';
 import { CORE_ACTION_ACCESS } from '../ext/core/access';
 import { withCoreAppsParts } from '../ext/core/lists';
@@ -64,12 +65,6 @@ function emptyLibraryText(sources: Sources, mayUpload: boolean, mayDeploy: boole
   const custom = mayUpload ? 'Upload an APK or link to one' : 'Link to an APK';
   const ways = sources.fdroid ? `${custom}, or pick an app from F-Droid. ` : sources.custom ? `${custom}. ` : '';
   return ways + (mayDeploy ? 'Apps in the library can be added to a configuration or pushed straight to devices.' : '');
-}
-
-/** A menu of one entry is a visible button instead (I7); two or more stay a "…" menu. */
-function singleItem(items: ReadonlyArray<MenuEntry>) {
-  const real = items.filter((it) => it !== 'separator');
-  return real.length === 1 ? real[0] : null;
 }
 
 /**
@@ -146,6 +141,13 @@ export function AppsLibrary({
     }
   }
 
+  // After a removal, focus goes to the next app rather than falling to the page with the removed row's "…".
+  const removeFocus = useRefocusAfterRemove();
+  const cancelRemove = () => {
+    removeFocus.forget();
+    setConfirmRemove(null);
+  };
+
   // #66: removing a library record never uninstalls the app; refuse while a configuration still uses it.
   async function askRemove(app: Application) {
     try {
@@ -158,10 +160,12 @@ export function AppsLibrary({
           'App is still in use',
           `Remove it from ${names.join(', ')} before deleting the Library record. This does not uninstall the app from devices.`,
         );
+        removeFocus.forget();
         return;
       }
       setConfirmRemove(app);
     } catch (e) {
+      removeFocus.forget();
       toast.push('err', 'Remove failed', errorText(e));
     }
   }
@@ -174,6 +178,7 @@ export function AppsLibrary({
       setApps((cur) => cur.filter((a) => a.id !== app.id));
       toast.push('ok', 'Removed from Library', `${app.name} — devices keep the installed app.`);
     } catch (e) {
+      removeFocus.forget();
       const msg = errorText(e);
       toast.push('err', 'Remove failed', /config\.reference\.exists/.test(msg) ? 'A configuration still uses this app.' : msg);
     } finally {
@@ -193,7 +198,10 @@ export function AppsLibrary({
               textValue: 'Remove from library',
               danger: true,
               disabled: removing != null,
-              onSelect: () => void askRemove(a),
+              onSelect: () => {
+                removeFocus.remember();
+                void askRemove(a);
+              },
             }
           : null,
     },
@@ -204,7 +212,7 @@ export function AppsLibrary({
 
   const actions = (a: Application, size: 'xs' | 'sm' = 'xs') => {
     const items = rowMenu.items(a);
-    const single = singleItem(items);
+    const single = loneButtonItem(items);
     const busy = deployingId === a.id;
     return (
       <div className="v2-rowactions">
@@ -224,7 +232,7 @@ export function AppsLibrary({
         {single ? (
           <Button
             size="sm"
-            variant={single.danger ? 'danger' : 'ghost'}
+            variant="ghost"
             icon={single.icon}
             disabled={single.disabled}
             onClick={single.onSelect}
@@ -487,13 +495,13 @@ export function AppsLibrary({
 
       <Modal
         open={confirmRemove !== null}
-        onClose={() => setConfirmRemove(null)}
+        onClose={cancelRemove}
         role="alertdialog"
         size="sm"
         title={removeShown ? `Remove ${removeShown.name} from the library?` : ''}
         footer={
           <>
-            <Button size="lg" onClick={() => setConfirmRemove(null)}>
+            <Button size="lg" onClick={cancelRemove}>
               Cancel
             </Button>
             <Button size="lg" variant="danger-primary" onClick={() => confirmRemove && void remove(confirmRemove)}>

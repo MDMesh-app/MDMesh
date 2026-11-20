@@ -12,7 +12,9 @@
 #   quiet     the dpkg frontend lock held 10 s, apt's output hidden (setup.sh's Docker-mode minisign install): the
 #             waiting is still said, then minisign is installed;
 #   native    all three held 15 s: the native installer (a copy that stops after its apt steps, on a terminal) waits,
-#             refreshes and installs.
+#             refreshes and installs;
+#   jdk       the oldest openjdk-17 apt has, then that copy's update-only JDK 17 upgrade, with apt in German: it moves
+#             to apt's newest openjdk-17 and says so.
 set -euo pipefail
 if [ "${MDMESH_APT_LOCK_TESTS:-}" != 1 ] || [ ! -f /.dockerenv ] || [ "$(id -u)" != 0 ]; then
   echo "cases.sh runs only in tests/apt-lock/run.sh's container." >&2; exit 2
@@ -148,6 +150,33 @@ t; { has "waiting for it, up to 5 minutes"; } || bad "native: says it waits, on 
 t; { ! has "failed to refresh"; } || bad "native: no 'failed to refresh'"
 t; { [ "$(count "up to 5 minutes")" -le 2 ]; } || bad "native: the lock sentence only for the steps that waited"
 shown native
+
+# --- jdk: an update's upgrade of the distribution's JDK 17 (distro_jdk17_upgrade), from the oldest openjdk-17 apt has,
+# with apt's messages in German (LANGUAGE=de; Debian ships apt's translations, Ubuntu's images leave them out). The
+# native copy above, its update-only step run as an update runs it, the JDK found where apt puts it.
+J=/work/clone-jdk
+cp -R "$N" "$J"
+# shellcheck disable=SC2016  # the installer's own text
+grep -qx '\[ "$UPDATING" != 1 \] || distro_jdk17_upgrade' "$J/install/install-native.sh" \
+  || { echo "FAIL: install-native.sh no longer runs distro_jdk17_upgrade on an update" >&2; exit 1; }
+# shellcheck disable=SC2016  # the installer's own text
+sed -i 's/^\[ "\$UPDATING" != 1 \] || distro_jdk17_upgrade$/distro_jdk17_upgrade/' "$J/install/install-native.sh"
+apt-get -qq update > /tmp/jdk-old.log 2>&1
+vers=$(apt-cache madison openjdk-17-jdk-headless | awk '{print $3}' | sort -uV)
+old=$(head -n 1 <<< "$vers"); new=$(tail -n 1 <<< "$vers")
+t; { [ -n "$old" ] && [ "$old" != "$new" ]; } || bad "jdk: apt offers an older openjdk-17 to start from (versions: $(tr '\n' ' ' <<< "$vers"))"
+apt-get -qq install -y "openjdk-17-jdk-headless=$old" "openjdk-17-jre-headless=$old" >> /tmp/jdk-old.log 2>&1 \
+  || { cat /tmp/jdk-old.log; echo "FAIL: could not install openjdk-17 $old" >&2; exit 1; }
+RC=0
+env -u LC_ALL PATH="/work/stubs:$PATH" LANG=C.UTF-8 LANGUAGE=de MDMESH_BASE_URL=http://localhost:8080 \
+  bash "$J/install/install-native.sh" -y < /dev/null > "$OUT" 2>&1 || RC=$?
+# shellcheck disable=SC2016  # a dpkg-query format
+now=$(dpkg-query -W -f='${Version}' openjdk-17-jdk-headless)
+t; { [ "$RC" = 0 ] && has "APT STEPS DONE"; } || bad "jdk: the apt steps succeed"
+t; { [ "$now" = "$new" ] && [ "$(dpkg-query -W -f='${Version}' openjdk-17-jre-headless)" = "$new" ]; } || bad "jdk: openjdk-17 moved from $old to $new (it is $now)"
+t; { has "updating the JDK 17 packages ($old → $new)" && has "JDK 17 updated: openjdk-17-jdk-headless openjdk-17-jre-headless $old → $new"; } \
+  || bad "jdk: says what it updates, then that it did"
+shown jdk
 
 if [ "$FAILS" -gt 0 ]; then echo "apt lock: $FAILS of $CHECKS checks failed" >&2; exit 1; fi
 echo "apt lock: all $CHECKS checks passed"

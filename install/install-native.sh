@@ -652,8 +652,9 @@ apt_update() {
 FETCH_JDK17=0
 if ! select_jdk17 >/dev/null; then
   apt_update
-  # A case, not `| grep -q`: grep's early exit would SIGPIPE apt-cache and fail the pipeline under pipefail.
-  case "$(apt-cache policy openjdk-17-jdk 2>/dev/null)" in *'Candidate: '[0-9]*) PKGS+=(openjdk-17-jdk) ;; *) FETCH_JDK17=1 ;; esac
+  # A case, not `| grep -q`: grep's early exit would SIGPIPE apt-cache and fail the pipeline under pipefail. LC_ALL=C:
+  # apt translates "Candidate:".
+  case "$(LC_ALL=C apt-cache policy openjdk-17-jdk 2>/dev/null)" in *'Candidate: '[0-9]*) PKGS+=(openjdk-17-jdk) ;; *) FETCH_JDK17=1 ;; esac
 fi
 if [ ${#PKGS[@]} -eq 0 ]; then
   ok "all packaged dependencies already present — nothing to install"
@@ -663,24 +664,28 @@ else
 fi
 # On an update, a JDK 17 from the distribution's packages gets the upgrade apt has for it (OpenJDK security fixes); the
 # server restart below loads it. Only the openjdk-17 packages already installed, never a removal. Not fatal: the update
-# goes on with the JDK it has.
+# goes on with the JDK it has, and it waits at most 2 minutes for another apt run's lock (not mdm_apt's 5). apt's and
+# dpkg's output is read with LC_ALL=C: apt translates "Installed:" and "Candidate:".
 distro_jdk17_upgrade() {
-  local jdk pkg pol inst cand
+  local jdk pkg pol inst cand MDM_APT_LOCK_WAIT=120
   local -a pkgs
   jdk=$(select_jdk17) || return 0
-  pkg=$(dpkg-query -S "$jdk/bin/javac" 2>/dev/null | sed -n '1s/^\(openjdk-17-[a-z0-9-]*\)[:,].*/\1/p') || true
+  pkg=$(LC_ALL=C dpkg-query -S "$jdk/bin/javac" 2>/dev/null | sed -n '1s/^\(openjdk-17-[a-z0-9-]*\)[:,].*/\1/p') || true
   [ -n "$pkg" ] || return 0
+  info "checking for a newer JDK 17 package ($pkg)"
   if [ "$APT_UPDATED" != 1 ]; then
     printf '\n=== Refreshing package lists (JDK 17 updates) ===\n' >> "$LOGFILE"
     apt_refresh >> "$LOGFILE" 2>&1 || { info "could not refresh the package lists: the JDK 17 packages are not updated"; return 0; }
     APT_UPDATED=1
   fi
-  pol=$(apt-cache policy "$pkg" 2>/dev/null) || return 0
+  pol=$(LC_ALL=C apt-cache policy "$pkg" 2>/dev/null) || return 0
   inst=$(sed -n 's/^ *Installed: //p' <<< "$pol"); cand=$(sed -n 's/^ *Candidate: //p' <<< "$pol")
-  case "$cand" in ''|'(none)'|"$inst") return 0 ;; esac
+  case "$cand" in ''|'(none)') return 0 ;; esac
+  dpkg --compare-versions "$cand" gt "$inst" || return 0
   # shellcheck disable=SC2016  # a dpkg-query format, not shell
-  mapfile -t pkgs < <(dpkg-query -W -f='${db:Status-Abbrev} ${Package}\n' 'openjdk-17-*' 2>/dev/null | awk '$1 == "ii" { print $2 }')
+  mapfile -t pkgs < <(LC_ALL=C dpkg-query -W -f='${db:Status-Abbrev} ${Package}\n' 'openjdk-17-*' 2>/dev/null | awk '$1 == "ii" { print $2 }')
   [ "${#pkgs[@]}" -gt 0 ] || return 0
+  info "updating the JDK 17 packages ($inst → $cand)"
   if mdm_apt install -y --only-upgrade --no-remove "${pkgs[@]}" >> "$LOGFILE" 2>&1; then
     ok "JDK 17 updated: ${pkgs[*]} $inst → $cand"
   else
@@ -1018,6 +1023,10 @@ else _server_xml=$(svc_cat "$CATALINA/conf/server.xml" 2>>"$LOGFILE"); fi \
   || _fail "Could not read $CATALINA/conf/server.xml as $SVC_USER: if it is a symbolic link, remove it; if root owns it (a run that stopped before handing the tree over), run chown -R $SVC_USER:$SVC_USER $CATALINA. Then re-run."
 tc_write conf/server.xml sed -E "s#(<Connector port=\")[0-9]+(\" protocol=\"HTTP/1.1\")#\1${HTTP_PORT}\2#" <<< "$_server_xml"
 info "HTTP port set to ${HTTP_PORT}"
+# bin/setenv.sh, as in the Docker image: catalina.sh adds its JVM flags (-XX:-UseBASE64Intrinsics) however Tomcat is
+# started, the unit's CATALINA_OPTS or a catalina.sh run by hand. Rewritten on every run: JVM options of your own go in
+# a `systemctl edit mdmesh-server` drop-in (docs/OPERATIONS.md), not here.
+tc_write bin/setenv.sh cat "$REPO/install/tomcat-setenv.sh"
 tc_guard webapps   # the glob below would otherwise empty a linked directory's target as root
 rm -rf "$CATALINA"/webapps/*
 # Deploy the server as an EXPLODED webapp (not ROOT.war) and overlay the built SPA into it, so a single
@@ -1229,9 +1238,10 @@ fi
 
 step "Starting the server"
 # Runs on the same pinned JDK 17 (JAVA_HOME exported above), matching the Docker tomcat:9.0-jdk17 image.
-# -XX:-UseBASE64Intrinsics: CVE-2026-114938 (OpenJDK), the AVX-512 Base64 decoder of JDK 17.0.6 to 17.0.21 on x86_64; the
-# Docker image sets it too (docker/tomcat-setenv.sh). catalina.sh puts CATALINA_OPTS after JAVA_OPTS (an operator's
-# drop-in), so it holds whatever that sets. The unit is rewritten on every run, so an update applies it.
+# -XX:-UseBASE64Intrinsics: CVE-2026-114938 (OpenJDK), the AVX-512 Base64 decoder of JDK 17.0.6 to 17.0.21 on x86_64.
+# bin/setenv.sh (install/tomcat-setenv.sh, written above) adds it as well, so it is on the java command line twice, which
+# is harmless. catalina.sh puts CATALINA_OPTS after JAVA_OPTS (an operator's drop-in), so it holds whatever that sets.
+# The unit is rewritten on every run, so an update applies it.
 export CATALINA_OPTS="-XX:-UseBASE64Intrinsics --add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.lang.reflect=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.text=ALL-UNNAMED --add-opens java.desktop/java.awt.font=ALL-UNNAMED"
 # Port check (the preflight above already rejected foreign holders; this catches anything that bound since).
 case "$(port_owner)" in

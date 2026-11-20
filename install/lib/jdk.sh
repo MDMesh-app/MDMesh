@@ -14,9 +14,9 @@ mdm_jdk17_base64_affected() {
   [ "$patch" -ge 6 ] && { [ "$patch" -lt 21 ] || { [ "$patch" -eq 21 ] && [ -z "$rest" ]; }; }
 }
 
-# mdm_jdk17_base64_fixed VERSION: succeeds when VERSION is a JDK 17 without that bug (17.0.0 to 17.0.5, or 17.0.21.1
+# mdm_jdk17_base64_unaffected VERSION: succeeds when VERSION is a JDK 17 without that bug (17.0.0 to 17.0.5, or 17.0.21.1
 # and later). Anything else, including other Java lines, fails.
-mdm_jdk17_base64_fixed() {
+mdm_jdk17_base64_unaffected() {
   local v=${1#jdk-}
   v=${v%%[+_ -]*}
   [[ "$v" =~ ^17\.0\.[0-9]+(\.[0-9.]+)?$ ]] && ! mdm_jdk17_base64_affected "$v"

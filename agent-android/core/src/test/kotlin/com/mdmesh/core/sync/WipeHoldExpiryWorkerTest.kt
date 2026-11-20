@@ -220,7 +220,7 @@ class WipeHoldExpiryWorkerTest {
         gate.complete(Unit)
 
         awaitReapplies(2)
-        assertEquals(WorkInfo.State.FAILED, reapplyWork(ConfigReapplyWorker.UNIQUE_NAME).single().state)
+        awaitState(reapplyWork(ConfigReapplyWorker.UNIQUE_NAME).single().id, WorkInfo.State.FAILED)
         awaitState(afterHold().single().id, WorkInfo.State.SUCCEEDED)
         assertTrue("the block is back", blocked)
     }

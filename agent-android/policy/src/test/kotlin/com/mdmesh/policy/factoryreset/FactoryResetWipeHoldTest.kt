@@ -22,6 +22,20 @@ class FactoryResetWipeHoldTest {
     private fun newProcess() =
         FactoryResetWipeHold(store, { boot }, { nowMs }, onHold = { checksAsked++ }) { expired++ }
 
+    /** WipeHoldExpiryWorker acts on its own only when its read didn't end the hold (onExpired did). */
+    @Test
+    fun `only the read that ends an expired hold says so`() {
+        val hold = newProcess()
+        hold.hold()
+        assertFalse(hold.read().endedNow)
+
+        nowMs += FactoryResetWipeHold.MAX_HOLD_MS
+
+        assertEquals(FactoryResetWipeHold.Reading(null, endedNow = true), hold.read())
+        assertEquals(FactoryResetWipeHold.Reading(null, endedNow = false), hold.read())
+        assertEquals(1, expired)
+    }
+
     @Test
     fun `a hold survives a process restart in the same boot`() {
         newProcess().hold()

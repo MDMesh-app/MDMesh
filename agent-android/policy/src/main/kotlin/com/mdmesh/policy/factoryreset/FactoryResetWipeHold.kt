@@ -28,7 +28,8 @@ import com.mdmesh.policy.PolicyOutcome
  * singleton).
  *
  * [onHold] and [onExpired] run inside this object's lock, [onExpired] possibly under the
- * configuration lock too: they must only schedule work, never apply the configuration themselves.
+ * configuration lock too: they must never apply the configuration themselves, only schedule work and
+ * make quick writes (the agent's [onExpired] also marks the configuration stale, a synchronous commit).
  * The agent's [onHold] waits up to 5 s for WorkManager to save the scheduled check (disk IO), so
  * every read of the hold may wait that long behind a [hold].
  * Whatever they throw is dropped: a read of the hold (a command, a policy write) or the wipe never

@@ -61,14 +61,18 @@ class FactoryResetWipeHold(
     fun read(): Reading {
         val at = heldAtMs ?: savedForThisBoot() ?: return Reading(null, endedNow = false)
         val elapsed = nowMs() - at
-        if (elapsed < 0) {
-            clear() // uptime restarted: a reboot, not an expiry
-            return Reading(null, endedNow = false)
+        return when {
+            elapsed < 0 -> {
+                clear() // uptime restarted: a reboot, not an expiry
+                Reading(null, endedNow = false)
+            }
+            elapsed < MAX_HOLD_MS -> Reading(MAX_HOLD_MS - elapsed, endedNow = false)
+            else -> {
+                clear()
+                runCatching(onExpired)
+                Reading(null, endedNow = true)
+            }
         }
-        if (elapsed < MAX_HOLD_MS) return Reading(MAX_HOLD_MS - elapsed, endedNow = false)
-        clear()
-        runCatching(onExpired)
-        return Reading(null, endedNow = true)
     }
 
     /** What [read] found: the hold's time left (null when not held), and whether that read ended it. */

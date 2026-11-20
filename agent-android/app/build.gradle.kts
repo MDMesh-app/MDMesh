@@ -129,6 +129,8 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)
+    // Writes DataStore files as the agent does (StoreCorruption), to damage them like a power loss.
+    testImplementation(libs.datastore.preferences)
     testImplementation(libs.androidx.test.core)
     // ATF's view builder loads MaterialButton, so Material comes along (test classpath only); Espresso isn't used.
     testImplementation(libs.accessibility.test.framework) {

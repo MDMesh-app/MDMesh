@@ -1,6 +1,7 @@
 package com.mdmesh.agent.a11y
 
 import android.app.Activity
+import android.app.ActivityManager
 import android.app.Application
 import android.app.Dialog
 import android.app.admin.DevicePolicyManager
@@ -30,10 +31,11 @@ import com.mdmesh.agent.ui.KioskRenderer
 import com.mdmesh.agent.ui.KioskScreen
 import com.mdmesh.agent.ui.StatusCopy
 import com.mdmesh.agent.ui.StatusScreen
+import com.mdmesh.agent.StatusViewModel
 import com.mdmesh.agent.ui.StatusUiState
+import androidx.lifecycle.ViewModelProvider
 import com.mdmesh.core.config.ServerConfigStore
-import com.mdmesh.core.store.DataStoreKioskStateStore
-import com.mdmesh.core.store.DeviceIdStore
+import com.mdmesh.core.store.AgentDataStores
 import com.mdmesh.core.store.SharedPrefsConfigStateStore
 import com.mdmesh.proto.ConfigApplyPayload
 import com.mdmesh.proto.KioskApplyPayload
@@ -78,7 +80,7 @@ class A11yScreens {
         val dpm = app.getSystemService(DevicePolicyManager::class.java)
         shadowOf(dpm).setDeviceOwner(ComponentName(app, AdminReceiver::class.java))
         ServerConfigStore(app).save("https://mdm.example.com")
-        runBlocking { DeviceIdStore(app).saveCredentials("dev_7f3a9c21e4b84d0e", "secret") }
+        runBlocking { AgentDataStores.stores(app).deviceIdStore().saveCredentials("dev_7f3a9c21e4b84d0e", "secret") }
         val pm = shadowOf(app.packageManager)
         for ((pkg, label) in apps) {
             val ai = ApplicationInfo().apply { packageName = pkg; nonLocalizedLabel = label }
@@ -115,10 +117,25 @@ class A11yScreens {
         if (kiosk == null) store.clear() else store.save(ConfigApplyPayload(revision = "a".repeat(64), kiosk = kiosk))
         val a = start(Robolectric.buildActivity(MainActivity::class.java))
         if (state != null) {
+            // The screen's own state loads from storage on other threads; drawn after [state], it would undo it.
+            val model = ViewModelProvider(a)[StatusViewModel::class.java]
+            awaitLoaded("the status screen's device id") {
+                model.state.value.deviceId !is StatusUiState.DeviceIdUi.Loading
+            }
             StatusScreen(a, {}, {}).render(state)
             idle()
         }
         return a
+    }
+
+    /** Runs the main looper until [loaded] holds: what a screen reads from storage arrives on other threads. */
+    private fun awaitLoaded(what: String, loaded: () -> Boolean) {
+        repeat(LOAD_ROUNDS) {
+            idle()
+            if (loaded()) return
+            Thread.sleep(LOAD_POLL_MS)
+        }
+        error("$what didn't load")
     }
 
     @Suppress("LongParameterList")
@@ -194,9 +211,14 @@ class A11yScreens {
     fun kioskApps(): List<KioskApp> = apps.map { (pkg, label) -> KioskApp(pkg, label, ColorDrawable(Color.GRAY)) }
 
     fun launcher(k: KioskApplyPayload?): KioskLauncherActivity {
-        runBlocking { DataStoreKioskStateStore(app).save(k) }
-        return start(Robolectric.buildActivity(KioskLauncherActivity::class.java))
+        runBlocking { AgentDataStores.stores(app).kioskStateStore().save(k) }
+        val a = start(Robolectric.buildActivity(KioskLauncherActivity::class.java))
+        // The saved kiosk reaches the launcher from storage on other threads: wait until it is applied (locked).
+        if (k != null) awaitLoaded("the kiosk") { lockTask() == ActivityManager.LOCK_TASK_MODE_LOCKED }
+        return a
     }
+
+    private fun lockTask(): Int = app.getSystemService(ActivityManager::class.java).lockTaskModeState
 
     fun exitPinDialog(): Dialog {
         val a = launcher(kiosk)
@@ -289,6 +311,8 @@ class A11yScreens {
         const val MAX_TRIES = 12
         const val UNAVAILABLE_WAIT_STEPS = 80
         const val UNAVAILABLE_WAIT_STEP_MS = 25L
+        const val LOAD_ROUNDS = 400
+        const val LOAD_POLL_MS = 10L
     }
 }
 

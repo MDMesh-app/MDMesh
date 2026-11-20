@@ -83,6 +83,8 @@ export const EVENT_LABELS: Record<string, string> = {
   kioskCrashLoop: 'Kiosk app keeps closing',
   kioskExit: 'Left kiosk mode',
   kioskReturn: 'Returned to kiosk mode',
+  storageRecovered: 'Storage recovered',
+  configReapplyFailed: 'Config re-apply failed',
 };
 
 /** The same events as a verb phrase after the device name ("KIOSK-FRONT booted"), the v0.3 console's Dashboard wording. */
@@ -98,6 +100,8 @@ export const EVENT_VERBS: Record<string, string> = {
   kioskCrashLoop: 'reported the kiosk app keeps closing',
   kioskExit: 'left kiosk mode',
   kioskReturn: 'returned to kiosk mode',
+  storageRecovered: 'recovered damaged storage',
+  configReapplyFailed: 'failed to re-apply its configuration',
 };
 
 /** A commandResult event's detail is "<commandId>:<status>" (agent CheckInCoordinator); null for anything else. */

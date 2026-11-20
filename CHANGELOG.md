@@ -30,6 +30,10 @@ Fixes
   and return, and the Overview no longer shows the device's description as if it were the event's detail.
 - Console: an action shows in one place: a configuration card's "…" holds only Delete, and the device page's "…"
   holds Ring and Reboot and then All actions, which opens Remote actions on the Control tab.
+- Agent: a settings file damaged by the device's storage (after a power loss) no longer makes every kiosk and
+  configuration command fail with "Unable to parse preferences proto." or crash the kiosk screen. The agent keeps a
+  copy of each file and restores it, or the configured kiosk, and the device page shows a `storageRecovered` event
+  (#220).
 
 ## v0.5.0 — 2026-11-17
 

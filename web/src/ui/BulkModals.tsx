@@ -20,7 +20,7 @@ import {
   type Configuration,
   type ConfigurationSummary,
 } from '../api/configurations';
-import { bulkDeletePartial, bulkSetConfiguration, deleteDevicesBulk } from '../api/devices';
+import { bulkDeletePartial, bulkErrorText, bulkSetConfiguration, deleteDevicesBulk } from '../api/devices';
 import { EXIT_PIN_RULE, exitPinValid } from '../data/configurationRules';
 import {
   buildKioskPayload,
@@ -674,7 +674,7 @@ export function ChangeConfigurationModal({
       onClose();
       await onDone();
     } catch (e) {
-      toast.push('err', 'Change failed', errText(e));
+      toast.push('err', 'Change failed', bulkErrorText(e) || 'The server didn’t accept the change.');
     } finally {
       setBusy(false);
     }
@@ -739,7 +739,8 @@ export function DeleteDevicesModal({
   ids: number[];
   label?: string;
   onClose: () => void;
-  onDone: () => void | Promise<void>;
+  /** After a delete: `remaining` are the ids that weren't deleted (kept selected), none when all went. */
+  onDone: (remaining?: number[]) => void | Promise<void>;
 }) {
   const toast = useToast();
   const [busy, setBusy] = useState(false);
@@ -754,17 +755,21 @@ export function DeleteDevicesModal({
       await onDone();
     } catch (e) {
       const partial = bulkDeletePartial(e);
-      if (partial) {
-        // Some went: the list must show that, so close and refresh as after a delete.
+      if (partial && partial.deleted.length > 0 && partial.notDeleted.length > 0) {
+        // Some went: close, refresh the list, and keep the rest selected to try again.
+        const left = partial.notDeleted.length;
         toast.push(
           'err',
-          'Some devices not deleted',
-          `${partial.deleted} deleted, ${partial.notDeleted} not deleted. Try again to delete the rest.`,
+          `${plural(left)} not deleted`,
+          `${plural(partial.deleted.length)} deleted. ${left === 1 ? 'The other is' : `The other ${left} are`} still ` +
+            'selected: delete again to retry.',
         );
         onClose();
-        await onDone();
+        await onDone(partial.notDeleted);
       } else {
-        toast.push('err', 'Delete failed', errText(e));
+        // Nothing went: a plain failure. The dialog stays, and Delete retries (a device already gone counts).
+        toast.push('err', n === 1 ? 'Device not deleted' : 'Devices not deleted',
+          partial ? 'Try again.' : bulkErrorText(e) || 'The server didn’t accept the delete. Try again.');
       }
     } finally {
       setBusy(false);

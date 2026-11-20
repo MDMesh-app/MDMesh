@@ -571,6 +571,46 @@ public class DeviceHistoryOnDeleteTest {
     }
 
     @Test
+    public void bulkChangesOverFiveThousandDevicesLockThemBriefly() throws Exception {
+        String prefix = "many-" + UUID.randomUUID() + "-";
+        sql("INSERT INTO " + schema + ".devices (number, customerId, configurationId, lastUpdate) SELECT '" + prefix
+                + "' || g, " + customerId + ", " + configurationId + ", 0 FROM generate_series(1, 5000) g");
+        java.util.List<Integer> ids = new java.util.ArrayList<>();
+        try (Connection c = connect(); Statement st = c.createStatement();
+             ResultSet r = st.executeQuery("SELECT id FROM " + schema + ".devices WHERE number LIKE '" + prefix
+                     + "%' ORDER BY id DESC")) {
+            while (r.next()) ids.add(r.getInt(1));
+        }
+        assertEquals(5000, ids.size());
+        int otherConfiguration = (int) scalar("INSERT INTO " + schema + ".configurations (name, customerId) VALUES ('"
+                + UUID.randomUUID() + "', " + customerId + ") RETURNING id");
+        int group = (int) scalar("INSERT INTO " + schema + ".groups (name, customerId) VALUES ('"
+                + UUID.randomUUID() + "', " + customerId + ") RETURNING id");
+        asAdmin(() -> {
+            DeviceDAO devices = injector.getInstance(DeviceDAO.class);
+            Integer[] ordered = ids.stream().sorted().toArray(Integer[]::new);
+            long t0 = System.nanoTime();
+            devices.requireAllAccessibleForUpdate(ordered);
+            long check = System.nanoTime() - t0;
+            t0 = System.nanoTime();
+            assertEquals(5000, devices.updateDevicesConfiguration(ids, otherConfiguration).size());
+            long configuration = System.nanoTime() - t0;
+            t0 = System.nanoTime();
+            devices.updateDevicesGroups(ids, Collections.singletonList(new com.hmdm.rest.json.LookupItem(group, "g")),
+                    true);
+            long groups = System.nanoTime() - t0;
+            System.out.printf("5000 devices, transaction (lock-hold) time: check %d ms, configuration %d ms, "
+                    + "groups %d ms%n", check / 1_000_000, configuration / 1_000_000, groups / 1_000_000);
+            assertTrue("each bulk transaction stays short", Math.max(check, Math.max(configuration, groups))
+                    < 5_000_000_000L);
+        });
+        assertEquals(5000, scalar("SELECT count(*) FROM " + schema + ".devices WHERE number LIKE '" + prefix
+                + "%' AND configurationId = " + otherConfiguration));
+        assertEquals(5000, scalar("SELECT count(*) FROM " + schema + ".deviceGroups WHERE groupId = " + group));
+        sql("DELETE FROM " + schema + ".devices WHERE number LIKE '" + prefix + "%'");
+    }
+
+    @Test
     public void aCheckInWaitsForADeleteInProgressThenAnswersAsAnUnknownDevice() throws Exception {
         String number = "inflight-" + UUID.randomUUID();
         int id = deviceWithHistory(number);
@@ -581,6 +621,7 @@ public class DeviceHistoryOnDeleteTest {
         try (Connection deleter = connect(); Statement st = deleter.createStatement()) {
             deleter.setAutoCommit(false);
             st.executeUpdate("DELETE FROM " + schema + ".devices WHERE id = " + id); // not committed yet
+            int deleterPid = backendPid(deleter);
             com.hmdm.rest.json.agent.AgentCheckInRequest request = new com.hmdm.rest.json.agent.AgentCheckInRequest();
             request.setDeviceId(number);
             com.hmdm.rest.json.agent.AgentTelemetryEvent event = new com.hmdm.rest.json.agent.AgentTelemetryEvent();
@@ -590,7 +631,7 @@ public class DeviceHistoryOnDeleteTest {
             // It still sees the device and authenticates, then its writes wait for the delete.
             java.util.concurrent.Future<com.hmdm.rest.json.Response> checkin = pool.submit(() ->
                     agentResource(injector.getInstance(AgentCommandDAO.class)).checkin("Bearer " + secret, null, request));
-            Thread.sleep(500);
+            awaitBlockedBy(deleterPid); // the check-in is waiting on the delete's lock
             assertTrue("the check-in waits for the delete", !checkin.isDone());
             deleter.commit();
             assertEquals("error.agent.unauthorized",
@@ -602,7 +643,7 @@ public class DeviceHistoryOnDeleteTest {
     }
 
     @Test
-    public void deliveringAKioskCommandWaitsForADeleteInProgressAndNeverDeadlocks() throws Exception {
+    public void deliveringAKioskCommandWaitsForADeleteInProgress() throws Exception {
         String number = "claim-" + UUID.randomUUID();
         sql("INSERT INTO " + schema + ".devices (number, customerId, configurationId, lastUpdate) VALUES ('" + number
                 + "', " + customerId + ", " + configurationId + ", 0)",
@@ -614,9 +655,10 @@ public class DeviceHistoryOnDeleteTest {
         try (Connection deleter = connect(); Statement st = deleter.createStatement()) {
             deleter.setAutoCommit(false);
             st.executeUpdate("DELETE FROM " + schema + ".devices WHERE number = '" + number + "'");
+            int deleterPid = backendPid(deleter);
             // The claim locks the device first, as the delete did, so it waits instead of locking the command.
             java.util.concurrent.Future<Boolean> claim = pool.submit(() -> agent.claimForDelivery(command, 1L));
-            Thread.sleep(500);
+            awaitBlockedBy(deleterPid);
             assertTrue("the claim waits for the delete", !claim.isDone());
             deleter.commit();
             try {
@@ -648,6 +690,68 @@ public class DeviceHistoryOnDeleteTest {
         });
         assertEquals(1, scalar("SELECT count(*) FROM " + schema + ".devices WHERE id = " + id + " AND number = '"
                 + number + "'"));
+    }
+
+    @Test
+    public void aDeleteWaitsForAKioskCommandBeingDeliveredAndNeitherDeadlocks() throws Exception {
+        // The order that deadlocked before: the delivery has locked what it needs, then the delete starts. The
+        // delivery runs in a transaction this test holds open, so the delete is seen waiting before it commits.
+        String number = "claimfirst-" + UUID.randomUUID();
+        sql("INSERT INTO " + schema + ".devices (number, customerId, configurationId, lastUpdate) VALUES ('" + number
+                + "', " + customerId + ", " + configurationId + ", 0)",
+                "INSERT INTO " + schema + ".agentCommand (deviceNumber, type, status, createdAt) VALUES ('" + number
+                        + "', 'kiosk.enter', 'pending', 0)"); // and no device_state row: its insert checks the key
+        AgentCommandDAO agent = injector.getInstance(AgentCommandDAO.class);
+        com.hmdm.persistence.domain.AgentCommand command = agent.listPending(number).get(0);
+        org.apache.ibatis.session.SqlSessionManager sessions =
+                injector.getInstance(org.apache.ibatis.session.SqlSessionManager.class);
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try (Connection deleter = connect(); Statement st = deleter.createStatement()) {
+            sessions.startManagedSession(false); // claimForDelivery joins it and leaves it open
+            boolean claimed;
+            try {
+                claimed = agent.claimForDelivery(command, 1L);
+                int deleterPid = backendPid(deleter);
+                java.util.concurrent.Future<Integer> delete = pool.submit(() -> st.executeUpdate(
+                        "DELETE FROM " + schema + ".devices WHERE number = '" + number + "'"));
+                awaitBlocked(deleterPid); // the delete waits for the delivery's transaction
+                sessions.commit();
+                assertEquals("the delete goes through once the delivery commits", 1,
+                        (int) delete.get(10, java.util.concurrent.TimeUnit.SECONDS));
+            } finally {
+                sessions.close();
+            }
+            assertTrue("the command was delivered", claimed);
+        } finally {
+            pool.shutdownNow();
+        }
+        assertHistory(number, 0);
+    }
+
+    private static int backendPid(Connection c) throws SQLException {
+        try (Statement s = c.createStatement(); ResultSet r = s.executeQuery("SELECT pg_backend_pid()")) {
+            r.next();
+            return r.getInt(1);
+        }
+    }
+
+    /** Waits until some session is waiting on a lock that backend {@code pid} holds. */
+    private static void awaitBlockedBy(int pid) throws Exception {
+        awaitTrue("SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND " + pid
+                + " = ANY(pg_blocking_pids(pid))");
+    }
+
+    /** Waits until backend {@code pid} is waiting on a lock. */
+    private static void awaitBlocked(int pid) throws Exception {
+        awaitTrue("SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND pid = " + pid);
+    }
+
+    private static void awaitTrue(String countQuery) throws Exception {
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (scalar(countQuery) == 0) {
+            assertTrue("timed out: " + countQuery, System.currentTimeMillis() < deadline);
+            Thread.sleep(20);
+        }
     }
 
     /** The agent API over the real DAOs; what a refused or device-gone check-in needs, nothing more. */

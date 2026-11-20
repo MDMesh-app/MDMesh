@@ -34,9 +34,10 @@ Fixes
 - The API refuses to change the number of a device enrolled with the agent (`error.device.number.agent`): the agent
   signs in with that number and could not check in again. Other devices are renamed as before.
 - Bulk delete deletes nothing when one of the devices is out of the user's reach. Otherwise each device is deleted on
-  its own, and when some can't be, the console says how many. Before, a failure partway left some deleted and still
-  answered OK.
-- Bulk configuration and group changes apply to every selected device or to none.
+  its own, and when some can't be, the console keeps those selected to delete again. Before, a failure partway left
+  some deleted and still answered OK.
+- Bulk configuration and group changes apply to every selected device or to none, and only add devices to groups of
+  the user's own customer that they may use.
 - Agent: a settings file damaged by the device's storage (after a power loss) no longer makes every kiosk and
   configuration command fail with "Unable to parse preferences proto." or crash the kiosk screen. The agent keeps a
   copy of each file and restores it, or the configured kiosk, and the device page shows a `storageRecovered` event

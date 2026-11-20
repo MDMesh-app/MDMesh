@@ -90,12 +90,22 @@ export async function deleteDevicesBulk(ids: number[]): Promise<void> {
   await apiClient.post('/private/devices/deleteBulk', { ids });
 }
 
-/** When a bulk delete left some devices: how many went and how many didn't, else null. */
-export function bulkDeletePartial(e: unknown): { deleted: number; notDeleted: number } | null {
+/** When a bulk delete left some devices: the ids deleted and the ids not deleted, else null. */
+export function bulkDeletePartial(e: unknown): { deleted: number[]; notDeleted: number[] } | null {
   if (!(e instanceof ApiError) || e.message !== BULK_DELETE_PARTIAL) return null;
   const data = (e.data ?? {}) as { deleted?: unknown; notDeleted?: unknown };
-  const count = (v: unknown) => (Array.isArray(v) ? v.length : 0);
-  return { deleted: count(data.deleted), notDeleted: count(data.notDeleted) };
+  const ids = (v: unknown) => (Array.isArray(v) ? v.filter((id): id is number => typeof id === 'number') : []);
+  return { deleted: ids(data.deleted), notDeleted: ids(data.notDeleted) };
+}
+
+const bulkMessages: Record<string, string> = {
+  'error.permission.denied': 'You can’t change one or more of these devices, so nothing was changed.',
+  [BULK_DELETE_PARTIAL]: 'Some devices weren’t deleted. Try again.',
+};
+/** What a refused bulk device change says, by the server's error key; other messages as they are. */
+export function bulkErrorText(e: unknown): string {
+  const message = e instanceof Error ? e.message : '';
+  return bulkMessages[message] ?? message;
 }
 
 /** Rename a device's friendly description — POST /private/devices/{id}/description

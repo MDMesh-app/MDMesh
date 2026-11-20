@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { ApiError } from './client';
-import { BULK_DELETE_PARTIAL, bulkDeletePartial } from './devices';
+import { BULK_DELETE_PARTIAL, bulkDeletePartial, bulkErrorText } from './devices';
 
 describe('bulkDeletePartial', () => {
-  it('counts what a partial bulk delete deleted and left', () => {
+  it('lists what a partial bulk delete deleted and left', () => {
     const e = new ApiError(BULK_DELETE_PARTIAL, 'ERROR', 200, { deleted: [1, 2, 3], notDeleted: [4] });
-    expect(bulkDeletePartial(e)).toEqual({ deleted: 3, notDeleted: 1 });
+    expect(bulkDeletePartial(e)).toEqual({ deleted: [1, 2, 3], notDeleted: [4] });
   });
 
   it('is null for any other failure', () => {
@@ -15,6 +15,19 @@ describe('bulkDeletePartial', () => {
   });
 
   it('copes with a missing list', () => {
-    expect(bulkDeletePartial(new ApiError(BULK_DELETE_PARTIAL, 'ERROR', 200))).toEqual({ deleted: 0, notDeleted: 0 });
+    expect(bulkDeletePartial(new ApiError(BULK_DELETE_PARTIAL, 'ERROR', 200))).toEqual({ deleted: [], notDeleted: [] });
+  });
+});
+
+describe('bulkErrorText', () => {
+  it('words the server keys a bulk change can answer', () => {
+    expect(bulkErrorText(new ApiError('error.permission.denied', 'ERROR', 200))).toBe(
+      'You can’t change one or more of these devices, so nothing was changed.',
+    );
+  });
+
+  it('passes other messages through', () => {
+    expect(bulkErrorText(new Error('Network down'))).toBe('Network down');
+    expect(bulkErrorText(undefined)).toBe('');
   });
 });

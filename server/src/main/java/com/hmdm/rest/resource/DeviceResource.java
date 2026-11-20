@@ -318,7 +318,12 @@ public class DeviceResource {
             return Response.PERMISSION_DENIED();
         }
 
-        this.deviceDAO.removeDeviceById(id);
+        try {
+            this.deviceDAO.removeDeviceById(id);
+        } catch (SecurityException e) {
+            log.warn("Device {} not deleted: not accessible to user {}", id, SecurityContext.get().getCurrentUserName());
+            return Response.PERMISSION_DENIED();
+        }
         return Response.OK();
     }
 

@@ -425,9 +425,24 @@ for pre in "" "-Dx=1 -Xmx1g"; do
   got=$(env -i CATALINA_OPTS="$pre" sh -c '. "$1"; printf %s "$CATALINA_OPTS"' _ "$REPO/install/tomcat-setenv.sh")
   [ "$got" = "${pre:+$pre }-XX:-UseBASE64Intrinsics" ] || fail "install/tomcat-setenv.sh turns CATALINA_OPTS '$pre' into '$got'"
 done
+# A native install writes it where there is none, rewrites its own (the marker line) and leaves an operator's alone: a
+# file without the marker, a link (even to ours) or a directory.
+mkdir -p "$WORK/setenv"
+sstate() { bash -c '. "$1"; mdm_setenv_state "$2"' _ "$REPO/install/lib/jdk.sh" "$1"; }
+grep -qxF -- "$(bash -c '. "$1"; printf %s "$MDM_SETENV_MARKER"' _ "$REPO/install/lib/jdk.sh")" "$REPO/install/tomcat-setenv.sh" \
+  || fail "install/tomcat-setenv.sh lacks install/lib/jdk.sh's MDM_SETENV_MARKER line"
+[ "$(sstate "$WORK/setenv/none.sh")" = absent ] || fail "setenv.sh: a missing file is not 'absent'"
+cp -- "$REPO/install/tomcat-setenv.sh" "$WORK/setenv/ours.sh"
+[ "$(sstate "$WORK/setenv/ours.sh")" = ours ] || fail "setenv.sh: ours is not 'ours'"
+# shellcheck disable=SC2016  # the operator's file's own text
+printf 'CATALINA_OPTS="$CATALINA_OPTS -Xmx2g"\n' >"$WORK/setenv/theirs.sh"
+[ "$(sstate "$WORK/setenv/theirs.sh")" = theirs ] || fail "setenv.sh: an operator's own is not 'theirs'"
+ln -s ours.sh "$WORK/setenv/link.sh"; mkdir "$WORK/setenv/dir.sh"
+[ "$(sstate "$WORK/setenv/link.sh")$(sstate "$WORK/setenv/dir.sh")" = theirstheirs ] || fail "setenv.sh: a link or a directory is not 'theirs'"
 # shellcheck disable=SC2016  # the installer's own text
-grep -qxF 'tc_write bin/setenv.sh cat "$REPO/install/tomcat-setenv.sh"' "$REPO/install/install-native.sh" \
-  || fail "install-native.sh no longer writes Tomcat's bin/setenv.sh"
+{ grep -qF 'case "$(mdm_setenv_state "$CATALINA/bin/setenv.sh" svc_cat)" in' "$REPO/install/install-native.sh" \
+  && grep -qxF '  absent|ours) tc_write bin/setenv.sh cat "$REPO/install/tomcat-setenv.sh" ;;' "$REPO/install/install-native.sh"; } \
+  || fail "install-native.sh no longer writes Tomcat's bin/setenv.sh only when it is absent or ours"
 grep -qxF 'COPY install/tomcat-setenv.sh /usr/local/tomcat/bin/setenv.sh' "$REPO/docker/server.Dockerfile" \
   || fail "docker/server.Dockerfile no longer installs Tomcat's bin/setenv.sh"
 ok

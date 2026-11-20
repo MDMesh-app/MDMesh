@@ -4,7 +4,7 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { AppRoutes } from '../App';
-import { renderInConsole, stubApi } from '../test/console';
+import { renderInConsole, settled, stubApi } from '../test/console';
 
 const LOAD = { timeout: 10_000 };
 const NOW = Date.now();
@@ -48,9 +48,10 @@ describe('activity wording', () => {
     expect(rows[4]).toContain('WH-1 returned to kiosk mode From the device');
     expect(rows.some((r) => r.includes('Front desk'))).toBe(false);
     expect(rows.some((r) => r.includes('1234') || r.includes('kioskExit'))).toBe(false);
+    await settled();
   });
 
-  it('Overview: the feed shows before the command histories come, and names the commands once they do', async () => {
+  it('Overview: the feed shows in full before the command histories come, and names the commands once they do', async () => {
     const fetch = stubApi(api);
     const base = fetch.getMockImplementation()!;
     let release = () => {};
@@ -62,19 +63,12 @@ describe('activity wording', () => {
     renderInConsole(<AppRoutes />, { path: '/' });
     const feed = within(await screen.findByRole('list', { name: 'Recent activity' }, LOAD));
     await feed.findByText('Command #1234: done', undefined, LOAD);
+    expect(feed.getByText('Command #1300: failed')).toBeTruthy();
+    expect(feed.getAllByRole('listitem').length).toBe(5);
     expect(feed.getByText('With the exit PIN, on the device')).toBeTruthy();
     release();
     await feed.findByText('Lock: done', undefined, LOAD);
-  });
-
-  it('Overview: a history that never answers doesn’t hold the feed back', async () => {
-    const fetch = stubApi(api);
-    const base = fetch.getMockImplementation()!;
-    fetch.mockImplementation((input, init) => (String(input).includes('/commands') ? new Promise<Response>(() => {}) : base(input, init)));
-    renderInConsole(<AppRoutes />, { path: '/' });
-    const feed = within(await screen.findByRole('list', { name: 'Recent activity' }, LOAD));
-    await feed.findByText('Command #1300: failed', undefined, LOAD);
-    expect(feed.getAllByRole('listitem').length).toBe(5);
+    await settled();
   });
 
   it('device Activity tab: the same wording', async () => {
@@ -86,5 +80,6 @@ describe('activity wording', () => {
     expect(list.getByText('Left kiosk mode')).toBeTruthy();
     expect(list.getByText('Returned to kiosk mode')).toBeTruthy();
     expect(list.queryByText('kioskExit')).toBeNull();
+    await settled();
   });
 });

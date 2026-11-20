@@ -1,9 +1,9 @@
 // Test helpers: the seeded server roles as signed-in users, a stubbed API, and a render inside the console's
 // providers with a chosen registry.
-import { render } from '@testing-library/react';
+import { render, waitFor } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
-import { vi } from 'vitest';
+import { expect, vi } from 'vitest';
 import type { AuthUser } from '../api/auth';
 import { AuthProvider } from '../auth/AuthContext';
 import { CORE_EXTENSION } from '../ext/core';
@@ -50,9 +50,13 @@ export function registryOf(...extensions: ExtensionDefinition[]): Registry {
   return registry;
 }
 
+/** The API calls the current stub has not answered yet (settled() waits for none). */
+let inFlight = { count: 0 };
+
 /**
  * Answer every API call with an empty OK envelope, or with `data(path, init)` when it returns something. Returns
- * the fetch mock, to assert on the calls.
+ * the fetch mock, to assert on the calls or to replace its implementation (held or failing answers); calls reach it
+ * through a wrapper that counts the ones not yet answered, for settled().
  */
 export function stubApi(data: (path: string, init?: RequestInit) => unknown = () => null) {
   const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -62,8 +66,31 @@ export function stubApi(data: (path: string, init?: RequestInit) => unknown = ()
       headers: { 'Content-Type': 'application/json' },
     });
   });
-  vi.stubGlobal('fetch', fetch);
+  // A fresh count per stub: a call a previous test left unanswered can't hold this one's settled().
+  const counter = { count: 0 };
+  inFlight = counter;
+  vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => {
+    counter.count++;
+    const answer = fetch(input, init);
+    const done = () => void counter.count--;
+    void answer.then(done, done);
+    return answer;
+  });
   return fetch;
+}
+
+/**
+ * Wait until the page has finished loading: every API call answered and no placeholder (skeleton) left. A test ends
+ * with this, or with an assertion on the loaded page, so no load is still running when the next test starts.
+ */
+export async function settled(timeout = 10_000) {
+  await waitFor(
+    () => {
+      expect(inFlight.count).toBe(0);
+      expect(document.querySelector('.v2-skel, .v2-skelrows')).toBeNull();
+    },
+    { timeout },
+  );
 }
 
 /**

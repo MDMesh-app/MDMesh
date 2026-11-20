@@ -4,7 +4,7 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest';
 import type { AuthUser } from '../../api/auth';
 import { AppRoutes } from '../../App';
-import { ROLES, renderInConsole, stubApi } from '../../test/console';
+import { ROLES, renderInConsole, settled, stubApi } from '../../test/console';
 
 const NOW = Date.now();
 const DEVICE = { id: 7, number: 'WH-1', description: 'Front desk', configurationId: 3, lastUpdate: NOW };
@@ -297,6 +297,7 @@ describe.each([
       const items = within(await screen.findByRole('menu')).getAllByRole('menuitem').map((m) => m.textContent);
       expect(items).toEqual(['Delete']);
     }
+    await settled();
   });
 
   it('the editor: Duplicate and Delete', async () => {

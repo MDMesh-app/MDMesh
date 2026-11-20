@@ -211,18 +211,21 @@ exited or credentials cleared while the older agent ran.
     container. A quick-start install made before v0.3.2 also needs the `JAVA_OPTS` line in its compose file
     ([OPERATIONS](OPERATIONS.md#temporary-debug-log)).
   - **Native:** `sudo ./setup.sh --update --native`. It sets the flag, and upgrades a JDK 17 from your distribution's
-    packages when apt has a newer one. Until you can update, add the flag in a drop-in (if you already set
-    `JAVA_OPTS` there, add it to that line instead), then restart:
+    packages when apt has a newer one. Until you can update, add the flag in a drop-in, then restart. If you already
+    set `JAVA_OPTS` there, add the flag to that line, and quote the whole setting when it holds several flags
+    (unquoted, systemd keeps only the first):
 
     ```bash
     sudo systemctl edit mdmesh-server
     # in the editor, under [Service]:
-    #   Environment=JAVA_OPTS=-XX:-UseBASE64Intrinsics
+    #   Environment="JAVA_OPTS=-XX:-UseBASE64Intrinsics"
+    # or, with flags you already had:
+    #   Environment="JAVA_OPTS=-Xmx1g -XX:-UseBASE64Intrinsics"
     sudo systemctl restart mdmesh-server
     ```
 
-  Going back to a release before 0.5.1 (`--allow-downgrade`, or a rollback) drops the flag again, so keep the `.env`
-  line or the drop-in if you might.
+  On Docker, going back to a release before 0.5.1 (`--allow-downgrade`, or a rollback) drops the flag again, so keep
+  the `.env` line if you might.
 
   To check a running server, look for `= false` and `{command line}`:
 

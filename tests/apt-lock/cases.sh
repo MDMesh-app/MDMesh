@@ -13,8 +13,9 @@
 #             waiting is still said, then minisign is installed;
 #   native    all three held 15 s: the native installer (a copy that stops after its apt steps, on a terminal) waits,
 #             refreshes and installs;
-#   jdk       the oldest openjdk-17 apt has, then that copy's update-only JDK 17 upgrade, with apt in German: it moves
-#             to apt's newest openjdk-17 and says so.
+#   jdk       the oldest openjdk-17 apt has, then that copy's update-only JDK 17 upgrade, with apt in German (a generated
+#             en_US.UTF-8 locale, LANGUAGE=de, apt's translations put back): it moves to apt's newest openjdk-17 and
+#             says so.
 set -euo pipefail
 if [ "${MDMESH_APT_LOCK_TESTS:-}" != 1 ] || [ ! -f /.dockerenv ] || [ "$(id -u)" != 0 ]; then
   echo "cases.sh runs only in tests/apt-lock/run.sh's container." >&2; exit 2
@@ -152,8 +153,22 @@ t; { [ "$(count "up to 5 minutes")" -le 2 ]; } || bad "native: the lock sentence
 shown native
 
 # --- jdk: an update's upgrade of the distribution's JDK 17 (distro_jdk17_upgrade), from the oldest openjdk-17 apt has,
-# with apt's messages in German (LANGUAGE=de; Debian ships apt's translations, Ubuntu's images leave them out). The
-# native copy above, its update-only step run as an update runs it, the JDK found where apt puts it.
+# with apt's messages in German. The native copy above, its update-only step run as an update runs it, the JDK found
+# where apt puts it.
+# German apt needs a real locale (gettext ignores LANGUAGE under C, and under C.UTF-8 since glibc 2.35) and apt's
+# translations, which Ubuntu's images leave out (a dpkg path-exclude): generate en_US.UTF-8, drop the exclude and
+# reinstall apt. The case stops unless apt then really speaks German.
+for f in /etc/dpkg/dpkg.cfg.d/*; do [ -f "$f" ] && sed -i '/\/usr\/share\/locale/d' "$f"; done
+apt-get -qq update > /tmp/jdk-old.log 2>&1
+{ apt-get -qq install -y locales && apt-get -qq install -y --reinstall apt; } >> /tmp/jdk-old.log 2>&1 \
+  || { cat /tmp/jdk-old.log; echo "FAIL: could not install locales or reinstall apt" >&2; exit 1; }
+sed -i 's/^# *\(en_US.UTF-8 UTF-8\)$/\1/' /etc/locale.gen 2>/dev/null || true
+grep -qx 'en_US.UTF-8 UTF-8' /etc/locale.gen 2>/dev/null || echo 'en_US.UTF-8 UTF-8' >> /etc/locale.gen
+locale-gen >> /tmp/jdk-old.log 2>&1 || { cat /tmp/jdk-old.log; echo "FAIL: locale-gen" >&2; exit 1; }
+GERMAN=(env -u LC_ALL LANG=en_US.UTF-8 LANGUAGE=de)
+pol=$("${GERMAN[@]}" apt-cache policy apt 2>&1 || true)
+grep -q 'Installationskandidat:' <<< "$pol" \
+  || { printf '%s\n' "$pol" >&2; echo "FAIL: jdk: apt does not speak German here, so the case would test nothing" >&2; exit 1; }
 J=/work/clone-jdk
 cp -R "$N" "$J"
 # shellcheck disable=SC2016  # the installer's own text
@@ -161,15 +176,13 @@ grep -qx '\[ "$UPDATING" != 1 \] || distro_jdk17_upgrade' "$J/install/install-na
   || { echo "FAIL: install-native.sh no longer runs distro_jdk17_upgrade on an update" >&2; exit 1; }
 # shellcheck disable=SC2016  # the installer's own text
 sed -i 's/^\[ "\$UPDATING" != 1 \] || distro_jdk17_upgrade$/distro_jdk17_upgrade/' "$J/install/install-native.sh"
-apt-get -qq update > /tmp/jdk-old.log 2>&1
 vers=$(apt-cache madison openjdk-17-jdk-headless | awk '{print $3}' | sort -uV)
 old=$(head -n 1 <<< "$vers"); new=$(tail -n 1 <<< "$vers")
 t; { [ -n "$old" ] && [ "$old" != "$new" ]; } || bad "jdk: apt offers an older openjdk-17 to start from (versions: $(tr '\n' ' ' <<< "$vers"))"
 apt-get -qq install -y "openjdk-17-jdk-headless=$old" "openjdk-17-jre-headless=$old" >> /tmp/jdk-old.log 2>&1 \
   || { cat /tmp/jdk-old.log; echo "FAIL: could not install openjdk-17 $old" >&2; exit 1; }
 RC=0
-env -u LC_ALL PATH="/work/stubs:$PATH" LANG=C.UTF-8 LANGUAGE=de MDMESH_BASE_URL=http://localhost:8080 \
-  bash "$J/install/install-native.sh" -y < /dev/null > "$OUT" 2>&1 || RC=$?
+"${GERMAN[@]}" PATH="/work/stubs:$PATH" MDMESH_BASE_URL=http://localhost:8080 bash "$J/install/install-native.sh" -y < /dev/null > "$OUT" 2>&1 || RC=$?
 # shellcheck disable=SC2016  # a dpkg-query format
 now=$(dpkg-query -W -f='${Version}' openjdk-17-jdk-headless)
 t; { [ "$RC" = 0 ] && has "APT STEPS DONE"; } || bad "jdk: the apt steps succeed"

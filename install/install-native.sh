@@ -664,7 +664,7 @@ else
 fi
 # On an update, a JDK 17 from the distribution's packages gets the upgrade apt has for it (OpenJDK security fixes); the
 # server restart below loads it. Only the openjdk-17 packages already installed, never a removal. Not fatal: the update
-# goes on with the JDK it has, and it waits at most 2 minutes for another apt run's lock (not mdm_apt's 5). apt's and
+# goes on with the JDK it has, and each apt call waits at most 2 minutes for another apt run's lock (not 5). apt's and
 # dpkg's output is read with LC_ALL=C: apt translates "Installed:" and "Candidate:".
 distro_jdk17_upgrade() {
   local jdk pkg pol inst cand MDM_APT_LOCK_WAIT=120
@@ -1025,14 +1025,15 @@ tc_write conf/server.xml sed -E "s#(<Connector port=\")[0-9]+(\" protocol=\"HTTP
 info "HTTP port set to ${HTTP_PORT}"
 # bin/setenv.sh, as in the Docker image: catalina.sh adds its JVM flags (-XX:-UseBASE64Intrinsics) however Tomcat is
 # started, the unit's CATALINA_OPTS or a catalina.sh run by hand. Written when there is none and rewritten when it is
-# ours (mdm_setenv_state: it has MDM_SETENV_MARKER); an operator's own is left alone, and the unit's CATALINA_OPTS
-# still sets the flag.
+# ours (mdm_setenv_state: it has MDM_SETENV_MARKER); an operator's own is left alone. The unit's CATALINA_OPTS still
+# sets the flag then, unless that file replaces CATALINA_OPTS (catalina.sh sources it after reading the environment).
 case "$(mdm_setenv_state "$CATALINA/bin/setenv.sh" svc_cat)" in
   absent|ours) tc_write bin/setenv.sh cat "$REPO/install/tomcat-setenv.sh" ;;
   *)
-    printf '  %s!%s %s/bin/setenv.sh is your own, so it is left as it is. The server unit still runs with\n' \
+    printf '  %s!%s %s/bin/setenv.sh is your own, so it is left as it is. The server unit runs with\n' \
       "$c_yel" "$c_reset" "$CATALINA"
-    printf '    -XX:-UseBASE64Intrinsics, but a catalina.sh you start by hand does not. Add this line to it:\n'
+    printf '    -XX:-UseBASE64Intrinsics unless your file replaces CATALINA_OPTS, and a catalina.sh you start by hand\n'
+    printf '    does not have it at all. Add this line at the end of your file:\n'
     printf '      %s\n' "$(tail -n 1 "$REPO/install/tomcat-setenv.sh")"
     printf '    or move your options to a "systemctl edit %s" drop-in and remove the file.\n' "$SVC_UNIT" ;;
 esac

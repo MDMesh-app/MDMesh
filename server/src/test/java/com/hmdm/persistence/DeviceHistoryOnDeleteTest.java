@@ -536,6 +536,8 @@ public class DeviceHistoryOnDeleteTest {
         int before = configurationId;
         setUp();
         int idForeign = deviceWithHistory("cfg-foreign-" + UUID.randomUUID());
+        int foreignGroup = (int) scalar("INSERT INTO " + schema + ".groups (name, customerId) VALUES ('"
+                + UUID.randomUUID() + "', " + customerId + ") RETURNING id");
 
         SecurityContext.init(Fakes.user(myAdmin, mine, "edit_devices", "devices"));
         try {
@@ -553,10 +555,21 @@ public class DeviceHistoryOnDeleteTest {
             } catch (com.hmdm.security.SecurityException expected) {
                 // rolled back
             }
+            // Every device reachable, but one of the groups is another customer's: refused, as for a configuration.
+            for (boolean add : new boolean[]{true, false}) {
+                try {
+                    devices.updateDevicesGroups(java.util.Arrays.asList(idA, idB), java.util.Arrays.asList(
+                            new com.hmdm.rest.json.LookupItem(group, "g"),
+                            new com.hmdm.rest.json.LookupItem(foreignGroup, "theirs")), add);
+                    fail("used another customer's group");
+                } catch (com.hmdm.security.SecurityException expected) {
+                    // rolled back
+                }
+            }
             assertEquals("no device moved", 2, scalar("SELECT count(*) FROM " + schema + ".devices WHERE id IN ("
                     + idA + ", " + idB + ") AND configurationId = " + before));
             assertEquals("no device regrouped", 0, scalar("SELECT count(*) FROM " + schema
-                    + ".deviceGroups WHERE groupId = " + group));
+                    + ".deviceGroups WHERE groupId IN (" + group + ", " + foreignGroup + ")"));
 
             assertEquals(2, devices.updateDevicesConfiguration(java.util.Arrays.asList(idB, idA, -1),
                     otherConfiguration).size());
@@ -693,9 +706,10 @@ public class DeviceHistoryOnDeleteTest {
     }
 
     @Test
-    public void aDeleteWaitsForAKioskCommandBeingDeliveredAndNeitherDeadlocks() throws Exception {
-        // The order that deadlocked before: the delivery has locked what it needs, then the delete starts. The
-        // delivery runs in a transaction this test holds open, so the delete is seen waiting before it commits.
+    public void aDeleteWaitsForAKioskCommandBeingDelivered() throws Exception {
+        // The delivery's transaction is still open when the delete starts: the delete waits for it, then goes
+        // through. (The old deadlock needed the delete to start between the claim's two statements, which the device
+        // lock the claim now takes first rules out by construction; this test does not recreate that timing.)
         String number = "claimfirst-" + UUID.randomUUID();
         sql("INSERT INTO " + schema + ".devices (number, customerId, configurationId, lastUpdate) VALUES ('" + number
                 + "', " + customerId + ", " + configurationId + ", 0)",

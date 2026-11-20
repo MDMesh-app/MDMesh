@@ -26,6 +26,15 @@ describe('bulkErrorText', () => {
     );
   });
 
+  it('names the configuration as a cause when the change is to a configuration', () => {
+    expect(bulkErrorText(new ApiError('error.permission.denied', 'ERROR', 200), 'configuration')).toBe(
+      'You can’t change one or more of these devices, or use this configuration, so nothing was changed.',
+    );
+    expect(bulkErrorText(new ApiError('error.device.configuration.required', 'ERROR', 200), 'configuration')).toBe(
+      'Choose a configuration to move the devices to.',
+    );
+  });
+
   it('passes other messages through', () => {
     expect(bulkErrorText(new Error('Network down'))).toBe('Network down');
     expect(bulkErrorText(undefined)).toBe('');

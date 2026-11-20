@@ -193,6 +193,12 @@ public interface DeviceMapper {
             "     OR EXISTS (SELECT 1 FROM userDeviceGroupsAccess access " +
             "                WHERE groups.id = access.groupId AND access.userId = users.id))";
 
+    /** The ids among {@code groupIds} that aren't {@link #USABLE_GROUPS}, in order. */
+    @Select({"SELECT g.id FROM unnest(#{groupIds,typeHandler=org.apache.ibatis.type.ArrayTypeHandler}) AS g(id) " +
+            "WHERE g.id NOT IN (" + USABLE_GROUPS + ") ORDER BY g.id"})
+    List<Integer> unusableGroups(@Param("userId") int userId, @Param("customerId") int customerId,
+                                 @Param("groupIds") Integer[] groupIds);
+
     /** Puts every device in every group (those it isn't in yet), in one statement. */
     @Insert({"INSERT INTO deviceGroups (deviceId, groupId) " +
             "SELECT d.id, g.id FROM unnest(" + IDS + ") AS d(id) " +

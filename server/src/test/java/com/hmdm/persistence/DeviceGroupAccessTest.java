@@ -54,6 +54,14 @@ public class DeviceGroupAccessTest {
                         ? (a[0] == null ? null : otherCustomerDevice()) : device((Integer) a[0]))
                 .answer("getDeviceByNumber", a -> a[0] == null ? null : device(Integer.parseInt(((String) a[0]).substring(3))))
                 .answer("isDeviceAccessibleToUser", a -> ((Integer) a[0]) == VISIBLE)
+                // The set-based lock and check of the bulk changes, by the same rule (the SQL itself runs on
+                // PostgreSQL in DeviceHistoryOnDeleteTest).
+                .answer("lockDevicesForUpdate", a -> java.util.Arrays.stream((Integer[]) a[0])
+                        .map(id -> id == OTHER_CUSTOMER_DEVICE ? otherCustomerDevice() : device(id))
+                        .collect(java.util.stream.Collectors.toList()))
+                .answer("inaccessibleDevices", a -> java.util.Arrays.stream((Integer[]) a[0])
+                        .filter(id -> id != VISIBLE).collect(java.util.stream.Collectors.toList()))
+                .answer("unusableGroups", a -> new ArrayList<Integer>())
                 .answer("isCustomerConfiguration", a -> ((Integer) a[1]) == 1
                         && (((Integer) a[0]) == OWN_CONFIG || ((Integer) a[0]) == OWN_CONFIG_2));
         dao = new DeviceDAO(fake.mapper, null, Guice.createInjector(), null, 3);

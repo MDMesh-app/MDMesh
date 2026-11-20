@@ -674,7 +674,7 @@ export function ChangeConfigurationModal({
       onClose();
       await onDone();
     } catch (e) {
-      toast.push('err', 'Change failed', bulkErrorText(e) || 'The server didn’t accept the change.');
+      toast.push('err', 'Change failed', bulkErrorText(e, 'configuration') || 'The server didn’t accept the change.');
     } finally {
       setBusy(false);
     }

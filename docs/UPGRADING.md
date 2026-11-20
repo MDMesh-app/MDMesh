@@ -214,10 +214,13 @@ exited or credentials cleared while the older agent ran.
   and agents retry their check-ins meanwhile.
 - **Quick start rolls an update back when the new server isn't healthy within 180 seconds.** With a very large
   history (tens of GB) or very slow storage, this first start could take longer, and the update would be rolled back
-  each time. Take a backup first. To give it longer, add `HEALTH_TIMEOUT=900` (seconds) to `.env` in the install
-  directory. The 0.5.x supervisor doesn't read it, so get this release's supervisor first, as for
-  [v0.5.0](#v050): set `SUPERVISOR_VERSION` in `.env` to this release, run
-  `docker compose pull supervisor && docker compose up -d supervisor`, then apply the update.
+  each time. Take a backup first. To give it longer, add `HEALTH_TIMEOUT=900` (seconds, at least 30) to `.env` in
+  the install directory. The 0.5.x supervisor doesn't read it, so get this release's supervisor first: set
+  `SUPERVISOR_VERSION=latest` in `.env`, then, when no update or rollback is running, run
+  `docker compose pull supervisor && docker compose up -d supervisor`, then apply the update from **Settings →
+  Updates**. That update pins `SUPERVISOR_VERSION` to the release's supervisor by digest again. With automatic
+  updates on (`AUTO_UPDATE=1`), do this as soon as you can: until then the old supervisor may apply the release
+  itself, with its 180-second limit.
 - **Going back to 0.5.0 without a restore** (`--allow-downgrade`) works: 0.5.0 starts on the new database unchanged.
   It keeps the links, so in 0.5.0 too, deleting a device deletes its history and renaming one carries it. A check-in
   or command that races a delete gets a server error in 0.5.0 (this release answers it as for an unknown device).

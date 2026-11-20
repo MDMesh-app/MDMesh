@@ -29,10 +29,25 @@ public class DeviceResourceBulkDeleteTest {
 
     private DeviceDAO.BulkDeleteResult result;
     private boolean refuse;
+    private final java.util.List<String> calls = new java.util.ArrayList<>();
 
     private DeviceResource resource() {
         DeviceDAO devices = new DeviceDAO(null, null, Guice.createInjector(), null, 3) {
-            @Override public boolean areAccessibleToUser(Collection<Integer> ids) { return true; }
+            @Override public boolean areAccessibleToUser(Collection<Integer> ids) {
+                throw new AssertionError("the DAO checks access, under the rows' locks");
+            }
+            @Override public Device getDeviceByNumber(String number) { return null; }
+            @Override public Device getDeviceById(Integer id) { return null; }
+            @Override public java.util.List<Device> updateDevicesConfiguration(Collection<Integer> ids, Integer cfg) {
+                calls.add("configuration " + cfg);
+                if (refuse) throw SecurityException.onConfigurationAccessViolation(cfg);
+                return java.util.Collections.emptyList();
+            }
+            @Override public void updateDevicesGroups(Collection<Integer> ids, java.util.List<com.hmdm.rest.json.LookupItem> g,
+                                                      boolean add) {
+                calls.add("groups");
+                if (refuse) throw SecurityException.onCustomerDataAccessViolation(7, "group");
+            }
             @Override public BulkDeleteResult removeDevicesByIds(Collection<Integer> ids) {
                 if (refuse) {
                     Device denied = new Device();
@@ -87,5 +102,31 @@ public class DeviceResourceBulkDeleteTest {
         Map<String, Object> data = (Map<String, Object>) r.getData();
         assertEquals(Arrays.asList(1), data.get("deleted"));
         assertEquals(Arrays.asList(2), data.get("notDeleted"));
+    }
+
+    @Test
+    public void aBulkConfigurationChangeNeedsAConfiguration() {
+        Device request = ids(1, 2);
+        Response r = resource().updateDevice(request);
+        assertEquals(Response.ResponseStatus.ERROR, r.getStatus());
+        assertEquals("error.device.configuration.required", r.getMessage());
+        assertEquals("nothing changed, notified or woken", java.util.Collections.emptyList(), calls);
+    }
+
+    @Test
+    public void bulkConfigurationAndGroupRefusalsArePermissionDenied() {
+        refuse = true;
+        Device request = ids(1, 2);
+        request.setConfigurationId(5);
+        Response r = resource().updateDevice(request);
+        assertEquals(Response.PERMISSION_DENIED().getMessage(), r.getMessage());
+
+        com.hmdm.rest.json.DeviceGroupBulkRequest groups = new com.hmdm.rest.json.DeviceGroupBulkRequest();
+        groups.setIds(Arrays.asList(1, 2));
+        groups.setGroups(java.util.Collections.singletonList(new com.hmdm.rest.json.LookupItem(7, "g")));
+        groups.setAction("set");
+        r = resource().updateDeviceGroupBulk(groups);
+        assertEquals(Response.PERMISSION_DENIED().getMessage(), r.getMessage());
+        assertEquals(Arrays.asList("configuration 5", "groups"), calls);
     }
 }

@@ -100,11 +100,16 @@ export function bulkDeletePartial(e: unknown): { deleted: number[]; notDeleted: 
 
 const bulkMessages: Record<string, string> = {
   'error.permission.denied': 'You can’t change one or more of these devices, so nothing was changed.',
+  'error.device.configuration.required': 'Choose a configuration to move the devices to.',
   [BULK_DELETE_PARTIAL]: 'Some devices weren’t deleted. Try again.',
 };
-/** What a refused bulk device change says, by the server's error key; other messages as they are. */
-export function bulkErrorText(e: unknown): string {
+/** What a refused bulk device change says, by the server's error key; other messages as they are. A change to a
+ *  configuration can also be refused for the configuration, so its refusal says so. */
+export function bulkErrorText(e: unknown, change: 'devices' | 'configuration' = 'devices'): string {
   const message = e instanceof Error ? e.message : '';
+  if (change === 'configuration' && message === 'error.permission.denied') {
+    return 'You can’t change one or more of these devices, or use this configuration, so nothing was changed.';
+  }
   return bulkMessages[message] ?? message;
 }
 

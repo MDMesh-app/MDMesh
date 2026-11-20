@@ -243,11 +243,12 @@ public class DeviceDAO extends AbstractDAO<Device> {
     }
 
     /**
-     * Adds the devices to the groups ({@code add}), or removes them from the groups, all of them or none. Only the
-     * customer's groups the user may use are touched, as a device edit does. Devices already gone are skipped. Each
-     * changed device's {@link DeviceInfoUpdatedEvent} fires once the change has committed.
+     * Adds the devices to the groups ({@code add}), or removes them from the groups, all of them or none. Devices
+     * already gone are skipped. Each changed device's {@link DeviceInfoUpdatedEvent} fires once the change has
+     * committed.
      *
-     * @throws SecurityException the user may not reach one of the devices (none changed)
+     * @throws SecurityException the user may not reach one of the devices, or use one of the groups (none changed):
+     *                           a group of the user's customer, for a user limited to some groups one of those
      */
     public void updateDevicesGroups(Collection<Integer> ids, List<LookupItem> groups, boolean add) {
         for (Integer id : applyDevicesGroups(orderedIds(ids), groups, add)) {
@@ -261,11 +262,19 @@ public class DeviceDAO extends AbstractDAO<Device> {
         List<Integer> devices = lockAccessible(orderedIds).stream().map(Device::getId).collect(Collectors.toList());
         Integer[] groupIds = groups == null ? new Integer[0]
                 : groups.stream().map(LookupItem::getId).filter(Objects::nonNull).distinct().toArray(Integer[]::new);
-        if (devices.isEmpty() || groupIds.length == 0) {
+        if (groupIds.length == 0) {
             return devices;
         }
-        User user = SecurityContext.get().getCurrentUser().orElseThrow(
-                () -> SecurityException.onDeviceAccessViolation(this.mapper.getDeviceById(devices.get(0))));
+        User user = SecurityContext.get().getCurrentUser()
+                .orElseThrow(() -> SecurityException.onCustomerDataAccessViolation(groupIds[0], "group"));
+        // Every group named must be one the user may use, as a configuration must be: else nothing changes.
+        List<Integer> unusable = this.mapper.unusableGroups(user.getId(), user.getCustomerId(), groupIds);
+        if (!unusable.isEmpty()) {
+            throw SecurityException.onCustomerDataAccessViolation(unusable.get(0), "group");
+        }
+        if (devices.isEmpty()) {
+            return devices;
+        }
         Integer[] deviceIds = devices.toArray(new Integer[0]);
         if (add) {
             this.mapper.addDevicesToGroups(user.getId(), user.getCustomerId(), deviceIds, groupIds);

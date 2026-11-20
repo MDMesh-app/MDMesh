@@ -21,7 +21,8 @@ import java.util.concurrent.TimeUnit
  * `wipeNotStarted` and schedules [ConfigReapplyWorker]). Early (WorkManager's delay is not on the uptime clock), it
  * runs again for the time left. Not held, it schedules the re-apply itself: that also covers a hold that ended in a
  * process killed before it could schedule the re-apply, a hold without a boot count that died with its process, and
- * a reboot. The re-apply is idempotent, and unique (KEEP) when one is already waiting.
+ * a reboot. The re-apply is idempotent and runs after any re-apply already running, which may have deferred the block
+ * while the hold was on.
  */
 @HiltWorker
 class WipeHoldExpiryWorker @AssistedInject constructor(
@@ -32,7 +33,7 @@ class WipeHoldExpiryWorker @AssistedInject constructor(
     override suspend fun doWork(): Result {
         val left = hold.remainingMs
         if (left == null) {
-            ConfigReapplyWorker.scheduleNow(applicationContext)
+            ConfigReapplyWorker.scheduleAfterCurrent(applicationContext)
         } else {
             // Appended, not replaced: replacing would cancel this run.
             enqueue(applicationContext, left, ExistingWorkPolicy.APPEND_OR_REPLACE)

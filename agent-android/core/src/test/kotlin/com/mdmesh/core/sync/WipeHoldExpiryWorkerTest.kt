@@ -3,6 +3,7 @@ package com.mdmesh.core.sync
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.work.Configuration
+import androidx.work.CoroutineWorker
 import androidx.work.ListenableWorker
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
@@ -12,8 +13,10 @@ import androidx.work.WorkerParameters
 import androidx.work.testing.SynchronousExecutor
 import androidx.work.testing.WorkManagerTestInitHelper
 import com.mdmesh.policy.factoryreset.FactoryResetWipeHold
+import kotlinx.coroutines.CompletableDeferred
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -21,6 +24,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.util.Collections
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicInteger
 
 /** PR #227 review: the scheduled check ends a wipe hold with no command, apply or server, on real WorkManager. */
 @RunWith(RobolectricTestRunner::class)
@@ -32,10 +36,25 @@ class WipeHoldExpiryWorkerTest {
 
     @Volatile private var nowMs = 0L
     @Volatile private var expired = 0
-    private val hold = FactoryResetWipeHold(nowMs = { nowMs }) { expired++ }
+    /** What else the expiry does; AgentModule's schedules the re-apply. */
+    @Volatile private var onExpired: () -> Unit = {}
+    private val hold = FactoryResetWipeHold(nowMs = { nowMs }) {
+        expired++
+        onExpired()
+    }
 
     /** ConfigReapplyWorker runs, as a stand-in (the real one needs the whole configuration graph). */
     private val reapplies: MutableList<UUID> = Collections.synchronizedList(mutableListOf())
+
+    /**
+     * With [inFlightReapply], the stand-in re-apply sets Factory reset: Block as the real one does (deferred while the
+     * hold is on), and its first run stays running until [gate] opens.
+     */
+    @Volatile private var inFlightReapply = false
+    private val gate = CompletableDeferred<Unit>()
+    private val started = AtomicInteger()
+    @Volatile private var deferredRuns = 0
+    @Volatile private var blocked = false
 
     @Before
     fun setUp() {
@@ -43,8 +62,20 @@ class WipeHoldExpiryWorkerTest {
             override fun createWorker(context: Context, name: String, params: WorkerParameters): ListenableWorker? =
                 when (name) {
                     WipeHoldExpiryWorker::class.java.name -> WipeHoldExpiryWorker(context, params, hold)
-                    ConfigReapplyWorker::class.java.name -> object : Worker(context, params) {
-                        override fun doWork(): Result = Result.success().also { reapplies += id }
+                    ConfigReapplyWorker::class.java.name -> if (inFlightReapply) {
+                        object : CoroutineWorker(context, params) {
+                            override suspend fun doWork(): Result {
+                                val first = started.getAndIncrement() == 0
+                                blocked = !hold.held
+                                if (!blocked) deferredRuns++
+                                if (first) gate.await()
+                                return Result.success().also { reapplies += id }
+                            }
+                        }
+                    } else {
+                        object : Worker(context, params) {
+                            override fun doWork(): Result = Result.success().also { reapplies += id }
+                        }
                     }
                     else -> null
                 }
@@ -117,6 +148,43 @@ class WipeHoldExpiryWorkerTest {
         assertEquals(WorkInfo.State.ENQUEUED, now.state)
     }
 
+    /**
+     * PR #227 review: a re-apply is running and deferred the block (the hold was on) when the hold ends. Its re-apply
+     * must still run after it, or the block stays off until the server re-sends; a KEEP enqueue was dropped.
+     */
+    @Test
+    fun `a check at the deadline re-applies after a re-apply already running`() {
+        inFlightReapply = true
+        hold.hold()
+        WipeHoldExpiryWorker.schedule(context)
+        ConfigReapplyWorker.scheduleNow(context) // the boot or an earlier expiry's re-apply
+        awaitDeferred(1)
+
+        nowMs = FactoryResetWipeHold.MAX_HOLD_MS
+        runCheck(checks().single().id)
+        gate.complete(Unit) // the running re-apply finishes; it deferred the block
+
+        awaitReapplies(2)
+        assertTrue("the block is back", blocked)
+    }
+
+    /** The same race when a command or a check-in, not the check, is the first to read the expired hold. */
+    @Test
+    fun `an expiry seen elsewhere re-applies after a re-apply already running`() {
+        inFlightReapply = true
+        onExpired = { ConfigReapplyWorker.scheduleAfterCurrent(context) } // as AgentModule's
+        hold.hold()
+        ConfigReapplyWorker.scheduleNow(context)
+        awaitDeferred(1)
+
+        nowMs = FactoryResetWipeHold.MAX_HOLD_MS
+        hold.expireIfDue()
+        gate.complete(Unit)
+
+        awaitReapplies(2)
+        assertTrue("the block is back", blocked)
+    }
+
     private fun checks(): List<WorkInfo> = workManager.getWorkInfosForUniqueWork(WipeHoldExpiryWorker.UNIQUE_NAME).get()
 
     private fun workInfo(id: UUID): WorkInfo = requireNotNull(workManager.getWorkInfoById(id).get())
@@ -131,6 +199,12 @@ class WipeHoldExpiryWorkerTest {
         val until = System.nanoTime() + WAIT_NS
         while (workInfo(id).state != state && System.nanoTime() < until) Thread.sleep(POLL_MS)
         assertEquals(state, workInfo(id).state)
+    }
+
+    private fun awaitDeferred(count: Int) {
+        val until = System.nanoTime() + WAIT_NS
+        while (deferredRuns < count && System.nanoTime() < until) Thread.sleep(POLL_MS)
+        assertEquals(count, deferredRuns)
     }
 
     /** The re-apply is enqueued from the worker's thread, and runs there. */

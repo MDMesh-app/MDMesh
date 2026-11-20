@@ -149,8 +149,9 @@ object AgentModule {
             // The re-apply first, each on its own: a failure to record the event must not cost the block.
             onExpired = {
                 // Puts Factory reset: Block back now; the server's re-send can wait an hour. Only scheduled: this
-                // runs inside a read of the hold, possibly under the configuration lock the re-apply takes.
-                runCatching { ConfigReapplyWorker.scheduleNow(context) }
+                // runs inside a read of the hold, possibly under the configuration lock the re-apply takes. After any
+                // running re-apply, which may have deferred the block while the hold was on.
+                runCatching { ConfigReapplyWorker.scheduleAfterCurrent(context) }
                     .onFailure { Log.w("FactoryResetWipeHold", "re-apply not scheduled", it) }
                 runCatching { events.record(EventType.WIPE_NOT_STARTED, WIPE_NOT_STARTED_DETAIL) }
                     .onFailure { Log.w("FactoryResetWipeHold", "wipeNotStarted not recorded", it) }

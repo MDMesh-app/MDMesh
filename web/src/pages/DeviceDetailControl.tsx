@@ -261,7 +261,7 @@ export function ConfigPanel({
     text = <>The device hasn’t reported which revision of {strongName} it runs.</>;
   } else if (verdict.label === DEVICE_RESET_LABEL) {
     title = 'Configuration out of date on the device';
-    const cause = staleCause(events, status.appliedAt);
+    const cause = staleCause(events, status);
     text = cause ? (
       <>
         {cause} The device asked for {strongName} again; the server re-sends it.

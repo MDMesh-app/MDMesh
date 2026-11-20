@@ -52,9 +52,20 @@ class ConfigReapplyWorker @AssistedInject constructor(
 
     companion object {
         private const val TAG = "ConfigReapplyWorker"
-        fun scheduleNow(context: Context) {
+        private const val UNIQUE_NAME = "config-reapply"
+
+        /** A re-apply unless one is waiting or running: for boot and self-update, which a running one already sees. */
+        fun scheduleNow(context: Context) = enqueue(context, ExistingWorkPolicy.KEEP)
+
+        /**
+         * A re-apply that starts after any running one finishes, for a change the running one may have read before
+         * (a wipe hold that ended): KEEP would drop it, and the block the running one deferred would stay off.
+         */
+        fun scheduleAfterCurrent(context: Context) = enqueue(context, ExistingWorkPolicy.APPEND_OR_REPLACE)
+
+        private fun enqueue(context: Context, policy: ExistingWorkPolicy) {
             WorkManager.getInstance(context).enqueueUniqueWork(
-                "config-reapply", ExistingWorkPolicy.KEEP, OneTimeWorkRequestBuilder<ConfigReapplyWorker>().build(),
+                UNIQUE_NAME, policy, OneTimeWorkRequestBuilder<ConfigReapplyWorker>().build(),
             )
         }
     }

@@ -75,21 +75,27 @@ export const STALE_CAUSE_WINDOW_MS = 15 * 60_000;
 
 /**
  * Why the configuration is out of date on the device: the latest event that explains it, from around [appliedAt] (when
- * the device first reported it, ConfigStatus.appliedAt) on. Null when none does: the Wi-Fi radio self-heal records no
- * event, and an older event would mislabel today's state.
+ * the device first reported it, ConfigStatus.appliedAt) on, and after the last config.apply that completed. That apply
+ * re-applied the whole configuration, so an event before it was resolved, and the device is out of date again for
+ * another reason (PR #227 review). Only a config.apply brings it back in date: the device's own re-apply leaves it
+ * marked out of date. Null when none explains it: the Wi-Fi radio self-heal records no event, and an older event would
+ * mislabel today's state. Events carry the device's clock, the rest the server's.
  */
 export function staleCause(
   events: ReadonlyArray<DeviceEvent> | undefined,
-  appliedAt: number | null | undefined,
+  status: Pick<ConfigStatus, 'appliedAt' | 'lastCommand'>,
 ): string | null {
-  if (appliedAt == null) return null;
-  const since = appliedAt - STALE_CAUSE_WINDOW_MS;
+  if (status.appliedAt == null) return null;
+  const since = status.appliedAt - STALE_CAUSE_WINDOW_MS;
+  const applied = status.lastCommand?.status === 'done' ? status.lastCommand.completedAt : undefined;
   let latest: DeviceEvent | null = null;
   for (const e of events ?? []) {
-    if (e.type in STALE_CAUSES && e.ts >= since && (!latest || e.ts > latest.ts)) latest = e;
+    if (!(e.type in STALE_CAUSES) || e.ts < since || (applied != null && e.ts <= applied)) continue;
+    if (!latest || e.ts > latest.ts) latest = e;
   }
   return latest ? STALE_CAUSES[latest.type] : null;
 }
+
 /** In sync, but the agent skipped some settings on purpose (e.g. Wi-Fi radio Off while Wi-Fi is the only network). */
 export const SOME_DEFERRED_LABEL = 'In sync (some settings deferred)';
 

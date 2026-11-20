@@ -81,9 +81,21 @@ export async function bulkSetConfiguration(
   await apiClient.put('/private/devices', { ids, configurationId });
 }
 
-/** Delete devices in bulk — POST /private/devices/deleteBulk {ids}. */
+/** Bulk delete deleted some devices, not all (DeviceResource.BULK_DELETE_PARTIAL); data says which. */
+export const BULK_DELETE_PARTIAL = 'error.device.delete.partial';
+
+/** Delete devices in bulk — POST /private/devices/deleteBulk {ids}. Refused for all when the user can't reach one;
+ *  otherwise each is deleted on its own, and an ApiError {@link BULK_DELETE_PARTIAL} lists any not deleted. */
 export async function deleteDevicesBulk(ids: number[]): Promise<void> {
   await apiClient.post('/private/devices/deleteBulk', { ids });
+}
+
+/** When a bulk delete left some devices: how many went and how many didn't, else null. */
+export function bulkDeletePartial(e: unknown): { deleted: number; notDeleted: number } | null {
+  if (!(e instanceof ApiError) || e.message !== BULK_DELETE_PARTIAL) return null;
+  const data = (e.data ?? {}) as { deleted?: unknown; notDeleted?: unknown };
+  const count = (v: unknown) => (Array.isArray(v) ? v.length : 0);
+  return { deleted: count(data.deleted), notDeleted: count(data.notDeleted) };
 }
 
 /** Rename a device's friendly description — POST /private/devices/{id}/description

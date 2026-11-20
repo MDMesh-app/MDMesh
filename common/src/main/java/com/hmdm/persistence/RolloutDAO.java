@@ -47,8 +47,9 @@ public class RolloutDAO {
         mapper.insertRollout(rollout);
     }
 
+    /** @throws DeviceGoneException the device was deleted meanwhile (after the statement's EXISTS check) */
     public void insertCanary(int rolloutId, String deviceNumber) {
-        mapper.insertCanary(rolloutId, deviceNumber);
+        DeviceGoneException.guard(deviceNumber, () -> mapper.insertCanary(rolloutId, deviceNumber));
     }
 
     public AgentRollout findActiveByCustomer(int customerId) {

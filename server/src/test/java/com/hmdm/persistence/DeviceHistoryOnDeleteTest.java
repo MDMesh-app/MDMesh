@@ -439,7 +439,7 @@ public class DeviceHistoryOnDeleteTest {
     }
 
     @Test
-    public void aBulkDeleteDeletesAllOrNothing() throws Exception {
+    public void aBulkDeleteRefusedForOneDeviceDeletesNone() throws Exception {
         String a = "bulk-a-" + UUID.randomUUID();
         String b = "bulk-b-" + UUID.randomUUID();
         int idA = deviceWithHistory(a);
@@ -454,8 +454,8 @@ public class DeviceHistoryOnDeleteTest {
         try {
             injector.getInstance(DeviceDAO.class).removeDevicesByIds(java.util.Arrays.asList(idA, idForeign, idB));
             fail("deleted another customer's device");
-        } catch (RuntimeException expected) {
-            // a security violation, after idA was deleted in the same transaction
+        } catch (com.hmdm.security.SecurityException expected) {
+            // checked for every device before any is deleted
         } finally {
             SecurityContext.release();
         }
@@ -465,14 +465,195 @@ public class DeviceHistoryOnDeleteTest {
         assertEquals(3, scalar("SELECT count(*) FROM " + schema + ".devices WHERE id IN (" + idA + ", " + idB + ", "
                 + idForeign + ")"));
 
-        // A device already gone counts as deleted: the others still go.
+        // A device already gone counts as deleted.
         SecurityContext.init(Fakes.user(adminId, customerId, "edit_devices", "devices"));
         try {
-            injector.getInstance(DeviceDAO.class).removeDevicesByIds(java.util.Arrays.asList(idForeign, -1));
+            DeviceDAO.BulkDeleteResult result =
+                    injector.getInstance(DeviceDAO.class).removeDevicesByIds(java.util.Arrays.asList(idForeign, -1));
+            assertEquals(java.util.Arrays.asList(-1, idForeign), result.deleted);
+            assertTrue(result.notDeleted.isEmpty());
         } finally {
             SecurityContext.release();
         }
         assertHistory(foreign, 0);
+    }
+
+    @Test
+    public void aBulkDeleteHoldsEachDeviceOnlyForItsOwnDelete() throws Exception {
+        String a = "batch-a-" + UUID.randomUUID();
+        String b = "batch-b-" + UUID.randomUUID();
+        int idA = deviceWithHistory(a);
+        int idB = deviceWithHistory(b); // a higher id: deleted after a
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try (Connection blocker = connect(); Statement st = blocker.createStatement()) {
+            // b's delete has to wait (its events are locked elsewhere), as a long cascade would.
+            blocker.setAutoCommit(false);
+            st.executeQuery("SELECT id FROM " + schema + ".device_event WHERE deviceNumber = '" + b + "' FOR UPDATE")
+                    .close();
+            java.util.concurrent.Future<DeviceDAO.BulkDeleteResult> batch = pool.submit(() -> {
+                SecurityContext.init(Fakes.user(adminId, customerId, "edit_devices", "devices"));
+                try {
+                    return injector.getInstance(DeviceDAO.class).removeDevicesByIds(java.util.Arrays.asList(idB, idA));
+                } finally {
+                    SecurityContext.release();
+                }
+            });
+            long deadline = System.currentTimeMillis() + 10_000;
+            while (scalar("SELECT count(*) FROM " + schema + ".devices WHERE id = " + idA) != 0) {
+                assertTrue("a's delete committed while the batch waits on b", System.currentTimeMillis() < deadline);
+                Thread.sleep(50);
+            }
+            assertTrue("the batch is still waiting on b", !batch.isDone());
+            // A check-in from a is answered at once (an unknown device), not held until the batch ends.
+            com.hmdm.rest.json.agent.AgentCheckInRequest request = new com.hmdm.rest.json.agent.AgentCheckInRequest();
+            request.setDeviceId(a);
+            java.util.concurrent.Future<com.hmdm.rest.json.Response> checkin = pool.submit(() ->
+                    agentResource(injector.getInstance(AgentCommandDAO.class)).checkin("Bearer x", null, request));
+            assertEquals("error.agent.unauthorized",
+                    checkin.get(5, java.util.concurrent.TimeUnit.SECONDS).getMessage());
+
+            blocker.rollback();
+            DeviceDAO.BulkDeleteResult result = batch.get(30, java.util.concurrent.TimeUnit.SECONDS);
+            assertEquals(java.util.Arrays.asList(idA, idB), result.deleted);
+            assertTrue(result.notDeleted.isEmpty());
+        } finally {
+            pool.shutdownNow();
+        }
+        assertHistory(a, 0);
+        assertHistory(b, 0);
+    }
+
+    @Test
+    public void bulkConfigurationAndGroupChangesAreAllOrNothing() throws Exception {
+        int idA = deviceWithHistory("cfg-a-" + UUID.randomUUID());
+        int idB = deviceWithHistory("cfg-b-" + UUID.randomUUID());
+        int mine = customerId;
+        int myAdmin = adminId;
+        int otherConfiguration = (int) scalar("INSERT INTO " + schema + ".configurations (name, customerId) VALUES ('"
+                + UUID.randomUUID() + "', " + mine + ") RETURNING id");
+        int group = (int) scalar("INSERT INTO " + schema + ".groups (name, customerId) VALUES ('"
+                + UUID.randomUUID() + "', " + mine + ") RETURNING id");
+        int before = configurationId;
+        setUp();
+        int idForeign = deviceWithHistory("cfg-foreign-" + UUID.randomUUID());
+
+        SecurityContext.init(Fakes.user(myAdmin, mine, "edit_devices", "devices"));
+        try {
+            DeviceDAO devices = injector.getInstance(DeviceDAO.class);
+            try {
+                devices.updateDevicesConfiguration(java.util.Arrays.asList(idA, idForeign, idB), otherConfiguration);
+                fail("moved another customer's device");
+            } catch (com.hmdm.security.SecurityException expected) {
+                // rolled back
+            }
+            try {
+                devices.updateDevicesGroups(java.util.Arrays.asList(idA, idForeign, idB),
+                        Collections.singletonList(new com.hmdm.rest.json.LookupItem(group, "g")), true);
+                fail("regrouped another customer's device");
+            } catch (com.hmdm.security.SecurityException expected) {
+                // rolled back
+            }
+            assertEquals("no device moved", 2, scalar("SELECT count(*) FROM " + schema + ".devices WHERE id IN ("
+                    + idA + ", " + idB + ") AND configurationId = " + before));
+            assertEquals("no device regrouped", 0, scalar("SELECT count(*) FROM " + schema
+                    + ".deviceGroups WHERE groupId = " + group));
+
+            assertEquals(2, devices.updateDevicesConfiguration(java.util.Arrays.asList(idB, idA, -1),
+                    otherConfiguration).size());
+            devices.updateDevicesGroups(java.util.Arrays.asList(idA, idB),
+                    Collections.singletonList(new com.hmdm.rest.json.LookupItem(group, "g")), true);
+        } finally {
+            SecurityContext.release();
+        }
+        assertEquals(2, scalar("SELECT count(*) FROM " + schema + ".devices WHERE id IN (" + idA + ", " + idB
+                + ") AND configurationId = " + otherConfiguration));
+        assertEquals(2, scalar("SELECT count(*) FROM " + schema + ".deviceGroups WHERE groupId = " + group));
+    }
+
+    @Test
+    public void aCheckInWaitsForADeleteInProgressThenAnswersAsAnUnknownDevice() throws Exception {
+        String number = "inflight-" + UUID.randomUUID();
+        int id = deviceWithHistory(number);
+        String secret = "secret-" + UUID.randomUUID();
+        sql("UPDATE " + schema + ".devices SET agentSecretHash = '" + com.hmdm.util.CryptoUtil.getSHA256String(secret)
+                + "' WHERE id = " + id);
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try (Connection deleter = connect(); Statement st = deleter.createStatement()) {
+            deleter.setAutoCommit(false);
+            st.executeUpdate("DELETE FROM " + schema + ".devices WHERE id = " + id); // not committed yet
+            com.hmdm.rest.json.agent.AgentCheckInRequest request = new com.hmdm.rest.json.agent.AgentCheckInRequest();
+            request.setDeviceId(number);
+            com.hmdm.rest.json.agent.AgentTelemetryEvent event = new com.hmdm.rest.json.agent.AgentTelemetryEvent();
+            event.setType("boot");
+            event.setTs(1L);
+            request.setEvents(Collections.singletonList(event));
+            // It still sees the device and authenticates, then its writes wait for the delete.
+            java.util.concurrent.Future<com.hmdm.rest.json.Response> checkin = pool.submit(() ->
+                    agentResource(injector.getInstance(AgentCommandDAO.class)).checkin("Bearer " + secret, null, request));
+            Thread.sleep(500);
+            assertTrue("the check-in waits for the delete", !checkin.isDone());
+            deleter.commit();
+            assertEquals("error.agent.unauthorized",
+                    checkin.get(10, java.util.concurrent.TimeUnit.SECONDS).getMessage());
+        } finally {
+            pool.shutdownNow();
+        }
+        assertHistory(number, 0);
+    }
+
+    @Test
+    public void deliveringAKioskCommandWaitsForADeleteInProgressAndNeverDeadlocks() throws Exception {
+        String number = "claim-" + UUID.randomUUID();
+        sql("INSERT INTO " + schema + ".devices (number, customerId, configurationId, lastUpdate) VALUES ('" + number
+                + "', " + customerId + ", " + configurationId + ", 0)",
+                "INSERT INTO " + schema + ".agentCommand (deviceNumber, type, status, createdAt) VALUES ('" + number
+                        + "', 'kiosk.enter', 'pending', 0)"); // and no device_state row: its insert checks the key
+        AgentCommandDAO agent = injector.getInstance(AgentCommandDAO.class);
+        com.hmdm.persistence.domain.AgentCommand command = agent.listPending(number).get(0);
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try (Connection deleter = connect(); Statement st = deleter.createStatement()) {
+            deleter.setAutoCommit(false);
+            st.executeUpdate("DELETE FROM " + schema + ".devices WHERE number = '" + number + "'");
+            // The claim locks the device first, as the delete did, so it waits instead of locking the command.
+            java.util.concurrent.Future<Boolean> claim = pool.submit(() -> agent.claimForDelivery(command, 1L));
+            Thread.sleep(500);
+            assertTrue("the claim waits for the delete", !claim.isDone());
+            deleter.commit();
+            try {
+                claim.get(10, java.util.concurrent.TimeUnit.SECONDS);
+                fail("a command was delivered to a deleted device");
+            } catch (java.util.concurrent.ExecutionException e) {
+                assertTrue(String.valueOf(e.getCause()), e.getCause() instanceof DeviceGoneException);
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+        assertHistory(number, 0);
+    }
+
+    @Test
+    public void theApiRefusesToRenameAnAgentEnrolledDevice() throws Exception {
+        String number = "api-agent-" + UUID.randomUUID();
+        int id = deviceWithHistory(number);
+        sql("UPDATE " + schema + ".devices SET agentSecretHash = 'x' WHERE id = " + id);
+        asAdmin(() -> {
+            com.hmdm.persistence.domain.Device device = injector.getInstance(DeviceDAO.class).getDeviceById(id);
+            device.setNumber("renamed-" + UUID.randomUUID());
+            com.hmdm.rest.resource.DeviceResource resource = new com.hmdm.rest.resource.DeviceResource(
+                    injector.getInstance(DeviceDAO.class), null, null, null, null, injector.getInstance(UnsecureDAO.class),
+                    null);
+            com.hmdm.rest.json.Response response = resource.updateDevice(device);
+            assertEquals(com.hmdm.rest.json.Response.ResponseStatus.ERROR, response.getStatus());
+            assertEquals("error.device.number.agent", response.getMessage());
+        });
+        assertEquals(1, scalar("SELECT count(*) FROM " + schema + ".devices WHERE id = " + id + " AND number = '"
+                + number + "'"));
+    }
+
+    /** The agent API over the real DAOs; what a refused or device-gone check-in needs, nothing more. */
+    private static com.hmdm.rest.resource.AgentResource agentResource(AgentCommandDAO agent) {
+        return new com.hmdm.rest.resource.AgentResource(injector.getInstance(UnsecureDAO.class), null, agent, null, null,
+                null, null, null, null, null);
     }
 
     private interface Body {

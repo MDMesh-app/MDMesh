@@ -26,9 +26,11 @@ import static org.junit.Assert.fail;
 
 /**
  * The 26.11.20-device-history-* changesets on an install that already has history rows of deleted devices: the
- * orphans go, every live device keeps its rows, the foreign keys end up validated, and a device enrolling while the
- * changesets run keeps its rows. The install is made by migrating, then undoing the three changesets (their foreign
- * keys dropped, their changelog rows deleted) so orphans can be stored, then migrating again.
+ * orphans go, every live device keeps its rows, and the foreign keys end up validated. The install is made by
+ * migrating, then undoing the three changesets (their foreign keys dropped, their changelog rows deleted) so orphans
+ * can be stored, then migrating again. The server serves nothing while Liquibase runs; the one overlap possible is a
+ * transaction still open when the migration starts (another server instance), which the first changeset's locks wait
+ * for, and which keeps its rows.
  *
  * <p>Runs when MDMESH_TEST_PG_URL is set (see AgentEnrollmentTransactionTest for the docker one-liner); with
  * MDMESH_TEST_PG_REQUIRED it fails without one. Works in its own schema, dropped afterwards.</p>
@@ -146,7 +148,8 @@ public class DeviceHistoryOrphanMigrationTest {
         sql("INSERT INTO " + schema + ".agentCommand (deviceNumber, type, status, createdAt) "
                 + "VALUES (NULL, 'device.lock', 'pending', 0)");
 
-        // A device enrolling while the server starts: its transaction is open when the migration begins.
+        // A transaction still open when the migration begins (a device another instance is enrolling): adding the
+        // keys waits for it.
         try (Connection enroll = connect(); Statement s = enroll.createStatement()) {
             enroll.setAutoCommit(false);
             s.execute(insertDevice(enrolling, customerId, configurationId));
@@ -159,7 +162,7 @@ public class DeviceHistoryOrphanMigrationTest {
                     throw new RuntimeException(e);
                 }
             });
-            Thread.sleep(500); // the migration is waiting for this transaction, or past the orphan delete
+            Thread.sleep(500); // the migration is waiting for this transaction's locks
             enroll.commit();
             migration.get(2, TimeUnit.MINUTES);
         }

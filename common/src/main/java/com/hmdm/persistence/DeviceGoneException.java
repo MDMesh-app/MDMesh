@@ -3,8 +3,14 @@
  */
 package com.hmdm.persistence;
 
-import java.sql.SQLException;
+import org.postgresql.util.PSQLException;
+import org.postgresql.util.ServerErrorMessage;
+
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.Locale;
+import java.util.Set;
 import java.util.function.Supplier;
 
 /**
@@ -16,7 +22,11 @@ import java.util.function.Supplier;
 public final class DeviceGoneException extends RuntimeException {
 
     private static final String FOREIGN_KEY_VIOLATION = "23503";
-    private static final String HISTORY_KEY_SUFFIX = "_device_fk\"";
+
+    /** The history tables' foreign keys to devices(number), as PostgreSQL names them (unquoted, so lower case). */
+    static final Set<String> HISTORY_KEYS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
+            "agentcommand_device_fk", "device_state_device_fk", "device_event_device_fk", "device_location_device_fk",
+            "agentrolloutcanary_device_fk")));
 
     public final String deviceNumber;
 
@@ -25,13 +35,16 @@ public final class DeviceGoneException extends RuntimeException {
         this.deviceNumber = deviceNumber;
     }
 
-    /** True when {@code e} is, or is caused by, a history foreign key refusing a row for a device that is gone. */
+    /**
+     * True when {@code e} is, or is caused by, a history foreign key refusing a row for a device that is gone. Read from
+     * the error's constraint field, which no server language changes (the message text and its quote marks do).
+     */
     static boolean isHistoryKeyViolation(Throwable e) {
         for (Throwable t = e; t != null; t = t.getCause() == t ? null : t.getCause()) {
-            if (t instanceof SQLException && FOREIGN_KEY_VIOLATION.equals(((SQLException) t).getSQLState())) {
-                // The constraint name is quoted in the server's message whatever its language.
-                String message = t.getMessage();
-                return message != null && message.toLowerCase(Locale.ROOT).contains(HISTORY_KEY_SUFFIX);
+            if (t instanceof PSQLException && FOREIGN_KEY_VIOLATION.equals(((PSQLException) t).getSQLState())) {
+                ServerErrorMessage server = ((PSQLException) t).getServerErrorMessage();
+                return server != null && server.getConstraint() != null
+                        && HISTORY_KEYS.contains(server.getConstraint().toLowerCase(Locale.ROOT));
             }
         }
         return false;

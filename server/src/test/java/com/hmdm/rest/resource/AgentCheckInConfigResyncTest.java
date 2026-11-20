@@ -79,7 +79,7 @@ public class AgentCheckInConfigResyncTest {
         FakeCommandDAO() { this(new long[]{0L, -1L}); }
 
         private FakeCommandDAO(long[] kiosk) {
-            super(insertOnlyCommandMapper(), null, kioskStateMapper(kiosk), null);
+            super(insertOnlyCommandMapper(), presentDevices(), kioskStateMapper(kiosk), null);
             this.kiosk = kiosk;
         }
 
@@ -96,6 +96,16 @@ public class AgentCheckInConfigResyncTest {
         }
 
         /** The two kiosk-generation statements with their SQL semantics; the other state calls are overridden. */
+        /** The device exists: the kiosk-generation step locks its row first. */
+        private static com.hmdm.persistence.mapper.AgentDeviceMapper presentDevices() {
+            return (com.hmdm.persistence.mapper.AgentDeviceMapper) java.lang.reflect.Proxy.newProxyInstance(
+                    com.hmdm.persistence.mapper.AgentDeviceMapper.class.getClassLoader(),
+                    new Class[]{com.hmdm.persistence.mapper.AgentDeviceMapper.class}, (p, m, a) -> {
+                        if ("lockDeviceKeyShare".equals(m.getName())) return 1;
+                        throw new AssertionError("unexpected AgentDeviceMapper." + m.getName());
+                    });
+        }
+
         private static com.hmdm.persistence.mapper.DeviceStateMapper kioskStateMapper(final long[] kiosk) {
             return (com.hmdm.persistence.mapper.DeviceStateMapper) java.lang.reflect.Proxy.newProxyInstance(
                     com.hmdm.persistence.mapper.DeviceStateMapper.class.getClassLoader(),

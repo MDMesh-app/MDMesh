@@ -204,7 +204,14 @@ public class RolloutResource {
         }
 
         // Persist the canary set
-        for (String n : canary) rolloutDAO.insertCanary(r.getId(), n);
+        for (String n : canary) {
+            try {
+                rolloutDAO.insertCanary(r.getId(), n);
+            } catch (DeviceGoneException e) {
+                // Deleted since the canary set was read: not in the canary, and not queued below.
+                logger.warn("Rollout {}: canary device {} was deleted meanwhile, skipped", r.getId(), n);
+            }
+        }
 
         // Enqueue to the eligible canary devices (skips already-updated / pending / ineligible).
         Set<String> pending = rolloutDAO.listPendingInstallNumbers(cust, r.getPackageName());

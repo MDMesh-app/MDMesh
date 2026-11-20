@@ -58,8 +58,9 @@ public class ConfigAppInstaller {
     /**
      * Queue an {@code app.install} for every action=install app of the device's configuration
      * that has a real hosted APK URL. An app whose SHA-256 is unknown (hosted elsewhere, none stored) is recorded as
-     * a failed command saying so instead of being sent. Returns the number queued. Never throws — callers treat
-     * this as best-effort (enrollment must not fail because an app list is dirty).
+     * a failed command saying so instead of being sent. Returns the number queued. Throws nothing but
+     * {@link com.hmdm.persistence.DeviceGoneException} (the device was deleted meanwhile): callers treat this as
+     * best-effort (enrollment must not fail because an app list is dirty).
      */
     public int enqueueConfigApps(Device device) {
         if (device == null || device.getConfigurationId() == null) {

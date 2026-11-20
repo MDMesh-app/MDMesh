@@ -3271,8 +3271,8 @@
         <comment>Delete the history rows of devices deleted before the foreign keys above (rows whose number no device
             has, and agentCommand rows with no number): no screen shows them, and a device later added with the number
             would have. An anti-join per table, one pass over it. Runs after the keys are in place, in its own
-            transaction, so no new such row can appear meanwhile, and a device enrolling meanwhile keeps its rows (they
-            name its number). Only the deleted rows are locked; check-ins and enrollments go on.</comment>
+            transaction. The server serves nothing while its changesets run, so no request writes meanwhile; even so,
+            the keys would refuse a new such row.</comment>
         <sql>
             DELETE FROM agentCommand h WHERE NOT EXISTS (SELECT 1 FROM devices d WHERE d.number = h.deviceNumber);
             DELETE FROM device_state h WHERE NOT EXISTS (SELECT 1 FROM devices d WHERE d.number = h.deviceNumber);
@@ -3285,7 +3285,7 @@
 
     <changeSet id="26.11.20-device-history-fk-validate" author="lunacy" context="common">
         <comment>Check the existing history rows against the foreign keys added above, now that the rows of deleted
-            devices are gone. VALIDATE reads each table but blocks no writes to it.</comment>
+            devices are gone. VALIDATE reads each table a second time; it would block no writes to it.</comment>
         <sql>
             ALTER TABLE agentCommand VALIDATE CONSTRAINT agentCommand_device_fk;
             ALTER TABLE device_state VALIDATE CONSTRAINT device_state_device_fk;

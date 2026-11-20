@@ -90,9 +90,18 @@ public class AgentCommandDAO {
      * Atomically claim a command for delivery and advance kiosk ordering only once the command is handed to the
      * device. A queued command has not changed device state yet: a buffered on-device kioskReturn sent in the same
      * check-in must remain evidence for the prior generation.
+     *
+     * <p>A command that moves the kiosk generation locks its device's row first (FOR KEY SHARE, as the state row's
+     * foreign key check would), then the command's row: a device delete takes them in the same order (the device, then
+     * its commands by cascade), so the two can't deadlock. A delete in progress is waited for.</p>
+     *
+     * @throws DeviceGoneException the device was deleted meanwhile
      */
     @Transactional
     public boolean claimForDelivery(AgentCommand command, Long deliveredAt) {
+        if (changesKiosk(command.getType()) && deviceMapper.lockDeviceKeyShare(command.getDeviceNumber()) == null) {
+            throw new DeviceGoneException(command.getDeviceNumber(), null);
+        }
         boolean claimed = claimForDelivery(command.getId(), deliveredAt);
         if (claimed && changesKiosk(command.getType())) {
             DeviceGoneException.guard(command.getDeviceNumber(),

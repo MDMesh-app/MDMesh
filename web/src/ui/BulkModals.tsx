@@ -20,7 +20,7 @@ import {
   type Configuration,
   type ConfigurationSummary,
 } from '../api/configurations';
-import { bulkSetConfiguration, deleteDevicesBulk } from '../api/devices';
+import { bulkDeletePartial, bulkSetConfiguration, deleteDevicesBulk } from '../api/devices';
 import { EXIT_PIN_RULE, exitPinValid } from '../data/configurationRules';
 import {
   buildKioskPayload,
@@ -753,7 +753,19 @@ export function DeleteDevicesModal({
       onClose();
       await onDone();
     } catch (e) {
-      toast.push('err', 'Delete failed', errText(e));
+      const partial = bulkDeletePartial(e);
+      if (partial) {
+        // Some went: the list must show that, so close and refresh as after a delete.
+        toast.push(
+          'err',
+          'Some devices not deleted',
+          `${partial.deleted} deleted, ${partial.notDeleted} not deleted. Try again to delete the rest.`,
+        );
+        onClose();
+        await onDone();
+      } else {
+        toast.push('err', 'Delete failed', errText(e));
+      }
     } finally {
       setBusy(false);
     }

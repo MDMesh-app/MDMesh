@@ -43,6 +43,8 @@ import com.hmdm.security.SecurityException;
 
 @Singleton
 public class DeviceDAO extends AbstractDAO<Device> {
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(DeviceDAO.class);
+
     private final DeviceMapper mapper;
     private final ApplicationSettingDAO applicationSettingDAO;
 
@@ -163,7 +165,15 @@ public class DeviceDAO extends AbstractDAO<Device> {
         }
     }
 
+    /**
+     * Deletes the device, with its agent history (by cascade). The row is locked before the access check, so the
+     * check holds for the delete (a group change committing meanwhile is waited for). A device already gone is a no-op.
+     *
+     * @throws SecurityException the user may not reach the device
+     */
+    @Transactional
     public void removeDeviceById(Integer id) {
+        this.mapper.lockDevices(Collections.singletonList(id));
         updateById(
                 id,
                 this::getAccessibleDeviceForUpdate,
@@ -173,13 +183,106 @@ public class DeviceDAO extends AbstractDAO<Device> {
     }
 
     /**
-     * Deletes the devices in one transaction: all of them, or none when one can't be (one the user may not reach
-     * fails it all). A device already gone counts as deleted. In id order, so two overlapping bulk deletes take the
-     * rows' locks in the same order and never deadlock.
+     * Deletes devices in bulk. First, in one short transaction, every device is locked and checked: if the user may
+     * not reach one, nothing is deleted. Then each device is deleted in its own short transaction, in id order, so
+     * the batch holds no lock for longer than one device's delete (its check-ins wait only for that) and two
+     * overlapping batches take locks in the same order. A device already gone counts as deleted. A delete that fails
+     * (the database, or the device moved out of the user's reach after the check) is reported, the others still go:
+     * this is not all-or-nothing once the check has passed.
+     *
+     * @return what was deleted and what wasn't
+     * @throws SecurityException the user may not reach one of the devices (nothing deleted)
+     */
+    public BulkDeleteResult removeDevicesByIds(Collection<Integer> ids) {
+        List<Integer> ordered = ids.stream().filter(Objects::nonNull).distinct().sorted().collect(Collectors.toList());
+        requireAllAccessibleForUpdate(ordered);
+        BulkDeleteResult result = new BulkDeleteResult();
+        for (Integer id : ordered) {
+            try {
+                removeDeviceById(id); // its own transaction (Guice intercepts the call)
+                result.deleted.add(id);
+            } catch (RuntimeException e) {
+                log.warn("Bulk delete: device {} not deleted: {}", id, e.getClass().getSimpleName());
+                result.notDeleted.add(id);
+            }
+        }
+        return result;
+    }
+
+    /** Locks the devices in id order and checks the user may reach each one that exists, in one transaction. */
+    @Transactional
+    public void requireAllAccessibleForUpdate(List<Integer> orderedIds) {
+        if (orderedIds.isEmpty()) {
+            return;
+        }
+        for (Integer id : this.mapper.lockDevices(orderedIds)) {
+            Device device = this.mapper.getDeviceById(id);
+            if (device == null) {
+                continue;
+            }
+            boolean sameCustomer = SecurityContext.get().getCurrentUser()
+                    .map(u -> u.isSuperAdmin() || u.getCustomerId() == device.getCustomerId()).orElse(false);
+            if (!sameCustomer || !isAccessibleToUser(device)) {
+                throw SecurityException.onDeviceAccessViolation(device);
+            }
+        }
+    }
+
+    /**
+     * Moves the devices to the configuration, all of them or none, in one transaction (rows locked in id order, so
+     * overlapping bulk changes can't deadlock). Devices already gone are skipped.
+     *
+     * @return the devices changed, as they were before (to notify and wake them once this has committed)
+     * @throws SecurityException the user may not reach one of the devices, or use the configuration (none changed)
      */
     @Transactional
-    public void removeDevicesByIds(Collection<Integer> ids) {
-        ids.stream().filter(Objects::nonNull).distinct().sorted().forEach(this::removeDeviceById);
+    public List<Device> updateDevicesConfiguration(Collection<Integer> ids, Integer configurationId) {
+        List<Integer> ordered = ids.stream().filter(Objects::nonNull).distinct().sorted().collect(Collectors.toList());
+        List<Device> before = new ArrayList<>();
+        if (ordered.isEmpty()) {
+            return before;
+        }
+        for (Integer id : this.mapper.lockDevices(ordered)) {
+            Device device = this.mapper.getDeviceById(id);
+            if (device == null) {
+                continue;
+            }
+            updateDeviceConfiguration(id, configurationId);
+            before.add(device);
+        }
+        return before;
+    }
+
+    /**
+     * Sets ({@code replace}) or removes the groups on the devices, all of them or none, in one transaction (rows
+     * locked in id order). Devices already gone are skipped.
+     *
+     * @throws SecurityException the user may not reach one of the devices (none changed)
+     */
+    @Transactional
+    public void updateDevicesGroups(Collection<Integer> ids, List<LookupItem> groups, boolean replace) {
+        List<Integer> ordered = ids.stream().filter(Objects::nonNull).distinct().sorted().collect(Collectors.toList());
+        if (ordered.isEmpty()) {
+            return;
+        }
+        for (Integer id : this.mapper.lockDevices(ordered)) {
+            Device device = getDeviceById(id);
+            if (device == null) {
+                continue;
+            }
+            List<LookupItem> deviceGroups = device.getGroups();
+            deviceGroups.removeAll(groups);
+            if (replace) {
+                deviceGroups.addAll(groups);
+            }
+            updateDevice(device);
+        }
+    }
+
+    /** The outcome of {@link #removeDevicesByIds}: the ids deleted (or already gone) and the ids not deleted. */
+    public static final class BulkDeleteResult {
+        public final List<Integer> deleted = new ArrayList<>();
+        public final List<Integer> notDeleted = new ArrayList<>();
     }
 
     public void updateDeviceConfiguration(Integer deviceId, Integer configurationId) {
@@ -248,8 +351,8 @@ public class DeviceDAO extends AbstractDAO<Device> {
     public void updateDevice(Device device) {
         updateById(device.getId(), this::getAccessibleDeviceForUpdate, dbDevice -> {
             // An agent signs in with its device number, which it never learns anew: renamed, it could not check in
-            // again. Read under the row's lock, so an enrollment completing meanwhile is seen. Any other device is
-            // renamed, and its history (keyed by number) follows by the foreign keys' ON UPDATE CASCADE.
+            // again. Read under the row's lock, so the number checked is the one this update replaces. Any other
+            // device is renamed, and its history (keyed by number) follows by the foreign keys' ON UPDATE CASCADE.
             String agentNumber = this.mapper.lockAgentDeviceNumber(dbDevice.getId());
             if (agentNumber != null && !agentNumber.equals(device.getNumber())) {
                 throw new AgentDeviceRenameException(agentNumber);

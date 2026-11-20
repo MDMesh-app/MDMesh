@@ -45,7 +45,8 @@ public class RolloutRequeuer {
         return rolloutDAO.insertIfNotInFlight(cmd);
     }
 
-    /** Called from check-in, after stale commands were expired. @return true when the update was queued. Never throws. */
+    /** Called from check-in, after stale commands were expired. @return true when the update was queued.
+     *  @throws com.hmdm.persistence.DeviceGoneException the device was deleted meanwhile; nothing else is thrown */
     public boolean requeue(Device device, long now) {
         try {
             if (device == null) return false;

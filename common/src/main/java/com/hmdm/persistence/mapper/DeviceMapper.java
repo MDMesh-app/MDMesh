@@ -159,8 +159,16 @@ public interface DeviceMapper {
                                          @Param("filter") String filter,
                                          @Param("limit") int limit);
 
-    /** The device's number when it is enrolled with the agent (it has an agent secret), else null; locks the row. */
-    @Select({"SELECT number FROM devices WHERE id = #{id} AND agentSecretHash IS NOT NULL FOR UPDATE"})
+    /** Locks the devices' rows, in id order. @return the ids that exist, in that order */
+    @Select({"<script>SELECT id FROM devices WHERE id IN " +
+            "<foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach> " +
+            "ORDER BY id FOR UPDATE</script>"})
+    List<Integer> lockDevices(@Param("ids") List<Integer> ids);
+
+    /** Locks the device's row (any device), then reads its number when it is enrolled with the agent (it has an agent
+     *  secret), else null. */
+    @Select({"SELECT CASE WHEN agentSecretHash IS NULL THEN NULL ELSE number END FROM devices WHERE id = #{id} " +
+            "FOR UPDATE"})
     String lockAgentDeviceNumber(@Param("id") Integer id);
 
     /** Its agent history (commands, state, events, locations, rollout canary membership) goes with it: those tables

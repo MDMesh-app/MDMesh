@@ -156,7 +156,8 @@ public class ConfigReconciler {
      * @param configAgentVersion the version that last completed config.apply (null = no baseline yet)
      * @param receivedAt         when this check-in reached the server, before its results were recorded: a
      *                           config.apply delivered earlier and still open is not running on the device
-     * @return true when a config.apply was enqueued. Never throws.
+     * @return true when a config.apply was enqueued
+     * @throws com.hmdm.persistence.DeviceGoneException the device was deleted meanwhile; nothing else is thrown
      */
     public boolean reconcile(Device device, Set<String> deviceTokens, String appliedRevision,
                              String agentVersion, String configAgentVersion, long now, long receivedAt) {

@@ -68,7 +68,8 @@ public class AppReconciler {
 
     /**
      * @param appsRevision the revision stored for the device (null = none: decide its whole set)
-     * @return how many app.install were queued. Never throws.
+     * @return how many app.install were queued
+     * @throws com.hmdm.persistence.DeviceGoneException the device was deleted meanwhile; nothing else is thrown
      */
     public int reconcile(Device device, Set<String> deviceTokens, String appsRevision, long now) {
         try {

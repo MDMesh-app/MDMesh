@@ -78,6 +78,7 @@ export const EVENT_LABELS: Record<string, string> = {
   enrolled: 'Enrolled',
   kioskPinLockout: 'Exit PIN locked',
   kioskCrashLoop: 'Kiosk app keeps closing',
+  wipeNotStarted: 'Factory reset didn’t start',
   storageRecovered: 'Storage recovered',
   configReapplyFailed: 'Config re-apply failed',
 };
@@ -93,6 +94,7 @@ export const EVENT_VERBS: Record<string, string> = {
   enrolled: 'enrolled',
   kioskPinLockout: 'locked the exit PIN',
   kioskCrashLoop: 'reported the kiosk app keeps closing',
+  wipeNotStarted: 'didn’t start its factory reset',
   storageRecovered: 'recovered damaged storage',
   configReapplyFailed: 'failed to re-apply its configuration',
 };

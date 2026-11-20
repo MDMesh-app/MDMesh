@@ -28,6 +28,18 @@ Fixes
   configuration command fail with "Unable to parse preferences proto." or crash the kiosk screen. The agent keeps a
   copy of each file and restores it, or the configured kiosk, and the device page shows a `storageRecovered` event
   (#220).
+- Agent: Factory reset from the console lifts the configuration's Factory reset: Block for the wipe, and puts it back
+  if the wipe can't start or the device hasn't reset within 10 minutes. Some vendor recoveries honour the block and
+  stopped mid-wipe (HyperOS, #222). Until the device resets, for at most 10 minutes, commands other than configuration
+  changes and another wipe are reported expired, not run.
+- Agent: Lock on a device with no screen lock set still turns the screen off, and its result now says the device isn't
+  protected.
+- Agent: after a boot or an agent update, the agent re-applies the newest configuration the server sent, not the last
+  one it applied in full. Before, a configuration with one failed setting could have its other settings undone by a
+  reboot. Until such a configuration applies in full, the device reports it as not in sync, so the server re-sends it.
+- Console: a configuration the device reports out of date now shows as "Out of date on the device", with the cause
+  when the device reported one (storage recovered, a factory reset that didn't start, a failed re-apply). It showed
+  "Reset by device (Wi-Fi turned back on)", which named only one of the causes.
 
 ## v0.5.0 — 2026-11-17
 

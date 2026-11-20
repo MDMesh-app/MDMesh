@@ -20,8 +20,9 @@ import dagger.assisted.AssistedInject
 import kotlinx.coroutines.CancellationException
 
 /**
- * After boot / self-update, re-assert the last fully-applied desired-state document BEFORE the first check-in,
- * so restrictions and kiosk are back even if the network is not. No network constraint; runs once.
+ * Re-asserts the newest delivered desired-state document with no network: after boot / self-update BEFORE the first
+ * check-in, so restrictions and kiosk are back even if the network is not, and when a wipe hold ends mid-uptime
+ * ([scheduleAfterHold]), which puts Factory reset: Block back. No network constraint; runs once.
  * First reads every store ([AgentDataStores.check]: a corrupt one is recovered now, before the kiosk is settled from
  * it) and drops a stale kiosk volume lock (it survives reboots and mutes the device) when no kiosk asks for it;
  * [KioskApplier] serializes that with kiosk enter/exit, so a concurrent config.apply or kiosk.enter keeps its lock.
@@ -52,9 +53,24 @@ class ConfigReapplyWorker @AssistedInject constructor(
 
     companion object {
         private const val TAG = "ConfigReapplyWorker"
-        fun scheduleNow(context: Context) {
+        internal const val UNIQUE_NAME = "config-reapply"
+        internal const val AFTER_HOLD_NAME = "config-reapply-after-hold"
+
+        /** A re-apply unless one is waiting or running: for boot and self-update, which a running one already sees. */
+        fun scheduleNow(context: Context) = enqueue(context, UNIQUE_NAME, ExistingWorkPolicy.KEEP)
+
+        /**
+         * The re-apply for a wipe hold that ended. A re-apply already running may have deferred the block while the
+         * hold was on, so KEEP on its name would drop this one (PR #227 review). Under its own name, a running boot
+         * re-apply that fails or is cancelled can't take it down with it; the configuration lock in [ConfigApplier]
+         * still orders it after any apply that deferred the block. Appended to one of its own that is running.
+         */
+        fun scheduleAfterHold(context: Context) =
+            enqueue(context, AFTER_HOLD_NAME, ExistingWorkPolicy.APPEND_OR_REPLACE)
+
+        private fun enqueue(context: Context, name: String, policy: ExistingWorkPolicy) {
             WorkManager.getInstance(context).enqueueUniqueWork(
-                "config-reapply", ExistingWorkPolicy.KEEP, OneTimeWorkRequestBuilder<ConfigReapplyWorker>().build(),
+                name, policy, OneTimeWorkRequestBuilder<ConfigReapplyWorker>().build(),
             )
         }
     }

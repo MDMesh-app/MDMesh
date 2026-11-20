@@ -68,6 +68,12 @@ class ConfigApplier(
 
     suspend fun apply(doc: ConfigApplyPayload): ConfigApplyResult = mutex.withLock { applyDeliveredLocked(doc) }
 
+    /**
+     * Runs [block] with no apply in progress and none able to start. `device.wipe` lifts Factory reset: Block
+     * for the wipe; a boot re-apply must not put it back in between (#222).
+     */
+    suspend fun <T> exclusive(block: suspend () -> T): T = mutex.withLock { block() }
+
     private suspend fun applyDeliveredLocked(doc: ConfigApplyPayload): ConfigApplyResult {
         // What came before: the last saved document, and the last delivered one if a failed section kept it unsaved.
         val previous = listOfNotNull(store.load(), store.delivered)
@@ -86,8 +92,8 @@ class ConfigApplier(
      * not installed; without this they would wait for the server's re-send, an hour later, while the app ran under
      * the device-wide auto-grant. An update may also request a configured permission the old version didn't.
      *
-     * A delivered document that is not applied yet is applied whole, exactly as the server's re-send would, so it is
-     * saved (and reported in sync) when nothing else fails. An applied one gets only this app's rules again; if one
+     * A delivered document that is not saved yet is applied whole, exactly as the server's re-send would, so it is
+     * saved (and reported in sync) when nothing else fails. The saved one gets only this app's rules again; if one
      * fails, the revision is marked stale so the server re-sends the document. Null when no rule names the app.
      */
     suspend fun applyAfterInstall(packageName: String): ConfigApplyResult? = mutex.withLock {
@@ -96,10 +102,9 @@ class ConfigApplier(
             entry.permissions.map { (permission, state) -> AppPermissionRule(packageName, permission, state) }
         }
         if (rules.isEmpty()) return@withLock null
-        val applied = store.revision()
-        if (applied != doc.revision && applied != ConfigStateStore.STALE_REVISION) {
-            return@withLock applyDeliveredLocked(doc)
-        }
+        // Against the saved document, not revision(): a stale mark (a wipe, storage recovery, the Wi-Fi self-heal) must
+        // not cut an unsaved newer document down to this app's rules.
+        if (doc.revision != store.load()?.revision) return@withLock applyDeliveredLocked(doc)
         val outcomes = rules.associate { it.key to setRule(it) }
         if (outcomes.values.any(ConfigOutcome::isFailed)) store.markStale()
         ConfigApplyResult(doc.revision, outcomes)
@@ -136,7 +141,7 @@ class ConfigApplier(
      * @param toggles the supported toggle policies, read once for this document.
      * @param previous the documents whose keys this one may stop managing.
      * @param unreleased outcome keys whose release (or kiosk exit) failed before: released again.
-     * @param persist false for the boot re-apply: the document is already stored (or stale until re-sent).
+     * @param persist false for the boot re-apply: never saved there, so the server re-sends what isn't saved yet.
      */
     private suspend fun applyLocked(
         doc: ConfigApplyPayload,
@@ -312,14 +317,23 @@ class ConfigApplier(
     }
 
     /**
-     * Re-run the last fully-applied document (after boot / self-update). Null when nothing is persisted. Not saved
-     * again: a stale document ([selfHealWifiRadio]) stays stale until the server re-sends it. One whose re-apply
-     * failed in part is marked stale, as [applyAfterInstall] does: the device no longer matches its revision, so the
-     * server sees the drift and re-sends it rather than taking the device as converged.
+     * Re-run the newest document the server delivered (after boot / self-update, or when a wipe hold ends), or the
+     * last saved one on a store from before delivered documents were kept. Null when there is none.
+     *
+     * The delivered one, not the saved one: a document with a failed section is never saved but may have changed the
+     * device, e.g. set Factory reset: Block over a saved Allow (PR #227). Replaying the saved one would put the older
+     * setting back. Not saved here, so a failed section is never reported applied.
+     *
+     * A saved document whose re-apply fails in part is marked stale, as [applyAfterInstall] does: the device no
+     * longer matches its revision, so the server sees the drift and re-sends it rather than taking the device as
+     * converged. An unsaved delivered one needs no mark: its revision differs from the saved one, so the check-in
+     * reports it stale anyway (`reportedRevision`).
      */
     suspend fun reapplyPersisted(): ConfigApplyResult? = mutex.withLock {
-        store.load()?.let { applyLocked(it, toggles(), listOf(it), persist = false) }
-            ?.also { if (!succeeded(it)) store.markStale() }
+        val saved = store.load()
+        val doc = store.delivered ?: saved ?: return@withLock null
+        applyLocked(doc, toggles(), listOfNotNull(saved, doc).distinct(), persist = false)
+            .also { if (!succeeded(it) && doc.revision == saved?.revision) store.markStale() }
     }
 
     /**

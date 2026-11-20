@@ -14,7 +14,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 
 /**
  * Last desired-state document the agent fully applied (see ConfigApplier). Its revision is reported in every
- * check-in so the server can tell drift from convergence; the document itself is re-applied after boot.
+ * check-in so the server can tell drift from convergence. After boot the newest [delivered] document is re-applied,
+ * this one only on a store from before that was kept.
  * Synchronous (SharedPreferences) on purpose: the state snapshot is built on a non-suspending path.
  */
 interface ConfigStateStore {
@@ -27,9 +28,10 @@ interface ConfigStateStore {
     fun configuredKioskFlow(): Flow<KioskApplyPayload?>
 
     /**
-     * Keep the document (for the boot re-apply) but report [STALE_REVISION], so the server sees drift and re-sends
-     * config.apply (used after the device undid part of it on its own, e.g. a Wi-Fi radio self-heal). A missing
-     * revision would not do: the server keeps the last one it stored.
+     * Keep the document but report [STALE_REVISION], so the server sees drift and re-sends config.apply (used after
+     * the device undid part of it on its own, e.g. a Wi-Fi radio self-heal, or a wipe lifted Factory reset: Block).
+     * The boot re-apply still replays the newest delivered document. A missing revision would not do: the server keeps
+     * the last one it stored.
      */
     fun markStale()
 
@@ -56,6 +58,21 @@ interface ConfigStateStore {
         /** Well-formed (64 hex) but never a real revision, so it never matches the configuration. */
         val STALE_REVISION = "0".repeat(64)
     }
+}
+
+/**
+ * The revision the check-in reports as applied: [ConfigStateStore.STALE_REVISION] while the newest delivered
+ * document is not the saved one (a section of it failed), else the saved revision.
+ *
+ * The boot re-apply replays the newest delivered document, so the saved revision alone would claim a document the
+ * device no longer follows. After a revert to exactly the saved document the server would see it in sync and never
+ * re-send it, while every boot replayed the newer one. Stale, the server re-sends its current document: at once when
+ * that differs from the last config.apply it sent (a revert), after its usual backoff otherwise.
+ * [ConfigStateStore.revision] itself is left as it is.
+ */
+fun ConfigStateStore.reportedRevision(): String? {
+    val newest = delivered?.revision
+    return if (newest != null && newest != revision()) ConfigStateStore.STALE_REVISION else revision()
 }
 
 /** A newer document with kiosk disabled must win even if an unrelated section failed to apply. */

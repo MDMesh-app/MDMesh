@@ -7,6 +7,7 @@ import com.mdmesh.core.kiosk.KioskHomeSwitch
 import com.mdmesh.core.store.ConfigStateStore
 import com.mdmesh.core.store.InMemoryConfigStateStore
 import com.mdmesh.core.store.InMemoryKioskStateStore
+import com.mdmesh.core.store.reportedRevision
 import com.mdmesh.core.testing.fixedToggles
 import com.mdmesh.kiosk.KioskController
 import com.mdmesh.kiosk.KioskResult
@@ -172,6 +173,26 @@ class ConfigApplierTest {
         assertEquals("p1", store.revision())
         assertEquals(Triple("org.example", "android.permission.CAMERA", "deny"), permissions.calls.last())
     }
+
+    /**
+     * A wipe, storage recovery or the Wi-Fi self-heal marks the revision stale while a newer document waits unsaved:
+     * the install must still apply that document whole, not only the app's rules.
+     */
+    @Test fun `an unsaved document is applied whole after its app's install, even with the revision marked stale`() =
+        runTest {
+            val permissions = FakeAppPermissions()
+            val store = InMemoryConfigStateStore()
+            val a = applier(fixedToggles(), kiosk(FakeController()), {}, store, permissions)
+            a.apply(ConfigApplyPayload(revision = "A"))
+            assertFalse(ConfigApplier.succeeded(a.apply(denyCamera)))
+            store.markStale()
+
+            permissions.installed += "org.example"
+            assertTrue(ConfigApplier.succeeded(a.applyAfterInstall("org.example")!!))
+
+            assertEquals("p1", store.revision())
+            assertEquals("p1", store.load()?.revision)
+        }
 
     @Test fun `an update of an app with rules gets them again and a failure has the server re-send`() = runTest {
         val permissions = FakeAppPermissions().apply { installed += "org.example" }
@@ -341,6 +362,132 @@ class ConfigApplierTest {
         assertNull(empty.reapplyPersisted())
     }
 
+    /** Records what the configuration asked of it, in order. */
+    private class RecordingReleasable(override val capabilityKey: String = "r") : TogglePolicy, ReleasablePolicy {
+        val calls = mutableListOf<String>()
+        override fun isSupported() = true
+        override fun setEnabled(enabled: Boolean): PolicyOutcome {
+            calls += "set $enabled"
+            return PolicyOutcome.Applied
+        }
+        override fun release(): PolicyOutcome { calls += "release"; return PolicyOutcome.Applied }
+    }
+
+    /** Fails the location section: the document is delivered, applied in part, and never saved. */
+    private val failLocation: (String) -> Unit = { check(it != FAIL) { "location refused" } }
+
+    @Test fun `the boot re-apply releases a key only the saved document managed`() = runTest {
+        val r = RecordingReleasable(); val store = InMemoryConfigStateStore()
+        store.save(ConfigApplyPayload(revision = "A", policies = mapOf("r" to false)))
+        store.delivered = ConfigApplyPayload(revision = "B", location = ConfigLocation(FAIL))
+
+        applier(fixedToggles("r" to r), kiosk(FakeController()), failLocation, store).reapplyPersisted()
+
+        assertEquals("the saved Block is not put back", listOf("release"), r.calls)
+        // B failed again, but it was never saved: the saved revision stays and the check-in reports stale.
+        assertEquals("A", store.revision())
+        assertEquals(ConfigStateStore.STALE_REVISION, store.reportedRevision())
+    }
+
+    @Test fun `a saved document whose boot re-apply fails is marked stale`() = runTest {
+        val store = InMemoryConfigStateStore()
+        val a = applier(fixedToggles(), kiosk(FakeController()), {}, store)
+        a.apply(ConfigApplyPayload(revision = "A", location = ConfigLocation(FAIL))) // the location setting worked then
+        assertEquals("A", store.revision())
+
+        applier(fixedToggles(), kiosk(FakeController()), failLocation, store).reapplyPersisted()
+
+        assertEquals(ConfigStateStore.STALE_REVISION, store.revision())
+        assertEquals(ConfigStateStore.STALE_REVISION, store.reportedRevision())
+    }
+
+    /**
+     * #227 x #228: B's app rule failed (app not installed yet), so B was never saved; the boot replays B, which fails
+     * again. Marking the revision stale there would make the install apply only that app's rule and never save B.
+     */
+    @Test fun `an unsaved document whose boot re-apply fails is applied whole once its app is installed`() = runTest {
+        val permissions = FakeAppPermissions()
+        val store = InMemoryConfigStateStore()
+        val a = applier(fixedToggles(), kiosk(FakeController()), {}, store, permissions)
+        a.apply(ConfigApplyPayload(revision = "A"))
+        assertFalse(ConfigApplier.succeeded(a.apply(denyCamera)))
+
+        assertFalse(ConfigApplier.succeeded(a.reapplyPersisted()!!))
+        assertEquals("A", store.revision())
+
+        permissions.installed += "org.example"
+        assertTrue(ConfigApplier.succeeded(a.applyAfterInstall("org.example")!!))
+        assertEquals("p1", store.revision())
+        assertEquals("p1", store.reportedRevision())
+    }
+
+    @Test fun `the boot re-apply exits a configured kiosk the newest delivered document turned off`() = runTest {
+        val c = FakeController(); val kioskStore = InMemoryKioskStateStore(); val store = InMemoryConfigStateStore()
+        val configured = KioskApplyPayload(mode = "single", pinPackage = "com.a")
+        kioskStore.save(configured) // entered by the saved configuration
+        store.save(ConfigApplyPayload(revision = "A", kiosk = configured))
+        store.delivered = ConfigApplyPayload(revision = "B", location = ConfigLocation(FAIL))
+
+        applier(fixedToggles(), kiosk(c, kioskStore), failLocation, store).reapplyPersisted()
+
+        assertEquals(0, c.enters)
+        assertEquals(1, c.exits)
+    }
+
+    @Test fun `the boot re-apply of a delivered document that was saved releases nothing and keeps the revision`() =
+        runTest {
+            val r = RecordingReleasable(); val store = InMemoryConfigStateStore()
+            val a = applier(fixedToggles("r" to r), kiosk(FakeController()), failLocation, store)
+            a.apply(ConfigApplyPayload(revision = "A", policies = mapOf("r" to false)))
+            r.calls.clear()
+
+            a.reapplyPersisted()
+
+            assertEquals(listOf("set false"), r.calls)
+            assertEquals("A", store.revision())
+            assertEquals("A", store.reportedRevision())
+        }
+
+    @Test fun `with no delivered document (an older store) the boot replays the saved one`() = runTest {
+        val r = RecordingReleasable(); val store = InMemoryConfigStateStore()
+        store.save(ConfigApplyPayload(revision = "A", policies = mapOf("r" to false)))
+        assertNull(store.delivered)
+
+        val result = applier(fixedToggles("r" to r), kiosk(FakeController()), {}, store).reapplyPersisted()
+
+        assertEquals("A", result?.revision)
+        assertEquals(listOf("set false"), r.calls)
+    }
+
+    /**
+     * PR #227 review: the device saved A, B arrived with a failed section, then the admin reverted to exactly A. Were
+     * A reported, the server would see it in sync and never re-send A, while every boot replays B. Stale until the
+     * newest delivered document is the saved one; the saved revision itself stays.
+     */
+    @Test fun `the revision is reported stale while the newest delivered document isn't saved`() = runTest {
+        val store = InMemoryConfigStateStore()
+        val a = applier(fixedToggles(), kiosk(FakeController()), failLocation, store)
+        val docA = ConfigApplyPayload(revision = "A")
+        a.apply(docA)
+        assertEquals("A", store.reportedRevision())
+
+        val docB = ConfigApplyPayload(revision = "B", location = ConfigLocation(FAIL))
+        assertFalse(ConfigApplier.succeeded(a.apply(docB)))
+        assertEquals("A", store.revision())
+        assertEquals(ConfigStateStore.STALE_REVISION, store.reportedRevision())
+
+        a.apply(docA) // the server re-sends A after the revert
+        assertEquals("A", store.reportedRevision())
+    }
+
+    @Test fun `a store that never saved a document reports the stale revision once one is delivered`() = runTest {
+        val store = InMemoryConfigStateStore()
+        assertNull(store.reportedRevision())
+        applier(fixedToggles(), kiosk(FakeController()), failLocation, store)
+            .apply(ConfigApplyPayload(revision = "B", location = ConfigLocation(FAIL)))
+        assertEquals(ConfigStateStore.STALE_REVISION, store.reportedRevision())
+    }
+
     private class FakeReleasable(private val outcome: PolicyOutcome) : TogglePolicy, ReleasablePolicy {
         override val capabilityKey = "wifiRadio"
         var releases = 0
@@ -434,7 +581,8 @@ class ConfigApplierTest {
         val resent = a.apply(b)
         assertTrue(resent.outcomes["policies.wifiRadio"]!!.startsWith("deferred: no connection to the server"))
         assertEquals(true, radio.on)
-        a.reapplyPersisted() // boot: replays A, which does not end the hold either
+        a.reapplyPersisted() // boot: replays B, the newest delivered, which does not end the hold either
+        assertEquals(true, radio.on)
         assertTrue(a.apply(b).outcomes["policies.wifiRadio"]!!.startsWith("deferred"))
         assertEquals(true, radio.on)
 
@@ -550,5 +698,9 @@ class ConfigApplierTest {
         assertEquals(ConfigOutcome.UNSUPPORTED, r.outcomes["connectivity"])
         assertTrue(modes.isEmpty())
         assertEquals("unsupported is final: the document is saved", "c5", store.revision())
+    }
+
+    private companion object {
+        const val FAIL = "fail"
     }
 }

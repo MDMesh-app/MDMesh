@@ -1013,6 +1013,7 @@ export function DeviceDetailPage() {
                 busy={busy}
                 onRetry={canEdit && !wiped ? () => void retryApply() : undefined}
                 now={now}
+                events={events}
               />
             ) : null}
             {cfgLoaded && cfgStatus?.kioskBackgroundImage ? (

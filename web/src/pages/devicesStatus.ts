@@ -10,7 +10,7 @@ export const ISSUE_CHIP: Record<IssueKind, { tone: 'alert' | 'warn'; text: (n: n
   outOfSync: { tone: 'warn', text: (n) => `${n} out of sync` },
   agentTooOld: { tone: 'warn', text: (n) => `${n} agent too old` },
   deferred: { tone: 'warn', text: (n) => `${n} settings deferred` },
-  reset: { tone: 'warn', text: (n) => `${n} reset by device` },
+  reset: { tone: 'warn', text: (n) => `${n} out of date on the device` },
 };
 
 /** StatusKind for the sync line, by tone (the label is passed separately, so product wording is kept). */

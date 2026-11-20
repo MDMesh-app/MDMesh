@@ -44,6 +44,10 @@ public interface AgentDeviceMapper {
     @Select({"SELECT agentCapabilities FROM devices WHERE number = #{deviceNumber}"})
     String getDeviceCapabilities(@Param("deviceNumber") String deviceNumber);
 
+    /** Locks the device's row as a foreign key check does (FOR KEY SHARE). @return 1, or null when there is none */
+    @Select({"SELECT 1 FROM devices WHERE number = #{deviceNumber} FOR KEY SHARE"})
+    Integer lockDeviceKeyShare(@Param("deviceNumber") String deviceNumber);
+
     @Select({"SELECT agentSecretHash FROM devices WHERE number = #{deviceNumber}"})
     String getDeviceSecretHash(@Param("deviceNumber") String deviceNumber);
 

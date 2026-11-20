@@ -12,6 +12,7 @@ package com.hmdm.rest.resource.support;
 
 import com.hmdm.notification.AgentWakeHub;
 import com.hmdm.rest.json.InstallPayloadBuilder;
+import com.hmdm.persistence.DeviceGoneException;
 import com.hmdm.persistence.AgentCommandDAO;
 import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.AgentCommand;
@@ -57,8 +58,9 @@ public class ConfigAppInstaller {
     /**
      * Queue an {@code app.install} for every action=install app of the device's configuration
      * that has a real hosted APK URL. An app whose SHA-256 is unknown (hosted elsewhere, none stored) is recorded as
-     * a failed command saying so instead of being sent. Returns the number queued. Never throws — callers treat
-     * this as best-effort (enrollment must not fail because an app list is dirty).
+     * a failed command saying so instead of being sent. Returns the number queued. Throws nothing but
+     * {@link com.hmdm.persistence.DeviceGoneException} (the device was deleted meanwhile): callers treat this as
+     * best-effort (enrollment must not fail because an app list is dirty).
      */
     public int enqueueConfigApps(Device device) {
         if (device == null || device.getConfigurationId() == null) {
@@ -77,6 +79,8 @@ public class ConfigAppInstaller {
             if (queued > 0) {
                 wakeHub.wake(device.getNumber(), "commands");
             }
+        } catch (DeviceGoneException e) {
+            throw e; // the device was deleted meanwhile: its caller answers as for an unknown device
         } catch (Exception e) {
             logger.warn("Failed to queue configuration apps for device {}", device.getNumber(), e);
         }

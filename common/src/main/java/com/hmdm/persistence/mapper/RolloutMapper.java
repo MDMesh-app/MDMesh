@@ -41,8 +41,10 @@ public interface RolloutMapper {
             before = false, resultType = int.class)
     void insertRollout(AgentRollout rollout);
 
-    @Insert({"INSERT INTO agentRolloutCanary (rolloutId, deviceNumber) VALUES (#{rolloutId}, #{deviceNumber}) " +
-            "ON CONFLICT DO NOTHING"})
+    /** Skips a number no device has any more (deleted since the canary set was read): the row would break its
+     *  foreign key to devices. */
+    @Insert({"INSERT INTO agentRolloutCanary (rolloutId, deviceNumber) SELECT #{rolloutId}, #{deviceNumber} " +
+            "WHERE EXISTS (SELECT 1 FROM devices WHERE number = #{deviceNumber}) ON CONFLICT DO NOTHING"})
     void insertCanary(@Param("rolloutId") int rolloutId, @Param("deviceNumber") String deviceNumber);
 
     @Select({"SELECT * FROM agentRollout WHERE customerId = #{customerId} AND stage IN ('canary','fleet') ORDER BY id DESC LIMIT 1"})

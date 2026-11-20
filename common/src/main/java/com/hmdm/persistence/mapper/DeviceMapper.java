@@ -159,6 +159,70 @@ public interface DeviceMapper {
                                          @Param("filter") String filter,
                                          @Param("limit") int limit);
 
+    /** An Integer[] bound as one PostgreSQL array: one parameter however many ids (no bind-parameter limit). */
+    String IDS = "#{ids,typeHandler=org.apache.ibatis.type.ArrayTypeHandler}";
+
+    /** Locks the devices' rows, in id order. @return the ids that exist, in that order */
+    @Select({"SELECT id FROM devices WHERE id = ANY(" + IDS + ") ORDER BY id FOR UPDATE"})
+    List<Integer> lockDevices(@Param("ids") Integer[] ids);
+
+    /** Locks the devices' rows, in id order. @return those that exist (id, number, customer, configuration) */
+    @Select({"SELECT id, number, customerId, configurationId FROM devices WHERE id = ANY(" + IDS + ") " +
+            "ORDER BY id FOR UPDATE"})
+    List<Device> lockDevicesForUpdate(@Param("ids") Integer[] ids);
+
+    /** The ids among {@code ids} the user may not reach (the rule of {@code DeviceDAO.isAccessibleToUser}), in order. */
+    @Select({"SELECT devices.id FROM devices LEFT JOIN users ON users.id = #{userId} " +
+            "WHERE devices.id = ANY(" + IDS + ") " +
+            "AND NOT COALESCE(devices.customerId = #{customerId} AND (#{superAdmin} OR " + USER_DEVICE_ACCESS + "), " +
+            "FALSE) ORDER BY devices.id"})
+    List<Integer> inaccessibleDevices(@Param("ids") Integer[] ids, @Param("userId") int userId,
+                                      @Param("customerId") int customerId, @Param("superAdmin") boolean superAdmin);
+
+    /** {@link #updateDeviceConfiguration} for many devices, in one statement. */
+    @Update({"UPDATE devices SET configurationId = #{configurationId} WHERE id = ANY(" + IDS + ") " +
+            "AND EXISTS (SELECT 1 FROM configurations " +
+            "            WHERE configurations.id = #{configurationId} AND configurations.customerId = devices.customerId)"})
+    int updateDevicesConfiguration(@Param("ids") Integer[] ids, @Param("configurationId") Integer configurationId);
+
+    /** The customer's groups the user may put devices in: as {@link #removeDeviceGroupsByDeviceId} decides. */
+    String USABLE_GROUPS =
+            "SELECT groups.id FROM groups INNER JOIN users ON users.id = #{userId} " +
+            "WHERE groups.customerId = #{customerId} " +
+            "AND (users.allDevicesAvailable AND users.customerId = #{customerId} " +
+            "     OR EXISTS (SELECT 1 FROM userDeviceGroupsAccess access " +
+            "                WHERE groups.id = access.groupId AND access.userId = users.id))";
+
+    /** The ids among {@code groupIds} that aren't {@link #USABLE_GROUPS}, in order. */
+    @Select({"SELECT g.id FROM unnest(#{groupIds,typeHandler=org.apache.ibatis.type.ArrayTypeHandler}) AS g(id) " +
+            "WHERE g.id NOT IN (" + USABLE_GROUPS + ") ORDER BY g.id"})
+    List<Integer> unusableGroups(@Param("userId") int userId, @Param("customerId") int customerId,
+                                 @Param("groupIds") Integer[] groupIds);
+
+    /** Puts every device in every group (those it isn't in yet), in one statement. */
+    @Insert({"INSERT INTO deviceGroups (deviceId, groupId) " +
+            "SELECT d.id, g.id FROM unnest(" + IDS + ") AS d(id) " +
+            "CROSS JOIN unnest(#{groupIds,typeHandler=org.apache.ibatis.type.ArrayTypeHandler}) AS g(id) " +
+            "WHERE g.id IN (" + USABLE_GROUPS + ") " +
+            "AND NOT EXISTS (SELECT 1 FROM deviceGroups x WHERE x.deviceId = d.id AND x.groupId = g.id)"})
+    int addDevicesToGroups(@Param("userId") int userId, @Param("customerId") int customerId,
+                           @Param("ids") Integer[] ids, @Param("groupIds") Integer[] groupIds);
+
+    /** Takes every device out of every group, in one statement. */
+    @Delete({"DELETE FROM deviceGroups WHERE deviceId = ANY(" + IDS + ") " +
+            "AND groupId = ANY(#{groupIds,typeHandler=org.apache.ibatis.type.ArrayTypeHandler}) " +
+            "AND groupId IN (" + USABLE_GROUPS + ")"})
+    int removeDevicesFromGroups(@Param("userId") int userId, @Param("customerId") int customerId,
+                                @Param("ids") Integer[] ids, @Param("groupIds") Integer[] groupIds);
+
+    /** Locks the device's row (any device), then reads its number when it is enrolled with the agent (it has an agent
+     *  secret), else null. */
+    @Select({"SELECT CASE WHEN agentSecretHash IS NULL THEN NULL ELSE number END FROM devices WHERE id = #{id} " +
+            "FOR UPDATE"})
+    String lockAgentDeviceNumber(@Param("id") Integer id);
+
+    /** Its agent history (commands, state, events, locations, rollout canary membership) goes with it: those tables
+     *  reference devices(number) ON DELETE CASCADE, as the rows keyed by id do devices(id). */
     @Delete({"DELETE FROM devices WHERE id = #{id}"})
     void removeDevice(@Param("id") Integer id);
 

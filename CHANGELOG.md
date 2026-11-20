@@ -12,6 +12,11 @@ Unreleased.
 Upgrading
 - Quick start: `MDMESH_VERSION` now takes 0.5.0 or later; for 0.4.0 it stops and names that release's own
   `quickstart.sh`, as it already did for earlier releases.
+- On its first start the server deletes the commands, state, events and locations of devices deleted before this
+  release. No screen showed them ([UPGRADING.md](docs/UPGRADING.md#unreleased)).
+- Quick start: `HEALTH_TIMEOUT` in `.env` sets how many seconds an updated server gets to answer before the update is
+  rolled back (default 180, at least 30). Raise it before an update whose database work may take longer; to have it
+  count for this update, get this release's supervisor first ([UPGRADING.md](docs/UPGRADING.md#unreleased)).
 
 Fixes
 - Commands: the server refuses a command, Install configuration apps and Retry apply for a device marked Wiped
@@ -24,6 +29,18 @@ Fixes
   says `native update, <from> → <to>`. The update from 0.5.0 still asks once (add `-y` to skip).
 - `./setup.sh --update` no longer refuses a clone on a release branch (`release/vX.Y.Z`) as "ahead" of that release
   once it is squash-merged: a clone on an older release moves on; only one newer than the release needs `--allow-downgrade`.
+- Agent rollout: a device already on a newer agent counts as updated and is no longer sent the older APK, which it
+  refused, so the rollout never finished. Versions now compare as numbers (0.10.0 is newer than 0.9.0).
+- Deleting a device, or a customer, now deletes the device's commands, state, events and locations too, and renaming
+  a device keeps them. Before, a device added later with the same number showed them as its own. A check-in or command
+  that races the delete is answered as for an unknown device, not with a server error.
+- The API refuses to change the number of a device enrolled with the agent (`error.device.number.agent`): the agent
+  signs in with that number and could not check in again. Other devices are renamed as before.
+- Bulk delete deletes nothing when one of the devices is out of the user's reach. Otherwise each device is deleted on
+  its own, and when some can't be, the console keeps those selected to delete again. Before, a failure partway left
+  some deleted and still answered OK.
+- Bulk configuration and group changes apply to every selected device or to none. A group change naming a group the
+  user may not use is refused, as one naming such a configuration was; a configuration change must name one.
 - Agent: a settings file damaged by the device's storage (after a power loss) no longer makes every kiosk and
   configuration command fail with "Unable to parse preferences proto." or crash the kiosk screen. The agent keeps a
   copy of each file and restores it, or the configured kiosk, and the device page shows a `storageRecovered` event

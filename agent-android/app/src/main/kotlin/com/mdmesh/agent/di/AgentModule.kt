@@ -47,7 +47,6 @@ import com.mdmesh.core.kiosk.SharedPrefsExitJournal
 import com.mdmesh.core.command.handlers.PolicyApplyHandler
 import com.mdmesh.core.device.AppInventoryCollector
 import com.mdmesh.core.device.HardwareIdCollector
-import com.mdmesh.core.sync.ConfigReapplyWorker
 import com.mdmesh.core.sync.HardwareIdSource
 import com.mdmesh.core.sync.LastCheckIn
 import com.mdmesh.core.sync.SharedPrefsLastCheckIn
@@ -135,7 +134,11 @@ object AgentModule {
 
     @Provides
     @Singleton
-    fun provideFactoryResetWipeHold(@ApplicationContext context: Context, events: EventSink): FactoryResetWipeHold =
+    fun provideFactoryResetWipeHold(
+        @ApplicationContext context: Context,
+        events: EventSink,
+        configStore: ConfigStateStore,
+    ): FactoryResetWipeHold =
         FactoryResetWipeHold(
             SharedPrefsWipeHoldStore(context),
             bootId = { Boot.count(context) },
@@ -148,11 +151,8 @@ object AgentModule {
             },
             // The re-apply first, each on its own: a failure to record the event must not cost the block.
             onExpired = {
-                // Puts Factory reset: Block back now; the server's re-send can wait an hour. Only scheduled: this
-                // runs inside a read of the hold, possibly under the configuration lock the re-apply takes. After any
-                // running re-apply, which may have deferred the block while the hold was on.
-                runCatching { ConfigReapplyWorker.scheduleAfterCurrent(context) }
-                    .onFailure { Log.w("FactoryResetWipeHold", "re-apply not scheduled", it) }
+                // Puts Factory reset: Block back now, and has the server re-send the configuration.
+                WipeHoldExpiryWorker.holdEnded(context, configStore)
                 runCatching { events.record(EventType.WIPE_NOT_STARTED, WIPE_NOT_STARTED_DETAIL) }
                     .onFailure { Log.w("FactoryResetWipeHold", "wipeNotStarted not recorded", it) }
             },

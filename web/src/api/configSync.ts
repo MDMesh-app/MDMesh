@@ -79,7 +79,8 @@ export const STALE_CAUSE_WINDOW_MS = 15 * 60_000;
  * re-applied the whole configuration, so an event before it was resolved, and the device is out of date again for
  * another reason (PR #227 review). Only a config.apply brings it back in date: the device's own re-apply leaves it
  * marked out of date. Null when none explains it: the Wi-Fi radio self-heal records no event, and an older event would
- * mislabel today's state. Events carry the device's clock, the rest the server's.
+ * mislabel today's state. Events carry the device's clock, the rest the server's, so this assumes a roughly right device
+ * clock: one running fast can still name an event the apply resolved.
  */
 export function staleCause(
   events: ReadonlyArray<DeviceEvent> | undefined,

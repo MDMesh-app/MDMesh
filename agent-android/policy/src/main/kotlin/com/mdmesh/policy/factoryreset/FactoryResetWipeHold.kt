@@ -1,6 +1,7 @@
 package com.mdmesh.policy.factoryreset
 
 import android.content.Context
+import android.util.Log
 import com.mdmesh.policy.PolicyOutcome
 
 /**
@@ -22,7 +23,8 @@ import com.mdmesh.policy.PolicyOutcome
  * first, and only once: [hold] calls [onHold], which schedules such a read at the deadline
  * (`WipeHoldExpiryWorker`), so the hold ends with no command, apply or server; each check-in, command
  * and apply reads it too. Then [onExpired] re-applies the newest delivered configuration on the device (the
- * agent enqueues `ConfigReapplyWorker`), which puts the block back. One instance per process (Hilt
+ * agent enqueues `ConfigReapplyWorker`), which puts the block back, and marks the configuration stale, so
+ * the server re-sends it. One instance per process (Hilt
  * singleton).
  *
  * [onHold] and [onExpired] run inside this object's lock, [onExpired] possibly under the
@@ -48,18 +50,28 @@ class FactoryResetWipeHold(
 
     /** The hold's time left, null when not held. Like [held], ends a hold past its deadline. */
     val remainingMs: Long?
-        @Synchronized get() {
-            val at = heldAtMs ?: savedForThisBoot() ?: return null
-            val elapsed = nowMs() - at
-            if (elapsed < 0) {
-                clear() // uptime restarted: a reboot, not an expiry
-                return null
-            }
-            if (elapsed < MAX_HOLD_MS) return MAX_HOLD_MS - elapsed
-            clear()
-            runCatching(onExpired)
-            return null
+        get() = read().remainingMs
+
+    /**
+     * Like [remainingMs], and says whether this read ended the hold ([Reading.endedNow]: it ran [onExpired]), for a
+     * caller that does what [onExpired] does when no read of it did.
+     */
+    @Synchronized
+    fun read(): Reading {
+        val at = heldAtMs ?: savedForThisBoot() ?: return Reading(null, endedNow = false)
+        val elapsed = nowMs() - at
+        if (elapsed < 0) {
+            clear() // uptime restarted: a reboot, not an expiry
+            return Reading(null, endedNow = false)
         }
+        if (elapsed < MAX_HOLD_MS) return Reading(MAX_HOLD_MS - elapsed, endedNow = false)
+        clear()
+        runCatching(onExpired)
+        return Reading(null, endedNow = true)
+    }
+
+    /** What [read] found: the hold's time left (null when not held), and whether that read ended it. */
+    data class Reading(val remainingMs: Long?, val endedNow: Boolean)
 
     /** Ends the hold if it is past its deadline; for callers that need nothing else from it. */
     fun expireIfDue() {
@@ -135,7 +147,7 @@ class SharedPrefsWipeHoldStore(context: Context) : WipeHoldStore {
     override var saved: SavedWipeHold?
         get() = prefs.getLong(KEY_BOOT, 0L).takeIf { it != 0L }?.let { SavedWipeHold(it, prefs.getLong(KEY_AT, 0L)) }
         set(v) {
-            prefs.edit().apply {
+            val saved = prefs.edit().apply {
                 if (v == null) {
                     remove(KEY_BOOT)
                     remove(KEY_AT)
@@ -144,9 +156,12 @@ class SharedPrefsWipeHoldStore(context: Context) : WipeHoldStore {
                     putLong(KEY_AT, v.atMs)
                 }
             }.commit()
+            // Unsaved, a hold dies with this process, and an apply after a restart could put the block back (#222).
+            if (!saved) Log.w(TAG, if (v == null) "wipe hold not cleared on disk" else "wipe hold not saved")
         }
 
     private companion object {
+        const val TAG = "FactoryResetWipeHold"
         const val KEY_BOOT = "heldBoot"
         const val KEY_AT = "heldAtMs"
     }

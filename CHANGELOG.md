@@ -30,7 +30,8 @@ Fixes
   (#220).
 - Agent: Factory reset from the console lifts the configuration's Factory reset: Block for the wipe, and puts it back
   if the wipe can't start or the device hasn't reset within 10 minutes. Some vendor recoveries honour the block and
-  stopped mid-wipe (HyperOS, #222).
+  stopped mid-wipe (HyperOS, #222). During those 10 minutes, commands other than configuration changes and another
+  wipe are reported expired, not run.
 - Agent: Lock on a device with no screen lock set still turns the screen off, and its result now says the device isn't
   protected.
 - Agent: after a boot or an agent update, the agent re-applies the newest configuration the server sent, not the last

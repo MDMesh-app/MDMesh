@@ -76,6 +76,8 @@ export function stubApi(data: (path: string, init?: RequestInit) => unknown = ()
       if (!counted) counter.count--;
       counted = true;
     };
+    // An aborted call is over for the app, whatever a held mock does with it.
+    init?.signal?.addEventListener('abort', done, { once: true });
     const answer = fetch(input, init);
     void answer.then((res) => answered(res, done), done);
     return answer;
@@ -117,8 +119,15 @@ function answered(res: unknown, done: () => void) {
 /**
  * Wait until the page has finished loading: every API call answered and no placeholder (skeleton) left. A test ends
  * with this, or with an assertion on the loaded page, so no load is still running when the next test starts.
+ *
+ * Needs real timers: it waits a macrotask between its checks, and an answer whose body the app never reads counts
+ * only a macrotask later. Under vi.useFakeTimers() it throws at once rather than time out; switch back with
+ * vi.useRealTimers() first.
  */
 export async function settled(timeout = 10_000) {
+  if (vi.isFakeTimers()) {
+    throw new Error('settled() needs real timers: call vi.useRealTimers() before it (fake timers never run its checks).');
+  }
   const SKELETONS = '.v2-skel, .v2-skelrows';
   // Twice, a macrotask apart: an answer's state commits and the effects it triggers (the next request: a row's own
   // detail, a reload) run in between, so a quiet moment between two chained requests doesn't pass for the end.

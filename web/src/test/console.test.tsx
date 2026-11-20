@@ -2,7 +2,7 @@
 // answer's effect sends (no placeholder in between to wait on), and one whose body the app never reads.
 import { render, screen } from '@testing-library/react';
 import { useEffect, useState } from 'react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { settled, stubApi } from './console';
 
 /** Loads /first, and once its answer is state, /second (as a row's own detail follows its list). */
@@ -37,5 +37,28 @@ describe('settled', () => {
     render(<p>page</p>);
     void globalThis.fetch('/refused');
     await settled();
+  });
+
+  it('fails at once under fake timers, which would never run its checks', async () => {
+    stubApi();
+    vi.useFakeTimers();
+    try {
+      await expect(settled()).rejects.toThrow('settled() needs real timers');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('counts an aborted call, whatever its held mock does', async () => {
+    const fetch = stubApi();
+    let answer = (_: Response) => {};
+    fetch.mockImplementation(() => new Promise<Response>((r) => (answer = r)));
+    const controller = new AbortController();
+    const call = globalThis.fetch('/held', { signal: controller.signal });
+    controller.abort();
+    await settled();
+    // Answered after all, so nothing is left pending past the test.
+    answer(new Response(''));
+    await call;
   });
 });

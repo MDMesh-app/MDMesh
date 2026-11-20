@@ -1,9 +1,12 @@
 package com.mdmesh.agent.di
 
+import android.app.KeyguardManager
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
 import android.os.SystemClock
+import android.os.UserManager
+import android.util.Log
 import com.mdmesh.agent.BuildConfig
 import com.mdmesh.agent.admin.AdminReceiver
 import com.mdmesh.core.capability.CapabilityCollector
@@ -29,6 +32,7 @@ import com.mdmesh.core.command.handlers.DeviceLocationModeHandler
 import com.mdmesh.core.command.handlers.DevicePowerModeHandler
 import com.mdmesh.core.command.handlers.DeviceRingStopHandler
 import com.mdmesh.core.command.handlers.DeviceWipeHandler
+import com.mdmesh.core.command.handlers.DpmWipeTarget
 import com.mdmesh.core.config.ConfigApplier
 import com.mdmesh.core.location.LocationModeStore
 import com.mdmesh.core.power.PowerModeStore
@@ -46,6 +50,7 @@ import com.mdmesh.core.device.HardwareIdCollector
 import com.mdmesh.core.sync.HardwareIdSource
 import com.mdmesh.core.sync.LastCheckIn
 import com.mdmesh.core.sync.SharedPrefsLastCheckIn
+import com.mdmesh.core.sync.WipeHoldExpiryWorker
 import com.mdmesh.core.install.InstallManager
 import com.mdmesh.core.state.DeviceStateCollector
 import com.mdmesh.core.state.DeviceStateSource
@@ -63,6 +68,7 @@ import com.mdmesh.core.telemetry.TelemetryAssembler
 import com.mdmesh.core.telemetry.TelemetrySource
 import com.mdmesh.proto.AppManagement
 import com.mdmesh.proto.DeviceAction
+import com.mdmesh.proto.EventType
 import com.mdmesh.kiosk.CrashLoopGuard
 import com.mdmesh.kiosk.Boot
 import com.mdmesh.kiosk.HoldStore
@@ -80,6 +86,8 @@ import com.mdmesh.oem.OemAdapter
 import com.mdmesh.policy.CapabilityRegistry
 import com.mdmesh.policy.AppRuntimePermissions
 import com.mdmesh.policy.DeviceOwnerAppRuntimePermissions
+import com.mdmesh.policy.factoryreset.FactoryResetWipeHold
+import com.mdmesh.policy.factoryreset.SharedPrefsWipeHoldStore
 import com.mdmesh.policy.wifi.AndroidWifiRadio
 import com.mdmesh.policy.wifi.DpmHandle
 import com.mdmesh.policy.wifi.SharedPrefsWifiRadioOffState
@@ -105,6 +113,9 @@ import kotlinx.coroutines.Dispatchers
 @InstallIn(SingletonComponent::class)
 object AgentModule {
 
+    private const val WIPE_NOT_STARTED_DETAIL =
+        "The device didn't reset within 10 minutes. It is back in use, and its configuration is applied again."
+
     @Provides
     @Singleton
     fun provideDpmHandle(@ApplicationContext context: Context): DpmHandle {
@@ -114,8 +125,38 @@ object AgentModule {
 
     @Provides
     @Singleton
-    fun provideCapabilityRegistry(@ApplicationContext context: Context, handle: DpmHandle): CapabilityRegistry =
-        CapabilityRegistry(handle, AndroidWifiRadio.from(context), SharedPrefsWifiRadioOffState(context))
+    fun provideCapabilityRegistry(
+        @ApplicationContext context: Context,
+        handle: DpmHandle,
+        wipeHold: FactoryResetWipeHold,
+    ): CapabilityRegistry =
+        CapabilityRegistry(handle, AndroidWifiRadio.from(context), SharedPrefsWifiRadioOffState(context), wipeHold)
+
+    @Provides
+    @Singleton
+    fun provideFactoryResetWipeHold(
+        @ApplicationContext context: Context,
+        events: EventSink,
+        configStore: ConfigStateStore,
+    ): FactoryResetWipeHold =
+        FactoryResetWipeHold(
+            SharedPrefsWipeHoldStore(context),
+            bootId = { Boot.count(context) },
+            nowMs = SystemClock::elapsedRealtime,
+            // Ends the hold at its deadline even if no command, apply or server comes. A failure to schedule doesn't
+            // stop the wipe: each command and apply still reads the hold.
+            onHold = {
+                runCatching { WipeHoldExpiryWorker.schedule(context) }
+                    .onFailure { Log.w("FactoryResetWipeHold", "expiry check not scheduled", it) }
+            },
+            // The re-apply first, each on its own: a failure to record the event must not cost the block.
+            onExpired = {
+                // Puts Factory reset: Block back now, and has the server re-send the configuration.
+                WipeHoldExpiryWorker.holdEnded(context, configStore)
+                runCatching { events.record(EventType.WIPE_NOT_STARTED, WIPE_NOT_STARTED_DETAIL) }
+                    .onFailure { Log.w("FactoryResetWipeHold", "wipeNotStarted not recorded", it) }
+            },
+        )
 
     @Provides
     @Singleton
@@ -207,7 +248,8 @@ object AgentModule {
     @Singleton
     fun provideCommandDispatcher(
         handlers: Set<@JvmSuppressWildcards CommandHandler>,
-    ): CommandDispatcher = CommandDispatcher(handlers.toList())
+        wipeHold: FactoryResetWipeHold,
+    ): CommandDispatcher = CommandDispatcher(handlers.toList(), wiping = { wipeHold.held })
 
     // --- Kiosk (lock-task) ---
 
@@ -312,8 +354,10 @@ object AgentModule {
 
     @Provides
     @IntoSet
-    fun provideDeviceLockHandler(handle: DpmHandle): CommandHandler =
-        DeviceLockHandler(handle)
+    fun provideDeviceLockHandler(@ApplicationContext context: Context, handle: DpmHandle): CommandHandler {
+        val keyguard = context.getSystemService(KeyguardManager::class.java)
+        return DeviceLockHandler(lockNow = { handle.dpm.lockNow() }, isDeviceSecure = { keyguard.isDeviceSecure })
+    }
 
     // --- Remote action handlers (multibound) ---
 
@@ -344,8 +388,18 @@ object AgentModule {
 
     @Provides
     @IntoSet
-    fun provideWipeHandler(handle: DpmHandle): CommandHandler =
-        DeviceWipeHandler(handle)
+    fun provideWipeHandler(
+        @ApplicationContext context: Context,
+        handle: DpmHandle,
+        applier: ConfigApplier,
+        wipeHold: FactoryResetWipeHold,
+        configStore: ConfigStateStore,
+    ): CommandHandler =
+        DeviceWipeHandler(
+            DpmWipeTarget(handle, context.getSystemService(UserManager::class.java)),
+            wipeHold,
+            markConfigStale = configStore::markStale,
+        ) { wipe -> applier.exclusive(wipe) }
 
     @Provides
     @IntoSet

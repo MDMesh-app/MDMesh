@@ -340,7 +340,7 @@ export function TelemetryTab({ telemetry, loaded, reportedAt }: { telemetry: Tel
    Activity: device events and the full command history
    =============================================================================================================== */
 
-function EventIcon({ type }: { type: string }) {
+export function EventIcon({ type }: { type: string }) {
   switch (type) {
     case 'boot':
       return <IconPower size={15} />;
@@ -359,6 +359,7 @@ function EventIcon({ type }: { type: string }) {
     case 'kioskPinLockout':
       return <IconLock size={15} />;
     case 'kioskCrashLoop':
+    case 'wipeNotStarted':
     case 'storageRecovered':
     case 'configReapplyFailed':
       return <IconAlert size={15} />;

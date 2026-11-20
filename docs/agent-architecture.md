@@ -45,8 +45,9 @@ configuration.
   polling.
 - The agent applies each key through the existing strategies (kiosk via the same `KioskApplier` as `kiosk.enter`)
   and reports a per-key outcome: `applied`, `unsupported`, `failed: <reason>` or `deferred: <reason>`.
-- It saves the new revision only when nothing failed, and re-applies the saved document after a boot or self-update,
-  so a reboot can't silently undo it.
+- It saves the new revision only when nothing failed. After a boot or self-update it re-applies the newest document
+  the server delivered, saved or not (one with a failed section may still have changed the device), so a reboot can't
+  silently undo it or bring back an older setting.
 - Only agents that advertise `configApply` get the command. Older ones show "Agent too old" in the console.
 - When a device reports a new agent version, the server re-sends `config.apply` until one queued for that version
   comes back done (`device_state.configAgentVersion`), so stale `unsupported` results refresh. A re-sent document
@@ -88,8 +89,8 @@ agents use both colours as sent.
 **Protocol history** (all additive; older agents keep working)
 - **1.1:** `config.apply` itself.
 - **1.2:** the `factoryReset` policy key. Agents without it report `unsupported`.
-- **1.3:** the `safeBoot` key, the same way. An agent updated later picks it up from the saved document on its
-  post-update re-apply, without re-enrollment.
+- **1.3:** the `safeBoot` key, the same way. An agent updated later picks it up from the newest delivered document
+  on its post-update re-apply, without re-enrollment.
 - **1.4 (v0.3.4):**
   - **Do not track** (`requestUpdates = DONOTTRACK`, the column default) is sent as location mode `off`, and the
     agent reads no location. Older agents treat `off` as passive, so the server also drops location from check-ins
@@ -101,12 +102,12 @@ agents use both colours as sent.
     Do-not-track configurations (whose devices get one `config.apply`).
 - **1.5:** the `connectivity` section (`connectivityMode`): `adaptive` (Battery-saver, the agent's default) holds the
   wake socket only while the screen is on or charging; `alwaysOn` holds it 24/7, so commands reach a locked device
-  without waiting for the next heartbeat. Applied through the same `PowerModeStore` as `device.powerMode`. NULL is
-  not managed: the section is omitted, so existing revisions don't move, and each device keeps its mode, including
-  one set by `device.powerMode`. A managed mode wins over `device.powerMode`: the saved document is applied again
+  without waiting for the next heartbeat. Applied through the same `PowerModeStore` as `device.powerMode`. NULL is not
+  managed: the section is omitted, so existing revisions don't move, and each device keeps its mode, including one set
+  by `device.powerMode`. A managed mode wins over `device.powerMode`: the newest delivered document is applied again
   after every boot and agent update (`ConfigReapplyWorker`), and the server re-sends `config.apply` when the agent
-  version changes, so a device-level mode lasts only until then. Switching a configuration from `alwaysOn` back to
-  not managed leaves its devices on `alwaysOn`; set `adaptive` to switch them back. Older agents ignore it.
+  version changes, so a device-level mode lasts only until then. Switching a configuration from `alwaysOn` back to not
+  managed leaves its devices on `alwaysOn`; set `adaptive` to switch them back. Older agents ignore it.
 - **1.6:** the `locationServices` policy key: Android 11+ Device Owners turn Android Location services on or off and
   lock the setting while managed; Not managed (NULL, the upgrade value) lifts the lock and leaves the switch as it is.
   It is separate from `requestUpdates`. Agents without it, and Android 10 and older, report `unsupported`.

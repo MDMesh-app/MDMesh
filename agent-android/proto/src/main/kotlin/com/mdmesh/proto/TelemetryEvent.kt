@@ -25,6 +25,9 @@ object EventType {
      */
     const val STORAGE_RECOVERED = "storageRecovered"
 
-    /** The boot/update re-apply of the saved configuration failed in part; detail names what failed. */
+    /** The boot/update re-apply of the newest delivered configuration failed in part; detail names what failed. */
     const val CONFIG_REAPPLY_FAILED = "configReapplyFailed"
+
+    /** An accepted factory reset did not reboot the device in time; the agent resumed and restores its policies. */
+    const val WIPE_NOT_STARTED = "wipeNotStarted"
 }

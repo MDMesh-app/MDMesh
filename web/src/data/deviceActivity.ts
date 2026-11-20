@@ -83,6 +83,7 @@ export const EVENT_LABELS: Record<string, string> = {
   kioskCrashLoop: 'Kiosk app keeps closing',
   kioskExit: 'Left kiosk mode',
   kioskReturn: 'Returned to kiosk mode',
+  wipeNotStarted: 'Factory reset didn’t start',
   storageRecovered: 'Storage recovered',
   configReapplyFailed: 'Config re-apply failed',
 };
@@ -100,6 +101,7 @@ export const EVENT_VERBS: Record<string, string> = {
   kioskCrashLoop: 'reported the kiosk app keeps closing',
   kioskExit: 'left kiosk mode',
   kioskReturn: 'returned to kiosk mode',
+  wipeNotStarted: 'didn’t start its factory reset',
   storageRecovered: 'recovered damaged storage',
   configReapplyFailed: 'failed to re-apply its configuration',
 };

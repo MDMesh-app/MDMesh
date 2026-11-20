@@ -4,7 +4,7 @@ import { arrowSegments, screenAngle, showPoints, type Pt } from './locationTrail
 const pts = (...xy: [number, number][]): Pt[] => xy.map(([x, y]) => ({ x, y }));
 
 describe('screenAngle', () => {
-  it('is 0° heading right (east) and turns clockwise, as SVG's rotate() does', () => {
+  it('is 0° heading right (east) and turns clockwise, as SVG’s rotate() does', () => {
     expect(screenAngle({ x: 0, y: 0 }, { x: 10, y: 0 })).toBeCloseTo(0);
     expect(screenAngle({ x: 0, y: 0 }, { x: 0, y: 10 })).toBeCloseTo(90); // down the screen (south)
     expect(screenAngle({ x: 0, y: 0 }, { x: -10, y: 0 })).toBeCloseTo(180);

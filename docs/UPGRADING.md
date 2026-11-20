@@ -209,19 +209,28 @@ exited or credentials cleared while the older agent ran.
   - **Docker (quick start and from source):** add `SERVER_JAVA_OPTS=-XX:-UseBASE64Intrinsics` to `.env` (if the line
     is already there, add the flag to its value, quoted), then run `docker compose up -d server` to recreate the
     container. A quick-start install made before v0.3.2 also needs the `JAVA_OPTS` line in its compose file
-    ([OPERATIONS](OPERATIONS.md#temporary-debug-log)). After 0.5.1 the line is no longer needed.
+    ([OPERATIONS](OPERATIONS.md#temporary-debug-log)).
   - **Native:** `sudo ./setup.sh --update --native`. It sets the flag, and upgrades a JDK 17 from your distribution's
-    packages when apt has a newer one. Until you can update, add `Environment=JAVA_OPTS=-XX:-UseBASE64Intrinsics`
-    with `systemctl edit mdmesh-server` (or add the flag to the `JAVA_OPTS` you set there), then
-    `systemctl restart mdmesh-server`.
+    packages when apt has a newer one. Until you can update, add the flag in a drop-in (if you already set
+    `JAVA_OPTS` there, add it to that line instead), then restart:
+
+    ```bash
+    sudo systemctl edit mdmesh-server
+    # in the editor, under [Service]:
+    #   Environment=JAVA_OPTS=-XX:-UseBASE64Intrinsics
+    sudo systemctl restart mdmesh-server
+    ```
+
+  Going back to a release before 0.5.1 (`--allow-downgrade`, or a rollback) drops the flag again, so keep the `.env`
+  line or the drop-in if you might.
 
   To check a running server, look for `= false` and `{command line}`:
 
   ```bash
-  # Docker, in the install directory
+  # Docker, in the install directory (before v0.2.7 the server ran as root: leave out -u mdmesh)
   docker compose exec -u mdmesh server jcmd org.apache.catalina.startup.Bootstrap VM.flags -all | grep UseBASE64Intrinsics
-  # Native
-  sudo -u mdmesh "$(systemctl show -p Environment --value mdmesh-server | tr ' ' '\n' | sed -n 's/^JAVA_HOME=//p')/bin/jcmd" \
+  # Native, as root (or with sudo -u mdmesh in place of runuser -u mdmesh --)
+  runuser -u mdmesh -- "$(systemctl show -p Environment --value mdmesh-server | tr ' ' '\n' | sed -n 's/^JAVA_HOME=//p')/bin/jcmd" \
     org.apache.catalina.startup.Bootstrap VM.flags -all | grep UseBASE64Intrinsics
   ```
 

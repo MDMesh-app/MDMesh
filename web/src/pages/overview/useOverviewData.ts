@@ -92,6 +92,11 @@ export function useOverviewData(): OverviewData {
 
   // Each refresh gets a generation; results of an older one (or after unmount) are dropped.
   const gen = useRef(0);
+  /**
+   * The activity feed's own generation, bumped when a full refresh sets a new feed (and on unmount): a command
+   * history applies while the feed it was fetched for is the one shown, whatever light refresh ran meanwhile.
+   */
+  const feedGen = useRef(0);
   const lastRun = useRef(0);
   const lastDeep = useRef(0);
   /** Device ids of the last good list, sorted and joined: a change (enrolled, deleted) forces a full refresh. */
@@ -160,15 +165,22 @@ export function useOverviewData(): OverviewData {
           }
           items.sort((a, b) => b.ev.ts - a.ev.ts);
           const kept = items.slice(0, ACTIVITY_KEEP);
-          setActivity(kept);
+          const fg = ++feedGen.current;
+          // Each device keeps the history the feed had for it until its fresh one comes, so rows that named their
+          // command don't fall back to "Command #id" on every full refresh.
+          setActivity((cur) => {
+            const had = new Map<number, CommandHistoryItem[]>();
+            for (const a of cur ?? []) if (a.commands) had.set(a.device.id, a.commands);
+            return kept.map((a) => (had.has(a.device.id) ? { ...a, commands: had.get(a.device.id) } : a));
+          });
           lastDeep.current = now; // a full refresh superseded before this point leaves the next one full too
           // Then a command result names its command, from its device's history: fetched only for the devices whose
-          // kept events include one, each applied as it comes (a slow or failed one leaves its rows "Command #id").
+          // kept events include one, each applied as it comes (a slow or failed one leaves its rows as they were).
           const withResults = [...new Set(kept.filter((a) => a.ev.type === 'commandResult').map((a) => a.device))];
           for (const d of withResults) {
             listCommandHistory(d.number)
               .then((commands: CommandHistoryItem[]) => {
-                if (!live() || !Array.isArray(commands)) return;
+                if (feedGen.current !== fg || !Array.isArray(commands)) return;
                 setActivity((cur) => cur && cur.map((a) => (a.device.id === d.id ? { ...a, commands } : a)));
               })
               .catch(() => {});
@@ -226,6 +238,7 @@ export function useOverviewData(): OverviewData {
       clearInterval(t);
       document.removeEventListener('visibilitychange', onVisible);
       gen.current++; // drop in-flight results
+      feedGen.current++;
     };
   }, [refresh]);
 

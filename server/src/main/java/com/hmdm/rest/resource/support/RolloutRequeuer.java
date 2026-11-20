@@ -2,6 +2,7 @@ package com.hmdm.rest.resource.support;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.hmdm.persistence.DeviceGoneException;
 import com.hmdm.persistence.RolloutDAO;
 import com.hmdm.persistence.domain.AgentCommand;
 import com.hmdm.persistence.domain.AgentRollout;
@@ -69,6 +70,8 @@ public class RolloutRequeuer {
             logger.info("Rollout {}: app.install queued again for {} (last: {}, attempts: {})", r.getId(), number,
                     latest == null ? "none" : latest.getStatus(), attempts);
             return true;
+        } catch (DeviceGoneException e) {
+            throw e; // the device was deleted meanwhile: its caller answers as for an unknown device
         } catch (Exception e) {
             logger.warn("rollout requeue skipped for {}", device == null ? "?" : device.getNumber(), e);
             return false;

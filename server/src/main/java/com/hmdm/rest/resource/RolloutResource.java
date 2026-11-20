@@ -23,6 +23,7 @@ package com.hmdm.rest.resource;
 
 import com.hmdm.notification.AgentWakeHub;
 import com.hmdm.persistence.DeviceDAO;
+import com.hmdm.persistence.DeviceGoneException;
 import com.hmdm.persistence.RolloutDAO;
 import com.hmdm.persistence.domain.AgentRollout;
 import com.hmdm.persistence.domain.RolloutDeviceRow;
@@ -317,7 +318,12 @@ public class RolloutResource {
         for (RolloutDeviceRow row : rows) {
             boolean hasPending = pending.contains(row.getDeviceNumber());
             if (RolloutProgress.classify(r.getTargetVersion(), row, hasPending) == RolloutProgress.Status.OUTSTANDING) {
-                if (enqueueInstall(r, row.getDeviceNumber())) n++;
+                try {
+                    if (enqueueInstall(r, row.getDeviceNumber())) n++;
+                } catch (DeviceGoneException e) {
+                    // Deleted since the device list was read: nothing to queue for it.
+                    logger.warn("Rollout {}: device {} was deleted meanwhile, skipped", r.getId(), e.deviceNumber);
+                }
             }
         }
         return n;

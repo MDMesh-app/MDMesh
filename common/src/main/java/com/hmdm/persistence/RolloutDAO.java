@@ -90,9 +90,10 @@ public class RolloutDAO {
         return mapper.isCanary(rolloutId, deviceNumber);
     }
 
-    /** Queues {@code cmd} unless the same command is already in flight for the device. @return true when queued. */
+    /** Queues {@code cmd} unless the same command is already in flight for the device. @return true when queued.
+     *  @throws DeviceGoneException the device was deleted meanwhile */
     public boolean insertIfNotInFlight(AgentCommand cmd) {
-        return mapper.insertIfNotInFlight(cmd) > 0;
+        return DeviceGoneException.guard(cmd.getDeviceNumber(), () -> mapper.insertIfNotInFlight(cmd)) > 0;
     }
 
     /** The device's app.install commands created at or after {@code since}, newest first. */

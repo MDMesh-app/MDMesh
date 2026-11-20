@@ -12,6 +12,7 @@ package com.hmdm.rest.resource.support;
 
 import com.hmdm.notification.AgentWakeHub;
 import com.hmdm.rest.json.InstallPayloadBuilder;
+import com.hmdm.persistence.DeviceGoneException;
 import com.hmdm.persistence.AgentCommandDAO;
 import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.AgentCommand;
@@ -77,6 +78,8 @@ public class ConfigAppInstaller {
             if (queued > 0) {
                 wakeHub.wake(device.getNumber(), "commands");
             }
+        } catch (DeviceGoneException e) {
+            throw e; // the device was deleted meanwhile: its caller answers as for an unknown device
         } catch (Exception e) {
             logger.warn("Failed to queue configuration apps for device {}", device.getNumber(), e);
         }

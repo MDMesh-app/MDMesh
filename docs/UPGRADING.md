@@ -206,8 +206,14 @@ exited or credentials cleared while the older agent ran.
 - **The database update deletes the history of deleted devices.** Before, deleting a device left its commands, state,
   events and locations behind, and a device added later with the same number showed them. On its first start the
   server deletes those rows (no screen showed them), then links each history table to its device, so deleting a device
-  deletes its history from then on. On a large `device_event` or `device_location` table the first start takes longer:
-  each table is read once. Devices that still exist keep everything. To keep the old rows, back up the database first.
+  deletes its history from then on. Devices that still exist keep everything. To keep the old rows, back up the
+  database first.
+- **The first start reads each history table once.** Measured on a 6-core test server with 5 million events and
+  1 million locations (1.3 GB, 9% of it from deleted devices): 2.4 seconds, on top of the usual start. Expect longer
+  on slow disks. The server answers once it is done, and agents retry their check-ins meanwhile.
+- **Going back to 0.5.0 without a restore** (`--allow-downgrade`) works: 0.5.0 starts on the new database unchanged.
+  It keeps the links, so in 0.5.0 too, deleting a device deletes its history and renaming one carries it. A check-in
+  or command that races a delete gets a server error in 0.5.0 (this release answers it as for an unknown device).
 
 ### v0.5.0
 

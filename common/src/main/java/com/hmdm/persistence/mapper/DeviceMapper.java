@@ -159,6 +159,10 @@ public interface DeviceMapper {
                                          @Param("filter") String filter,
                                          @Param("limit") int limit);
 
+    /** The device's number when it is enrolled with the agent (it has an agent secret), else null; locks the row. */
+    @Select({"SELECT number FROM devices WHERE id = #{id} AND agentSecretHash IS NOT NULL FOR UPDATE"})
+    String lockAgentDeviceNumber(@Param("id") Integer id);
+
     /** Its agent history (commands, state, events, locations, rollout canary membership) goes with it: those tables
      *  reference devices(number) ON DELETE CASCADE, as the rows keyed by id do devices(id). */
     @Delete({"DELETE FROM devices WHERE id = #{id}"})

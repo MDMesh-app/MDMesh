@@ -29,7 +29,12 @@ Fixes
 - Agent rollout: a device already on a newer agent counts as updated and is no longer sent the older APK, which it
   refused, so the rollout never finished. Versions now compare as numbers (0.10.0 is newer than 0.9.0).
 - Deleting a device, or a customer, now deletes the device's commands, state, events and locations too, and renaming
-  a device keeps them. Before, a device added later with the same number showed them as its own.
+  a device keeps them. Before, a device added later with the same number showed them as its own. A check-in or command
+  that races the delete is answered as for an unknown device, not with a server error.
+- The API refuses to change the number of a device enrolled with the agent (`error.device.number.agent`): the agent
+  signs in with that number and could not check in again. Other devices are renamed as before.
+- Deleting devices in bulk deletes all of them or none: before, a failure partway left some deleted and still
+  answered OK.
 - Agent: a settings file damaged by the device's storage (after a power loss) no longer makes every kiosk and
   configuration command fail with "Unable to parse preferences proto." or crash the kiosk screen. The agent keeps a
   copy of each file and restores it, or the configured kiosk, and the device page shows a `storageRecovered` event

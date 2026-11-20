@@ -10,6 +10,7 @@
 
 package com.hmdm.rest.resource.support;
 
+import com.hmdm.persistence.DeviceGoneException;
 import com.hmdm.persistence.AgentCommandDAO;
 import com.hmdm.persistence.RolloutDAO;
 import com.hmdm.persistence.UnsecureDAO;
@@ -121,6 +122,8 @@ public class AppReconciler {
                         cfgId);
             }
             return queued;
+        } catch (DeviceGoneException e) {
+            throw e; // the device was deleted meanwhile: its caller answers as for an unknown device
         } catch (Exception e) {
             // A broken configuration fails on EVERY check-in of every device on it: WARN at most once
             // per minute per configuration id, DEBUG otherwise.

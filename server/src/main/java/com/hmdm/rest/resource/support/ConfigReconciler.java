@@ -1,5 +1,6 @@
 package com.hmdm.rest.resource.support;
 
+import com.hmdm.persistence.DeviceGoneException;
 import com.hmdm.persistence.AgentCommandDAO;
 import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.AgentCommand;
@@ -191,6 +192,8 @@ public class ConfigReconciler {
             logger.info("config.apply queued for {} (revision {} -> {}, agent {})", number, appliedRevision,
                     doc.getRevision(), agentChanged ? configAgentVersion + " -> " + agentVersion : agentVersion);
             return true;
+        } catch (DeviceGoneException e) {
+            throw e; // the device was deleted meanwhile: its caller answers as for an unknown device
         } catch (Exception e) {
             // A broken configuration fails on EVERY check-in of every device on it: WARN at most once
             // per minute per configuration id, DEBUG otherwise.

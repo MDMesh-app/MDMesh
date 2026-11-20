@@ -289,6 +289,9 @@ public class DeviceResource {
 
                 return Response.OK();
             }
+        } catch (DeviceDAO.AgentDeviceRenameException e) {
+            log.warn("Device {} not renamed: {}", device.getId(), e.getMessage());
+            return Response.ERROR(DeviceDAO.AgentDeviceRenameException.ERROR_KEY);
         } catch (Exception e) {
             log.error("Unexpected error when saving/creating device", e);
             return Response.ERROR();
@@ -341,11 +344,13 @@ public class DeviceResource {
                         SecurityContext.get().getCurrentUserName());
                 return Response.PERMISSION_DENIED();
             }
-            Iterator it = device.getIds().iterator();
-
-            while (it.hasNext()) {
-                Integer id = (Integer) it.next();
-                this.deviceDAO.removeDeviceById(id);
+            try {
+                this.deviceDAO.removeDevicesByIds(device.getIds());
+            } catch (SecurityException e) {
+                // A device moved out of the user's reach after the check above: nothing was deleted.
+                log.warn("Bulk delete refused: a device became inaccessible to user {}; nothing deleted",
+                        SecurityContext.get().getCurrentUserName());
+                return Response.PERMISSION_DENIED();
             }
         }
         return Response.OK();

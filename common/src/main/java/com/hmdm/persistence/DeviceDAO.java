@@ -172,6 +172,16 @@ public class DeviceDAO extends AbstractDAO<Device> {
         );
     }
 
+    /**
+     * Deletes the devices in one transaction: all of them, or none when one can't be (one the user may not reach
+     * fails it all). A device already gone counts as deleted. In id order, so two overlapping bulk deletes take the
+     * rows' locks in the same order and never deadlock.
+     */
+    @Transactional
+    public void removeDevicesByIds(Collection<Integer> ids) {
+        ids.stream().filter(Objects::nonNull).distinct().sorted().forEach(this::removeDeviceById);
+    }
+
     public void updateDeviceConfiguration(Integer deviceId, Integer configurationId) {
         updateById(
                 deviceId,
@@ -237,6 +247,13 @@ public class DeviceDAO extends AbstractDAO<Device> {
     @Transactional
     public void updateDevice(Device device) {
         updateById(device.getId(), this::getAccessibleDeviceForUpdate, dbDevice -> {
+            // An agent signs in with its device number, which it never learns anew: renamed, it could not check in
+            // again. Read under the row's lock, so an enrollment completing meanwhile is seen. Any other device is
+            // renamed, and its history (keyed by number) follows by the foreign keys' ON UPDATE CASCADE.
+            String agentNumber = this.mapper.lockAgentDeviceNumber(dbDevice.getId());
+            if (agentNumber != null && !agentNumber.equals(device.getNumber())) {
+                throw new AgentDeviceRenameException(agentNumber);
+            }
             requireUsableConfiguration(device.getConfigurationId(), dbDevice.getConfigurationId());
             device.setCustomerId(dbDevice.getCustomerId());
             device.updateFastSearch(fastSearchChars);
@@ -577,4 +594,12 @@ public class DeviceDAO extends AbstractDAO<Device> {
 
     }
 
+    /** The number of an agent-enrolled device can't change (see {@link #updateDevice}). */
+    public static final class AgentDeviceRenameException extends RuntimeException {
+        public static final String ERROR_KEY = "error.device.number.agent";
+
+        public AgentDeviceRenameException(String number) {
+            super("device " + number + " is enrolled with the agent: its number can't change");
+        }
+    }
 }

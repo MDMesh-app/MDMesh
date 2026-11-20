@@ -141,6 +141,13 @@ export function AppsLibrary({
     }
   }
 
+  // After a removal, focus goes to the next app rather than falling to the page with the removed row's "…".
+  const removeFocus = useRefocusAfterRemove();
+  const cancelRemove = () => {
+    removeFocus.forget();
+    setConfirmRemove(null);
+  };
+
   // #66: removing a library record never uninstalls the app; refuse while a configuration still uses it.
   async function askRemove(app: Application) {
     try {
@@ -153,16 +160,15 @@ export function AppsLibrary({
           'App is still in use',
           `Remove it from ${names.join(', ')} before deleting the Library record. This does not uninstall the app from devices.`,
         );
+        removeFocus.forget();
         return;
       }
       setConfirmRemove(app);
     } catch (e) {
+      removeFocus.forget();
       toast.push('err', 'Remove failed', errorText(e));
     }
   }
-
-  // After a removal, focus goes to the next app rather than falling to the page with the removed row's "…".
-  const rememberFocus = useRefocusAfterRemove();
 
   async function remove(app: Application) {
     setConfirmRemove(null);
@@ -172,6 +178,7 @@ export function AppsLibrary({
       setApps((cur) => cur.filter((a) => a.id !== app.id));
       toast.push('ok', 'Removed from Library', `${app.name} — devices keep the installed app.`);
     } catch (e) {
+      removeFocus.forget();
       const msg = errorText(e);
       toast.push('err', 'Remove failed', /config\.reference\.exists/.test(msg) ? 'A configuration still uses this app.' : msg);
     } finally {
@@ -192,7 +199,7 @@ export function AppsLibrary({
               danger: true,
               disabled: removing != null,
               onSelect: () => {
-                rememberFocus();
+                removeFocus.remember();
                 void askRemove(a);
               },
             }
@@ -488,13 +495,13 @@ export function AppsLibrary({
 
       <Modal
         open={confirmRemove !== null}
-        onClose={() => setConfirmRemove(null)}
+        onClose={cancelRemove}
         role="alertdialog"
         size="sm"
         title={removeShown ? `Remove ${removeShown.name} from the library?` : ''}
         footer={
           <>
-            <Button size="lg" onClick={() => setConfirmRemove(null)}>
+            <Button size="lg" onClick={cancelRemove}>
               Cancel
             </Button>
             <Button size="lg" variant="danger-primary" onClick={() => confirmRemove && void remove(confirmRemove)}>

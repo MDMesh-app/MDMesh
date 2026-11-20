@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { chooseOption } from '../../test/select';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppRoutes } from '../../App';
-import { ROLES, renderInConsole, stubApi } from '../../test/console';
+import { ROLES, renderInConsole, settled, stubApi } from '../../test/console';
 import type { AuthUser } from '../../api/auth';
 import type { ManagedUser, UserRole } from '../../api/users';
 
@@ -259,5 +259,27 @@ describe('Users & roles administration', () => {
     );
     // The page behind the open dialog is hidden from assistive tech (aria-hidden), so look past that.
     expect(screen.getByRole('table', { name: 'Roles', hidden: true }).textContent).toContain('Operators');
+  });
+
+  it('after deleting a user, focus moves to the next row, not to the page', async () => {
+    const packer: ManagedUser = { ...account, id: 21, login: 'packer', name: 'Packer' };
+    const others = [account, packer];
+    const fetch = open({ others });
+    const base = fetch.getMockImplementation()!;
+    fetch.mockImplementation(async (input, init) => {
+      // The server forgets the account: the reload after the delete no longer lists it.
+      if (init?.method === 'DELETE') others.splice(0, 1);
+      return base(input, init);
+    });
+    await screen.findByRole('button', { name: 'More actions for operator' }, { timeout: 10_000 });
+    await settled();
+    await rowAction('operator', 'Delete');
+    const dialog = within(await screen.findByRole('alertdialog'));
+    fireEvent.click(dialog.getByRole('button', { name: 'Delete user' }));
+    expect(await screen.findByText('User deleted')).toBeTruthy();
+    const row = (await screen.findByRole('button', { name: 'More actions for packer' })).closest('tr')!;
+    expect(screen.queryByRole('button', { name: 'More actions for operator' })).toBeNull();
+    await waitFor(() => expect(row.contains(document.activeElement)).toBe(true));
+    await settled();
   });
 });

@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { loneButtonItem } from './loneAction';
 import type { MenuEntry } from './Menu';
 import { Modal } from './Modal';
+import { focusPlace, placeOf } from './focusPlace';
 import { useRefocusAfterRemove } from './useRefocusAfterRemove';
 
 const noop = () => {};
@@ -32,7 +33,7 @@ describe('loneButtonItem', () => {
 function List({ initial }: { initial: string[] }) {
   const [rows, setRows] = useState(initial);
   const [asking, setAsking] = useState<string | null>(null);
-  const remember = useRefocusAfterRemove();
+  const { remember, forget } = useRefocusAfterRemove();
   return (
     <main id="v2-main" tabIndex={-1}>
       <ul>
@@ -50,10 +51,19 @@ function List({ initial }: { initial: string[] }) {
           </li>
         ))}
       </ul>
+      {/* A reload that drops the first row for another reason (another admin deleted it). */}
+      <button onClick={() => setRows((cur) => cur.slice(1))}>Reload</button>
       {asking ? (
         <>
           <button onClick={() => setRows((cur) => cur.filter((x) => x !== asking))}>Confirm</button>
-          <button onClick={() => setAsking(null)}>Cancel</button>
+          <button
+            onClick={() => {
+              forget();
+              setAsking(null);
+            }}
+          >
+            Cancel
+          </button>
         </>
       ) : null}
     </main>
@@ -97,6 +107,15 @@ describe('useRefocusAfterRemove', () => {
     const a = remove('A', 'Cancel');
     expect(document.activeElement).toBe(a);
     expect(screen.getAllByRole('listitem')).toHaveLength(2);
+  });
+
+  it('forgets the item on a cancel: its removal later, for another reason, moves no focus', () => {
+    render(<List initial={['A', 'B']} />);
+    remove('A', 'Cancel');
+    (document.activeElement as HTMLElement).blur(); // a click on empty page space
+    act(() => screen.getByRole('button', { name: 'Reload' }).click());
+    expect(screen.queryByRole('link', { name: 'A' })).toBeNull();
+    expect(document.activeElement).toBe(document.body);
   });
 
   it('leaves focus alone when it is somewhere else by the time the item goes', () => {
@@ -173,5 +192,42 @@ describe('Modal: an opener removed while the dialog is open', () => {
     // Radix hands focus back a tick after the dialog unmounts.
     await act(() => new Promise((r) => setTimeout(r, 20)));
     expect(document.activeElement).toBe(elsewhere);
+  });
+});
+
+describe('focusPlace', () => {
+  /** Builds `html` in the document and returns a lookup by id. */
+  function dom(html: string) {
+    document.body.innerHTML = html;
+    return (id: string) => document.getElementById(id)!;
+  }
+
+  it('tries the item itself first when only its control went (the item stayed)', () => {
+    const $ = dom('<ul><li id="a"><a id="a-link" href="#a">A</a><button id="a-more">More</button></li><li><a href="#b">B</a></li></ul>');
+    const place = placeOf($('a-more'));
+    $('a-more').remove();
+    focusPlace(place);
+    expect(document.activeElement).toBe($('a-link'));
+  });
+
+  it('skips hidden inputs', () => {
+    const $ = dom(
+      '<ul><li id="a"><button id="a-more">More</button></li><li><input type="hidden" /><a id="b" href="#b">B</a></li></ul>',
+    );
+    const place = placeOf($('a-more'));
+    $('a').remove();
+    focusPlace(place);
+    expect(document.activeElement).toBe($('b'));
+  });
+
+  it('stays in the dialog the list is in when the list empties, not the page behind it', () => {
+    const $ = dom(
+      '<main id="v2-main" tabindex="-1"></main>' +
+        '<div role="dialog" id="outer"><button id="close">Close</button><ul><li id="a"><button id="a-del">Delete</button></li></ul></div>',
+    );
+    const place = placeOf($('a-del'));
+    $('a').remove();
+    focusPlace(place);
+    expect(document.activeElement).toBe($('close'));
   });
 });

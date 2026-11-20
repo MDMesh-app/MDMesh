@@ -67,7 +67,7 @@ export function ConfigurationsPage() {
   const [copyOf, setCopyOf] = useState<Configuration | null>(null);
   const [deleting, setDeleting] = useState<Configuration | null>(null);
   // After a delete, focus goes to the next card rather than falling to the page with the deleted card's "…".
-  const rememberFocus = useRefocusAfterRemove();
+  const deleteFocus = useRefocusAfterRemove();
   // Creating needs add_config; duplicating and deleting copy_config (ext/core/access.ts). Opening one needs neither.
   const canAdd = usePermission(CORE_ACTION_ACCESS.addConfig);
   const canCopy = usePermission(CORE_ACTION_ACCESS.copyConfig);
@@ -271,7 +271,7 @@ export function ConfigurationsPage() {
                 onDelete={
                   canCopy
                     ? () => {
-                        rememberFocus();
+                        deleteFocus.remember();
                         setDeleting(c);
                       }
                     : undefined
@@ -357,7 +357,11 @@ export function ConfigurationsPage() {
         target={deleting}
         deviceCount={devicesBlockingDelete(deleting?.id != null ? sync[deleting.id] : undefined)}
         wipedCount={deleting?.id != null ? sync[deleting.id]?.wiped : undefined}
-        onClose={() => setDeleting(null)}
+        onClose={() => {
+          // Cancelled, or the delete failed: the card stays.
+          deleteFocus.forget();
+          setDeleting(null);
+        }}
         onDeleted={() => {
           setDeleting(null);
           void load(false);

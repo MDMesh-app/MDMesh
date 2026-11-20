@@ -3,7 +3,7 @@ import * as D from '@radix-ui/react-dialog';
 import { IconButton } from './Button';
 import { IconClose } from './icons';
 import { cx } from './cx';
-import { focusPlace, placeOf, type FocusPlace } from './focusPlace';
+import { FOCUSABLE, focusPlace, placeOf, type FocusPlace } from './focusPlace';
 import './Modal.css';
 
 export interface ModalProps {
@@ -26,9 +26,6 @@ export interface ModalProps {
   role?: 'dialog' | 'alertdialog';
   className?: string;
 }
-
-const FOCUSABLE =
-  'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /**
  * Whether the body is a Tab stop of its own: while it scrolls and nothing in it is (a release's notes without a link),

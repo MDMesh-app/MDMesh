@@ -29,7 +29,10 @@ Fixes
 - Console: activity says which command ran and how it went ("Lock: done", not "Command 1234:done"), labels kiosk exit
   and return, and the Overview no longer shows the device's description as if it were the event's detail.
 - Console: an action shows in one place: a configuration card's "…" holds only Delete, and the device page's "…"
-  holds Ring and Reboot and then All actions, which opens Remote actions on the Control tab.
+  holds Ring and Reboot and then All actions, which opens Remote actions on the Control tab. A lone Delete or Remove
+  from library stays in its "…" rather than becoming a button next to the row.
+- Console: after you delete a configuration or remove an app from the library, keyboard focus moves to the next card
+  or row instead of to the top of the page.
 - Agent: a settings file damaged by the device's storage (after a power loss) no longer makes every kiosk and
   configuration command fail with "Unable to parse preferences proto." or crash the kiosk screen. The agent keeps a
   copy of each file and restores it, or the configured kiosk, and the device page shows a `storageRecovered` event

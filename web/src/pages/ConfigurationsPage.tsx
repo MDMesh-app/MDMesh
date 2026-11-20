@@ -35,6 +35,7 @@ import {
 import { CORE_ACTION_ACCESS } from '../ext/core/access';
 import { usePermission } from '../ext/permissions';
 import { paths } from '../routes';
+import { useRefocusAfterRemove } from '../ui/useRefocusAfterRemove';
 import { CopyConfigModal, DeleteConfigModal, NewConfigChooser } from './configurations/modals';
 import { devicesBlockingDelete, syncLine } from './configurations/sync';
 import type { ConfigWatch } from './configurations/watch';
@@ -65,6 +66,8 @@ export function ConfigurationsPage() {
   const [chooserOpen, setChooserOpen] = useState(false);
   const [copyOf, setCopyOf] = useState<Configuration | null>(null);
   const [deleting, setDeleting] = useState<Configuration | null>(null);
+  // After a delete, focus goes to the next card rather than falling to the page with the deleted card's "…".
+  const rememberFocus = useRefocusAfterRemove();
   // Creating needs add_config; duplicating and deleting copy_config (ext/core/access.ts). Opening one needs neither.
   const canAdd = usePermission(CORE_ACTION_ACCESS.addConfig);
   const canCopy = usePermission(CORE_ACTION_ACCESS.copyConfig);
@@ -265,7 +268,14 @@ export function ConfigurationsPage() {
                 syncFailed={syncFailed}
                 syncLoaded={syncLoaded}
                 onCopy={canCopy ? () => setCopyOf(c) : undefined}
-                onDelete={canCopy ? () => setDeleting(c) : undefined}
+                onDelete={
+                  canCopy
+                    ? () => {
+                        rememberFocus();
+                        setDeleting(c);
+                      }
+                    : undefined
+                }
               />
             </GridCell>
           ))}

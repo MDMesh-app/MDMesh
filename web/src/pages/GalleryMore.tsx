@@ -99,7 +99,8 @@ export function GalleryMore() {
         note={
           'Enter / Space / ArrowDown open, arrows and type-ahead move, Esc closes and returns focus. Each action shows in ' +
           'one place per surface: the primary and up to two safe secondaries are buttons, the rest go in the “…”, ' +
-          'destructive last after a separator. A menu of one item is a button instead, except a card’s lone Delete. ' +
+          'destructive last after a separator. A menu of one safe item is a button instead; a lone destructive one ' +
+          '(a card’s or row’s Delete) stays in the “…”. ' +
           'A header that sums up a panel repeats only its most used actions; its “…” ends with “All actions →”.'
         }
       >

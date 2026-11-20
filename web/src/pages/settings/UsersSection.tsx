@@ -32,6 +32,7 @@ import {
   useToast,
   type MenuItem,
 } from '../../ui';
+import { loneButtonItem } from '../../ui/loneAction';
 import { UserEditor } from '../users/UserEditor';
 import { RoleEditor } from '../users/RoleEditor';
 import './UsersSection.css';
@@ -57,13 +58,13 @@ function Clip({ text, sub }: { text: string; sub?: boolean }) {
   );
 }
 
-/** Row actions, shown on row hover or focus: a "…" menu, or its one action as a visible button. */
+/** Row actions, shown on row hover or focus: a "…" menu, or its one safe action as a visible button (loneButtonItem). */
 function RowActions({ name, items }: { name: string; items: MenuItem[] }) {
   if (items.length === 0) return null;
-  const [only] = items;
+  const only = loneButtonItem(items);
   return (
     <div className="v2-rowactions">
-      {items.length === 1 ? (
+      {only ? (
         <Button size="sm" variant="ghost" aria-label={`${only.textValue} ${name}`} onClick={only.onSelect}>
           {only.label}
         </Button>

@@ -16,6 +16,11 @@ Upgrading
   unchanged. Quick-start installs: apply the update from Settings → Updates. From source: `./setup.sh --update`.
   Native installs: `sudo ./setup.sh --update --native`. The agent fixes below need agent 0.5.1, which devices get
   from the server as usual.
+- Account changes take your own password: scripts and API clients that create or delete users or customers, or change
+  another account's password or email, must now send `oldPassword`. Everyone signs in to the console again once, and
+  new accounts start with no access. Old audit records are masked in the background after the update: allow free disk
+  space of about the size of `plugin_audit_log`, and with several servers on one database, stop them all first
+  ([UPGRADING, v0.5.1](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v051)).
 - Quick start: `MDMESH_VERSION` now takes 0.5.0 or later; for 0.4.0 it stops and names that release's own
   `quickstart.sh`, as it already did for earlier releases.
 
@@ -26,9 +31,11 @@ Heads-up
   ([UPGRADING, v0.5.1](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v051)).
 
 Security
-- Account access and the audit log: secrets are masked in audit records, and sign-in requests have size limits.
-- Legacy device API (`LEGACY_DEVICE_API=1`): stricter checks on its requests. Changing a device's groups stays within
-  the user's own customer.
+- Account access: admins limited to some device groups or configurations can't give or reach access beyond their own,
+  and account changes take the current password. Secrets are masked in audit records, old ones included, and sign-in
+  requests have size limits.
+- Legacy device API (`LEGACY_DEVICE_API=1`): its routes no longer serve an agent device's configuration, and check
+  their requests more strictly. Changing a device's groups stays within the user's own customer.
 - CVE-2026-114938 (OpenJDK Base64, x86_64 with AVX-512): the server runs with `-XX:-UseBASE64Intrinsics` on Docker
   and native installs. The Docker image moves to Temurin 17.0.21.1, and the native installer's own JDK to 17.0.21.1;
   `--update` upgrades a distribution JDK 17 when a fixed one is available. To protect a server before you update:

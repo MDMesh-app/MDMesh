@@ -97,53 +97,19 @@
 	import security_headers
 	import edge_tls_{$EDGE_TLS:off}
 
-	# Your own rules (DEPLOY.md, "Your own edge rules"): every *.caddy file in the install directory's site.d/, mounted
-	# read-only at /etc/caddy/site.d (MDMESH_SITE_DIR in .env). Updates never touch it. None there: nothing is imported.
-	import /etc/caddy/site.d/*.caddy
-
 	# A server path that the server's routing would read differently from its security filters: a ";" path
 	# parameter, or an encoded ";", "/" or "\" (or a raw "\"), anywhere in the path of /rest, /files or /agent (the
-	# query string is not looked at). Refused here with 400, before it is proxied; the server refuses these too
-	# (AmbiguousPathFilter), for installs without this edge. {http.request.uri} is the path as sent, still escaped.
+	# query string is not looked at). Refused with 400 (first, in the route below), before it is proxied; the server
+	# refuses these too (AmbiguousPathFilter), for installs without this edge. {http.request.uri} is the path as sent,
+	# still escaped.
 	@ambiguous {
 		path_regexp ^(?i)/(rest|files|agent)([/;\\]|$)
 		expression `{http.request.uri}.matches("^(?i)[^?]*(;|%3b|%2f|%5c|\\\\)")`
 	}
-	handle @ambiguous {
-		respond 400
-	}
-
-	# Canonical agent-APK URL: /files/agent.apk works on BOTH deployment shapes (native serves a
-	# real file from Tomcat; here it's the supervisor's sha256-verified release mirror — the same
-	# upstream as /update/agent.apk, which stays below for back-compat). The exact-path matcher
-	# outranks the /files/* → server route (Caddy sorts handles longest-path-first), so this must
-	# stay more specific than @backend.
-	handle /files/agent.apk {
-		rewrite * /update/agent.apk
-		reverse_proxy supervisor:9000
-	}
-
-	# API, uploaded files, and the agent wake WebSocket → the Tomcat server. reverse_proxy
-	# upgrades WebSockets automatically, so /agent/ws works without extra config.
+	# API, uploaded files, and the agent wake WebSocket: the Tomcat server.
 	@backend path /rest/* /files/* /agent/ws/*
-	handle @backend {
-		reverse_proxy server:8080 {
-			import client_address
-		}
-	}
-
-	# Updater status + recovery page → the decoupled supervisor (always up, independent of the
-	# server), so "update available" + recovery stay reachable even mid-update.
-	handle /update/* {
-		reverse_proxy supervisor:9000
-	}
-	handle /recovery* {
-		reverse_proxy supervisor:9000
-	}
-
 	# Health probes for uptime monitors. Both answer 200 "ok" or 503, never the SPA's catch-all 200:
-	#   /healthz            the edge AND the API server answer (the probe apply.sh/rollback.sh use to call
-	#                       an update healthy: GET /rest/public/name, no DB round-trip, no auth)
+	#   /healthz            the edge AND the API server answer (GET /rest/public/name, no DB round-trip, no auth)
 	#   /healthz/supervisor the updater/recovery supervisor answers (update checks, recovery page, and the
 	#                       /files/agent.apk mirror that new enrollments download)
 	# Each also answers with a trailing slash (exact paths only, nothing below them), so /healthz/ cannot fall through
@@ -151,37 +117,78 @@
 	# sees the probe path.
 	@healthz path /healthz /healthz/
 	@healthzSupervisor path /healthz/supervisor /healthz/supervisor/
-	handle @healthz {
-		reverse_proxy server:8080 {
-			import client_address
-			rewrite /rest/public/name
-			@up status 2xx
-			handle_response @up {
-				respond "ok" 200
-			}
-			handle_response {
-				respond "server unavailable" 503
-			}
-		}
-	}
-	handle @healthzSupervisor {
-		reverse_proxy supervisor:9000 {
-			rewrite /healthz
-			@up status 2xx
-			handle_response @up {
-				respond "ok" 200
-			}
-			handle_response {
-				respond "supervisor unavailable" 503
-			}
-		}
-	}
 
-	# Everything else is the single-page app.
-	handle {
-		root * /srv
-		try_files {path} /index.html
-		file_server
+	# One ordered route, read top to bottom, the first matching handle answering: MDMesh's path check, then your own
+	# rules, then MDMesh's routes. (Outside a route Caddy sorts handles by path, so a rule of your own with a path, say
+	# handle /rest/x/*, would run before the path check.)
+	route {
+		handle @ambiguous {
+			respond 400
+		}
+
+		# Your own rules (DEPLOY.md, "Your own edge rules"): every *.caddy file in the install directory's site.d/,
+		# mounted read-only at /etc/caddy/site.d (MDMESH_SITE_DIR in .env). Updates never touch it. None there:
+		# nothing is imported. A handle here answers before MDMesh's own below; any other directive (a header, a
+		# bare respond) applies to every request that gets this far.
+		import /etc/caddy/site.d/*.caddy
+
+		# Canonical agent-APK URL: /files/agent.apk works on BOTH deployment shapes (native serves a
+		# real file from Tomcat; here it's the supervisor's sha256-verified release mirror — the same
+		# upstream as /update/agent.apk, which stays below for back-compat). Before @backend, which
+		# /files/* would otherwise take.
+		handle /files/agent.apk {
+			rewrite * /update/agent.apk
+			reverse_proxy supervisor:9000
+		}
+
+		# reverse_proxy upgrades WebSockets automatically, so /agent/ws works without extra config.
+		handle @backend {
+			reverse_proxy server:8080 {
+				import client_address
+			}
+		}
+
+		# Updater status + recovery page → the decoupled supervisor (always up, independent of the
+		# server), so "update available" + recovery stay reachable even mid-update.
+		handle /update/* {
+			reverse_proxy supervisor:9000
+		}
+		handle /recovery* {
+			reverse_proxy supervisor:9000
+		}
+
+		handle @healthz {
+			reverse_proxy server:8080 {
+				import client_address
+				rewrite /rest/public/name
+				@up status 2xx
+				handle_response @up {
+					respond "ok" 200
+				}
+				handle_response {
+					respond "server unavailable" 503
+				}
+			}
+		}
+		handle @healthzSupervisor {
+			reverse_proxy supervisor:9000 {
+				rewrite /healthz
+				@up status 2xx
+				handle_response @up {
+					respond "ok" 200
+				}
+				handle_response {
+					respond "supervisor unavailable" 503
+				}
+			}
+		}
+
+		# Everything else is the single-page app.
+		handle {
+			root * /srv
+			try_files {path} /index.html
+			file_server
+		}
 	}
 
 	# If the server (API) is down/erroring, fall back to the supervisor's recovery page. Not for the health

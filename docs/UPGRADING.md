@@ -154,7 +154,10 @@ know the mode):
 
 **From behind your own proxy** back to your own domain: `COMPOSE_FILE=docker-compose.yml:docker-compose.domain.yml`
 and `SITE_ADDRESS=<your hostname>`; to the tunnel: `COMPOSE_FILE=docker-compose.yml`,
-`COMPOSE_PROFILES=cloudflare`, `SITE_ADDRESS=:80` and `TUNNEL_TOKEN`. Then step 4.
+`COMPOSE_PROFILES=cloudflare`, `SITE_ADDRESS=:80` and `TUNNEL_TOKEN`. In both, set `TRUSTED_PROXIES=` (empty: devices
+reach the edge directly, so no peer is believed; `host` means nothing outside the proxy mode, and the edge ignores it,
+saying so in `docker compose logs caddy`). `MDMESH_BIND` and `MDMESH_ORIGIN_TLS` can stay; nothing else reads them.
+Then step 4.
 
 A release before 0.6.0 doesn't know the proxy mode, so while an install runs behind your own proxy the updater refuses
 an update or a Roll back to one, saying so, and changes nothing. Move the install back to its old mode first.

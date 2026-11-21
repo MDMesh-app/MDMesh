@@ -223,8 +223,11 @@ handle @outside {
 }
 ```
 
-Wrap a rule that answers a request in `handle` (or `route`), as here: Caddy runs MDMesh's own `handle` blocks before
-a bare `respond`, so a bare one would never answer the paths MDMesh routes. `scripts/edge-check.sh` runs this example.
+The edge reads its rules in order: first MDMesh's path checks (a request with a `;` or an encoded `/` in a server
+path is refused, also under a rule of yours), then your files, then MDMesh's own routes; the first `handle` that
+matches answers. So wrap a rule that answers requests in `handle`, as here. A directive outside a `handle` applies to
+every request that gets that far: a bare `respond` would answer all of them. `scripts/edge-check.sh` runs this
+example.
 
 Make the file readable by everyone (`chmod 644`), check it, then restart the edge:
 

@@ -57,6 +57,8 @@ MODES=(
   "behind a proxy|SITE_ADDRESS=:80 ACME_EMAIL= COMPOSE_PROFILES= TRUSTED_PROXIES=private_ranges"
   "own-domain, empty TRUSTED_PROXIES (as the compose files pass it)|SITE_ADDRESS=mdm.example.com ACME_EMAIL=ops@example.com COMPOSE_PROFILES= TRUSTED_PROXIES="
   ":80, empty TRUSTED_PROXIES|SITE_ADDRESS=:80 ACME_EMAIL= COMPOSE_PROFILES= TRUSTED_PROXIES="
+  # Moved out of the proxy mode with TRUSTED_PROXIES="host" left in .env: the edge still starts (host dropped).
+  "own-domain, host left from the proxy mode|SITE_ADDRESS=mdm.example.com ACME_EMAIL= COMPOSE_PROFILES= TRUSTED_PROXIES=host"
   # Behind your own proxy, as docker-compose.proxy.yml passes it (TRUSTED_PROXIES reaches the edge as
   # EDGE_TRUSTED_PROXIES; `host` needs a gateway, which --network none lacks: it has its own check below).
   "behind your own proxy|SITE_ADDRESS=:8080 ACME_EMAIL= COMPOSE_PROFILES= TRUSTED_PROXIES= MDMESH_EXPOSURE=proxy EDGE_TRUSTED_PROXIES=192.0.2.10,2001:db8::/32 BASE_URL=https://mdm.example.com MDMESH_ORIGIN_TLS=0"
@@ -76,6 +78,15 @@ for mode in "${MODES[@]}"; do
     printf '%s\n' "$out" | grep -v '^{"level":"info"' | tail -5 | sed 's/^/         /'
   fi
 done
+
+# Outside the proxy mode, `host` in TRUSTED_PROXIES is dropped with a warning; the other entries stay, on both listeners.
+out="$(docker run --rm --network none -e "TRUSTED_PROXIES=host 192.0.2.10" -e COMPOSE_PROFILES= -e SITE_ADDRESS=mdm.example.com \
+    -v "$EDGE_PEERS:/edge-peers.sh:ro" "$CADDY_IMAGE" sh -c '. /edge-peers.sh && echo "peers=$TRUSTED_PROXIES|$HTTP_TRUSTED_PEERS"' 2>&1)" || true
+if grep -qxF 'peers=192.0.2.10|192.0.2.10' <<<"$out" && grep -qF 'TRUSTED_PROXIES says host, which only the proxy mode' <<<"$out"; then
+  pass "outside the proxy mode, host in TRUSTED_PROXIES is dropped, saying so; 192.0.2.10 stays"
+else
+  fail "outside the proxy mode, host in TRUSTED_PROXIES: $out"
+fi
 
 # Your own rules: each site.d/*.caddy is imported into the site (its header is in the adapted config), and a broken one
 # is an error, not ignored. The directory is mounted read-only, as the compose files mount it.
@@ -102,6 +113,8 @@ rm -f "$SITE_D/own.caddy"
 # extra address on the container's loopback (NET_ADMIN); a stub server answers on :8080.
 awk '/^### Your own edge rules/ { s = 1 } s && /^```caddyfile$/ { c = 1; next } c && /^```$/ { exit } c' "$ROOT/DEPLOY.md" > "$SITE_D/office.caddy"
 chmod 644 "$SITE_D/office.caddy"
+# And an operator's own handle with a path, which must not get ahead of MDMesh's path check (docker/Caddyfile's route).
+printf 'handle /rest/x/* {\n\trespond "own" 200\n}\n' > "$SITE_D/own-path.caddy"; chmod 644 "$SITE_D/own-path.caddy"
 # shellcheck disable=SC2016  # expanded by the container's shell
 SITE_PROBE='set -u; F=0
 ip addr add 203.0.113.7/32 dev lo && ip addr add 198.51.100.7/32 dev lo || { echo "  FAIL could not add test addresses"; exit 1; }
@@ -115,6 +128,9 @@ t() { got=$(c "$1" "$2"); if [ "$got" = "$3" ]; then echo "  ok   DEPLOY.md site
 t 198.51.100.7 /rest/private/users/current 403 "outside the office: the console API is refused"
 t 203.0.113.7 /rest/private/users/current 200 "inside the office: the console API reaches the server"
 t 198.51.100.7 /rest/public/name 200 "outside the office: other paths are untouched"
+t 203.0.113.7 /rest/x/a 200 "a handle of your own with a path answers its paths"
+t 203.0.113.7 "/rest/x/a;jsessionid=1" 400 "a handle of your own with a path does not get ahead of the path check"
+t 203.0.113.7 "/rest/x/a%2fb" 400 "an encoded / under your own handle is refused too"
 exit "$F"'
 if [ -s "$SITE_D/office.caddy" ]; then
   out="$(docker run --rm --network none --cap-add NET_ADMIN --add-host server:127.0.0.1 --add-host supervisor:127.0.0.1 \
@@ -126,7 +142,7 @@ if [ -s "$SITE_D/office.caddy" ]; then
 else
   fail "DEPLOY.md has no caddyfile example under Your own edge rules"
 fi
-rm -f "$SITE_D/office.caddy"; rmdir "$SITE_D"
+rm -f "$SITE_D/office.caddy" "$SITE_D/own-path.caddy"; rmdir "$SITE_D"
 
 # Behind your own proxy, docker/edge-peers.sh turns TRUSTED_PROXIES into Caddy's list: `host` is this container's
 # default gateway(s) (`ip` stubbed here: --network none has none), a lone address a /32 or /128; and it stops the edge on

@@ -15,6 +15,7 @@
 #                      and the mode publishes no port, so only the stack's own containers reach the listener.
 #   anything else      TRUSTED_PROXIES (unset or empty: loopback, which no Docker peer is), X-Forwarded-For. A forged
 #                      CF-Connecting-IP is never believed. This covers the dev stack and a proxy of your own in front.
+#                      `host` in it (left from the proxy mode) is dropped, saying so: only the proxy mode reads it.
 # Tunnel mode is COMPOSE_PROFILES listing "cloudflare": the compose files pass it from .env, which setup.sh and
 # quickstart.sh write. A compose file from before v0.3.5 passes no COMPOSE_PROFILES (updates keep a quick-start
 # install's compose file, and in a quick start only tunnel mode serves :80). Then, for a :80 site only, tunnel mode is
@@ -152,6 +153,23 @@ if [ "${MDMESH_EXPOSURE:-}" = proxy ]; then
     SITE_ADDRESS=":8080"
   fi
   export PROXY_TRUSTED_PEERS EDGE_TLS EDGE_ORIGIN_NAME SITE_ADDRESS
+fi
+
+# Outside the proxy mode TRUSTED_PROXIES reaches Caddy as it is (docker/Caddyfile, :443), where `host` is no address:
+# Caddy would refuse the whole configuration and the edge would never start. An install moved out of the proxy mode with
+# its `host` left in .env: the entry is dropped, saying so, which trusts fewer peers, never more.
+if [ "${MDMESH_EXPOSURE:-}" != proxy ]; then
+  _kept=''; _dropped=''
+  set -f
+  for _t in ${TRUSTED_PROXIES:-}; do
+    if [ "$_t" = host ]; then _dropped=1; else _kept="$_kept $_t"; fi
+  done
+  set +f
+  if [ -n "$_dropped" ]; then
+    echo "MDMesh edge: TRUSTED_PROXIES says host, which only the proxy mode (docker-compose.proxy.yml) reads: ignoring it, so no proxy on this machine is believed. Set TRUSTED_PROXIES= in .env (docs/UPGRADING.md, Changing the hosting mode)." >&2
+    TRUSTED_PROXIES=${_kept# }
+    export TRUSTED_PROXIES
+  fi
 fi
 
 if edge_tunnel_mode; then

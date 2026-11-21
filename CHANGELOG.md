@@ -9,15 +9,44 @@ Unreleased.
 
 ## Unreleased
 
-Upgrading
-- Quick start: `MDMESH_VERSION` now takes 0.5.0 or later; for 0.4.0 it stops and names that release's own
-  `quickstart.sh`, as it already did for earlier releases.
-
 New
 - Arm64: the server, web and supervisor images are built for linux/amd64 and linux/arm64, so the quick start and
   one-click updates run on Arm64 hosts such as Oracle Ampere (#205, thanks @sgofferj). On any other architecture,
   or on Arm64 with an `MDMESH_VERSION` that has no Arm64 images, the quick start stops and says why before it pulls
   anything.
+
+## v0.5.1 — 2026-11-20
+
+Upgrading
+- Update every server: this is a security release, so it can't wait for 0.6.0. The updater (supervisor) is
+  unchanged. Quick-start installs: apply the update from Settings → Updates. From source: `./setup.sh --update`.
+  Native installs: `sudo ./setup.sh --update --native`. The agent fixes below need agent 0.5.1, which devices get
+  from the server as usual.
+- Account changes take your own password: scripts and API clients that create or delete users or customers, or change
+  another account's password or email, must now send `oldPassword`. Everyone signs in to the console again once, and
+  new accounts start with no access. Old audit records are masked in the background after the update: allow free disk
+  space of about the size of `plugin_audit_log`, and with several servers on one database, stop them all first
+  ([UPGRADING, v0.5.1](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v051)).
+- Quick start: `MDMESH_VERSION` now takes 0.5.0 or later; for 0.4.0 it stops and names that release's own
+  `quickstart.sh`, as it already did for earlier releases.
+
+Heads-up
+- With `LEGACY_DEVICE_API=1`, Headwind launcher devices need a configuration that no MDMesh agent device uses and no
+  agent enrollment code enrolls into: the launcher's routes no longer serve such a configuration or create devices in
+  it, and answer requests for an agent device with the launcher's device-not-found error
+  ([UPGRADING, v0.5.1](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v051)).
+
+Security
+- Account access: admins limited to some device groups or configurations can't give or reach access beyond their own,
+  and account changes take the current password. Secrets are masked in audit records, old ones included, and sign-in
+  requests have size limits.
+- Legacy device API (`LEGACY_DEVICE_API=1`): its routes no longer serve an agent device's configuration, and check
+  their requests more strictly. Changing a device's groups stays within the user's own customer.
+- CVE-2026-114938 (OpenJDK Base64, x86_64 with AVX-512): the server runs with `-XX:-UseBASE64Intrinsics` on Docker
+  and native installs. The Docker image moves to Temurin 17.0.21.1, and the native installer's own JDK to 17.0.21.1;
+  `--update` upgrades a distribution JDK 17 when a fixed one is available. To protect a server before you update:
+  [UPGRADING, v0.5.1](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v051).
+- Thanks to @lared3294 for the report.
 
 Fixes
 - Commands: the server refuses a command, Install configuration apps and Retry apply for a device marked Wiped
@@ -26,6 +55,30 @@ Fixes
   from its page.
 - Agent: app installs and agent updates no longer fail with `apk fetch failed: timeout` on slow Wi-Fi. A download now
   waits up to a minute for data, not 10 seconds, and has no limit on its total time (#174).
+- Native: `sudo ./setup.sh --update --native` over an install asks nothing: it keeps the data, base URL and port, and
+  says `native update, <from> → <to>`. The update from 0.5.0 still asks once (add `-y` to skip).
+- `./setup.sh --update` no longer refuses a clone on a release branch (`release/vX.Y.Z`) as "ahead" of that release
+  once it is squash-merged: a clone on an older release moves on; only one newer than the release needs `--allow-downgrade`.
+- Agent: a settings file damaged by the device's storage (after a power loss) no longer makes every kiosk and
+  configuration command fail with "Unable to parse preferences proto." or crash the kiosk screen. The agent keeps a
+  copy of each file and restores it, or the configured kiosk, and the device page shows a `storageRecovered` event
+  (#220).
+- Agent: Factory reset from the console lifts the configuration's Factory reset: Block for the wipe, and puts it back
+  if the wipe can't start or the device hasn't reset within 10 minutes. Some vendor recoveries honour the block and
+  stopped mid-wipe (HyperOS, #222). Until the device resets, for at most 10 minutes, commands other than configuration
+  changes and another wipe are reported expired, not run.
+- Agent: Lock on a device with no screen lock set still turns the screen off, and its result now says the device isn't
+  protected.
+- Agent: after a boot or an agent update, the agent re-applies the newest configuration the server sent, not the last
+  one it applied in full. Before, a configuration with one failed setting could have its other settings undone by a
+  reboot. Until such a configuration applies in full, the device reports it as not in sync, so the server re-sends it.
+- Console: a configuration the device reports out of date now shows as "Out of date on the device", with the cause
+  when the device reported one (storage recovered, a factory reset that didn't start, a failed re-apply). It showed
+  "Reset by device (Wi-Fi turned back on)", which named only one of the causes.
+- With `LEGACY_DEVICE_API=1`, the launcher's sync works for a configuration without a kiosk exit PIN.
+
+Under the hood
+- Dependencies: Jackson 2.23.0 (server); vite 8.3.8, @vitejs/plugin-react 6.3.0 (console).
 
 ## v0.5.0 — 2026-11-17
 

@@ -131,6 +131,9 @@ public class JWTAuthResource {
             if (credentials.getLogin() == null || credentials.getPassword() == null) {
                 return Response.status(Response.Status.BAD_REQUEST).build();
             }
+            if (req != null) {
+                req.setAttribute(UserCredentials.REQUEST_LOGIN, credentials.getLogin());   // for the audit record
+            }
 
             // Shares the console's limit on failed sign-ins (LoginThrottle); nothing sleeps. A refusal is the same 429
             // and Retry-After whichever limit refused.

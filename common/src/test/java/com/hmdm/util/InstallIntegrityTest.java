@@ -171,6 +171,41 @@ public class InstallIntegrityTest {
         assertEquals(HEX, M.readTree(out).get("sha256").asText());
     }
 
+    @Test
+    public void aHashAsLongAsAnEncodedSha256CanBeIsRead() {
+        assertEquals(HEX, InstallIntegrity.normalizeHex("\n" + HEX + "\t "));
+        assertEquals(HEX, InstallIntegrity.normalizeHex(" " + B64URL + "\r\n"));
+        assertEquals(44, B64URL.length());
+        assertEquals(HEX, InstallIntegrity.hexOnly("\n" + HEX + "\t "));
+        // Room for blanks around the longest form, and no more
+        String blanks = repeat(' ', InstallIntegrity.MAX_HASH_INPUT - HEX.length());
+        assertEquals(HEX, InstallIntegrity.normalizeHex(blanks + HEX));
+        assertNull(InstallIntegrity.normalizeHex(blanks + " " + HEX));
+        assertNull(InstallIntegrity.hexOnly(blanks + " " + HEX));
+    }
+
+    @Test
+    public void aMegabyteHashIsRefusedBeforeItIsRead() {
+        int megabyte = 1024 * 1024;
+        // A valid hash with a megabyte of blanks after it: refused, so the length is checked before trimming or decoding
+        assertNull(InstallIntegrity.normalizeHex(HEX + repeat(' ', megabyte)));
+        assertNull(InstallIntegrity.hexOnly(HEX + repeat(' ', megabyte)));
+        assertNull(InstallIntegrity.toApkHash(HEX + repeat(' ', megabyte)));
+        // Well-formed base64 and hex, a megabyte long
+        assertNull(InstallIntegrity.normalizeHex(repeat('A', megabyte)));
+        assertNull(InstallIntegrity.normalizeHex(repeat('a', megabyte)));
+        assertNull(InstallIntegrity.hexOnly(repeat('a', megabyte)));
+
+        expectRejected("{\"url\":\"http://lan/a.apk\",\"packageName\":\"x\",\"sha256\":\"" + repeat('A', megabyte) + "\"}",
+                "malformed sha256");
+    }
+
+    private static String repeat(char c, int n) {
+        char[] chars = new char[n];
+        java.util.Arrays.fill(chars, c);
+        return new String(chars);
+    }
+
     private static void expectRejected(String payload, String detailFragment) {
         try {
             InstallIntegrity.ensureSha256(payload, new FakeSource());

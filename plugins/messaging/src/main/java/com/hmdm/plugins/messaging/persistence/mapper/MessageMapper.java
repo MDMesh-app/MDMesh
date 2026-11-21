@@ -43,6 +43,9 @@ public interface MessageMapper {
             keyColumn = "id", keyProperty = "id", before = false, resultType = int.class )
     int insertMessage(Message msg);
 
+    @Select("SELECT deviceId FROM plugin_messaging_messages WHERE id = #{id}")
+    Integer getMessageDeviceId(@Param("id") int id);
+
     @Update("UPDATE plugin_messaging_messages SET status = #{status} WHERE id = #{id}")
     int updateMessageStatus(@Param("id") int id, @Param("status") int status);
 

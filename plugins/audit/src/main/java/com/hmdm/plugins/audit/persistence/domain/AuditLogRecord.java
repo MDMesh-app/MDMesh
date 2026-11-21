@@ -67,6 +67,9 @@ public class AuditLogRecord implements CustomerData, Serializable {
     @ApiModelProperty("Error flag, 0 - no error")
     private Integer errorCode;
 
+    @ApiModelProperty("In a session signed in as another account: the ID of the administrator who signed in as it")
+    private Integer impersonatedBy;
+
     /**
      * <p>Constructs new <code>AuditLogRecord</code> instance. This implementation does nothing.</p>
      */
@@ -152,6 +155,14 @@ public class AuditLogRecord implements CustomerData, Serializable {
         this.errorCode = errorCode;
     }
 
+    public Integer getImpersonatedBy() {
+        return impersonatedBy;
+    }
+
+    public void setImpersonatedBy(Integer impersonatedBy) {
+        this.impersonatedBy = impersonatedBy;
+    }
+
     @Override
     public String toString() {
         return "AuditLogRecord{" +
@@ -164,6 +175,7 @@ public class AuditLogRecord implements CustomerData, Serializable {
                 ", payload='" + payload + '\'' +
                 ", ipAddress='" + ipAddress + '\'' +
                 ", errorCode='" + errorCode + '\'' +
+                ", impersonatedBy=" + impersonatedBy +
                 '}';
     }
 
@@ -175,7 +187,8 @@ public class AuditLogRecord implements CustomerData, Serializable {
                 ", ipAddress='" + ipAddress + '\'' +
                 ", action='" + action + '\'' +
                 ", payload='" + payload + '\'' +
-                ", errorCode='" + errorCode + '\''
+                ", errorCode='" + errorCode + '\'' +
+                (impersonatedBy == null ? "" : ", impersonatedBy=" + impersonatedBy)
         ;
     }
 }

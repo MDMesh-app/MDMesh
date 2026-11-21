@@ -139,8 +139,8 @@ The tag must point at a commit on `main` (its first-parent history), be newer th
 the tagged commit's CHANGELOG.md section as its annotation (`release/changelog-section.sh --check vX.Y.Z`, which
 you can also run locally): the workflow's `gate` job checks that first. The `images` job then builds the **server**,
 **web**, and **supervisor** images for `linux/amd64` and `linux/arm64`, each on its own GitHub runner (`ubuntu-24.04`
-and `ubuntu-24.04-arm`, no emulation), pushes them by digest, untagged (nothing pulls them), and smoke-tests the
-pushed supervisor on both. It needs no secrets; the web image's enrollment QR gets the APK signing checksum recorded
+and `ubuntu-24.04-arm`, no emulation), pushes them by digest, untagged (nothing pulls them), and checks the pushed
+builds on both: the supervisor's smoke test, and the server's JVM (`scripts/server-jvm-check.sh`). It needs no secrets; the web image's enrollment QR gets the APK signing checksum recorded
 in `release/agent-signature-checksum`. The `release` job (the only one with the signing secrets) starts once those
 builds pass and waits for a reviewer's approval in the `release` environment (setup step 4). It runs the changelog
 check again when it starts and just before it publishes, and fails if the tag no longer points at the commit it

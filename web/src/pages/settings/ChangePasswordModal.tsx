@@ -1,5 +1,12 @@
 import { useEffect, useId, useState, type FormEvent } from 'react';
-import { changeOwnPassword, isTooManyAttempts, TOO_MANY_MESSAGE, type AuthUser } from '../../api/auth';
+import {
+  changeOwnPassword,
+  IMPERSONATED,
+  IMPERSONATED_MESSAGE,
+  isTooManyAttempts,
+  TOO_MANY_MESSAGE,
+  type AuthUser,
+} from '../../api/auth';
 import { Button, Callout, Field, IconAlert, Modal, PasswordInput, RuleList, useToast, type Rule } from '../../ui';
 
 /** Also the account editor's minimum (Settings → Users & roles). */
@@ -60,6 +67,7 @@ export function ChangePasswordModal({ open, user, onClose }: { open: boolean; us
       // The current-password check counts as a sign-in for the server's limit (LoginThrottle, v0.3.9).
       else if (isTooManyAttempts(ex)) setErr(TOO_MANY_MESSAGE);
       else if (m === 'error.password.empty') setErr('Enter a new password.');
+      else if (m === IMPERSONATED) setErr(IMPERSONATED_MESSAGE);
       else if (m === 'error.permission.denied') setErr('The server refused the change. Sign out and in again, then retry.');
       else setErr(m || 'The password was not changed.');
     } finally {

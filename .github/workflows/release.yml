@@ -124,6 +124,17 @@ jobs:
           echo "$D" | grep -Eqx 'sha256:[0-9a-f]{64}' || { echo "::error::no digest for ${IMAGE} linux/${ARCH} (got '${D}')"; exit 1; }
           echo "ref=${REPO}@${D}" >> "$GITHUB_OUTPUT"
           mkdir -p "$RUNNER_TEMP/digest" && printf '%s\n' "$D" > "$RUNNER_TEMP/digest/${IMAGE}-${ARCH}"
+      # The server's JVM on each platform, started from exactly the pushed image: a JDK without the CVE-2026-114938
+      # (OpenJDK) Base64 bug, or -XX:-UseBASE64Intrinsics in effect (install/tomcat-setenv.sh). The bug is x86_64-only,
+      # but the image sets the flag on both, so both must show it (the arm64 base may lag the amd64 one's JDK). A
+      # failure here stops the run before the release job tags anything.
+      - if: matrix.image == 'server'
+        name: Server JVM check, linux/${{ matrix.arch }}
+        env:
+          REF: ${{ steps.push.outputs.ref }}
+        run: |
+          docker pull --quiet "$REF"
+          scripts/server-jvm-check.sh --image "$REF"
       # Supervisor smoke on each platform, against exactly the pushed image (#27): a supervisor that can't start the way
       # compose runs it must never get a tag. A failure here stops the run before the release job tags anything.
       - if: matrix.image == 'supervisor'

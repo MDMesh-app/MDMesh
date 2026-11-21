@@ -42,6 +42,14 @@ public interface UserMapper {
 
     User findById(@Param("userId") Integer userId);
 
+    /**
+     * Locks the account's row until the transaction ends: a change to it committed meanwhile is seen by the next read,
+     * and one started after waits. An admin's edit of the account (UserDAO.updateUserMainDetails) updates the row
+     * before its access, so it holds the same lock.
+     */
+    @Select("SELECT id FROM users WHERE id = #{id} FOR UPDATE")
+    Integer lockById(@Param("id") Integer id);
+
     List<User> findAll(@Param("customerId") Integer customerId);
 
     User findFirstByRole(@Param("customerId") Integer customerId, @Param("roleId") Integer roleId);
@@ -69,6 +77,14 @@ public interface UserMapper {
             "passwordReset=#{passwordReset} " +
             "WHERE id=#{id} AND customerId=#{customerId}"})
     void updateUserMainDetails(User user);
+
+    /**
+     * Writes an account's login, name and email, and nothing else: its role and access stay as they are in the row.
+     * Call through UserDAO.updateUserIdentity, which locks the row first.
+     */
+    @Update({"UPDATE users SET login=#{login}, name=#{name}, email=#{email} " +
+            "WHERE id=#{id} AND customerId=#{customerId}"})
+    void updateIdentity(User user);
 
     /** Sets a password. Call through UserDAO.updatePassword, which also gives the user a new authToken. */
     @Update({"UPDATE users SET password=#{password}, passwordReset=#{passwordReset}, " +
@@ -134,6 +150,16 @@ public interface UserMapper {
     void removeConfigurationAccessByUserId(@Param("customerId") int customerId, @Param("id") Integer userId);
 
     void insertUserConfigurationAccess(@Param("id") Integer userId, @Param("configurations") List<Integer> configurations);
+
+    /** Those of {@code ids} that are device groups of the customer. */
+    @Select({"<script>SELECT id FROM groups WHERE customerId = #{customerId} AND id IN " +
+            "<foreach item='i' collection='ids' open='(' separator=',' close=')'>#{i}</foreach></script>"})
+    List<Integer> findCustomerGroupIds(@Param("customerId") int customerId, @Param("ids") List<Integer> ids);
+
+    /** Those of {@code ids} that are configurations of the customer. */
+    @Select({"<script>SELECT id FROM configurations WHERE customerId = #{customerId} AND id IN " +
+            "<foreach item='i' collection='ids' open='(' separator=',' close=')'>#{i}</foreach></script>"})
+    List<Integer> findCustomerConfigurationIds(@Param("customerId") int customerId, @Param("ids") List<Integer> ids);
 
     @Select("SELECT hintKey FROM userHints WHERE userId = #{id}")
     List<String> getShownHints(@Param("id") Integer userId);

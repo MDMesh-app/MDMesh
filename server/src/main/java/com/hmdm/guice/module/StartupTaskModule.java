@@ -8,6 +8,7 @@ import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.User;
 import com.hmdm.service.RsaKeyService;
 import com.hmdm.task.CustomerStatusTask;
+import com.hmdm.task.DefaultAdminPasswordCheck;
 import com.hmdm.task.ExtraCustomersCheck;
 import com.hmdm.task.FileCheckTask;
 import com.hmdm.task.FileMigrateTask;
@@ -104,6 +105,11 @@ public class StartupTaskModule {
                 // Only while the row still holds that MD5: the installer may set the admin's password meanwhile.
                 unsecureDAO.upgradePasswordHashUnsecure(user.getId(), user.getPassword(),
                         PasswordUtil.getHashFromMd5(user.getPassword()));
+            }
+            try {
+                new DefaultAdminPasswordCheck(unsecureDAO, commonDAO).run();   // sees what the migration above left
+            } catch (RuntimeException e) {
+                logger.warn("Could not check the admin account for the default password", e);   // only a warning
             }
         }
     }

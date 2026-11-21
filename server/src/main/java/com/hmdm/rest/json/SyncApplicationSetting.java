@@ -145,7 +145,7 @@ public class SyncApplicationSetting implements Serializable, SyncApplicationSett
                 "packageId='" + packageId + '\'' +
                 ", name='" + name + '\'' +
                 ", type=" + type +
-                ", value='" + value + '\'' +
+                ", value=" + (value == null ? null : "<set>") + // never the value: it can be a secret
                 ", readonly=" + readonly +
                 ", lastUpdate=" + lastUpdate +
                 ", variable=" + variable +

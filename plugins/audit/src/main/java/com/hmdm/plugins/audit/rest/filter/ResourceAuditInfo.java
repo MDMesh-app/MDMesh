@@ -40,16 +40,17 @@ import java.util.stream.Stream;
 public enum ResourceAuditInfo {
     LOGIN("POST", "/rest/public/auth/login", true, "plugin.audit.action.user.login", true, true),
     JWT_LOGIN("POST", "/rest/public/jwt/login", true, "plugin.audit.action.jwt.login", true, false),
-    UPDATE_DEVICE("PUT", "/rest/private/devices", true, "plugin.audit.action.update.device", true, true),
+    UPDATE_DEVICE("PUT", "/rest/private/devices", true, "plugin.audit.action.update.device", AuditBody.DEVICE, true),
     REMOVE_DEVICE("DELETE", "/rest/private/devices", false, "plugin.audit.action.remove.device", true, true),
-    UPDATE_CONFIG("PUT", "/rest/private/configurations", true, "plugin.audit.action.update.configuration", true, true),
-    COPY_CONFIG("PUT", "/rest/private/configurations/copy", true, "plugin.audit.action.copy.configuration", true, true),
+    UPDATE_CONFIG("PUT", "/rest/private/configurations", true, "plugin.audit.action.update.configuration", AuditBody.CONFIGURATION, true),
+    COPY_CONFIG("PUT", "/rest/private/configurations/copy", true, "plugin.audit.action.copy.configuration", AuditBody.CONFIGURATION, true),
     REMOVE_CONFIG("DELETE", "/rest/private/configurations", false, "plugin.audit.action.remove.configuration", true, true),
     UPDATE_APP("PUT", "/rest/private/applications/android", true, "plugin.audit.action.update.application", true, true),
     UPDATE_WEBAPP("PUT", "/rest/private/applications/web", true, "plugin.audit.action.update.webapp", true, true),
+    // Before REMOVE_APP, whose prefix also matches a version's URI: the first rule that matches is the one recorded.
+    REMOVE_APP_VERSION("DELETE", "/rest/private/applications/versions", false, "plugin.audit.action.remove.version", true, true),
     REMOVE_APP("DELETE", "/rest/private/applications", false, "plugin.audit.action.remove.application", true, true),
     UPDATE_APP_VERSION("PUT", "/rest/private/applications/versions", true, "plugin.audit.action.update.version", true, true),
-    REMOVE_APP_VERSION("DELETE", "/rest/private/applications/versions", false, "plugin.audit.action.remove.version", true, true),
     UPDATE_FILE("POST", "/rest/private/web-ui-files/move", true, "plugin.audit.action.update.file", true, true),
     REMOVE_FILE("POST", "/rest/private/web-ui-files/remove", true, "plugin.audit.action.remove.file", true, true),
     UPDATE_APP_CONFIG("POST", "/rest/private/applications/configurations", true, "plugin.audit.action.update.app.config", true, true),
@@ -59,11 +60,23 @@ public enum ResourceAuditInfo {
     UPDATE_LANGUAGE("POST", "/rest/private/settings/lang", true, "plugin.audit.action.update.language", true, true),
     UPDATE_PLUGINS("POST", "/rest/plugin/main/private/disabled", true, "plugin.audit.action.update.plugins", true, true),
     UPDATE_USER("PUT", "/rest/private/users", true, "plugin.audit.action.update.user", true, true),
+    UPDATE_USER_DETAILS("PUT", "/rest/private/users/details", true, "plugin.audit.action.update.user.details", true, true),
+    SUPERADMIN_PASSWORD("PUT", "/rest/private/users/superadmin/password", true, "plugin.audit.action.password.superadmin", true, true),
+    UPDATE_CUSTOMER("PUT", "/rest/private/customers", true, "plugin.audit.action.update.customer", true, true),
+    REMOVE_CUSTOMER("DELETE", "/rest/private/customers", false, "plugin.audit.action.remove.customer", true, true),
     REMOVE_USER("DELETE", "/rest/private/users", false, "plugin.audit.action.remove.user", true, true),
+    // The record names the admin who signed in as the account (ResourceAuditor.IMPERSONATIONS); the URI names the account.
+    IMPERSONATE_USER("POST", Pattern.compile("/rest/private/users/impersonate/[^/]+/?"), "plugin.audit.action.impersonate.user", true, false, true),
+    IMPERSONATE_CUSTOMER("POST", Pattern.compile("/rest/private/customers/impersonate/[^/]+/?"), "plugin.audit.action.impersonate.customer", true, false, true),
+    // No body: it holds the reset token and the new password. The resource names the account (UserCredentials.REQUEST_LOGIN).
+    PASSWORD_RESET_BY_LINK("POST", "/rest/public/passwordReset/reset", true, "plugin.audit.action.password.reset.link", false, true),
+    UPDATE_ROLE("PUT", "/rest/private/roles", true, "plugin.audit.action.update.role", true, true),
+    REMOVE_ROLE("DELETE", "/rest/private/roles", false, "plugin.audit.action.remove.role", true, true),
     UPDATE_GROUP("PUT", "/rest/private/groups", true, "plugin.audit.action.update.group", true, true),
     REMOVE_GROUP("DELETE", "/rest/private/groups", false, "plugin.audit.action.remove.group", true, true),
     PASSWORD_CHANGED("PUT", "/rest/private/users/current", true, "plugin.audit.action.password.changed", true, true),
-    DEVICE_PASSWORD_RESET("PUT", "/rest/plugins/devicereset/private/password", true, "plugin.audit.action.password.reset", true, true),
+    // No body: it is the device's new password.
+    DEVICE_PASSWORD_RESET("PUT", "/rest/plugins/devicereset/private/password", true, "plugin.audit.action.password.reset", false, true),
     DEVICE_FACTORY_RESET("PUT", "/rest/plugins/devicereset/private/reset", false, "plugin.audit.action.device.reset", false, true),
     DEVICE_LOCK("PUT", "/rest/plugins/devicereset/private/lock", true, "plugin.audit.action.device.lock", true, true),
     DEVICE_COMMAND("POST", Pattern.compile("/rest/private/agent/v1/devices/[^/]+/commands/?"), "plugin.audit.action.device.command", true, true, true),
@@ -106,11 +119,8 @@ public enum ResourceAuditInfo {
      */
     private final boolean payload;
 
-    /**
-     * <p>A flag indicating if the request is an agent command whose payload must be masked in the saved request data,
-     * since it can hold a secret (a kiosk exit password, a new screen lock PIN).</p>
-     */
-    private final boolean maskCommandPayload;
+    /** <p>How the request body is stored when {@link #payload} is set: every body is masked one way or another.</p> */
+    private final AuditBody body;
 
     /**
      * <p>A flag indicating if response is in Headwind MDM standard format and should be checked for errors.</p>
@@ -127,7 +137,22 @@ public enum ResourceAuditInfo {
         this.uriPattern = null;
         this.auditLogAction = auditLogAction;
         this.payload = payload;
-        this.maskCommandPayload = false;
+        this.body = AuditBody.MASKED;
+        this.checkResponse = checkResponse;
+    }
+
+    /**
+     * <p>Constructs new <code>ResourceAuditInfo</code> instance whose request body is stored the given way.</p>
+     */
+    ResourceAuditInfo(String method, String uri, boolean uriExactMatch, String auditLogAction, AuditBody body,
+                      boolean checkResponse) {
+        this.method = method;
+        this.uri = uri;
+        this.uriExactMatch = uriExactMatch;
+        this.uriPattern = null;
+        this.auditLogAction = auditLogAction;
+        this.payload = true;
+        this.body = body;
         this.checkResponse = checkResponse;
     }
 
@@ -142,7 +167,7 @@ public enum ResourceAuditInfo {
         this.uriPattern = uriPattern;
         this.auditLogAction = auditLogAction;
         this.payload = payload;
-        this.maskCommandPayload = maskCommandPayload;
+        this.body = maskCommandPayload ? AuditBody.COMMAND : AuditBody.MASKED;
         this.checkResponse = checkResponse;
     }
 
@@ -169,8 +194,29 @@ public enum ResourceAuditInfo {
     public ResourceAuditor getResourceAuditor(ServletRequest request, ServletResponse response, FilterChain chain,
                                               String proxyIps, String ipHeader, List<String> trustedProxies,
                                               boolean privatePeersAreProxies) throws IOException {
-        return new ResourceAuditor(auditLogAction, request, response, chain, payload, maskCommandPayload, checkResponse,
+        return new ResourceAuditor(auditLogAction, request, response, chain, payload ? body : null,
+                isPublicSignIn() ? AuditBody.PUBLIC_BODY_CAP : 0, checkResponse,
                 proxyIps, ipHeader, trustedProxies, privatePeersAreProxies);
+    }
+
+    /** The key of the action this rule records. */
+    public String getAuditLogAction() {
+        return auditLogAction;
+    }
+
+    /** A rule anyone can reach without signing in that keeps a masked body: the sign-in routes. */
+    boolean isPublicSignIn() {
+        return payload && body == AuditBody.MASKED && uri != null && uri.startsWith("/rest/public/");
+    }
+
+    /** How the request body is stored, when {@link #storesBody}. */
+    AuditBody body() {
+        return body;
+    }
+
+    /** Whether the record holds the request (method, URI, masked body, User-Agent). */
+    boolean storesBody() {
+        return payload;
     }
 
     /**
@@ -203,7 +249,7 @@ public enum ResourceAuditInfo {
         final String path = routedPath(requestUri);
         return Stream.of(ResourceAuditInfo.values())
                 .filter(info -> info.matches(requestMethod, path))
-                .findAny();
+                .findFirst();
     }
 
     /**

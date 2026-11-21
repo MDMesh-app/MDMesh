@@ -3,7 +3,6 @@ import { Link } from 'react-router';
 import { forceSync } from '../api/commands';
 import type { ConfigSyncSummary } from '../api/configSync';
 import type { ConfigurationLookup, DeviceView } from '../api/devices';
-import type { DeviceEvent } from '../api/events';
 import type { ActiveRollout } from '../api/rollout';
 import { isOnline, notConnected } from '../data/presence';
 import { LOAD_DEVICES_FAILED } from '../data/useDevices';
@@ -28,16 +27,8 @@ import {
   NumberedSteps,
   Grid,
   GridCell,
-  IconAlert,
-  IconBattery,
   IconCheck,
-  IconDownload,
-  IconInfo,
-  IconLock,
-  IconNetwork,
   IconPlus,
-  IconPower,
-  IconTrash,
   PageHeader,
   RelativeTime,
   Segmented,
@@ -52,10 +43,9 @@ import {
   type AttentionItem,
   type BarSegment,
   type StatNote,
-  type StatusTone,
 } from '../ui';
+import { eventView } from './overview/eventView';
 import { ServerCard } from './overview/ServerCard';
-import { EVENT_VERBS, parseCommandResult } from '../data/deviceActivity';
 import type { SyncCheck } from '../data/fleetHealth';
 import { wipedOnlyLine } from './configurations/sync';
 import { bucketOf, reasonFor, topReason, type ConfigIssue } from './overview/attention';
@@ -640,55 +630,6 @@ function ByConfiguration({
 
 type ActivityFilter = 'all' | 'commands' | 'events';
 
-function eventView(
-  ev: DeviceEvent,
-  device: DeviceView,
-  appNames: Record<string, string>,
-): { icon: ReactNode; tone: StatusTone; what: string; detail?: string } {
-  const what = EVENT_VERBS[ev.type] ?? ev.type;
-  // Classic: the event detail, else the device description.
-  const detail = ev.detail || device.description || undefined;
-  switch (ev.type) {
-    case 'enrolled':
-      return { icon: <IconPlus size={15} />, tone: 'ok', what, detail };
-    case 'appInstalled':
-    case 'appUninstalled': {
-      // Detail is the package name; show the library name when the app is in the library.
-      const pkg = ev.detail?.trim() ?? '';
-      const name = pkg ? appNames[pkg] : undefined;
-      return {
-        icon: ev.type === 'appInstalled' ? <IconDownload size={15} /> : <IconTrash size={15} />,
-        tone: 'idle',
-        what,
-        detail: name ?? detail,
-      };
-    }
-    case 'commandResult': {
-      const r = parseCommandResult(ev.detail);
-      if (!r) return { icon: <IconCheck size={15} />, tone: 'idle', what, detail };
-      const s = r.status.toLowerCase();
-      const tone: StatusTone = s === 'done' ? 'ok' : s === 'failed' ? 'alert' : s === 'expired' ? 'warn' : 'idle';
-      return {
-        icon: tone === 'alert' ? <IconAlert size={15} /> : <IconCheck size={15} />,
-        tone,
-        what,
-        detail: `#${r.id} · ${r.status}`,
-      };
-    }
-    case 'lowBattery':
-      return { icon: <IconBattery size={15} />, tone: 'warn', what, detail };
-    case 'connectivityChange':
-      return { icon: <IconNetwork size={15} />, tone: 'idle', what, detail };
-    case 'boot':
-      return { icon: <IconPower size={15} />, tone: 'idle', what, detail };
-    case 'kioskPinLockout':
-      return { icon: <IconLock size={15} />, tone: 'alert', what, detail };
-    case 'kioskCrashLoop':
-      return { icon: <IconAlert size={15} />, tone: 'warn', what, detail };
-    default:
-      return { icon: <IconInfo size={15} />, tone: 'idle', what, detail };
-  }
-}
 
 const FILTERS: ReadonlyArray<{ value: ActivityFilter; label: string }> = [
   { value: 'all', label: 'All' },

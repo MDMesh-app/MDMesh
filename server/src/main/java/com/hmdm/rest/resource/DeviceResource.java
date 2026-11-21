@@ -289,6 +289,10 @@ public class DeviceResource {
 
                 return Response.OK();
             }
+        } catch (SecurityException e) {
+            // A device, configuration or group this user may not use: nothing was saved
+            log.error("Device change refused: {}", e.getMessage());
+            return Response.PERMISSION_DENIED();
         } catch (Exception e) {
             log.error("Unexpected error when saving/creating device", e);
             return Response.ERROR();
@@ -372,6 +376,12 @@ public class DeviceResource {
             // Device IDs are transferred in the "ids" parameter; all of them are regrouped or none
             if (!this.deviceDAO.areAccessibleToUser(request.getIds())) {
                 log.error("Bulk regroup refused: not all devices are accessible to user {}",
+                        SecurityContext.get().getCurrentUserName());
+                return Response.PERMISSION_DENIED();
+            }
+            if ("set".equals(request.getAction()) && request.getGroups() != null && !this.deviceDAO.areGroupsUsableByUser(
+                    request.getGroups().stream().map(LookupItem::getId).collect(Collectors.toList()))) {
+                log.error("Bulk regroup refused: not all groups are usable by user {}",
                         SecurityContext.get().getCurrentUserName());
                 return Response.PERMISSION_DENIED();
             }

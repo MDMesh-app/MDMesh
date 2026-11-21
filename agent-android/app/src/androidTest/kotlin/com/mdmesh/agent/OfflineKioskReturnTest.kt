@@ -20,6 +20,7 @@ import com.mdmesh.core.config.ConfigApplier
 import com.mdmesh.core.kiosk.AndroidKioskHomeSwitch
 import com.mdmesh.core.kiosk.KioskApplier
 import com.mdmesh.core.store.AgentDataStores
+import com.mdmesh.core.store.KioskStateStore
 import com.mdmesh.core.store.SharedPrefsConfigStateStore
 import com.mdmesh.core.store.configuredKiosk
 import com.mdmesh.core.telemetry.EventLog
@@ -44,15 +45,14 @@ import java.io.File
  * Run on a disposable, offline Device Owner emulator (Wi-Fi and mobile data disabled). Exercises the real PIN UI,
  * persisted kiosk state, Settings access and return button against Android lock task, without an MDM server.
  * Saves the return screen to the app's external files directory for visual review.
- * Manual only: CI neither compiles nor runs it (`./gradlew :app:assembleDebugAndroidTest` builds it), so a change to
- * the classes it uses can break it unnoticed until someone runs it. Assumptions skip unsupported test environments.
+ * Manual only: CI compiles it (t0-fast) but does not run it. Assumptions skip unsupported test environments.
  */
 @RunWith(AndroidJUnit4::class)
 class OfflineKioskReturnTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context get() = instrumentation.targetContext
     private val ui get() = instrumentation.uiAutomation
-    private lateinit var store: DataStoreKioskStateStore
+    private lateinit var store: KioskStateStore
     private lateinit var applier: KioskApplier
     private lateinit var config: SharedPrefsConfigStateStore
     private lateinit var configApplier: ConfigApplier

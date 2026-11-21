@@ -9,6 +9,9 @@ Unreleased.
 
 ## Unreleased
 
+Under the hood
+- CI compiles the agent's instrumented tests (they still run only by hand, on an emulator).
+
 ## v0.5.1 — 2026-11-20
 
 Upgrading

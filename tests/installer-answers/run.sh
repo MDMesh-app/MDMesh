@@ -684,6 +684,28 @@ for c in 'cloudflare|:80|--profile cloudflare' '|mdm.example.com, www.example.co
   ok
 done
 
+# A site.d that already exists and others may write is not connected to the edge (never made private and then trusted),
+# and left out of .env so a later run tries again; once it is private, it is.
+rm -rf -- "$WORK/src7"; mkdir -p "$WORK/src7/install" "$WORK/src7/site.d"; chmod 775 "$WORK/src7/site.d"
+cp -- "$REPO/setup.sh" "$WORK/src7/"; cp -R -- "$REPO/install/lib" "$WORK/src7/install/"
+printf '%s\n' DB_PASSWORD=x HASH_SECRET=y BASE_URL=https://mdm.example.com SITE_ADDRESS=mdm.example.com \
+  COMPOSE_FILE=docker-compose.yml:docker-compose.domain.yml COMPOSE_PROFILES= IMAGE_OWNER=local > "$WORK/src7/.env"
+setup_run "$WORK/src7"
+{ grep -qF 'site.d is not connected to the edge' "$WORK/out/o" "$WORK/out/e" && ! grep -q '^MDMESH_SITE_DIR=' "$WORK/src7/.env" \
+  && [ "$(stat -c %a "$WORK/src7/site.d")" = 775 ]; } || { fail "setup.sh trusts a group-writable site.d, or changes it"; show; }
+chmod 755 "$WORK/src7/site.d"; setup_run "$WORK/src7"
+grep -qxF "MDMESH_SITE_DIR=$WORK/src7/site.d" "$WORK/src7/.env" || { fail "setup.sh does not connect site.d once it is private"; show; }
+ok
+
+# Moved out of the proxy mode with TRUSTED_PROXIES="host" left in .env: a re-run says to clear it, and goes on.
+rm -rf -- "$WORK/src7"; mkdir -p "$WORK/src7/install"; cp -- "$REPO/setup.sh" "$WORK/src7/"; cp -R -- "$REPO/install/lib" "$WORK/src7/install/"
+printf '%s\n' DB_PASSWORD=x HASH_SECRET=y BASE_URL=https://mdm.example.com SITE_ADDRESS=mdm.example.com 'TRUSTED_PROXIES="host"' \
+  COMPOSE_FILE=docker-compose.yml:docker-compose.domain.yml COMPOSE_PROFILES= IMAGE_OWNER=local > "$WORK/src7/.env"
+setup_run "$WORK/src7"
+{ grep -qF 'TRUSTED_PROXIES in .env says host, which only the proxy mode reads' "$WORK/out/o" "$WORK/out/e" \
+  && [ "$(up_args)" = '-f docker-compose.yml -f docker-compose.domain.yml' ]; } || { fail "a re-run out of the proxy mode with host left does not say to clear it"; show; }
+ok
+
 # Behind your own proxy: `host` (a proxy on this machine) only with MDMesh on a loopback address, refused before
 # anything happens (dry runs too); a proxy's own address with any address.
 for inst in quickstart.sh setup.sh; do
@@ -788,7 +810,7 @@ ok
 # others may read, a directory or a file in it that others may write.
 for c in 'BASE_URL=https://x.example.com/'"'"';drop' 'BASE_URL=https://a\b.example.com' 'IMAGE_OWNER=Me' 'GITHUB_REPO=../x' \
          'CURRENT_VERSION=0.6.0;id' 'COMPOSE_FILE=docker-compose.yml:evil.yml' "WEB_VERSION=0.6.0@sha256:$D1" \
-         'perm:.env:644' \
+         'perm:.env:644' 'perm:.:775' 'perm:install/lib/db.sh:666' \
          'COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml|MDMESH_BIND=127.0.0.1:8080|TRUSTED_PROXIES="0.0.0.0/0"' \
          'COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml|MDMESH_BIND=0.0.0.0:8080|TRUSTED_PROXIES="host"' \
          'COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml|MDMESH_BIND=127.0.0.1:8080|TRUSTED_PROXIES=' \
@@ -810,22 +832,23 @@ qs_dir; qs_env COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml MDMESH_B
 qs_run
 grep -q '/docker compose pull$' "$WORK/docker.log" || { fail "quickstart.sh does not resume a sound proxy-mode install"; show; }
 ok
-# This user's own paths left group-writable by a login umask of 0002 (Debian and Ubuntu's default for a regular user)
-# are made writable by this user only, and the install goes on; a new quick start under umask 0002 makes its directory
-# writable by this user only.
-for p in .:775 install/lib/db.sh:666 install:777; do
-  qs_dir; qs_env > "$WORK/qs7/mdmesh/.env"; chmod 600 "$WORK/qs7/mdmesh/.env"; chmod "${p##*:}" "$WORK/qs7/mdmesh/${p%:*}"
-  (umask 002; qs_run)
-  { grep -q '/docker compose pull$' "$WORK/docker.log" && [ -z "$(find "$WORK/qs7/mdmesh" \( -perm -020 -o -perm -002 \) -print)" ] \
-    && [ ! -e "$WORK/PWNED" ]; } || { fail "quickstart.sh under umask 0002 does not fix its own group-writable ${p%:*} and go on"; show; }
-  ok
-done
+# A login umask of 0002 (Debian and Ubuntu's default for a regular user): a new quick start still makes its directory
+# writable by this user only. A path that already exists and others may write (an install directory made by hand under
+# that umask, a file in it, its .env) is refused with the chmod to run, never made private and then trusted.
 mkdir -p "$WORK/qs9"; rm -rf -- "$WORK/qs9/mdmesh"; : > "$WORK/docker.log"
 (umask 002; cd "$WORK/qs9" && env -i PATH="$WORK/stubs:$PATH" HOME="$WORK" STUB_LOG="$WORK/docker.log" STUB_DOCKER_OK=1 \
   bash "$REPO/quickstart.sh" < /dev/null > "$WORK/out/o" 2> "$WORK/out/e") || true
 { grep -qF 'How will your phones reach MDMesh?' "$WORK/out/o" && [ "$(stat -c %a "$WORK/qs9/mdmesh")" = 755 ]; } \
-  || { fail "a new quick start under umask 0002 refuses its own directory"; show; }
+  || { fail "a new quick start under umask 0002 refuses its own directory, or leaves it group-writable"; show; }
 ok
+for p in .:775 install:775 install/lib/db.sh:664 .env:660; do
+  qs_dir; qs_env > "$WORK/qs7/mdmesh/.env"; chmod 600 "$WORK/qs7/mdmesh/.env"; chmod "${p##*:}" "$WORK/qs7/mdmesh/${p%:*}"
+  (umask 002; qs_run)
+  { ! grep -q '/docker compose ' "$WORK/docker.log" && [ ! -e "$WORK/PWNED" ] && grep -qF 'chmod go-w' "$WORK/out/e" \
+    && [ "$(stat -c %a "$WORK/qs7/mdmesh/${p%:*}")" = "${p##*:}" ]; } \
+    || { fail "quickstart.sh trusts its own pre-existing group-writable ${p%:*}, or changes it"; show; }
+  ok
+done
 # A directory another user owns (one found on this system, not world-writable), and /tmp itself: refused.
 other=$(find /var /usr /etc -maxdepth 3 -type d ! -user 0 ! -user "$(id -u)" ! -perm -002 -perm -001 -print -quit 2>/dev/null || true)
 for d in /tmp ${other:+"$other"}; do

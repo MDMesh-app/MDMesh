@@ -782,14 +782,25 @@ mdm_host_name() {
 mdm_site_dir() {
   local d
   MDMESH_SITE_DIR=''
-  if ! { mkdir -p site.d && chmod 755 site.d; }; then warn "Could not make site.d here: your own edge rules can't be added."; return 0; fi
+  # Made private from the start (mkdir -m ignores the umask). One that already exists is used only when it is a directory
+  # of this user's (or root's) that nobody else may write: its rules go into the edge, so it is never made private and
+  # then trusted.
+  if [ -e site.d ] || [ -L site.d ]; then
+    if [ -L site.d ] || [ ! -d site.d ] || [ -z "$(find site.d -prune \( -user "$EUID" -o -user 0 \) ! -perm -020 ! -perm -002 -print 2> /dev/null)" ]; then
+      warn "site.d is not connected to the edge: it must be a directory of yours that nobody else may write. If nobody else"
+      warn "could have changed it, run chmod go-w site.d, then run this again ($MDM_DOCS/DEPLOY.md#your-own-edge-rules)."
+      return 0
+    fi
+  elif ! mkdir -m 755 site.d; then
+    warn "Could not make site.d here: your own edge rules can't be added."; return 0
+  fi
   if [ ! -e site.d/README ]; then
     printf '%s\n' "Your own rules for MDMesh's edge (Caddy). Every *.caddy file here is imported into the edge's site," \
       "after MDMesh's own settings. Updates never change this directory. Make each file readable by everyone" \
       "(chmod 644), check it, then restart the edge (from the install directory):" \
       "  docker compose exec caddy caddy validate --config /etc/caddy/Caddyfile && docker compose restart caddy" \
-      "Wrap a rule that answers requests (respond, redir) in handle { } or route { }: MDMesh's own handle blocks run" \
-      "before a bare one." \
+      "Your files run after MDMesh's path checks and before its own routes, the first matching handle answering:" \
+      "wrap a rule that answers requests (respond, redir) in handle { }; a bare one answers every request." \
       "How, with an example: $MDM_DOCS/DEPLOY.md#your-own-edge-rules" > site.d/README
     chmod 644 site.d/README
   fi
@@ -936,16 +947,19 @@ cd -P -- "$DIR"
 # Everything here is read, sourced or handed to docker as this user (often root): the directory and whatever the quick
 # start uses in it must belong to this user or root, and nobody else may write them. A directory someone else made (in
 # /tmp, say) is refused, so they can't plant a .env, a compose file or db.sh, or swap a verified file before it runs.
-# This user's own paths that a looser umask left group- or world-writable (an earlier run's, under 0002) are made
-# writable by this user only, the directory first: from then on nobody else can change what is in it.
+# A path that already exists and others may write is refused too, never made private and then trusted: someone may
+# have changed it while it was open. (What this run creates is private from the start: umask 022 above.)
 for _p in . install install/lib install/sql .env .quickstart-unfinished $MDM_QUICKSTART_FILES docker-compose.yml site.d; do
   [ -e "$_p" ] || [ -L "$_p" ] || continue
-  if [ ! -L "$_p" ] && [ -O "$_p" ] && [ -n "$(find "$_p" -prune \( -perm -020 -o -perm -002 \) -print 2>/dev/null)" ]; then
-    chmod go-w -- "$_p" || true
-  fi
-  if [ -L "$_p" ] || [ -z "$(find "$_p" -prune \( -user "$EUID" -o -user 0 \) ! -perm -020 ! -perm -002 -print 2>/dev/null)" ]; then
+  _open=$(find "$_p" -prune \( -perm -020 -o -perm -002 \) -print 2>/dev/null)
+  if [ -L "$_p" ] || [ -z "$(find "$_p" -prune \( -user "$EUID" -o -user 0 \) -print 2>/dev/null)" ] || { [ -n "$_open" ] && [ ! -O "$_p" ]; }; then
     err "$(pwd)/${_p#./}: the install directory and what is in it must belong to you (or root), not be links, and be"
     err "writable by nobody else. Install into a directory of your own (MDMESH_DIR). Nothing was changed."
+    exit 1
+  fi
+  if [ -n "$_open" ]; then
+    err "$(pwd)/${_p#./} is writable by other users, so what is in it can't be trusted. If nobody else could have changed"
+    err "it, make it yours alone (chmod go-w '$(pwd)/${_p#./}'), then run the quick start again. Nothing was changed."
     exit 1
   fi
 done

@@ -260,14 +260,25 @@ mdm_host_name() {
 mdm_site_dir() {
   local d
   MDMESH_SITE_DIR=''
-  if ! { mkdir -p site.d && chmod 755 site.d; }; then warn "Could not make site.d here: your own edge rules can't be added."; return 0; fi
+  # Made private from the start (mkdir -m ignores the umask). One that already exists is used only when it is a directory
+  # of this user's (or root's) that nobody else may write: its rules go into the edge, so it is never made private and
+  # then trusted.
+  if [ -e site.d ] || [ -L site.d ]; then
+    if [ -L site.d ] || [ ! -d site.d ] || [ -z "$(find site.d -prune \( -user "$EUID" -o -user 0 \) ! -perm -020 ! -perm -002 -print 2> /dev/null)" ]; then
+      warn "site.d is not connected to the edge: it must be a directory of yours that nobody else may write. If nobody else"
+      warn "could have changed it, run chmod go-w site.d, then run this again ($MDM_DOCS/DEPLOY.md#your-own-edge-rules)."
+      return 0
+    fi
+  elif ! mkdir -m 755 site.d; then
+    warn "Could not make site.d here: your own edge rules can't be added."; return 0
+  fi
   if [ ! -e site.d/README ]; then
     printf '%s\n' "Your own rules for MDMesh's edge (Caddy). Every *.caddy file here is imported into the edge's site," \
       "after MDMesh's own settings. Updates never change this directory. Make each file readable by everyone" \
       "(chmod 644), check it, then restart the edge (from the install directory):" \
       "  docker compose exec caddy caddy validate --config /etc/caddy/Caddyfile && docker compose restart caddy" \
-      "Wrap a rule that answers requests (respond, redir) in handle { } or route { }: MDMesh's own handle blocks run" \
-      "before a bare one." \
+      "Your files run after MDMesh's path checks and before its own routes, the first matching handle answering:" \
+      "wrap a rule that answers requests (respond, redir) in handle { }; a bare one answers every request." \
       "How, with an example: $MDM_DOCS/DEPLOY.md#your-own-edge-rules" > site.d/README
     chmod 644 site.d/README
   fi

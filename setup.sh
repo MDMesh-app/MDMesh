@@ -423,6 +423,12 @@ if [ "$REUSE_ENV" = 1 ]; then
     warn "This install runs in $(mdm_mode_name "$MODE") mode, and a re-run keeps it: to move it to another, see docs/UPGRADING.md (Changing the hosting mode)."
   fi
   PROXY_BIND=${MDMESH_BIND:-$MDM_PROXY_BIND_DEFAULT}; ORIGIN_TLS=${MDMESH_ORIGIN_TLS:-0}
+  # Moved out of the proxy mode with its `host` left: the edge drops it (docker/edge-peers.sh); say so here too.
+  if [ "$MODE" != 3 ]; then
+    case " $(printf '%s' "${TRUSTED_PROXIES:-}" | tr ',' ' ') " in
+      *" host "*) warn "TRUSTED_PROXIES in .env says host, which only the proxy mode reads: the edge ignores it. Set TRUSTED_PROXIES= (docs/UPGRADING.md, Changing the hosting mode)." ;;
+    esac
+  fi
   mdm_mode_settings "$MODE" rerun
 else
   if [ "$RESET" = 1 ] && [ -f .env ]; then
@@ -490,8 +496,8 @@ fi
 # and on the first re-run of an install from before 0.6.0. A path already in .env is kept as it is.
 if ! grep -q '^MDMESH_SITE_DIR=' .env; then
   mdm_site_dir
-  setenv MDMESH_SITE_DIR "$MDMESH_SITE_DIR"
-  export MDMESH_SITE_DIR
+  # Not connected (it said why): left out of .env, so the next run tries again.
+  if [ -n "$MDMESH_SITE_DIR" ]; then setenv MDMESH_SITE_DIR "$MDMESH_SITE_DIR"; export MDMESH_SITE_DIR; fi
 fi
 
 # The supervisor polls this repo's GitHub Releases (updater + the verified agent-APK mirror behind

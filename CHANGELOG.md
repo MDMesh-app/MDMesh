@@ -27,7 +27,7 @@ Security
   and native installs. The Docker image moves to Temurin 17.0.21.1, and the native installer's own JDK to 17.0.21.1;
   `--update` upgrades a distribution JDK 17 when a fixed one is available. To protect a server before you update:
   [UPGRADING, v0.5.1](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v051).
-- Thanks to @REPORTER for the report.
+- Thanks to @lared3294 for the report.
 
 Fixes
 - Commands: the server refuses a command, Install configuration apps and Retry apply for a device marked Wiped

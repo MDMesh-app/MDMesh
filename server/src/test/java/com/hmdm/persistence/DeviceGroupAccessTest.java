@@ -62,6 +62,7 @@ public class DeviceGroupAccessTest {
                 .answer("inaccessibleDevices", a -> java.util.Arrays.stream((Integer[]) a[0])
                         .filter(id -> id != VISIBLE).collect(java.util.stream.Collectors.toList()))
                 .answer("unusableGroups", a -> new ArrayList<Integer>())
+                .answer("updateDevicesConfiguration", a -> java.util.Arrays.asList((Integer[]) a[0]))
                 .answer("isCustomerConfiguration", a -> ((Integer) a[1]) == 1
                         && (((Integer) a[0]) == OWN_CONFIG || ((Integer) a[0]) == OWN_CONFIG_2));
         dao = new DeviceDAO(fake.mapper, null, Guice.createInjector(), null, 3);
@@ -79,7 +80,7 @@ public class DeviceGroupAccessTest {
     public void everyDeviceWriteAndDetailReadRejectsAHiddenDevice() {
         Map<String, Runnable> ops = new LinkedHashMap<>();
         ops.put("remove", () -> dao.removeDeviceById(HIDDEN));
-        ops.put("configuration", () -> dao.updateDeviceConfiguration(HIDDEN, 5));
+        ops.put("configuration", () -> dao.updateDevicesConfiguration(Fakes.list(HIDDEN), OWN_CONFIG));
         ops.put("update", () -> dao.updateDevice(device(HIDDEN)));
         ops.put("description", () -> dao.updateDeviceDescription(HIDDEN, "x"));
         ops.put("saveAppSettings", () -> dao.saveDeviceApplicationSettings(HIDDEN, new ArrayList<>()));
@@ -158,13 +159,13 @@ public class DeviceGroupAccessTest {
 
     @Test
     public void aDeviceCannotBePointedAtAnotherCustomersConfiguration() {
-        expectDenied("configuration", () -> dao.updateDeviceConfiguration(VISIBLE, OTHER_CONFIG));
+        expectDenied("configuration", () -> dao.updateDevicesConfiguration(Fakes.list(VISIBLE), OTHER_CONFIG));
         expectDenied("update", () -> dao.updateDevice(withConfiguration(VISIBLE, OTHER_CONFIG)));
         Device created = withConfiguration(0, OTHER_CONFIG);
         created.setId(null);
         expectDenied("insert", () -> dao.insertDevice(created));
         assertTrue(fake.calls.toString(), noDeviceWrites());
-        String where = Fakes.whereOf(Fakes.sqlOf(DeviceMapper.class, "updateDeviceConfiguration"));
+        String where = Fakes.whereOf(Fakes.sqlOf(DeviceMapper.class, "updateDevicesConfiguration"));
         assertTrue(where, where.contains("configurations.customerid"));
     }
 
@@ -174,10 +175,10 @@ public class DeviceGroupAccessTest {
         u.setAllDevicesAvailable(false);
         SecurityContext.release();
         SecurityContext.init(u);
-        expectDenied("configuration", () -> dao.updateDeviceConfiguration(VISIBLE, OWN_CONFIG_2));
+        expectDenied("configuration", () -> dao.updateDevicesConfiguration(Fakes.list(VISIBLE), OWN_CONFIG_2));
         assertTrue(fake.calls.toString(), noDeviceWrites());
-        dao.updateDeviceConfiguration(VISIBLE, OWN_CONFIG);
-        assertEquals(1, fake.callsTo("updateDeviceConfiguration").size());
+        assertEquals(1, dao.updateDevicesConfiguration(Fakes.list(VISIBLE), OWN_CONFIG).size());
+        assertEquals(1, fake.callsTo("updateDevicesConfiguration").size());
     }
 
     @Test

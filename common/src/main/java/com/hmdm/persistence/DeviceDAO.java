@@ -207,8 +207,11 @@ public class DeviceDAO extends AbstractDAO<Device> {
             try {
                 removeDeviceById(id); // its own transaction (Guice intercepts the call)
                 result.deleted.add(id);
+            } catch (SecurityException e) {
+                log.warn("Bulk delete: device {} not deleted: {}", id, e.getMessage());
+                result.notDeleted.add(id);
             } catch (RuntimeException e) {
-                log.warn("Bulk delete: device {} not deleted: {}: {}", id, e.getClass().getSimpleName(), e.getMessage());
+                log.error("Bulk delete: device {} not deleted", id, e);
                 result.notDeleted.add(id);
             }
         }
@@ -231,7 +234,7 @@ public class DeviceDAO extends AbstractDAO<Device> {
      * number of devices (rows locked in id order, so overlapping bulk changes can't deadlock). Devices already gone
      * are skipped.
      *
-     * @return the devices changed, as they were before (to notify and wake them once this has committed)
+     * @return the devices moved, as they were before (to notify and wake them once this has committed)
      * @throws SecurityException the user may not reach one of the devices, or use the configuration (none changed)
      */
     @Transactional
@@ -240,11 +243,12 @@ public class DeviceDAO extends AbstractDAO<Device> {
             throw SecurityException.onConfigurationAccessViolation(configurationId);
         }
         List<Device> before = lockAccessible(orderedIds(ids));
-        if (!before.isEmpty()) {
-            this.mapper.updateDevicesConfiguration(
-                    before.stream().map(Device::getId).toArray(Integer[]::new), configurationId);
+        if (before.isEmpty()) {
+            return before;
         }
-        return before;
+        Set<Integer> moved = new HashSet<>(this.mapper.updateDevicesConfiguration(
+                before.stream().map(Device::getId).toArray(Integer[]::new), configurationId));
+        return before.stream().filter(d -> moved.contains(d.getId())).collect(Collectors.toList());
     }
 
     /**
@@ -322,23 +326,6 @@ public class DeviceDAO extends AbstractDAO<Device> {
     public static final class BulkDeleteResult {
         public final List<Integer> deleted = new ArrayList<>();
         public final List<Integer> notDeleted = new ArrayList<>();
-    }
-
-    /** Moves the device to the configuration; its row is locked before it is read, as {@link #updateDevice} does. */
-    @Transactional
-    public void updateDeviceConfiguration(Integer deviceId, Integer configurationId) {
-        if (deviceId != null) {
-            this.mapper.lockDevices(new Integer[]{deviceId});
-        }
-        updateById(
-                deviceId,
-                this::getAccessibleDeviceForUpdate,
-                device -> {
-                    requireUsableConfiguration(configurationId, device.getConfigurationId());
-                    this.mapper.updateDeviceConfiguration(device.getId(), configurationId);
-                },
-                SecurityException::onDeviceAccessViolation
-        );
     }
 
     public Device getDeviceByNumber(String number) {

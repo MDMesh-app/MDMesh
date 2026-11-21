@@ -169,11 +169,16 @@ public interface DeviceMapper {
     List<Integer> inaccessibleDevices(@Param("ids") Integer[] ids, @Param("userId") int userId,
                                       @Param("customerId") int customerId, @Param("superAdmin") boolean superAdmin);
 
-    /** {@link #updateDeviceConfiguration} for many devices, in one statement. */
-    @Update({"UPDATE devices SET configurationId = #{configurationId} WHERE id = ANY(" + IDS + ") " +
+    /**
+     * Moves the devices to the configuration, in one statement; only into a configuration of the device's own customer.
+     * @return the ids of the devices moved
+     */
+    @Select({"UPDATE devices SET configurationId = #{configurationId} WHERE id = ANY(" + IDS + ") " +
             "AND EXISTS (SELECT 1 FROM configurations " +
-            "            WHERE configurations.id = #{configurationId} AND configurations.customerId = devices.customerId)"})
-    int updateDevicesConfiguration(@Param("ids") Integer[] ids, @Param("configurationId") Integer configurationId);
+            "            WHERE configurations.id = #{configurationId} AND configurations.customerId = devices.customerId) " +
+            "RETURNING id"})
+    @Options(flushCache = Options.FlushCachePolicy.TRUE, useCache = false)
+    List<Integer> updateDevicesConfiguration(@Param("ids") Integer[] ids, @Param("configurationId") Integer configurationId);
 
     /**
      * The groups the user may put devices in (or take them out of): groups of the customer the user belongs to, every
@@ -219,12 +224,6 @@ public interface DeviceMapper {
      *  reference devices(number) ON DELETE CASCADE, as the rows keyed by id do devices(id). */
     @Delete({"DELETE FROM devices WHERE id = #{id}"})
     void removeDevice(@Param("id") Integer id);
-
-    @Update({"UPDATE devices SET configurationId = #{configurationId} WHERE id = #{deviceId} " +
-            "AND EXISTS (SELECT 1 FROM configurations " +
-            "            WHERE configurations.id = #{configurationId} AND configurations.customerId = devices.customerId)"})
-    void updateDeviceConfiguration(@Param("deviceId") Integer deviceId,
-                                   @Param("configurationId") Integer configurationId);
 
     @Select({"SELECT COUNT(*) > 0 FROM configurations WHERE id = #{configurationId} AND customerId = #{customerId}"})
     boolean isCustomerConfiguration(@Param("configurationId") int configurationId,

@@ -39,6 +39,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -347,10 +349,15 @@ public class DeviceGroupsPgTest {
         String url = URL + (URL.contains("?") ? "&" : "?") + "currentSchema=" + schema;
         try (Connection other = DriverManager.getConnection(url, user(), password()); Statement s = other.createStatement()) {
             other.setAutoCommit(false);
+            long holder;
+            try (ResultSet r = s.executeQuery("SELECT pg_backend_pid()")) {
+                r.next();
+                holder = r.getLong(1);
+            }
             s.execute("SELECT id FROM devices WHERE id = " + device + " FOR UPDATE");
             s.execute("DELETE FROM deviceGroups WHERE deviceId = " + device + " AND groupId = " + closed);
 
-            java.util.concurrent.CompletableFuture<Throwable> edit = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+            CompletableFuture<Throwable> edit = CompletableFuture.supplyAsync(() -> {
                 SecurityContext.init(limited);
                 try {
                     dao.updateDevice(change);
@@ -362,15 +369,16 @@ public class DeviceGroupsPgTest {
                 }
             });
             long deadline = System.currentTimeMillis() + 10_000;
-            while (scalar("SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' "
-                    + "AND query ILIKE '%FOR UPDATE%' AND pid <> pg_backend_pid()") == 0) {
+            // Only the edit can be waiting on this transaction: it holds nothing anyone else wants
+            while (scalar("SELECT count(*) FROM pg_stat_activity WHERE " + holder
+                    + " = ANY(pg_blocking_pids(pid))") == 0) {
                 assertFalse("the edit never waited for the device's lock", edit.isDone());
                 assertTrue("the edit never waited for the device's lock", System.currentTimeMillis() < deadline);
                 Thread.sleep(20);
             }
             other.commit();
 
-            Throwable outcome = edit.get(10, java.util.concurrent.TimeUnit.SECONDS);
+            Throwable outcome = edit.get(10, TimeUnit.SECONDS);
             assertTrue("expected the edit to be refused, got " + outcome, outcome instanceof SecurityException);
         }
         assertEquals(Collections.singletonList(open), groupsOf(device));

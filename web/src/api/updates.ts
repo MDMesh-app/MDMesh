@@ -17,6 +17,9 @@ export interface UpdateStatus {
   current: string;
   latest: string | null;
   updateAvailable: boolean;
+  /** Why the newer verified release (`latest`) can't be installed by this updater, which then doesn't offer it: no
+   *  images for this server's platform, or images under another owner. Absent from a supervisor before 0.6.0. */
+  blocked?: string | null;
   verified: boolean;
   channel: string | null;
   checkedAt: number | null;

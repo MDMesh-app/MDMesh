@@ -42,13 +42,15 @@ function missedSecurity(manifest, verified, current) {
     .sort((a, b) => (semverGt(a, b) ? 1 : semverGt(b, a) ? -1 : 0));
 }
 
-/** Build the status object the console + recovery page read. Update only offered if VERIFIED. */
-function shapeStatus({ current, manifest, verified, checkedAt, error }) {
+/** Build the status object the console + recovery page read. Update only offered if VERIFIED, and not `blocked`
+ *  (updateBlocked: why this install can't apply the newer release, which the console shows instead of an update). */
+function shapeStatus({ current, manifest, verified, checkedAt, error, blocked }) {
   const latest = manifest && manifest.version;
   return {
     current,
     latest: latest || null,
-    updateAvailable: !!(verified && latest && semverGt(latest, current)),
+    updateAvailable: !!(verified && latest && semverGt(latest, current) && !blocked),
+    blocked: blocked || null,
     verified: !!verified,
     channel: (manifest && manifest.channel) || null,
     checkedAt: checkedAt || null,
@@ -57,11 +59,20 @@ function shapeStatus({ current, manifest, verified, checkedAt, error }) {
   };
 }
 
+/** Why the newer verified release in `manifest` can't be applied by this supervisor (imagePins: no digests, another
+ *  image owner, no images for this host's platform), or null: also null when there's nothing newer and verified, or
+ *  on an install that doesn't apply updates itself (a native install builds from source: the images don't concern it). */
+function updateBlocked({ manifest, verified, current, imageOwner, platform, applySupported }) {
+  if (!applySupported || !verified || !manifest || !parseSemver(manifest.version) || !parseSemver(current)) return null;
+  if (!semverGt(manifest.version, current)) return null;
+  return imagePins(manifest, imageOwner, platform).error || null;
+}
+
 /** Why an Update must not start, or null if it may. `manifest` is the last VERIFIED manifest (null if none), `current`
  *  the running version, `skipVersion` the auto-apply skip (it never blocks a manual Update; it only marks a running
  *  version whose update failed), `imageOwner` the install's IMAGE_OWNER: a newer release must also pin its images by
- *  digest under that owner, for `platform` (default: this host's; imagePins). The version guard matters beyond the banner: re-applying the running (or an older)
- *  version would overwrite /backups/latest with a dump of the post-update database, leaving nothing to roll back to. */
+ *  digest under that owner, for `platform` (default: this host's; imagePins). The version guard matters beyond the
+ *  banner: re-applying the running (or an older) version would overwrite /backups/latest with a dump of the post-update database, leaving nothing to roll back to. */
 function applyRefusal({ manifest, current, skipVersion, imageOwner, platform }) {
   if (!manifest) return 'no verified update available';
   const to = manifest.version;
@@ -93,7 +104,7 @@ function hostPlatform() {
  *  { server, web, supervisor } (the three refs) or { error } saying why the release cannot be applied: a manifest
  *  from release tooling without digests, a malformed ref, or images published under another owner than the one this
  *  install pulls from (a fork's install following upstream releases, or the reverse), or no images for `platform` (this
- *  host's: components.platforms, comma-separated; a manifest without it, from before Arm64 images, is linux/amd64 only).
+ *  host's: components.platforms, comma-separated; an older manifest without it is linux/amd64 only).
  *  apply.sh checks the refs again, and docker refuses to pull an index without the host's platform. */
 function imagePins(manifest, imageOwner, platform = hostPlatform()) {
   const v = (manifest && manifest.version) || '(unknown)';
@@ -118,7 +129,8 @@ function imagePins(manifest, imageOwner, platform = hostPlatform()) {
   }
   const platforms = manifest.components.platforms === undefined ? 'linux/amd64' : manifest.components.platforms;
   if (typeof platforms !== 'string' || !platforms.split(',').includes(platform)) {
-    return { error: `the signed release ${v} has no images for this host (${platform}), only for ${String(platforms) || '(none)'}, `
+    const has = typeof platforms === 'string' && platforms ? platforms.split(',').join(', ') : 'no platform';
+    return { error: `the signed release ${v} has no images for this host (${platform}), only for ${has}, `
       + 'so it cannot be applied' };
   }
   return pins;
@@ -296,7 +308,7 @@ function legacyDeploymentAdmin(body) {
 }
 
 module.exports = {
-  parseSemver, semverGt, pickRelease, shapeStatus, missedSecurity,
+  parseSemver, semverGt, pickRelease, shapeStatus, updateBlocked, missedSecurity,
   imageTags, imagePins, nextPhase, isTerminal, APPLY_PHASES, APPLY_TERMINAL,
   apkAsset, sha256Matches, recoveryPage, isPublishTemp, assetRequest, fetchAsset, envValue, applyLine, applyRefusal,
   deploymentAdminVerdict, legacyDeploymentAdmin,

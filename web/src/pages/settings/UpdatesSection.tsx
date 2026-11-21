@@ -494,8 +494,16 @@ export function UpdatesSection({
         </div>
       ) : null}
 
+      {/* A newer release this updater can't install: why, instead of an update or "the latest release". */}
+      {s && s.blocked && s.latest && !running ? (
+        <Callout tone="warn" icon={<IconAlert />}>
+          MDMesh <span className="v2-num">{s.latest}</span> was found, but this server can&rsquo;t install it:{' '}
+          {s.blocked}.
+        </Callout>
+      ) : null}
+
       {/* Nothing to install. */}
-      {s && !s.updateAvailable && !running ? (
+      {s && !s.updateAvailable && !s.blocked && !running ? (
         <div className="v2-settings-uptodate">
           <span className="v2-settings-uptodate__icon" aria-hidden="true">
             <IconCheck size={12} />

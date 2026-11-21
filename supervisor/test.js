@@ -1,6 +1,6 @@
 const t = require('node:test');
 const a = require('node:assert');
-const { semverGt, pickRelease, shapeStatus, missedSecurity, imageTags, nextPhase, isTerminal, apkAsset, sha256Matches, recoveryPage, isPublishTemp,
+const { semverGt, pickRelease, shapeStatus, updateBlocked, missedSecurity, imageTags, nextPhase, isTerminal, apkAsset, sha256Matches, recoveryPage, isPublishTemp,
   assetRequest, fetchAsset, envValue, applyLine, applyRefusal, imagePins, deploymentAdminVerdict,
   legacyDeploymentAdmin } = require('./lib');
 
@@ -37,6 +37,29 @@ t.test('shapeStatus', () => {
   a.equal(shapeStatus({ current: '1.0.0', manifest: { version: '1.1.0' }, verified: true }).updateAvailable, true);
   a.equal(shapeStatus({ current: '1.1.0', manifest: { version: '1.1.0' }, verified: true }).updateAvailable, false);
   a.equal(shapeStatus({ current: '1.0.0', manifest: { version: '1.1.0' }, verified: false }).updateAvailable, false);
+  a.equal(shapeStatus({ current: '1.0.0', manifest: { version: '1.1.0' }, verified: true }).blocked, null);
+  // A newer release this install can't apply (updateBlocked): not offered as an update; the reason is shown instead.
+  const st = shapeStatus({ current: '1.0.0', manifest: { version: '1.1.0' }, verified: true, blocked: 'no images for this host' });
+  a.equal(st.updateAvailable, false);
+  a.equal(st.blocked, 'no images for this host');
+  a.equal(st.latest, '1.1.0');
+});
+
+t.test('updateBlocked — why a newer verified release can\'t be applied by this supervisor, or null', () => {
+  const m = (v, platforms = PLATFORMS) => ({ version: v, components: { images: PIN, platforms } });
+  const args = { current: '0.6.0', verified: true, imageOwner: 'mdmesh-app', platform: 'linux/arm64', applySupported: true };
+  a.equal(updateBlocked({ ...args, manifest: m('0.6.1') }), null);
+  a.equal(updateBlocked({ ...args, manifest: m('0.6.1', 'linux/amd64') }),
+    'the signed release 0.6.1 has no images for this host (linux/arm64), only for linux/amd64, so it cannot be applied');
+  a.match(updateBlocked({ ...args, manifest: m('0.6.1'), imageOwner: 'forkco' }), /this install pulls ghcr\.io\/forkco/);
+  a.match(updateBlocked({ ...args, manifest: { version: '0.6.1' } }), /names its images by tag only/);
+  // Only a newer, verified release on an install that applies updates itself can be blocked.
+  a.equal(updateBlocked({ ...args, manifest: m('0.6.0', 'linux/amd64') }), null, 'the running version');
+  a.equal(updateBlocked({ ...args, manifest: m('0.5.1', 'linux/amd64') }), null, 'an older one');
+  a.equal(updateBlocked({ ...args, manifest: m('0.6.1', 'linux/amd64'), verified: false }), null, 'unverified');
+  a.equal(updateBlocked({ ...args, manifest: null }), null);
+  a.equal(updateBlocked({ ...args, manifest: m('0.6.1', 'linux/amd64'), applySupported: false }), null,
+    'a native install builds from source: the images are not its concern');
 });
 
 t.test('missedSecurity — the security releases an update skips over', () => {
@@ -582,7 +605,7 @@ async function fakeGitHub(dir, opts) {
   const fs = require('fs'), path = require('path'), http = require('http'), crypto = require('crypto');
   const kd = fs.mkdtempSync(path.join(dir, 'gh-'));
   // Pinned images under the default owner unless opts.images says otherwise (null: a manifest without digests).
-  const manifest = { version: opts.version, channel: 'stable', components: { platforms: PLATFORMS } };
+  const manifest = { version: opts.version, channel: 'stable', components: { platforms: opts.platforms || PLATFORMS } };
   const images = opts.images === undefined ? PIN : opts.images;
   if (images) manifest.components.images = images;
   if (opts.apk) manifest.components.apk = { file: 'mdmesh-agent.apk', versionCode: 999, sha256: crypto.createHash('sha256').update(opts.apk).digest('hex') };
@@ -1493,22 +1516,28 @@ t.test('apply.sh: a compose file that does not resolve to the pinned refs is ref
   }
 });
 
-t.test('a release without digests, or pinned under another owner, is refused by Update with the reason; nothing runs',
+t.test('a release without digests, under another owner or without images for this host: shown as blocked with the reason, '
+  + 'not offered or auto-applied; Update refuses it; nothing runs',
   { skip: !HAS_MINISIGN && 'minisign not installed', timeout: 40000 }, async () => {
     const fs = require('fs');
     for (const [opts, envText, want] of [
       [{ version: '0.0.2', images: null }, '', /names its images by tag only/],
       [{ version: '0.0.2' }, 'IMAGE_OWNER=forkco\n', /this install pulls ghcr\.io\/forkco\/mdmesh-server \(IMAGE_OWNER=forkco in \.env\)/],
+      [{ version: '0.0.2', platforms: 'linux/s390x' }, '', /has no images for this host \(linux\/[a-z0-9]+\), only for linux\/s390x/],
     ]) {
       const d = makeDeploy(envText + 'SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n');
       let gh = null, sup = null, authz = null;
       try {
         gh = await fakeGitHub(d.dir, opts);
         authz = await fakeAuthz();
-        sup = await spawnSupervisor(d.dir, { ...d.env, ...gh.env, APPLY_SUPPORTED: '1', SERVER_BASE: authz.base }, /supervisor on/, ['--require', gh.preload]);
+        sup = await spawnSupervisor(d.dir, { ...d.env, ...gh.env, APPLY_SUPPORTED: '1', AUTO_UPDATE: '1', SERVER_BASE: authz.base }, /supervisor on/, ['--require', gh.preload]);
         const status = async () => (await fetch(`http://127.0.0.1:${sup.port}/update/status`)).json();
         const st = await waitFor(async () => { const x = await status(); return x.checkedAt && x; }, 'the startup poll');
-        a.equal(st.updateAvailable, true, 'the release is still offered: Update says why it will not apply');
+        a.equal(st.updateAvailable, false, 'not offered as an update');
+        a.equal(st.latest, '0.0.2');
+        a.match(st.blocked, want, 'the status says why');
+        a.match(sup.log(), /\[update\] not offered: /);
+        a.doesNotMatch(sup.log(), /\[auto\]/, 'auto-apply leaves it alone');
         const r = await fetch(`http://127.0.0.1:${sup.port}/update/apply`, { method: 'POST', headers: ADMIN });
         a.equal(r.status, 400);
         a.match((await r.json()).error, want);

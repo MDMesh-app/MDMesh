@@ -7,7 +7,7 @@ const os = require('os');
 const cp = require('child_process');
 const path = require('path');
 const crypto = require('crypto');
-const { pickRelease, shapeStatus, imageTags, imagePins, isTerminal, apkAsset, sha256Matches, recoveryPage, isPublishTemp, fetchAsset,
+const { pickRelease, shapeStatus, updateBlocked, imageTags, imagePins, isTerminal, apkAsset, sha256Matches, recoveryPage, isPublishTemp, fetchAsset,
   envValue, applyLine, applyRefusal, deploymentAdminVerdict, legacyDeploymentAdmin } = require('./lib');
 
 const PORT = +(process.env.SUPERVISOR_PORT || 9000);
@@ -106,7 +106,7 @@ function blockAuto(v) {
   console.log('[auto] will not auto-apply', v, 'again (apply failed or rolled back); Update still applies it by hand');
 }
 
-let state = { current: currentVersion, latest: null, updateAvailable: false, verified: false, checkedAt: null, error: 'not polled yet', missedSecurity: [], apply: null, auto: autoUpdate, autoSkipped: skipVersion, applySupported: APPLY_SUPPORTED };
+let state = { current: currentVersion, latest: null, updateAvailable: false, blocked: null, verified: false, checkedAt: null, error: 'not polled yet', missedSecurity: [], apply: null, auto: autoUpdate, autoSkipped: skipVersion, applySupported: APPLY_SUPPORTED };
 
 async function ghJson(url) {
   const headers = { 'User-Agent': 'mdmesh-updater', Accept: 'application/vnd.github+json' };
@@ -237,11 +237,18 @@ function removeStalePublishTemps() {
   }
 }
 
-/** Rebuild `state` from a poll result while preserving the live `apply`/`auto` view. */
+/** Rebuild `state` from a poll result while preserving the live `apply`/`auto` view. A newer release this install
+ *  can't apply (updateBlocked) is shown with its reason instead of as an update, so auto-apply leaves it alone; the
+ *  reason is logged once per release and reason, not on every poll. */
+let lastBlockedLog = null;
 function setStatus(args) {
   maybeClearSkip();
+  const blocked = updateBlocked({ manifest: args.manifest, verified: args.verified, current: args.current,
+    imageOwner: readImageOwner(), applySupported: APPLY_SUPPORTED });
+  if (blocked && blocked !== lastBlockedLog) console.log('[update] not offered:', blocked);
+  lastBlockedLog = blocked;
   state = {
-    ...shapeStatus(args),
+    ...shapeStatus({ ...args, blocked }),
     apply,
     auto: autoUpdate,
     autoSkipped: skipVersion,

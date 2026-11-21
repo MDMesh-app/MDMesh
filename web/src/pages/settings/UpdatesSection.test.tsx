@@ -88,3 +88,30 @@ describe('Settings → Updates: missing security fixes', () => {
     expect(screen.queryByRole('region', { name: 'Missing security fixes' })).toBeNull();
   });
 });
+
+describe('Settings → Updates: a release this updater cannot install', () => {
+  const REASON =
+    'the signed release 0.3.8 has no images for this host (linux/arm64), only for linux/amd64, so it cannot be applied';
+  const render = (over: Partial<UpdateStatus>) => {
+    stubApi();
+    const status = { ...STATUS, ...over } as UpdateStatus;
+    const sup = { status, loaded: true, reachable: true, refresh: async () => {}, setStatus: () => {}, patch: () => {} };
+    renderInConsole(<UpdatesSection id="updates" sup={sup} rolloutHref="#agent-rollout" />, { path: '/settings' });
+  };
+
+  it('says why, with no Update button and no "latest release" line', async () => {
+    render({ updateAvailable: false, blocked: REASON });
+    expect(
+      (await screen.findByText(/was found, but this server can’t install it/)).textContent,
+    ).toBe(`MDMesh 0.3.8 was found, but this server can’t install it: ${REASON}.`);
+    expect(screen.queryByRole('button', { name: 'Update server and console' })).toBeNull();
+    expect(screen.queryByText(/is the latest release/)).toBeNull();
+    expect(screen.queryByText(/is ready/)).toBeNull();
+  });
+
+  it('is absent when nothing is blocked, or the supervisor predates the field', async () => {
+    render({ updateAvailable: false, latest: '0.3.7', blocked: null });
+    await screen.findByText(/is the latest release/);
+    expect(screen.queryByText(/can’t install it/)).toBeNull();
+  });
+});

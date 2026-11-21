@@ -92,26 +92,46 @@ describe('Settings → Updates: missing security fixes', () => {
 describe('Settings → Updates: a release this updater cannot install', () => {
   const REASON =
     'the signed release 0.3.8 has no images for this host (linux/arm64), only for linux/amd64, so it cannot be applied';
-  const render = (over: Partial<UpdateStatus>) => {
+  const render = (over: Partial<UpdateStatus>, base: UpdateStatus = STATUS) => {
     stubApi();
-    const status = { ...STATUS, ...over } as UpdateStatus;
+    const status = { ...base, ...over } as UpdateStatus;
     const sup = { status, loaded: true, reachable: true, refresh: async () => {}, setStatus: () => {}, patch: () => {} };
     renderInConsole(<UpdatesSection id="updates" sup={sup} rolloutHref="#agent-rollout" />, { path: '/settings' });
   };
 
-  it('says why, with no Update button and no "latest release" line', async () => {
-    render({ updateAvailable: false, blocked: REASON });
-    expect(
-      (await screen.findByText(/was found, but this server can’t install it/)).textContent,
-    ).toBe(`MDMesh 0.3.8 was found, but this server can’t install it: ${REASON}.`);
+  it('says so once, with the next step; no Update button and no "latest release" line', async () => {
+    render({ updateAvailable: false, blocked: REASON, blockedCode: 'platform' });
+    const text = (await screen.findByText(/can’t be installed on this server/)).textContent;
+    expect(text).toMatch(/^MDMesh 0\.3\.8 can’t be installed on this server\. Its images don’t include this server’s platform\./);
+    expect(text).toMatch(/native install/);
     expect(screen.queryByRole('button', { name: 'Update server and console' })).toBeNull();
     expect(screen.queryByText(/is the latest release/)).toBeNull();
     expect(screen.queryByText(/is ready/)).toBeNull();
   });
 
-  it('is absent when nothing is blocked, or the supervisor predates the field', async () => {
-    render({ updateAvailable: false, latest: '0.3.7', blocked: null });
+  it('keeps the missing-security notice, saying the release can’t be installed here', async () => {
+    render({ updateAvailable: false, blocked: REASON, blockedCode: 'owner', missedSecurity: ['0.3.8'], current: '0.3.6' });
+    const notice = await screen.findByRole('region', { name: 'Missing security fixes' });
+    expect(notice.textContent).toContain('0.3.8 fixed security issues this server doesn’t have yet. It runs 0.3.6, and can’t install 0.3.8 itself (below).');
+    expect(screen.getByText(/Set GITHUB_REPO or IMAGE_OWNER/)).toBeTruthy();
+  });
+
+  it('is absent when the supervisor predates the field (no blocked key at all)', async () => {
+    const { blocked: _b, blockedCode: _c, ...older } = { ...STATUS, updateAvailable: false, latest: '0.3.7' } as UpdateStatus;
+    expect('blocked' in older).toBe(false);
+    render({}, older as UpdateStatus);
     await screen.findByText(/is the latest release/);
-    expect(screen.queryByText(/can’t install it/)).toBeNull();
+    expect(screen.queryByText(/can’t be installed/)).toBeNull();
+  });
+});
+
+describe('Settings → Updates: an unverified newer release', () => {
+  it('is not also called "the latest release"', async () => {
+    stubApi();
+    const status = { ...STATUS, updateAvailable: false, verified: false } as UpdateStatus;
+    const sup = { status, loaded: true, reachable: true, refresh: async () => {}, setStatus: () => {}, patch: () => {} };
+    renderInConsole(<UpdatesSection id="updates" sup={sup} rolloutHref="#agent-rollout" />, { path: '/settings' });
+    await screen.findByText(/its signature couldn’t be verified/);
+    expect(screen.queryByText(/is the latest release/)).toBeNull();
   });
 });

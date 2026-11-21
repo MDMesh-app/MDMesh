@@ -1,6 +1,6 @@
 const t = require('node:test');
 const a = require('node:assert');
-const { semverGt, pickRelease, shapeStatus, updateBlocked, missedSecurity, imageTags, nextPhase, isTerminal, apkAsset, sha256Matches, recoveryPage, isPublishTemp,
+const { semverGt, pickRelease, shapeStatus, updateBlocked, blockedLogLine, missedSecurity, imageTags, nextPhase, isTerminal, apkAsset, sha256Matches, recoveryPage, isPublishTemp,
   assetRequest, fetchAsset, envValue, applyLine, applyRefusal, imagePins, deploymentAdminVerdict,
   legacyDeploymentAdmin } = require('./lib');
 
@@ -39,20 +39,50 @@ t.test('shapeStatus', () => {
   a.equal(shapeStatus({ current: '1.0.0', manifest: { version: '1.1.0' }, verified: false }).updateAvailable, false);
   a.equal(shapeStatus({ current: '1.0.0', manifest: { version: '1.1.0' }, verified: true }).blocked, null);
   // A newer release this install can't apply (updateBlocked): not offered as an update; the reason is shown instead.
-  const st = shapeStatus({ current: '1.0.0', manifest: { version: '1.1.0' }, verified: true, blocked: 'no images for this host' });
+  const blocked = { code: 'platform', reason: 'no images for this host' };
+  const st = shapeStatus({ current: '1.0.0', manifest: { version: '1.1.0' }, verified: true, blocked });
   a.equal(st.updateAvailable, false);
   a.equal(st.blocked, 'no images for this host');
+  a.equal(st.blockedCode, 'platform');
   a.equal(st.latest, '1.1.0');
+  a.equal(shapeStatus({ current: '1.0.0', manifest: { version: '1.1.0' }, verified: true }).blockedCode, null);
+});
+
+t.test('shapeStatus — a blocked release leaves its own security fixes missing too', () => {
+  const manifest = { version: '0.6.1', securityReleases: ['0.5.1', '0.6.0', '0.6.1'] };
+  const blocked = { code: 'owner', reason: 'r' };
+  a.deepEqual(shapeStatus({ current: '0.5.1', manifest, verified: true }).missedSecurity, ['0.6.0'], 'offered: its notes say so');
+  a.deepEqual(shapeStatus({ current: '0.5.1', manifest, verified: true, blocked }).missedSecurity, ['0.6.0', '0.6.1']);
+  a.deepEqual(shapeStatus({ current: '0.6.0', manifest: { version: '0.6.1', securityReleases: ['0.6.0'] }, verified: true, blocked })
+    .missedSecurity, [], 'no security release newer than the running one');
+});
+
+t.test('blockedLogLine — once per reason', () => {
+  const b = { code: 'owner', reason: 'r1' };
+  let x = blockedLogLine(null, b);
+  a.equal(x.line, '[update] not offered: r1');
+  x = blockedLogLine(x.lastReason, b);
+  a.equal(x.line, null, 'the next poll finds the same: nothing logged');
+  x = blockedLogLine(x.lastReason, { code: 'platform', reason: 'r2' });
+  a.equal(x.line, '[update] not offered: r2', 'another reason');
+  x = blockedLogLine(x.lastReason, null);
+  a.deepEqual(x, { line: null, lastReason: null }, 'installable again');
+  a.equal(blockedLogLine(x.lastReason, { code: 'platform', reason: 'r2' }).line, '[update] not offered: r2', 'blocked again: logged again');
 });
 
 t.test('updateBlocked — why a newer verified release can\'t be applied by this supervisor, or null', () => {
   const m = (v, platforms = PLATFORMS) => ({ version: v, components: { images: PIN, platforms } });
   const args = { current: '0.6.0', verified: true, imageOwner: 'mdmesh-app', platform: 'linux/arm64', applySupported: true };
   a.equal(updateBlocked({ ...args, manifest: m('0.6.1') }), null);
-  a.equal(updateBlocked({ ...args, manifest: m('0.6.1', 'linux/amd64') }),
-    'the signed release 0.6.1 has no images for this host (linux/arm64), only for linux/amd64, so it cannot be applied');
-  a.match(updateBlocked({ ...args, manifest: m('0.6.1'), imageOwner: 'forkco' }), /this install pulls ghcr\.io\/forkco/);
-  a.match(updateBlocked({ ...args, manifest: { version: '0.6.1' } }), /names its images by tag only/);
+  a.deepEqual(updateBlocked({ ...args, manifest: m('0.6.1', 'linux/amd64') }), { code: 'platform',
+    reason: 'the signed release 0.6.1 has no images for this host (linux/arm64), only for linux/amd64, so it cannot be applied' });
+  const owner = updateBlocked({ ...args, manifest: m('0.6.1'), imageOwner: 'forkco' });
+  a.equal(owner.code, 'owner');
+  a.match(owner.reason, /this install pulls ghcr\.io\/forkco/);
+  const tags = updateBlocked({ ...args, manifest: { version: '0.6.1' } });
+  a.equal(tags.code, 'digests');
+  a.match(tags.reason, /names its images by tag only/);
+  a.equal(updateBlocked({ ...args, manifest: { version: '0.6.1', components: { images: { ...PIN, web: 'x' } } } }).code, 'digests');
   // Only a newer, verified release on an install that applies updates itself can be blocked.
   a.equal(updateBlocked({ ...args, manifest: m('0.6.0', 'linux/amd64') }), null, 'the running version');
   a.equal(updateBlocked({ ...args, manifest: m('0.5.1', 'linux/amd64') }), null, 'an older one');
@@ -1520,10 +1550,10 @@ t.test('a release without digests, under another owner or without images for thi
   + 'not offered or auto-applied; Update refuses it; nothing runs',
   { skip: !HAS_MINISIGN && 'minisign not installed', timeout: 40000 }, async () => {
     const fs = require('fs');
-    for (const [opts, envText, want] of [
-      [{ version: '0.0.2', images: null }, '', /names its images by tag only/],
-      [{ version: '0.0.2' }, 'IMAGE_OWNER=forkco\n', /this install pulls ghcr\.io\/forkco\/mdmesh-server \(IMAGE_OWNER=forkco in \.env\)/],
-      [{ version: '0.0.2', platforms: 'linux/s390x' }, '', /has no images for this host \(linux\/[a-z0-9]+\), only for linux\/s390x/],
+    for (const [opts, envText, want, code] of [
+      [{ version: '0.0.2', images: null }, '', /names its images by tag only/, 'digests'],
+      [{ version: '0.0.2' }, 'IMAGE_OWNER=forkco\n', /this install pulls ghcr\.io\/forkco\/mdmesh-server \(IMAGE_OWNER=forkco in \.env\)/, 'owner'],
+      [{ version: '0.0.2', platforms: 'linux/s390x' }, '', /has no images for this host \(linux\/[a-z0-9]+\), only for linux\/s390x/, 'platform'],
     ]) {
       const d = makeDeploy(envText + 'SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n');
       let gh = null, sup = null, authz = null;
@@ -1536,8 +1566,11 @@ t.test('a release without digests, under another owner or without images for thi
         a.equal(st.updateAvailable, false, 'not offered as an update');
         a.equal(st.latest, '0.0.2');
         a.match(st.blocked, want, 'the status says why');
-        a.match(sup.log(), /\[update\] not offered: /);
-        a.doesNotMatch(sup.log(), /\[auto\]/, 'auto-apply leaves it alone');
+        a.equal(st.blockedCode, code);
+        // The status is what auto-apply acts on: no apply started (not just no log line yet).
+        a.equal(st.apply, null, 'auto-apply leaves it alone');
+        await waitFor(async () => /\[update\] not offered: /.test(sup.log()), 'the not-offered log line');
+        a.doesNotMatch(sup.log(), /\[auto\]/, 'nor tries it');
         const r = await fetch(`http://127.0.0.1:${sup.port}/update/apply`, { method: 'POST', headers: ADMIN });
         a.equal(r.status, 400);
         a.match((await r.json()).error, want);
@@ -1546,6 +1579,31 @@ t.test('a release without digests, under another owner or without images for thi
         await stopChild(sup && sup.child); if (gh) await gh.close(); if (authz) await authz.close();
         fs.rmSync(d.dir, { recursive: true, force: true });
       }
+    }
+  });
+
+t.test('a blocked release becomes installable once IMAGE_OWNER matches: the next check offers it; logged once',
+  { skip: !HAS_MINISIGN && 'minisign not installed', timeout: 40000 }, async () => {
+    const fs = require('fs'), path = require('path');
+    const d = makeDeploy('IMAGE_OWNER=forkco\nSERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n');
+    let gh = null, sup = null, authz = null;
+    try {
+      gh = await fakeGitHub(d.dir, { version: '0.0.2' });
+      authz = await fakeAuthz();
+      sup = await spawnSupervisor(d.dir, { ...d.env, ...gh.env, APPLY_SUPPORTED: '1', SERVER_BASE: authz.base }, /supervisor on/, ['--require', gh.preload]);
+      const base = `http://127.0.0.1:${sup.port}`;
+      const st = await waitFor(async () => { const x = await (await fetch(`${base}/update/status`)).json(); return x.checkedAt && x; }, 'the startup poll');
+      a.equal(st.blockedCode, 'owner');
+      fs.writeFileSync(path.join(d.project, '.env'), 'IMAGE_OWNER=mdmesh-app\nSERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n');
+      await new Promise((res) => setTimeout(res, 15500));   // /update/check polls again only after 15 s
+      const after = await (await fetch(`${base}/update/check`, { method: 'POST', headers: ADMIN })).json();
+      a.equal(after.updateAvailable, true, 'offered now');
+      a.equal(after.blocked, null);
+      a.equal(after.blockedCode, null);
+      a.equal(sup.log().match(/\[update\] not offered: /g).length, 1);
+    } finally {
+      await stopChild(sup && sup.child); if (gh) await gh.close(); if (authz) await authz.close();
+      fs.rmSync(d.dir, { recursive: true, force: true });
     }
   });
 

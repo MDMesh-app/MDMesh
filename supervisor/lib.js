@@ -29,43 +29,54 @@ const RELEASE_VERSION = /^\d+\.\d+\.\d+$/;
 /** The security releases an update from `current` to the manifest's version skips over: the versions in the manifest's
  *  securityReleases (every release whose CHANGELOG.md section has a Security heading, release/build-manifest.sh) newer
  *  than `current` and older than the offered release, oldest first. The offered release itself is left out (its own
- *  notes already say "Security fixes"). Trusted only from a VERIFIED manifest; an unverified one, or one from release
- *  tooling before the field (0.4.x and older), gives []. */
-function missedSecurity(manifest, verified, current) {
+ *  notes already say "Security fixes"), unless `withLatest`: a release this install can't apply (updateBlocked) leaves
+ *  its own fixes missing too. Trusted only from a VERIFIED manifest; an unverified one, or one from release tooling
+ *  before the field (0.4.x and older), gives []. */
+function missedSecurity(manifest, verified, current, withLatest = false) {
   const latest = manifest && manifest.version;
   const list = manifest && manifest.securityReleases;
   if (!verified || !latest || !Array.isArray(list)) return [];
   const seen = new Set();
   return list
-    .filter((v) => typeof v === 'string' && RELEASE_VERSION.test(v) && semverGt(v, current) && semverGt(latest, v)
-      && !seen.has(v) && seen.add(v))
+    .filter((v) => typeof v === 'string' && RELEASE_VERSION.test(v) && semverGt(v, current)
+      && (semverGt(latest, v) || (withLatest && v === latest)) && !seen.has(v) && seen.add(v))
     .sort((a, b) => (semverGt(a, b) ? 1 : semverGt(b, a) ? -1 : 0));
 }
 
 /** Build the status object the console + recovery page read. Update only offered if VERIFIED, and not `blocked`
- *  (updateBlocked: why this install can't apply the newer release, which the console shows instead of an update). */
+ *  (updateBlocked's { code, reason }: why this install can't apply the newer release; the console shows that instead,
+ *  with the security fixes it leaves missing). */
 function shapeStatus({ current, manifest, verified, checkedAt, error, blocked }) {
   const latest = manifest && manifest.version;
   return {
     current,
     latest: latest || null,
     updateAvailable: !!(verified && latest && semverGt(latest, current) && !blocked),
-    blocked: blocked || null,
+    blocked: (blocked && blocked.reason) || null,
+    blockedCode: (blocked && blocked.code) || null,
     verified: !!verified,
     channel: (manifest && manifest.channel) || null,
     checkedAt: checkedAt || null,
     error: error || null,
-    missedSecurity: missedSecurity(manifest, verified, current),
+    missedSecurity: missedSecurity(manifest, verified, current, !!blocked),
   };
 }
 
-/** Why the newer verified release in `manifest` can't be applied by this supervisor (imagePins: no digests, another
- *  image owner, no images for this host's platform), or null: also null when there's nothing newer and verified, or
- *  on an install that doesn't apply updates itself (a native install builds from source: the images don't concern it). */
+/** Why the newer verified release in `manifest` can't be applied by this supervisor, as imagePins says it: { code,
+ *  reason }, code 'digests', 'owner' or 'platform'. Null when it can, when there's nothing newer and verified, or on an
+ *  install that doesn't apply updates itself (a native install builds from source: the images don't concern it). */
 function updateBlocked({ manifest, verified, current, imageOwner, platform, applySupported }) {
   if (!applySupported || !verified || !manifest || !parseSemver(manifest.version) || !parseSemver(current)) return null;
   if (!semverGt(manifest.version, current)) return null;
-  return imagePins(manifest, imageOwner, platform).error || null;
+  const p = imagePins(manifest, imageOwner, platform);
+  return p.error ? { code: p.code, reason: p.error } : null;
+}
+
+/** The supervisor's log line for a blocked release: once per reason, so a poll that finds the same one says nothing,
+ *  and a release blocked again after it was installable (or for another reason) says it again. */
+function blockedLogLine(lastReason, blocked) {
+  const reason = blocked ? blocked.reason : null;
+  return { line: reason && reason !== lastReason ? `[update] not offered: ${reason}` : null, lastReason: reason };
 }
 
 /** Why an Update must not start, or null if it may. `manifest` is the last VERIFIED manifest (null if none), `current`
@@ -101,7 +112,7 @@ function hostPlatform() {
 /** The images a verified manifest deploys, pinned by digest, for an install that pulls from ghcr.io/<imageOwner>
  *  (IMAGE_OWNER in .env; compose's default is mdmesh-app). The manifest's components.images holds, from 0.5.0 on,
  *  `ghcr.io/<owner>/mdmesh-<name>@sha256:…` for server, web and supervisor (release/build-manifest.sh). Returns
- *  { server, web, supervisor } (the three refs) or { error } saying why the release cannot be applied: a manifest
+ *  { server, web, supervisor } (the three refs) or { error, code } saying why (code: 'digests', 'owner', 'platform') the release cannot be applied: a manifest
  *  from release tooling without digests, a malformed ref, or images published under another owner than the one this
  *  install pulls from (a fork's install following upstream releases, or the reverse), or no images for `platform` (this
  *  host's: components.platforms, comma-separated; an older manifest without it is linux/amd64 only).
@@ -112,18 +123,20 @@ function imagePins(manifest, imageOwner, platform = hostPlatform()) {
   if (!im || typeof im !== 'object' || Array.isArray(im)) {
     return { error: `the signed release ${v} names its images by tag only, without digests (its release workflow predates `
       + 'digest pinning), so this supervisor will not apply it. Publish it with the current release workflow, or update by '
-      + 'hand (docs/UPGRADING.md)' };
+      + 'hand (docs/UPGRADING.md)', code: 'digests' };
   }
   const owner = imageOwner || 'mdmesh-app';
   const pins = {};
   for (const name of PINNED_IMAGES) {
     const m = DIGEST_REF.exec(typeof im[name] === 'string' ? im[name] : '');
-    if (!m) return { error: `the signed release ${v} has no valid digest for its ${name} image, so it cannot be applied` };
+    if (!m) {
+      return { error: `the signed release ${v} has no valid digest for its ${name} image, so it cannot be applied`, code: 'digests' };
+    }
     const want = `ghcr.io/${owner}/mdmesh-${name}`;
     if (m[1] !== want) {
       return { error: `the signed release ${v} pins its ${name} image at ${m[1]}, but this install pulls ${want} `
         + `(IMAGE_OWNER=${owner} in .env). Set GITHUB_REPO to the repository that publishes ${owner}'s images, or IMAGE_OWNER `
-        + 'to the owner this release names, then run docker compose up -d' };
+        + 'to the owner this release names, then run docker compose up -d', code: 'owner' };
     }
     pins[name] = im[name];
   }
@@ -131,7 +144,7 @@ function imagePins(manifest, imageOwner, platform = hostPlatform()) {
   if (typeof platforms !== 'string' || !platforms.split(',').includes(platform)) {
     const has = typeof platforms === 'string' && platforms ? platforms.split(',').join(', ') : 'no platform';
     return { error: `the signed release ${v} has no images for this host (${platform}), only for ${has}, `
-      + 'so it cannot be applied' };
+      + 'so it cannot be applied', code: 'platform' };
   }
   return pins;
 }
@@ -308,7 +321,7 @@ function legacyDeploymentAdmin(body) {
 }
 
 module.exports = {
-  parseSemver, semverGt, pickRelease, shapeStatus, updateBlocked, missedSecurity,
+  parseSemver, semverGt, pickRelease, shapeStatus, updateBlocked, blockedLogLine, missedSecurity,
   imageTags, imagePins, nextPhase, isTerminal, APPLY_PHASES, APPLY_TERMINAL,
   apkAsset, sha256Matches, recoveryPage, isPublishTemp, assetRequest, fetchAsset, envValue, applyLine, applyRefusal,
   deploymentAdminVerdict, legacyDeploymentAdmin,

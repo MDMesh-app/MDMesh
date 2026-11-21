@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import type { UpdateStatus } from '../api/updates';
 import {
+  blockedShort,
+  blockedText,
   joinVersions,
   missedSecurity,
   missedSecurityLink,
   missedSecurityShort,
   missedSecurityText,
+  unverifiedRelease,
   updatesNavMeta,
+  updateOffer,
+  upToDate,
 } from './updateStatus';
 
 const status = (over: Partial<UpdateStatus> = {}): UpdateStatus => ({
@@ -113,5 +118,51 @@ describe('updatesNavMeta (Settings section list)', () => {
     expect(updatesNavMeta(status({ apply: apply('pull') }))).toEqual({ meta: 'Updating', metaTone: 'warn' });
     expect(updatesNavMeta(status({ apply: apply('rolled_back') }))).toEqual({ meta: 'Failed', metaTone: 'alert' });
     expect(updatesNavMeta(status({ apply: apply('done') }))).toEqual({ meta: 'Security fixes', metaTone: 'warn' });
+  });
+});
+
+describe('a release this server can’t install (blocked)', () => {
+  const blocked = (over: Partial<UpdateStatus> = {}) =>
+    status({ updateAvailable: false, blocked: 'the signed release 0.1.15 has no images …', blockedCode: 'platform', ...over });
+  it('is still shown, with the security fixes it leaves missing (the release’s own included, from the supervisor)', () => {
+    expect(updateOffer(blocked({ missedSecurity: ['0.1.13', '0.1.15'] }))).toEqual({
+      kind: 'blocked', latest: '0.1.15', missed: ['0.1.13', '0.1.15'],
+    });
+    expect(updateOffer(blocked({ missedSecurity: [] }))).toEqual({ kind: 'blocked', latest: '0.1.15', missed: [] });
+    expect(missedSecurity(blocked())).toEqual(['0.1.13']);
+    expect(upToDate(blocked())).toBe(false);
+    expect(updateOffer(status())?.kind).toBe('ready');
+    expect(updateOffer(status({ updateAvailable: false }))).toBeNull();
+  });
+  it('says plainly when it leaves security fixes missing, and its cause otherwise', () => {
+    expect(blockedShort(blocked(), ['0.1.13', '0.1.15'])).toBe(
+      'This server is missing security fixes from 0.1.13 and 0.1.15, and can’t install them itself.',
+    );
+    expect(blockedShort(blocked(), [])).toBe('Its images don’t include this server’s platform.');
+    expect(blockedShort(blocked({ blockedCode: 'owner' }), [])).toBe('Its images are published under another owner.');
+    expect(blockedShort(blocked({ blockedCode: undefined }), [])).toBe('This server can’t install it itself.');
+    expect(missedSecurityText(['0.1.15'], '0.1.12', '0.1.15', true)).toBe(
+      '0.1.15 fixed security issues this server doesn’t have yet. It runs 0.1.12, and can’t install 0.1.15 itself (below).',
+    );
+  });
+  it('gives the next step for each cause, and the supervisor’s words for an unknown one', () => {
+    expect(blockedText(blocked())).toMatch(/^Its images don’t include this server’s platform\. This server keeps running 0\.1\.12\./);
+    expect(blockedText(blocked({ blockedCode: 'owner' }))).toMatch(/Set GITHUB_REPO or IMAGE_OWNER/);
+    expect(blockedText(blocked({ blockedCode: 'digests' }))).toMatch(/installed by hand/);
+    expect(blockedText(blocked({ blockedCode: null }))).toBe('The updater says: the signed release 0.1.15 has no images ….');
+  });
+  it('nav meta: amber with security fixes missing, quiet otherwise', () => {
+    expect(updatesNavMeta(blocked())).toEqual({ meta: 'Security fixes', metaTone: 'warn' });
+    expect(updatesNavMeta(blocked({ missedSecurity: [] }))).toEqual({ meta: 'Can’t install' });
+  });
+});
+
+describe('upToDate / unverifiedRelease', () => {
+  it('a newer release found unverified is not "the latest release"', () => {
+    const s = status({ updateAvailable: false, verified: false, missedSecurity: [] });
+    expect(unverifiedRelease(s)).toBe(true);
+    expect(upToDate(s)).toBe(false);
+    expect(upToDate(status({ updateAvailable: false, latest: '0.1.12', missedSecurity: [] }))).toBe(true);
+    expect(upToDate(null)).toBe(false);
   });
 });

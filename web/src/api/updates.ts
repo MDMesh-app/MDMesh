@@ -17,9 +17,10 @@ export interface UpdateStatus {
   current: string;
   latest: string | null;
   updateAvailable: boolean;
-  /** Why the newer verified release (`latest`) can't be installed by this updater, which then doesn't offer it: no
-   *  images for this server's platform, or images under another owner. Absent from a supervisor before 0.6.0. */
+  /** Why the newer verified release (`latest`) can't be installed by this updater, which then doesn't offer it, in
+   *  the supervisor's words; `blockedCode` names the cause. Absent from a supervisor before 0.6.0. */
   blocked?: string | null;
+  blockedCode?: 'platform' | 'owner' | 'digests' | null;
   verified: boolean;
   channel: string | null;
   checkedAt: number | null;
@@ -34,8 +35,8 @@ export interface UpdateStatus {
   applySupported?: boolean;
   /** The mirrored agent APK for the latest verified release (for device rollouts), or null. */
   apk: { version: string; versionCode: number; sha256: string; available: boolean } | null;
-  /** The security releases the offered update skips over (newer than `current`, older than `latest`), oldest first,
-   *  from the verified manifest's securityReleases. Empty when nothing is skipped or the manifest isn't verified;
+  /** The security releases the offered update skips over (newer than `current`, older than `latest`; `latest` too
+   *  when it is `blocked`), oldest first, from the verified manifest's securityReleases. Empty when nothing is skipped or the manifest isn't verified;
    *  absent from a supervisor before 0.5.0. */
   missedSecurity?: string[];
   /** Release notes / link / date for the picked release, or null when there's no release. */

@@ -62,3 +62,31 @@ describe('Overview Server card', () => {
     expect(screen.queryByText(LINE)).toBeNull();
   });
 });
+
+describe('a release this server can’t install (blocked)', () => {
+  const BLOCKED: UpdateStatus = { ...STATUS, updateAvailable: false, blocked: 'r', blockedCode: 'owner', missedSecurity: [] };
+  const SEC = 'This server is missing security fixes from 0.1.13 and 0.1.15, and can’t install them itself.';
+  it('sidebar: quiet with its cause, amber when security fixes are missing', async () => {
+    sidebar(BLOCKED);
+    const card = (await screen.findByText('Its images are published under another owner.')).closest('.v2-updcard') as HTMLElement;
+    expect(card.querySelector('.v2-updcard__title')?.textContent).toBe('0.1.15 can’t be installed');
+    expect(card.querySelector('.v2-updcard__dot.is-warn')).toBeNull();
+    vi.unstubAllGlobals();
+  });
+  it('sidebar: says which security fixes are missing, in amber', async () => {
+    sidebar({ ...BLOCKED, missedSecurity: ['0.1.13', '0.1.15'] });
+    const card = (await screen.findByText(SEC)).closest('.v2-updcard') as HTMLElement;
+    expect(card.querySelector('.v2-updcard__dot.is-warn')).toBeTruthy();
+  });
+  it('Overview: "can’t be installed here", quiet or amber the same way', () => {
+    stub(BLOCKED);
+    const { unmount } = renderInConsole(<ServerCard status={BLOCKED} />);
+    expect(screen.getByText('0.1.15 can’t be installed here')).toBeTruthy();
+    const line = screen.getByText('Its images are published under another owner.').closest('.v2-ov-srv__line') as HTMLElement;
+    expect(line.classList.contains('is-warn')).toBe(false);
+    expect(screen.queryByText(/Up to date/)).toBeNull();
+    unmount();
+    renderInConsole(<ServerCard status={{ ...BLOCKED, missedSecurity: ['0.1.13', '0.1.15'] }} />);
+    expect((screen.getByText(SEC).closest('.v2-ov-srv__line') as HTMLElement).classList.contains('is-warn')).toBe(true);
+  });
+});

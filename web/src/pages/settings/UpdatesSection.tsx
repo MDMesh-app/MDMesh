@@ -30,11 +30,14 @@ import type { Block, NotesSection } from '../../whatsnew/changelog';
 import { InlineText, NotesList } from '../../whatsnew/NotesView';
 import {
   applyPhaseLabel,
+  blockedText,
   lastCheckError,
-  missedSecurity,
   missedSecurityLink,
   missedSecurityText,
   safeReleaseUrl,
+  unverifiedRelease,
+  upToDate,
+  updateOffer,
 } from '../../data/updateStatus';
 
 /** Apply phases in order (supervisor APPLY_PHASES before `done`). */
@@ -248,7 +251,8 @@ export function UpdatesSection({
   const canApply = s?.applySupported !== false;
   const lastError = lastCheckError(s);
   const releaseUrl = safeReleaseUrl(s?.release?.url);
-  const missed = missedSecurity(s);
+  const offer = updateOffer(s);
+  const missed = offer?.missed ?? [];
   const missedLink = missedSecurityLink(missed, s?.release?.url);
 
   const header = (
@@ -403,7 +407,7 @@ export function UpdatesSection({
             ) : undefined
           }
         >
-          <p>{missedSecurityText(missed, s.current, s.latest)}</p>
+          <p>{missedSecurityText(missed, s.current, s.latest, offer?.kind === 'blocked')}</p>
         </Notice>
       ) : null}
 
@@ -494,16 +498,15 @@ export function UpdatesSection({
         </div>
       ) : null}
 
-      {/* A newer release this updater can't install: why, instead of an update or "the latest release". */}
-      {s && s.blocked && s.latest && !running ? (
+      {/* A newer release this updater can't install: why, and what to do, instead of an update or "the latest". */}
+      {s && offer?.kind === 'blocked' && !running ? (
         <Callout tone="warn" icon={<IconAlert />}>
-          MDMesh <span className="v2-num">{s.latest}</span> was found, but this server can&rsquo;t install it:{' '}
-          {s.blocked}.
+          MDMesh <span className="v2-num">{offer.latest}</span> can&rsquo;t be installed on this server. {blockedText(s)}
         </Callout>
       ) : null}
 
-      {/* Nothing to install. */}
-      {s && !s.updateAvailable && !s.blocked && !running ? (
+      {/* Nothing newer: not on offer, blocked, or found unverified. */}
+      {s && upToDate(s) && !running ? (
         <div className="v2-settings-uptodate">
           <span className="v2-settings-uptodate__icon" aria-hidden="true">
             <IconCheck size={12} />
@@ -514,7 +517,7 @@ export function UpdatesSection({
           </span>
         </div>
       ) : null}
-      {s && !s.updateAvailable && s.latest && !s.verified && s.latest !== s.current ? (
+      {s && unverifiedRelease(s) ? (
         <Callout tone="warn" icon={<IconAlert />}>
           MDMesh <span className="v2-num">{s.latest}</span> was found, but its signature couldn&rsquo;t be verified, so it
           won&rsquo;t be offered or installed.

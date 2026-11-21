@@ -1,9 +1,9 @@
 // The Overview's Server card: the running version, and an update on offer, running or failed.
 import type { ReactNode } from 'react';
 import { isApplyTerminal, type UpdateStatus } from '../../api/updates';
-import { applyPhaseLabel, lastCheckError, missedSecurity, missedSecurityShort } from '../../data/updateStatus';
+import { applyPhaseLabel, blockedShort, lastCheckError, missedSecurityShort, updateOffer } from '../../data/updateStatus';
 import { UPDATES_HREF } from '../../routes';
-import { ButtonAnchor, ButtonLink, Card, CardHeader, IconCheck, IconShield, RelativeTime, StatusDot } from '../../ui';
+import { ButtonAnchor, ButtonLink, Card, CardHeader, cx, IconCheck, IconShield, RelativeTime, StatusDot } from '../../ui';
 
 /**
  * The server's version, and an update as an inset callout with its action: "0.1.15 is available", its signature and
@@ -16,6 +16,7 @@ export function ServerCard({ status }: { status: UpdateStatus }) {
   const failed = !!apply && (apply.phase === 'failed' || apply.phase === 'rolled_back');
   const channel = status.channel ? ` · ${status.channel} channel` : '';
 
+  const offer = updateOffer(status);
   let panel: ReactNode = null;
   if (active && apply) {
     panel = (
@@ -41,12 +42,30 @@ export function ServerCard({ status }: { status: UpdateStatus }) {
         </ButtonAnchor>
       </div>
     );
-  } else if (status.updateAvailable && status.latest) {
-    // An update that skips security releases (verified manifest only) says so in amber, as the sidebar card does.
-    const missed = missedSecurity(status);
+  } else if (offer?.kind === 'blocked') {
+    // Found but not installable here (the sidebar's card says the same): amber only when it leaves security fixes missing.
     panel = (
       <div className="v2-ov-srv__panel">
-        <span className="v2-ov-srv__title">{status.latest} is available</span>
+        <span className="v2-ov-srv__title">{offer.latest} can&rsquo;t be installed here</span>
+        <span className={cx('v2-ov-srv__line v2-ov-srv__line--long', offer.missed.length > 0 && 'is-warn')}>
+          {offer.missed.length > 0 ? (
+            <span className="v2-ov-srv__icon" aria-hidden="true">
+              <IconShield size={14} />
+            </span>
+          ) : null}
+          <span>{blockedShort(status, offer.missed)}</span>
+        </span>
+        <ButtonLink size="sm" to={UPDATES_HREF}>
+          See why
+        </ButtonLink>
+      </div>
+    );
+  } else if (offer) {
+    // An update that skips security releases (verified manifest only) says so in amber, as the sidebar card does.
+    const missed = offer.missed;
+    panel = (
+      <div className="v2-ov-srv__panel">
+        <span className="v2-ov-srv__title">{offer.latest} is available</span>
         {missed.length > 0 ? (
           <span className="v2-ov-srv__line v2-ov-srv__line--long is-warn">
             <span className="v2-ov-srv__icon" aria-hidden="true">

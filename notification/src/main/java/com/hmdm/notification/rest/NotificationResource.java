@@ -26,6 +26,7 @@ import javax.inject.Singleton;
 import com.hmdm.notification.persistence.NotificationDAO;
 import com.hmdm.notification.persistence.domain.PushMessage;
 import com.hmdm.notification.rest.json.PlainPushMessage;
+import com.hmdm.persistence.LegacyDevice;
 import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.Device;
 import com.hmdm.rest.json.Response;
@@ -88,11 +89,8 @@ public class NotificationResource {
                                                 String deviceNumber) {
         log.debug("#getPushMessages: deviceNumber = {}", deviceNumber);
         try {
-            Device dbDevice = this.unsecureDAO.getDeviceByNumber(deviceNumber);
-            if (dbDevice == null) {
-                dbDevice = this.unsecureDAO.getDeviceByOldNumber(deviceNumber);
-            }
-            if (dbDevice != null) {
+            LegacyDevice found = this.unsecureDAO.findLegacyDevice(deviceNumber, LegacyDevice.Lookup.OLD_NUMBER);
+            if (found.isServed()) {
                 List<PushMessage> messages = this.notificationDAO.getPendingMessagesForDelivery(deviceNumber);
                 log.info("Delivering push-messages to device '{}': {}", deviceNumber, messages);
 
@@ -100,7 +98,7 @@ public class NotificationResource {
                         = messages.stream().map(PlainPushMessage::new).collect(Collectors.toList());
                 return Response.OK(messagesToDeliver);
             } else {
-                return Response.DEVICE_NOT_FOUND_ERROR();
+                return found.refusal();
             }
         } catch (Exception e) {
             log.error("Unexpected error when querying for pending messages for device: {}", deviceNumber, e);

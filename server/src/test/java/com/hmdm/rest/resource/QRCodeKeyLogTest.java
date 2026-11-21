@@ -89,7 +89,7 @@ public class QRCodeKeyLogTest {
         return new UnsecureDAO(null, null, null, null, null, null, null, null, null, null, null, null, null, null,
                 "/nonexistent-mdmesh-test-files", 2, "com.hmdm.launcher") {
             @Override
-            public Configuration getConfigurationByQRCodeKey(String id) {
+            public Configuration getLegacyConfigurationByQRCodeKey(String id) {
                 if (BROKEN.equals(id)) {
                     throw new IllegalStateException("lookup failed for key " + CryptoUtil.logFingerprint(id));
                 }

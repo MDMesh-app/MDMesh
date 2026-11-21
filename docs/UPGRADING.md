@@ -254,6 +254,17 @@ exited or credentials cleared while the older agent ran.
   rollback, and prune the old logs. The access logs of Tomcat and of a reverse proxy also record the enrollment QR's
   key, which is part of its URL (`/rest/public/qr/<key>`) and fetches the QR with the Wi-Fi password in it: prune
   those too.
+- **With `LEGACY_DEVICE_API=1`, keep Headwind launcher devices and MDMesh agent devices in separate
+  configurations.** The launcher's routes no longer serve a configuration that an agent device uses, or that an
+  agent enrollment code can still enroll devices into, nor create launcher devices in it: the launcher gets the error
+  `error.configuration.agent.managed`, and the server log says which configuration. A code enrolls into the
+  configuration it names or, if it names none, into the default configuration for new devices (**Settings**), which
+  then counts too. A configuration named by its QR code key counts the same way, and the server no longer makes its
+  Headwind QR code. The routes answer requests for an agent device with the launcher's device-not-found error. To fix
+  a launcher device that gets the error, move it to a configuration no agent device or enrollment code uses. With
+  `LEGACY_DEVICE_API` off (the default), nothing changes.
+- With `LEGACY_DEVICE_API=1`, the launcher's sync now works for a configuration without a kiosk exit PIN. Before, it
+  failed with a server error.
 - **CVE-2026-114938 (OpenJDK).** The Base64 code of JDK 17.0.6 to 17.0.21 is affected on x86_64 CPUs with AVX-512.
   0.5.1 runs the server with `-XX:-UseBASE64Intrinsics`, which turns that code off. To protect a server before you
   update:

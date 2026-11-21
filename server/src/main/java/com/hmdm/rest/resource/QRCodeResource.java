@@ -139,7 +139,7 @@ public class QRCodeResource {
         // Never the key itself: it fetches the QR, which holds the Wi-Fi password
         logger.info("Generating JSON for configuration key {}", CryptoUtil.logFingerprint(id));
         try {
-            Configuration configuration = this.unsecureDAO.getConfigurationByQRCodeKey(id);
+            Configuration configuration = this.unsecureDAO.getLegacyConfigurationByQRCodeKey(id);
             if (configuration != null) {
                 String miscExtrasEntry = "";
                 if (configuration.getAdminExtras() != null) {
@@ -196,7 +196,7 @@ public class QRCodeResource {
                                                     @Context HttpServletRequest req) {
         logger.info("Generating QR-code image for configuration key {}", CryptoUtil.logFingerprint(id));
         try {
-            Configuration configuration = this.unsecureDAO.getConfigurationByQRCodeKey(id);
+            Configuration configuration = this.unsecureDAO.getLegacyConfigurationByQRCodeKey(id);
             if (configuration != null) {
                 Integer mainAppId = configuration.getMainAppId();
                 if (mainAppId != null) {

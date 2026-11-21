@@ -201,6 +201,42 @@ exited or credentials cleared while the older agent ran.
 
 ## Version notes
 
+### v0.5.1
+
+- **CVE-2026-114938 (OpenJDK).** The Base64 code of JDK 17.0.6 to 17.0.21 is affected on x86_64 CPUs with AVX-512.
+  0.5.1 runs the server with `-XX:-UseBASE64Intrinsics`, which turns that code off. To protect a server before you
+  update:
+  - **Docker (quick start and from source):** add `SERVER_JAVA_OPTS=-XX:-UseBASE64Intrinsics` to `.env` (if the line
+    is already there, add the flag to its value, quoted), then run `docker compose up -d server` to recreate the
+    container. A quick-start install made before v0.3.2 also needs the `JAVA_OPTS` line in its compose file
+    ([OPERATIONS](OPERATIONS.md#temporary-debug-log)).
+  - **Native:** `sudo ./setup.sh --update --native`. It sets the flag, and upgrades a JDK 17 from your distribution's
+    packages when apt has a newer one. Until you can update, add the flag in a drop-in, then restart. If you already
+    set `JAVA_OPTS` there, add the flag to that line, and quote the whole setting when it holds several flags
+    (unquoted, systemd keeps only the first):
+
+    ```bash
+    sudo systemctl edit mdmesh-server
+    # in the editor, under [Service]:
+    #   Environment="JAVA_OPTS=-XX:-UseBASE64Intrinsics"
+    # or, with flags you already had:
+    #   Environment="JAVA_OPTS=-Xmx1g -XX:-UseBASE64Intrinsics"
+    sudo systemctl restart mdmesh-server
+    ```
+
+  On Docker, going back to a release before 0.5.1 (`--allow-downgrade`, or a rollback) drops the flag again, so keep
+  the `.env` line if you might.
+
+  To check a running server, look for `= false` and `{command line}`:
+
+  ```bash
+  # Docker, in the install directory (before v0.2.7 the server ran as root: leave out -u mdmesh)
+  docker compose exec -u mdmesh server jcmd org.apache.catalina.startup.Bootstrap VM.flags -all | grep UseBASE64Intrinsics
+  # Native, as root (or with sudo -u mdmesh in place of runuser -u mdmesh --)
+  runuser -u mdmesh -- "$(systemctl show -p Environment --value mdmesh-server | tr ' ' '\n' | sed -n 's/^JAVA_HOME=//p')/bin/jcmd" \
+    org.apache.catalina.startup.Bootstrap VM.flags -all | grep UseBASE64Intrinsics
+  ```
+
 ### v0.5.0
 
 - **Quick start: update the supervisor before you apply 0.5.0.** In the install directory, run

@@ -304,6 +304,15 @@ cmd_port() {
   if [ -n "$port" ] && ss -ltn 2>/dev/null | awk '{print $4}' | grep -qE ":$port\$"; then echo "$port listening"; else echo "${port:-none} not-listening"; fi
 }
 
+# The server JVM's UseBASE64Intrinsics, as jcmd reads it from the live process as the service user: its value and where
+# it came from ("false {command line}" once the installer sets -XX:-UseBASE64Intrinsics).
+cmd_base64_flag() {
+  local jh
+  jh=$(systemctl show -p Environment --value mdmesh-server 2>/dev/null | tr ' ' '\n' | sed -n 's/^JAVA_HOME=//p')
+  (cd / && runuser -u mdmesh -- "$jh/bin/jcmd" org.apache.catalina.startup.Bootstrap VM.flags -all 2>/dev/null) \
+    | sed -nE 's/^[[:space:]]*bool[[:space:]]+UseBASE64Intrinsics[[:space:]]+= ([a-z]+)[[:space:]].*(\{[^}]*\})[[:space:]]*$/\1 \2/p'
+}
+
 cmd_initialized() { cat "$BASE_DIR/initialized.txt" 2>/dev/null || echo "(no $BASE_DIR/initialized.txt)"; }
 
 cmd_units() {
@@ -341,7 +350,7 @@ cmd_collect() {
 
 cmd=${1:?usage: guest.sh <subcommand> ...}; shift
 case "$cmd" in
-  clone|checkout|install|update-release|update|admin-temp-password|secrets|settings|set-token|set-proxy|counts|deployed|port|initialized|units|state|collect) "cmd_${cmd//-/_}" "$@" ;;
+  clone|checkout|install|update-release|update|admin-temp-password|secrets|settings|set-token|set-proxy|counts|deployed|port|base64-flag|initialized|units|state|collect) "cmd_${cmd//-/_}" "$@" ;;
   kill-points) cmd_kill_points ;;
   *) echo "unknown subcommand: $cmd" >&2; exit 2 ;;
 esac

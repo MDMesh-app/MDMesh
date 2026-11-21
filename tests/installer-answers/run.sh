@@ -697,6 +697,19 @@ chmod 755 "$WORK/src7/site.d"; setup_run "$WORK/src7"
 grep -qxF "MDMESH_SITE_DIR=$WORK/src7/site.d" "$WORK/src7/.env" || { fail "setup.sh does not connect site.d once it is private"; show; }
 ok
 
+# install/lib/modes.sh: the proxy overlay is found in COMPOSE_FILE as the installers write it and as a hand edit might
+# (./ or a path); a release before 0.6.0 can't run the proxy mode (setup.sh --update and the quick start refuse it).
+RC=0; out=$(env -i bash -c '. "$1"; r=""
+  for l in docker-compose.yml:docker-compose.proxy.yml docker-compose.yml:./docker-compose.proxy.yml /srv/m/docker-compose.proxy.yml; do
+    mdm_compose_has_proxy "$l" || r="$r has:$l"; done
+  for l in docker-compose.yml:docker-compose.domain.yml docker-compose.proxy.yml.bak "" docker-compose.yml:my-docker-compose.proxy.yml.d; do
+    ! mdm_compose_has_proxy "$l" || r="$r not:$l"; done
+  for v in 0.5.9 v0.5.1 0.0.1; do [ -n "$(mdm_proxy_version_problem "$v")" ] || r="$r old:$v"; done
+  for v in 0.6.0 v0.6.1 1.0.0 9.1.0 latest ""; do [ -z "$(mdm_proxy_version_problem "$v")" ] || r="$r new:$v"; done
+  echo "r=$r"' _ "$REPO/install/lib/modes.sh" 2>&1) || RC=$?
+[ "$out" = "r=" ] || fail "modes.sh: mdm_compose_has_proxy or mdm_proxy_version_problem got these wrong: $out"
+ok
+
 # Moved out of the proxy mode with TRUSTED_PROXIES="host" left in .env: a re-run says to clear it, and goes on.
 rm -rf -- "$WORK/src7"; mkdir -p "$WORK/src7/install"; cp -- "$REPO/setup.sh" "$WORK/src7/"; cp -R -- "$REPO/install/lib" "$WORK/src7/install/"
 printf '%s\n' DB_PASSWORD=x HASH_SECRET=y BASE_URL=https://mdm.example.com SITE_ADDRESS=mdm.example.com 'TRUSTED_PROXIES="host"' \
@@ -722,8 +735,17 @@ for inst in quickstart.sh setup.sh; do
   dry "$inst" MDMESH_MODE=domain MDMESH_HOST=mdm.example.com MDMESH_ORIGIN_TLS=1
   { [ "$RC" = 0 ] && grep -qF 'MDMESH_ORIGIN_TLS is not used in domain mode' "$WORK/out/e"; } \
     || { fail "$inst: MDMESH_ORIGIN_TLS=1 in domain mode is not reported unused"; show; }
+  dry "$inst" MDMESH_MODE=domain MDMESH_HOST=mdm.example.com MDMESH_ORIGIN_TLS=0
+  { [ "$RC" = 0 ] && ! grep -qF 'MDMESH_ORIGIN_TLS is not used' "$WORK/out/e"; } \
+    || { fail "$inst: MDMESH_ORIGIN_TLS=0 (the default) is reported unused"; show; }
   ok
 done
+# A setup.sh re-run reuses .env and doesn't check answers it won't use: proxy answers that would be refused for a new
+# .env (host off loopback) don't stop it.
+SETUP_ARGS=(); setup_run "$WORK/src6" MDMESH_MODE=proxy MDMESH_BIND=0.0.0.0:8080
+{ [ "$(up_args)" = '-f docker-compose.yml -f docker-compose.proxy.yml' ] && grep -qF 'answers are not used' "$WORK/out/o" "$WORK/out/e"; } \
+  || { fail "a setup.sh re-run is stopped by answers it doesn't use"; show; }
+ok
 # A release before 0.6.0 named in advance has no proxy mode: refused at once, dry run included.
 dry quickstart.sh MDMESH_MODE=proxy MDMESH_HOST=mdm.example.com MDMESH_VERSION=0.5.1
 { [ "$RC" != 0 ] && grep -qF 'behind your own proxy came in 0.6.0' "$WORK/out/e"; } || { fail "proxy mode with MDMESH_VERSION=0.5.1 is not refused"; show; }

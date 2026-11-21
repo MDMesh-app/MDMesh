@@ -258,6 +258,7 @@ update_to_release() {
   if [ "$dry" = 1 ]; then
     if [ "$cur" = "$tgt" ]; then say "Dry run (MDMESH_DRY_RUN=1): this clone is already on ${tag}, which verifies. A run would run its ./setup.sh ${PASS_ARGS[*]}"
     else
+      update_mode_check "$tag"
       [ "$have" = 0 ] || update_downgrade_check "$cur" "$tgt" "$tag"
       say "Dry run (MDMESH_DRY_RUN=1): ${tag} verifies. A run would fetch it, check it out and run its ./setup.sh ${PASS_ARGS[*]}"
       [ "$have" = 1 ] || echo "(Whether that goes back from this checkout is checked once the tag is fetched.)"
@@ -268,9 +269,20 @@ update_to_release() {
   git fetch -q --no-tags origin "refs/tags/${tag}:refs/tags/${tag}" \
     || _upd_stop "Could not fetch ${tag} from origin (above). If this clone has a different ${tag}, remove it (git tag -d ${tag}) and re-run."
   [ "$(git rev-parse --verify -q "${tag}^{commit}")" = "$tgt" ] || _upd_stop "${tag} in this clone is not the commit origin and the signed manifest name."
+  update_mode_check "$tag"
   update_downgrade_check "$cur" "$tgt" "$tag"
   git -c advice.detachedHead=false checkout -q --detach "$tgt" || _upd_stop "git checkout ${tag} failed (above)."
   say "Checked out ${tag} (signed release, verified)."
+}
+# update_mode_check TAG: an install behind your own proxy never goes to a release before 0.6.0, --allow-downgrade or
+# not: that release's setup.sh would read the .env as your own domain, and its edge doesn't know the mode.
+update_mode_check() {
+  local files why
+  [ -r .env ] || return 0
+  files=$(sed -n 's/^COMPOSE_FILE=//p' .env | head -1 | tr -d "\"'")
+  mdm_compose_has_proxy "$files" || return 0
+  why=$(mdm_proxy_version_problem "$1")
+  [ -z "$why" ] || _upd_stop "This install runs behind your own proxy, which $1 can't run ($why), also with --allow-downgrade. Move it back to its earlier hosting mode first (docs/UPGRADING.md, Changing the hosting mode)."
 }
 # update_downgrade_check CUR TGT TAG: stop when CUR has commits TAG doesn't and is not on an older release (main ahead
 # of the release, a commit on top of it, a newer local tag), and this clone runs an install: checking out TAG would run
@@ -318,13 +330,14 @@ mdm_answer tunnel-token TUNNEL_TOKEN tunnel-token MDMESH_TUNNEL_TOKEN
 mdm_answer acme-email ACME_EMAIL email MDMESH_ACME_EMAIL
 mdm_answer bind PROXY_BIND bind MDMESH_BIND
 mdm_answer trusted-proxies PROXY_TRUSTED proxies MDMESH_TRUSTED_PROXIES
-mdm_mode_check_answers
 REUSE_ENV=0
 if [ -f .env ] && [ "$RESET" != 1 ]; then REUSE_ENV=1; fi
 if [ "$REUSE_ENV" = 1 ] && mdm_any_answered; then
   warn "The MDMESH_* answers are not used: an .env exists here, and a re-run reuses it (--reset starts over)."
 fi
 if [ "$REUSE_ENV" = 0 ]; then
+  # The rules that span the answers, only for a new .env: a re-run doesn't use them.
+  mdm_mode_check_answers
   mdm_need mode; mdm_need host
   if mdm_given mode && [ "$MODE" = 1 ]; then mdm_need tunnel-token; fi
 fi

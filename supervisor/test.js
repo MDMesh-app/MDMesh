@@ -951,6 +951,15 @@ t.test('behind your own proxy, apply.sh and rollback.sh refuse a release before 
     // Its own mode allows 0.6.1, and the same .env without the overlay allows 0.5.9.
     a.equal(runScript('apply.sh', applyArgs('0.6.1'), d.env).code, 0);
   } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+  // The overlay named as a hand edit might (./, or a path ending in it) counts the same.
+  for (const cf of ['docker-compose.yml:./docker-compose.proxy.yml', '/srv/mdmesh/docker-compose.yml:/srv/mdmesh/docker-compose.proxy.yml']) {
+    d = makeDeploy(`SERVER_VERSION=0.6.0\nWEB_VERSION=0.6.0\nCURRENT_VERSION=0.6.0\nCOMPOSE_FILE=${cf}\n`);
+    try {
+      const r = runScript('apply.sh', applyArgs('0.5.9'), d.env);
+      a.notEqual(r.code, 0, cf + ': ' + r.all);
+      a.match(r.all, /^ERR this install runs behind your own proxy/m);
+    } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+  }
   d = makeDeploy('SERVER_VERSION=0.6.0\nWEB_VERSION=0.6.0\nCURRENT_VERSION=0.6.0\nCOMPOSE_FILE=docker-compose.yml:docker-compose.domain.yml\n');
   try {
     a.equal(runScript('apply.sh', applyArgs('0.5.9'), d.env).code, 0, 'another mode is not held back');

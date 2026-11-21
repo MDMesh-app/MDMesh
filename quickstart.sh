@@ -613,7 +613,7 @@ mdm_mode_check_answers() {
   done <<EOF
 $_MDM_MODE_ANSWERS
 EOF
-  if [ "$MODE" != 3 ] && [ -n "${MDMESH_ORIGIN_TLS-}" ]; then
+  if [ "$MODE" != 3 ] && [ "${MDMESH_ORIGIN_TLS:-0}" = 1 ]; then
     printf 'MDMesh installer: MDMESH_ORIGIN_TLS is not used in %s mode: ignoring it.\n' "$(mdm_mode_name "$MODE")" >&2
   fi
   if [ "$MODE" = 3 ] && mdm_given bind; then
@@ -721,8 +721,23 @@ EOF
 # when COMPOSE_FILE lists docker-compose.proxy.yml, else domain.
 mdm_mode_of_env() {
   case ",$(printf '%s' "${COMPOSE_PROFILES:-}" | tr -d ' ')," in *,cloudflare,*) echo 1; return ;; esac
-  case ":${COMPOSE_FILE:-}:" in *:docker-compose.proxy.yml:*) echo 3; return ;; esac
+  if mdm_compose_has_proxy "${COMPOSE_FILE:-}"; then echo 3; return; fi
   echo 2
+}
+
+# mdm_compose_has_proxy LIST: the COMPOSE_FILE list LIST names docker-compose.proxy.yml (as the installers write it, or
+# ./docker-compose.proxy.yml or a path ending in it, as a hand edit might).
+mdm_compose_has_proxy() {
+  case ":$1:" in *:docker-compose.proxy.yml:*|*/docker-compose.proxy.yml:*) return 0 ;; esac
+  return 1
+}
+
+# mdm_proxy_version_problem VERSION: prints why an install behind your own proxy can't run release VERSION (X.Y.Z, a
+# leading v allowed): the mode came in 0.6.0, and an older release's edge and setup.sh don't know it. Nothing when it can.
+mdm_proxy_version_problem() {
+  if [[ "${1#v}" =~ ^0\.([0-9]+)\. ]] && [ "$((10#${BASH_REMATCH[1]}))" -lt 6 ]; then
+    echo "behind your own proxy came in 0.6.0, and ${1#v}'s edge doesn't know it"
+  fi
 }
 
 # mdm_mode_settings NUMBER [rerun]: the mode's settings, from HOST (and, behind your proxy, PROXY_BIND and ORIGIN_TLS):
@@ -912,7 +927,7 @@ mdm_answer bind PROXY_BIND bind MDMESH_BIND
 mdm_answer trusted-proxies PROXY_TRUSTED proxies MDMESH_TRUSTED_PROXIES
 mdm_mode_check_answers
 # Behind your own proxy needs a release from 0.6.0 on: one named in advance is refused now, before anything happens.
-if mdm_given mode && [ "$MODE" = 3 ] && [[ "${MDMESH_VERSION:-}" =~ ^v?0\.([0-9]+)\. ]] && [ "$((10#${BASH_REMATCH[1]}))" -lt 6 ]; then
+if mdm_given mode && [ "$MODE" = 3 ] && [ -n "$(mdm_proxy_version_problem "${MDMESH_VERSION:-}")" ]; then
   _mdm_answer_fail "MDMESH_VERSION=${MDMESH_VERSION}: behind your own proxy came in 0.6.0, so install 0.6.0 or later, or pick another mode."
 fi
 mdm_need mode; mdm_need host

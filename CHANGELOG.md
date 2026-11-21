@@ -13,6 +13,11 @@ Upgrading
 - Existing installs keep their mode and settings. To move one behind your own proxy, see
   [UPGRADING, Changing the hosting mode](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#changing-the-hosting-mode).
 
+Heads-up
+- The edge sends HSTS for a request that came in over HTTP only when a trusted peer says `X-Forwarded-Proto: https`
+  (Cloudflare Tunnel, or a proxy in `TRUSTED_PROXIES`). A proxy of your own in front of port 80 without
+  `TRUSTED_PROXIES` no longer gets HSTS added: list it in `TRUSTED_PROXIES`, or use the new proxy mode.
+
 New
 - Install behind the nginx, Apache, Caddy or Traefik you already run: the quick start's third choice (or `--proxy`),
   with ready configurations for each. Thanks @lared3294, @detobel36.

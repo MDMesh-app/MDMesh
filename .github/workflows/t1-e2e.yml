@@ -9,6 +9,10 @@
 # docker/server.Dockerfile and its own entrypoint configures it; scripts/dev-seed.sh seeds the database
 # through the installers' install/lib/db.sh and sets the admin password through the real first-login
 # reset; then the suite runs against the server's published API port.
+#
+# A second job, lifecycle-e2e, runs the install lifecycle suites (tests/proxy-e2e, tests/rollback-e2e) when the
+# installers, the edge, the updater or the compose files change. They build the images and run in docker:dind, so they
+# take longer (up to about an hour) and are not part of the 10-minute target.
 name: t1-e2e
 
 on:
@@ -41,6 +45,9 @@ jobs:
           # docker/server.Dockerfile (.github/** and docker-compose* fail closed anyway).
           filters: |
             e2e: pom.xml, common/**, jwt/**, notification/**, plugins/**, server/**, proto/**, install/**, docker/entrypoint.sh, docker/server.Dockerfile, .dockerignore, docker-compose.yml, docker-compose.dev.yml, docker/dev.env, scripts/dev-seed.sh, scripts/agent-v1-e2e.sh, scripts/server-jvm-check.sh
+            # The install lifecycle in docker:dind (tests/proxy-e2e, tests/rollback-e2e): the installers, the edge, the
+            # updater, the compose files and the ready proxy configurations, and the tests themselves.
+            lifecycle: quickstart.sh, setup.sh, install/**, docker/**, docker-compose*.yml, supervisor/**, docs/proxies/**, tests/proxy-e2e/**, tests/rollback-e2e/**, .dockerignore
 
   agent-e2e:
     name: agent-e2e
@@ -114,10 +121,69 @@ jobs:
           docker compose --env-file docker/dev.env down -v --remove-orphans || true
           [ -z "$img" ] || docker rmi "$img" >/dev/null 2>&1 || true
 
+  # The install lifecycle end to end, each suite in its own privileged docker:dind with a registry that answers as
+  # ghcr.io (nothing reaches the runner's own stacks). Images are built from this checkout (and, for rollback-e2e, from
+  # origin/main), tagged per run so concurrent runs on a shared daemon (vars.CI_RUNNER) never use each other's.
+  #   proxy-e2e     behind your own proxy: docs/proxies' nginx, Apache, Caddy and Traefik in front; sign-in, client
+  #                 address, wake socket, uploads, the HTTPS origin; update and Roll back keep the mode.
+  #   rollback-e2e  updates and rollbacks across a schema change: from v0.4.0 (its published images), from origin/main,
+  #                 and the by-hand restores the docs give.
+  lifecycle-e2e:
+    name: ${{ matrix.suite }}
+    needs: paths
+    if: needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).lifecycle
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [proxy-e2e, rollback-e2e]
+    env:
+      E2E_NEW_TAG: ci-${{ github.run_id }}-${{ github.run_attempt }}
+      E2E_OLD_TAG: ci-main-${{ github.run_id }}-${{ github.run_attempt }}
+      E2E_PREFIX: ${{ matrix.suite == 'proxy-e2e' && 'px' || 'rr' }}-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0   # rollback-e2e reads v0.4.0's files (git archive) and builds origin/main
+      - name: Build this checkout's images
+        run: |
+          for n in server web supervisor; do
+            docker build -q -f "docker/$n.Dockerfile" -t "ghcr.io/local/mdmesh-$n:$E2E_NEW_TAG" .
+          done
+      - name: Build origin/main's images (rollback-e2e's older release)
+        if: matrix.suite == 'rollback-e2e'
+        run: |
+          git fetch -q --tags origin main
+          git worktree add -q "$RUNNER_TEMP/main" origin/main
+          for n in server web supervisor; do
+            docker build -q -f "$RUNNER_TEMP/main/docker/$n.Dockerfile" -t "ghcr.io/local/mdmesh-$n:$E2E_OLD_TAG" "$RUNNER_TEMP/main"
+          done
+      - name: Pull the images the suite loads into its docker:dind
+        run: |
+          caddy=$(awk 'tolower($1) == "from" && $2 ~ /^caddy[:@]/ { print $2; exit }' docker/web.Dockerfile)
+          if [ "${{ matrix.suite }}" = proxy-e2e ]; then
+            imgs="postgres:14 nginx:1.26-alpine httpd:2.4-alpine $caddy"
+          else
+            imgs="postgres:14 postgres:16 ghcr.io/mdmesh-app/mdmesh-server:0.4.0 ghcr.io/mdmesh-app/mdmesh-web:0.4.0 ghcr.io/mdmesh-app/mdmesh-supervisor:0.4.0"
+          fi
+          for i in $imgs; do docker pull -q "$i"; done
+      - name: Run tests/${{ matrix.suite }}
+        env:
+          E2E_DATA_DIR: ${{ runner.temp }}/e2e-data
+        run: tests/${{ matrix.suite }}/run.sh
+      - name: Remove this run's images
+        # By tag only (never by id: an identical build can share its id with another tag).
+        if: always()
+        run: |
+          for n in server web supervisor; do
+            docker rmi "ghcr.io/local/mdmesh-$n:$E2E_NEW_TAG" "ghcr.io/local/mdmesh-$n:$E2E_OLD_TAG" >/dev/null 2>&1 || true
+          done
+
   # A red T1 on main means main is broken for real devices: open/update one tracking issue.
   # PR failures are already visible on the PR, so they do not file issues.
   report:
-    needs: agent-e2e
+    needs: [agent-e2e, lifecycle-e2e]
     if: failure() && github.event_name == 'push'
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 5

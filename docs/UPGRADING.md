@@ -122,17 +122,23 @@ devices and secrets stay as they are.
 know the mode):
 
 1. Have `docker-compose.proxy.yml` in the install directory. A clone has it. A quick start set up with 0.6.0 or later
-   has it too; an older one fetches it from the release it runs (`CURRENT_VERSION` in `.env`) and checks it against
-   that release's signed manifest:
+   has it too. An older one fetches it from the release it runs (`CURRENT_VERSION` in `.env`), checked against that
+   release's signed manifest. The supervisor does the work, with the `minisign` and release key it already has, so the
+   host needs neither `minisign` nor OpenSSL 3; the file lands in the install directory only once it checks out. From
+   the install directory:
 
    ```bash
-   V=0.6.0   # CURRENT_VERSION in .env
-   R=https://github.com/MDMesh-app/MDMesh/releases/download/v$V
-   curl -fsSLO "https://raw.githubusercontent.com/MDMesh-app/MDMesh/v$V/docker-compose.proxy.yml" &&
-     curl -fsSLO "$R/manifest.json" && curl -fsSLO "$R/manifest.json.minisig" &&
-     minisign -V -m manifest.json -P RWQbf0pIhddaWnDsFknIG4X325wHR05pUxEQJmuuQRdBlQm3zi8/Eqcd &&
-     grep -qF "\"docker-compose.proxy.yml\": \"$(sha256sum docker-compose.proxy.yml | cut -d' ' -f1)\"" manifest.json &&
-     echo "docker-compose.proxy.yml verified"
+   docker compose exec -T supervisor sh -euc '
+     V=$(sed -n "s/^CURRENT_VERSION=//p" /project/.env); G=$(sed -n "s/^GITHUB_REPO=//p" /project/.env)
+     G=${G:-MDMesh-app/MDMesh}; R=https://github.com/$G/releases/download/v$V; T=$(mktemp -d); cd "$T"
+     curl -fsSL -o manifest.json "$R/manifest.json"; curl -fsSL -o manifest.json.minisig "$R/manifest.json.minisig"
+     minisign -Vq -m manifest.json -p /app/minisign.pub
+     grep -qF "\"version\": \"$V\"" manifest.json
+     curl -fsSL -o proxy.yml "https://raw.githubusercontent.com/$G/v$V/docker-compose.proxy.yml"
+     grep -qF "\"docker-compose.proxy.yml\": \"$(sha256sum proxy.yml | cut -d" " -f1)\"" manifest.json
+     cat proxy.yml' > docker-compose.proxy.yml.new &&
+     mv docker-compose.proxy.yml.new docker-compose.proxy.yml && echo "docker-compose.proxy.yml verified" ||
+     { rm -f docker-compose.proxy.yml.new; echo "not verified: nothing changed" >&2; }
    ```
 
 2. In `.env`, set (and leave `TUNNEL_TOKEN` and `ACME_EMAIL` as they are; this mode doesn't read them):

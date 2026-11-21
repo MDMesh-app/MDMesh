@@ -78,6 +78,8 @@ public class ResourceInjectionTest {
                 bind(UploadedFileDAO.class).toInstance(new UploadedFileDAO(null, null, null, "unused"));
                 bind(APKFileAnalyzer.class).toInstance(new APKFileAnalyzer("aapt"));
                 bind(MailchimpService.class).toInstance(new MailchimpService("https://mdm.example", "", ""));
+                bind(com.hmdm.security.LoginThrottle.class).toInstance(new com.hmdm.security.LoginThrottle("", false,
+                        "0123456789abcdef0123456789abcdef0123456789abcdef", ""));
                 // AgentResource's collaborators: never called here, only injected.
                 bind(AgentEnrollmentTokenDAO.class).toInstance(new AgentEnrollmentTokenDAO(null));
                 bind(AgentCommandDAO.class).toInstance(new AgentCommandDAO(null, null, null, null));

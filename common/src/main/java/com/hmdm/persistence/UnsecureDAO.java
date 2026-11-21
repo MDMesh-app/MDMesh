@@ -684,10 +684,11 @@ public class UnsecureDAO {
         if (createOptions.getConfiguration() != null) {
             Configuration configuration = configurationMapper.getConfigurationByQRCodeKey(createOptions.getConfiguration());
             if (configuration == null) {
-                logger.warn("Failed to get a configuration by key " + createOptions.getConfiguration() + ", device not created");
+                logger.warn("Failed to get a configuration by key {}, device not created",
+                        CryptoUtil.logFingerprint(createOptions.getConfiguration()));
                 return null;
             } else if (configuration.getCustomerId() != customerId) {
-                logger.warn("Configuration with key " + createOptions.getConfiguration() + " doesn't belong to customer " +
+                logger.warn("Configuration " + configuration.getId() + " doesn't belong to customer " +
                         customerId + ", device not created");
                 return null;
             } else {

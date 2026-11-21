@@ -122,6 +122,7 @@ public class AuthResource {
         if ( credentials.getLogin() == null || credentials.getPassword() == null ) {
             return Response.ERROR();
         }
+        req.setAttribute(UserCredentials.REQUEST_LOGIN, credentials.getLogin());   // for the audit record
 
         // Failed sign-ins are limited per client address and per account (LoginThrottle), without sleeping: a refused
         // attempt is answered at once, with the same message whichever limit refused, and its password is never

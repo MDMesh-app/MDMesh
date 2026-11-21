@@ -122,8 +122,25 @@ The server logs to stdout at INFO:
 - **Docker:** `docker compose logs -f server`
 - **Native:** `journalctl -u mdmesh-server -f`
 
-Audit events (sign-ins, password changes, edits, commands sent to devices) are logged by `AuditLogger`, for example
-`docker compose logs server | grep AuditLogger`. They are also stored in the `plugin_audit_log` table.
+Audit events (sign-ins, password changes and resets, account and role changes, signing in as another account, edits,
+commands sent to devices) are logged by `AuditLogger`, for example `docker compose logs server | grep AuditLogger`.
+They are also stored in the `plugin_audit_log` table. A configuration or device change keeps only the fields that
+hold no secret; every other body has its passwords, tokens, PINs and signed-URL parameters masked. A body that can't be
+read as JSON, or is over 1 MB, is not stored. For an action in a session signed in as another account, the record also
+holds the admin who signed in (`impersonatedBy`, in the table and the audit API). A sign-in (`/rest/public/auth/login`, `/rest/public/jwt/login`)
+keeps at most its first 8 KB, masked, then "(truncated)"; its login is cut to 100 characters.
+
+After an upgrade to 0.5.1 the server scrubs the audit records older releases stored, in the background
+([UPGRADING](UPGRADING.md#v051)). After an error it tries again later, waiting up to 5 minutes. A fatal JVM error (out of
+memory) stops it until the next restart, logged at ERROR as "Audit record scrub stopped"; it goes on from where it
+stopped after the restart. After running 0.5.0 again without restoring its backup, see [UPGRADING, v0.5.1](UPGRADING.md#v051) for the SQL
+that makes the scrub take in what 0.5.0 wrote.
+
+The enrollment QR's key is part of its URL (`/rest/public/qr/<key>`), so the access logs of Tomcat and of a reverse
+proxy record it, and the key fetches the QR, Wi-Fi password included. Keep those logs as private as the database.
+
+While the account `admin` (or `superadmin`, on a multi-customer install) still has the password `admin`, the server
+logs a warning at every start.
 
 Tomcat's own files (`catalina.<date>.log` and the access log) are in `/usr/local/tomcat/logs` (container) or
 `/opt/mdmesh-tc/logs` (native).
@@ -236,9 +253,21 @@ reverse_proxy 127.0.0.1:8080 {
 ## Sign-in limits
 
 Failed sign-ins are limited, for the console (`/rest/public/auth/login`), API clients (`/rest/public/jwt/login`) and
-the current-password check of a password or e-mail change (`/rest/private/users`), all together. A refused attempt
-isn't checked, even with the right password. Every refusal looks the same, whichever limit refused: the console says
-"Too many failed sign-ins"; the API answers `429` with `Retry-After: 900` (the 15-minute window; try again then).
+the current-password check of account changes, all together. Those are creating or deleting an account or customer and
+changing another account's password or e-mail: `/rest/private/users` (including `/users/details` and
+`/users/superadmin/password`) and `/rest/private/customers`, and your own password or e-mail. A refused attempt
+isn't checked, even with the right password. A refusal looks the same whichever limit refused:
+
+- The console says "Too many failed sign-ins".
+- `/rest/public/jwt/login` answers `429` with `Retry-After: 900` (the 15-minute window; try again then).
+- `/rest/private/users` and `/rest/private/customers` answer HTTP `200` with
+  `{"status":"ERROR","message":"error.auth.too.many.attempts"}` and no `Retry-After`: a script has to read `message`.
+
+A wrong `oldPassword` is a failed sign-in for the caller's own account, not for the account being changed, so a script
+should stop at the first `error.password.wrong` rather than retry. The cookie below goes only to `/rest/public`, so
+these checks on `/rest/private` never count as a known browser: they count under a known address, or else as
+anything else. A session signed in as another account is refused these changes outright
+(`error.password.impersonated`), and nothing is counted.
 
 Each attempt is counted under the first of these that applies:
 

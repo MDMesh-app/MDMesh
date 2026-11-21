@@ -519,6 +519,12 @@ qs_arch aarch64 MDMESH_VERSION=0.5.0
 { grep -qF 'Verifying release v0.5.0' "$WORK/out/o" && ! grep -q 'no images for this host\|built for x86_64' "$WORK/out/e"; } \
   || { fail "quickstart.sh does not go on to verify a release on Arm64"; show; }
 ok
+# A release before 0.5.0 on Arm64: not sent to that release's own quickstart.sh (its images are x86_64 only too).
+qs_arch aarch64 MDMESH_VERSION=0.4.0
+{ grep -qF 'Release v0.4.0 has no images for this host (linux/arm64), only for linux/amd64' "$WORK/out/e" \
+  && ! grep -qF 'refs/tags/v0.4.0/quickstart.sh' "$WORK/out/e" && ! grep -q 'curl' "$WORK/children4.log"; } \
+  || { fail "quickstart.sh sends Arm64 to a release before 0.5.0"; show; }
+ok
 qs_arch x86_64 MDMESH_VERSION=0.5.0
 { grep -qF 'Verifying release v0.5.0' "$WORK/out/o" && ! grep -q 'no images for this host\|built for x86_64' "$WORK/out/e"; } \
   || { fail "quickstart.sh does not go on to verify 0.5.0 on x86_64"; show; }

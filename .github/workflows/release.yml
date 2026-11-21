@@ -86,8 +86,10 @@ jobs:
     strategy:
       matrix:
         image: [server, web, supervisor]
-        arch: [amd64, arm64]
+        arch: [amd64, arm64]   # the release job's PLATFORMS, as linux/<arch>
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    # An image build takes minutes; a stuck Arm runner queue or build must not hold the release for the 6 h default.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550  # v4.8.0
@@ -161,12 +163,15 @@ jobs:
     # 2026-10-19). T0 stays on ubuntu-latest and is the canary; bump this (and the images job's) after T0 is green on
     # the new image.
     runs-on: ubuntu-24.04
+    # Counted from the approval: the APK build and tests, then tagging, signing and publishing.
+    timeout-minutes: 90
     permissions:
       contents: write
       packages: write
     env:
       # The platforms every image's index must hold (one image each, the images job's matrix), recorded in the signed
       # manifest as components.platforms: the quick start refuses a host whose platform is not listed.
+      # Keep it the images job's matrix.arch list (linux/<arch> each): the step that joins them reads one digest per entry.
       PLATFORMS: linux/amd64,linux/arm64
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -262,7 +267,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       # One index per image, holding its linux/amd64 and linux/arm64 builds; docker pulls the host's platform from it.
       # The manifest pins each index by the digest read back from GHCR (image-digest.sh, which also refuses an index
-      # without exactly one image per platform).
+      # that isn't exactly the tested builds, one per platform).
       - name: Join each image's platforms under :VERSION
         env:
           OWNER: ${{ github.repository_owner }}
@@ -272,14 +277,16 @@ jobs:
           IFS=, read -ra plats <<< "$PLATFORMS"
           for img in server web supervisor; do
             REPO="ghcr.io/${O}/mdmesh-${img}"
-            srcs=()
-            for arch in amd64 arm64; do
+            srcs=(); tested=()
+            for plat in "${plats[@]}"; do
+              arch=${plat#linux/}
               d=$(cat "$RUNNER_TEMP/digest/${img}-${arch}")
-              echo "$d" | grep -Eqx 'sha256:[0-9a-f]{64}' || { echo "::error::no digest for ${img} linux/${arch}"; exit 1; }
-              srcs+=("${REPO}@${d}")
+              echo "$d" | grep -Eqx 'sha256:[0-9a-f]{64}' || { echo "::error::no digest for ${img} ${plat}"; exit 1; }
+              srcs+=("${REPO}@${d}"); tested+=("${plat}=${d}")
             done
             docker buildx imagetools create --tag "${REPO}:${VERSION}" "${srcs[@]}"
-            D=$(release/image-digest.sh "${REPO}:${VERSION}" "${plats[@]}")   # its own line: a failure fails the step
+            # The index :VERSION now names must hold exactly the builds the images job tested, one per platform.
+            D=$(release/image-digest.sh "${REPO}:${VERSION}" "${tested[@]}")   # its own line: a failure fails the step
             echo "${img^^}_REF=${REPO}@${D}" >> "$GITHUB_ENV"
           done
           echo "SERVER_IMG=ghcr.io/${O}/mdmesh-server:${VERSION}" >> "$GITHUB_ENV"

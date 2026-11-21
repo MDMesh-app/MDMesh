@@ -5,7 +5,8 @@
 #     refuse it tampered with or signed by another key;
 #   - they read the version, the three image digests and each downloaded file's SHA-256 from it;
 #   - supervisor/lib.js imagePins (what apply.sh is handed) reads the same three refs;
-#   - release/image-digest.sh pins an index only when it holds one image per platform asked for (docker stubbed);
+#   - release/image-digest.sh pins an index only when it holds one image per platform asked for, and exactly the
+#     tested builds when they are named (docker stubbed);
 #   - the fields older supervisors and the installers read (components.serverImage/webImage/apk) are unchanged;
 #   - quickstart.sh's copy of the release key and its file list match release/minisign.pub and build-manifest.sh;
 #   - securityReleases is CHANGELOG.md's list (release/security-releases.py: a version with a Security heading), the
@@ -39,8 +40,8 @@ P2=linux/amd64,linux/arm64
 ( cd "$T" && ! "$ROOT/release/build-manifest.sh" 9.8.7 stable "ghcr.io/$O/mdmesh-server:9.8.7" "ghcr.io/$O/mdmesh-web:9.8.7" \
     agent.apk 90807 CKSUM 1.5 "ghcr.io/$O/mdmesh-server:9.8.7" "ghcr.io/$O/mdmesh-web@$D2" "ghcr.io/$O/mdmesh-supervisor@$D3" "$P2" ) 2>/dev/null \
   || fail "build-manifest.sh accepted a tag where a digest belongs"
-# The image platforms (components.platforms) are linux/<arch> names, linux/amd64 among them.
-for bad in linux/arm64 'linux/amd64, linux/arm64' amd64,arm64 ''; do
+# The image platforms (components.platforms) are distinct linux/<arch> names, linux/amd64 among them.
+for bad in linux/arm64 'linux/amd64, linux/arm64' amd64,arm64 '' linux/amd64,linux/amd64 linux/amd64,linux/arm64,linux/amd64; do
   ( cd "$T" && ! "$ROOT/release/build-manifest.sh" 9.8.7 stable "ghcr.io/$O/mdmesh-server:9.8.7" "ghcr.io/$O/mdmesh-web:9.8.7" \
       agent.apk 90807 CKSUM 1.5 "ghcr.io/$O/mdmesh-server@$D1" "ghcr.io/$O/mdmesh-web@$D2" "ghcr.io/$O/mdmesh-supervisor@$D3" "$bad" ) 2>/dev/null \
     || fail "build-manifest.sh accepted the platforms '$bad'"
@@ -58,6 +59,14 @@ digest_of() { MDM_FAKE_INSPECT="$T/inspect.json" PATH="$T/bin:$PATH" "$ROOT/rele
 index "$(plat a linux amd64)" "$(plat b linux arm64 v8)" > "$T/inspect.json"
 [ "$(digest_of linux/amd64 linux/arm64)" = "$D1" ] || fail "image-digest.sh refused an amd64 + arm64 index"
 [ "$(digest_of)" = "$D1" ] || fail "image-digest.sh without platforms refused an index"
+# Each platform pinned to the build that was tested (os/arch=digest): exactly those images, and nothing else.
+DA=sha256:$(printf %064d 0 | tr 0 a); DB=sha256:$(printf %064d 0 | tr 0 b); DC=sha256:$(printf %064d 0 | tr 0 c)
+[ "$(digest_of "linux/amd64=$DA" "linux/arm64=$DB")" = "$D1" ] || fail "image-digest.sh refused the index of the tested builds"
+! digest_of "linux/amd64=$DA" "linux/arm64=$DC" 2>/dev/null || fail "image-digest.sh pinned an index holding another arm64 build"
+! digest_of "linux/amd64=sha256:abc" linux/arm64 2>/dev/null || fail "image-digest.sh accepted a malformed child digest"
+index "$(plat a linux amd64)" "$(plat b linux arm64 v8)" "$(plat c unknown unknown)" > "$T/inspect.json"
+! digest_of "linux/amd64=$DA" "linux/arm64=$DB" 2>/dev/null || fail "image-digest.sh pinned an index with an extra manifest"
+[ "$(digest_of linux/amd64 linux/arm64)" = "$D1" ] || fail "image-digest.sh without child digests refused attestation entries"
 index "$(plat a linux amd64)" "$(plat c unknown unknown)" > "$T/inspect.json"
 ! digest_of linux/amd64 linux/arm64 2>/dev/null || fail "image-digest.sh pinned an index without arm64"
 index "$(plat a linux amd64)" "$(plat b linux amd64)" "$(plat c linux arm64)" > "$T/inspect.json"
@@ -200,6 +209,8 @@ python3 -c 'import json,sys; m=json.load(open(sys.argv[1])); del m["components"]
   "$T/manifest.json" "$T/old.json"
 mdm_manifest_has_platform "$T/old.json" linux/amd64 || fail "a manifest without platforms is not linux/amd64"
 ! mdm_manifest_has_platform "$T/old.json" linux/arm64 || fail "a manifest without platforms counted as linux/arm64"
+[ "$(mdm_manifest_platforms "$T/manifest.json")" = "$P2" ] || fail "the quick start does not print the manifest's platforms"
+[ "$(mdm_manifest_platforms "$T/old.json")" = linux/amd64 ] || fail "the quick start does not print linux/amd64 for a manifest without platforms"
 grep -q '^  "files": {$' "$T/manifest.json" || fail "quickstart.sh would not find the files block"
 for f in $MDM_QUICKSTART_FILES quickstart.sh; do
   [ "$(mdm_manifest_field "$T/manifest.json" "$f" "$MDM_SHA256_ERE")" = "$(mdm_sha256 "$ROOT/$f")" ] || fail "sha256 of $f not read or wrong"

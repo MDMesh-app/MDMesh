@@ -24,8 +24,10 @@ if len(sys.argv) != 14:
              "PROTO_VERSION SERVER_REF WEB_REF SUPERVISOR_REF PLATFORMS")
 ver, ch, server_img, web_img, apk, apk_vc, apk_ck, proto, server_ref, web_ref, sup_ref, platforms = sys.argv[2:14]
 # One string, not a list: quickstart.sh reads fields line by line (see the end).
-if not re.fullmatch(r"linux/[a-z0-9]+(,linux/[a-z0-9]+)*", platforms) or "linux/amd64" not in platforms.split(","):
-    sys.exit("PLATFORMS must be comma-separated linux/<arch> names, linux/amd64 among them (got %r)" % platforms)
+plat_list = platforms.split(",")
+if (not re.fullmatch(r"linux/[a-z0-9]+(,linux/[a-z0-9]+)*", platforms) or "linux/amd64" not in plat_list
+        or len(set(plat_list)) != len(plat_list)):
+    sys.exit("PLATFORMS must be distinct comma-separated linux/<arch> names, linux/amd64 among them (got %r)" % platforms)
 sha = lambda p: hashlib.sha256(open(p, "rb").read()).hexdigest()
 
 # Each ref is repo@sha256:<64 hex>; server and web are the repositories of the :VERSION tags above, and the

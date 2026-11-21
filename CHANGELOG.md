@@ -16,15 +16,13 @@ Upgrading
   unchanged. Quick-start installs: apply the update from Settings → Updates. From source: `./setup.sh --update`.
   Native installs: `sudo ./setup.sh --update --native`. The agent fixes below need agent 0.5.1, which devices get
   from the server as usual.
-- Legacy device API: it is off unless you turn it on. If you still run devices on the old Headwind launcher, set
-  `LEGACY_DEVICE_API=1` (in `.env`, or in the native installer's environment) to keep it. MDMesh agents don't use it.
 - Quick start: `MDMESH_VERSION` now takes 0.5.0 or later; for 0.4.0 it stops and names that release's own
   `quickstart.sh`, as it already did for earlier releases.
 
 Security
 - Account access and the audit log: secrets are masked in audit records, and sign-in requests have size limits.
-- Legacy device API: off by default (`LEGACY_DEVICE_API`), with stricter input checks. Changing a device's groups
-  stays within the user's own customer.
+- Legacy device API (`LEGACY_DEVICE_API=1`): stricter checks on its requests. Changing a device's groups stays within
+  the user's own customer.
 - CVE-2026-114938 (OpenJDK Base64, x86_64 with AVX-512): the server runs with `-XX:-UseBASE64Intrinsics` on Docker
   and native installs. The Docker image moves to Temurin 17.0.21.1, and the native installer's own JDK to 17.0.21.1;
   `--update` upgrades a distribution JDK 17 when a fixed one is available. To protect a server before you update:

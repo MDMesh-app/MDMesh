@@ -9,16 +9,27 @@ Unreleased.
 
 ## Unreleased
 
+## v0.5.1 — 2026-11-20
+
 Upgrading
+- Update every server: this is a security release, so it can't wait for 0.6.0. The updater (supervisor) is
+  unchanged. Quick-start installs: apply the update from Settings → Updates. From source: `./setup.sh --update`.
+  Native installs: `sudo ./setup.sh --update --native`. The agent fixes below need agent 0.5.1, which devices get
+  from the server as usual.
+- Legacy device API: it is off unless you turn it on. If you still run devices on the old Headwind launcher, set
+  `LEGACY_DEVICE_API=1` (in `.env`, or in the native installer's environment) to keep it. MDMesh agents don't use it.
 - Quick start: `MDMESH_VERSION` now takes 0.5.0 or later; for 0.4.0 it stops and names that release's own
   `quickstart.sh`, as it already did for earlier releases.
 
 Security
-- CVE-2026-114938 (OpenJDK): the server runs with `-XX:-UseBASE64Intrinsics`, in the Docker image and on native
-  installs, which turns off the affected Base64 code of JDK 17.0.6 to 17.0.21 on x86_64. The native installer's own
-  JDK is now 17.0.21.1 on x86_64; it warns about an affected JDK, and `--update` upgrades the distribution's JDK 17.
-  To protect a server before you update: [UPGRADING,
-  v0.5.1](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v051).
+- Account access and the audit log: secrets are masked in audit records, and sign-in requests have size limits.
+- Legacy device API: off by default (`LEGACY_DEVICE_API`), with stricter input checks. Changing a device's groups
+  stays within the user's own customer.
+- CVE-2026-114938 (OpenJDK Base64, x86_64 with AVX-512): the server runs with `-XX:-UseBASE64Intrinsics` on Docker
+  and native installs. The Docker image moves to Temurin 17.0.21.1, and the native installer's own JDK to 17.0.21.1;
+  `--update` upgrades a distribution JDK 17 when a fixed one is available. To protect a server before you update:
+  [UPGRADING, v0.5.1](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v051).
+- Thanks to @REPORTER for the report.
 
 Fixes
 - Commands: the server refuses a command, Install configuration apps and Retry apply for a device marked Wiped
@@ -47,6 +58,9 @@ Fixes
 - Console: a configuration the device reports out of date now shows as "Out of date on the device", with the cause
   when the device reported one (storage recovered, a factory reset that didn't start, a failed re-apply). It showed
   "Reset by device (Wi-Fi turned back on)", which named only one of the causes.
+
+Under the hood
+- Dependencies: Jackson 2.23.0 (server); vite 8.3.8, @vitejs/plugin-react 6.3.0 (console).
 
 ## v0.5.0 — 2026-11-17
 

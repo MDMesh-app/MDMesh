@@ -26,9 +26,14 @@ cd "$PROJECT_DIR" || { errln "cannot cd $PROJECT_DIR"; phase failed; exit 1; }
 # database update on the first start can need more (docs/UPGRADING.md). At least 30: a smaller value (0 included, which
 # is not "no limit") would fail every update at once. HEALTH_TIMEOUT_MIN lowers that floor for the tests only.
 health_timeout() {
-  local v min="${HEALTH_TIMEOUT_MIN:-30}"
-  for v in "$(grep -E '^HEALTH_TIMEOUT=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '\r"'"'"' ')" \
-           "${HEALTH_TIMEOUT:-}"; do
+  local v min="${HEALTH_TIMEOUT_MIN:-30}" file
+  # The value as docker compose reads it from .env: quoted, the text between the quotes; else up to a " # comment".
+  file="$(grep -E '^HEALTH_TIMEOUT=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '\r')"
+  case "$file" in
+    [\"\']*) file="${file:1}"; file="${file%%[\"\']*}" ;;
+    *) file="${file%%[[:space:]]#*}" ;;
+  esac
+  for v in "${file//[[:space:]]/}" "${HEALTH_TIMEOUT:-}"; do
     [ -z "$v" ] && continue
     if [[ "$v" =~ ^[0-9]{1,6}$ ]] && [ "$((10#$v))" -ge "$min" ]; then echo "$((10#$v))"; return; fi
     echo "HEALTH_TIMEOUT=$v is not a whole number of seconds, at least $min; ignored" >&2

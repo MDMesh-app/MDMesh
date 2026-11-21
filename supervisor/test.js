@@ -1120,6 +1120,14 @@ t.test('HEALTH_TIMEOUT: 180 by default; below 30 (0 included, not "no limit") is
     a.equal(resolveHealthTimeout(script, '', {}).value, '180', script);
     a.equal(resolveHealthTimeout(script, 'HEALTH_TIMEOUT=900\n', { HEALTH_TIMEOUT: '180' }).value, '900', script);
     a.equal(resolveHealthTimeout(script, 'HEALTH_TIMEOUT=30\n', {}).value, '30', script);
+    // Read as docker compose reads .env: an inline comment after whitespace is not part of the value, quoted or not
+    a.equal(resolveHealthTimeout(script, 'HEALTH_TIMEOUT=900 # slow database update\n', {}).value, '900', script);
+    a.equal(resolveHealthTimeout(script, 'HEALTH_TIMEOUT=900\t#slow\r\n', {}).value, '900', script);
+    a.equal(resolveHealthTimeout(script, 'HEALTH_TIMEOUT="900" # slow\n', {}).value, '900', script);
+    a.equal(resolveHealthTimeout(script, "HEALTH_TIMEOUT='600' # slow\n", {}).value, '600', script);
+    a.equal(resolveHealthTimeout(script, 'HEALTH_TIMEOUT=900#slow\n', { HEALTH_TIMEOUT: '240' }).value, '240',
+      `${script}: no whitespace before # (compose keeps it in the value): not a number`);
+    a.equal(resolveHealthTimeout(script, '# HEALTH_TIMEOUT=900\n', {}).value, '180', `${script}: a commented-out line`);
     for (const low of ['0', '29']) {
       const r = resolveHealthTimeout(script, `HEALTH_TIMEOUT=${low}\n`, { HEALTH_TIMEOUT: '240' });
       a.equal(r.value, '240', `${script}: ${low} falls through to the environment`);

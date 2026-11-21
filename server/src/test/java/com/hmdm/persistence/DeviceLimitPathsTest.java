@@ -56,7 +56,7 @@ import static org.junit.Assert.fail;
 /**
  * The device limit across the REAL device-adding paths, on the real schema (the server's Liquibase changelog) and the
  * real DAOs built by Guice + mybatis-guice as in production: {@link DeviceDAO#insertDeviceWithinLimit} (the console),
- * {@link UnsecureDAO#createNewDeviceOnDemand(String, DeviceCreateOptions)} and enrollment, raced both ways round.
+ * {@link UnsecureDAO#createLegacyDevice(String, DeviceCreateOptions)} and enrollment, raced both ways round.
  * Removing {@code @Transactional} from either path, or its lock, lets the race overfill the customer and fails here.
  *
  * <p>Runs when MDMESH_TEST_PG_URL is set (see AgentEnrollmentTransactionTest for the docker one-liner); with
@@ -270,7 +270,7 @@ public class DeviceLimitPathsTest {
             DeviceCreateOptions options = new DeviceCreateOptions();
             options.setCustomer(customerName);
             options.setConfiguration(qrKey);
-            return unsecureDAO.createNewDeviceOnDemand(number, options) != null;
+            return unsecureDAO.createLegacyDevice(number, options).isServed();
         };
     }
 

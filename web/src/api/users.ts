@@ -1,5 +1,5 @@
-import { hashPassword } from './auth';
-import { apiClient } from './client';
+import { hashPassword, IMPERSONATED_MESSAGE, isTooManyAttempts, TOO_MANY_MESSAGE } from './auth';
+import { apiClient, deleteWithBody } from './client';
 
 export interface Permission {
   id: number;
@@ -44,7 +44,11 @@ export const listPermissions = (signal?: AbortSignal) =>
 export const listGroups = (signal?: AbortSignal) => apiClient.get<AccessItem[]>('/private/groups/search', signal);
 export const listAccessConfigurations = (signal?: AbortSignal) =>
   apiClient.get<AccessItem[]>('/private/configurations/list', signal);
-export async function saveUser(user: ManagedUser, password: string): Promise<void> {
+/**
+ * `currentPassword` is the caller's own: the server asks for it to create an account, and when another account's email
+ * or password changes (recovery links go to that address). It goes with this request only.
+ */
+export async function saveUser(user: ManagedUser, password: string, currentPassword = ''): Promise<void> {
   // Explicit fields only: never round-trip account secrets or client-supplied role permissions.
   await apiClient.put('/private/users', {
     id: user.id,
@@ -57,9 +61,12 @@ export async function saveUser(user: ManagedUser, password: string): Promise<voi
     groups: user.groups.map(({ id }) => ({ id })),
     configurations: user.configurations.map(({ id }) => ({ id })),
     ...(password ? { newPassword: hashPassword(password) } : {}),
+    ...(currentPassword ? { oldPassword: hashPassword(currentPassword) } : {}),
   });
 }
-export const deleteUser = (id: number) => apiClient.del<void>(`/private/users/other/${id}`);
+/** Deleting an account takes the caller's own current password; it goes with this request only. */
+export const deleteUser = (id: number, currentPassword: string) =>
+  deleteWithBody<void>(`/private/users/other/${id}`, { oldPassword: hashPassword(currentPassword) });
 export const saveRole = (role: UserRole) =>
   apiClient.put<void>('/private/roles', {
     id: role.id,
@@ -80,10 +87,16 @@ const messages: Record<string, string> = {
   'error.role.save': 'Could not save the role. Reload and try again.',
   'error.role.delete': 'Could not delete the role. It may still be assigned to users.',
   'error.password.empty': 'Enter a password for the new account.',
+  'error.password.wrong': 'Your current password is not correct.',
+  'error.password.impersonated': IMPERSONATED_MESSAGE,
+  'error.permission.denied':
+    'Not allowed. You can give only the access you have, and change only accounts within your own access.',
   'error.user.login': 'Enter a login.',
   'error.user.not.found': 'This account no longer exists. Reload the page.',
+  "Can't remove self": 'You can’t delete your own account.',
 };
 export function managementError(error: unknown): string {
+  if (isTooManyAttempts(error)) return TOO_MANY_MESSAGE;
   const message = error instanceof Error ? error.message : 'Could not complete the operation.';
   return messages[message] ?? message;
 }

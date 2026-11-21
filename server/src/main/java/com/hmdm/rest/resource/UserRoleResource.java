@@ -31,6 +31,7 @@ import com.hmdm.persistence.domain.UserRolePermission;
 import com.hmdm.rest.json.LookupItem;
 import com.hmdm.rest.json.Response;
 import com.hmdm.security.SecurityContext;
+import com.hmdm.security.SecurityException;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
@@ -119,6 +120,10 @@ public class UserRoleResource {
                 this.userRoleDAO.update(userRole);
             }
             return Response.OK();
+        } catch (SecurityException e) {
+            log.warn("Refused to store user role {} for user {}: {}", userRole.getId(),
+                    SecurityContext.get().getCurrentUserName(), e.getMessage());
+            return Response.PERMISSION_DENIED();
         } catch (IllegalArgumentException e) {
             return Response.ERROR(e.getMessage());
         } catch (Exception e) {

@@ -52,4 +52,22 @@ public class CryptoUtilTest {
         assertFalse(CryptoUtil.constantTimeEquals(null, SHA256_ABC));
         assertFalse(CryptoUtil.constantTimeEquals(SHA256_ABC, null));
     }
+
+    @Test
+    public void logFingerprint_isShortStableAndHidesTheSecret() {
+        // SHA-256("abc") starts ba7816bf
+        assertEquals("sha256:ba7816bf", CryptoUtil.logFingerprint("abc"));
+        assertEquals(CryptoUtil.logFingerprint("qr-key-1"), CryptoUtil.logFingerprint("qr-key-1"));
+        assertFalse(CryptoUtil.logFingerprint("qr-key-1").contains("qr-key-1"));
+        assertFalse(CryptoUtil.logFingerprint("qr-key-1").equals(CryptoUtil.logFingerprint("qr-key-2")));
+        assertEquals("null", CryptoUtil.logFingerprint(null));
+    }
+
+    @Test
+    public void deviceCreateOptionsNeverPrintTheConfigurationKey() {
+        com.hmdm.rest.json.DeviceCreateOptions options = new com.hmdm.rest.json.DeviceCreateOptions();
+        options.setConfiguration("qr-key-1");
+        assertFalse(options.toString(), options.toString().contains("qr-key-1"));
+        assertTrue(options.toString(), options.toString().contains(CryptoUtil.logFingerprint("qr-key-1")));
+    }
 }

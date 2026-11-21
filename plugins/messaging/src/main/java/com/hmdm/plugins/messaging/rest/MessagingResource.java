@@ -24,6 +24,7 @@ package com.hmdm.plugins.messaging.rest;
 import com.hmdm.notification.PushService;
 import com.hmdm.notification.persistence.domain.PushMessage;
 import com.hmdm.persistence.DeviceDAO;
+import com.hmdm.persistence.LegacyDevice;
 import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.Device;
 import com.hmdm.persistence.domain.DeviceSearchRequest;
@@ -303,6 +304,12 @@ public class MessagingResource {
             return Response.ERROR();
         }
         try {
+            // Only a launcher device's message: the launcher names the message by its id alone.
+            LegacyDevice found = this.unsecureDAO.findLegacyDeviceById(this.messagingDAO.getMessageDeviceId(id));
+            if (!found.isServed()) {
+                logger.warn("Message {} of no launcher device, status not set", id);
+                return found.refusal();
+            }
             this.messagingDAO.updateMessageStatus(id, status);
             return Response.OK();
         } catch (Exception e) {

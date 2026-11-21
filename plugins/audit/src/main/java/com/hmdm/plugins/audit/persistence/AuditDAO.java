@@ -25,13 +25,16 @@ import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import com.hmdm.persistence.AbstractDAO;
 import com.hmdm.plugins.audit.persistence.domain.AuditLogRecord;
+import com.hmdm.plugins.audit.persistence.domain.AuditScrubRow;
 import com.hmdm.plugins.audit.persistence.mapper.AuditMapper;
+import com.hmdm.plugins.audit.rest.filter.StoredPayloads;
 import com.hmdm.plugins.audit.rest.json.AuditLogFilter;
 import com.hmdm.security.SecurityContext;
 import org.mybatis.guice.transactional.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * <p>A DAO for {@link AuditLogRecord} domain objects.</p>
@@ -96,6 +99,47 @@ public class AuditDAO extends AbstractDAO<AuditLogRecord> {
                     return this.mapper.countAll(filter);
                 })
                 .orElse(0L);
+    }
+
+    /** Moves the scrub's end to the newest record while the scrub is not done ({@link AuditMapper#extendScrubEnd}). */
+    public void extendScrubEnd() {
+        this.mapper.extendScrubEnd();
+    }
+
+    /**
+     * <p>Scrubs the next {@code limit} records older releases stored ({@link StoredPayloads#scrub}: the one scrub
+     * policy), in one transaction, and moves the progress past them. Records are taken in id order from the stored
+     * progress, so an interrupted scrub goes on where it stopped, and a record is rewritten only when its payload
+     * changes.</p>
+     *
+     * @param limit the most records to scrub.
+     * @return how many records it rewrote, or -1 when the scrub is done.
+     */
+    @Transactional
+    public int scrubOldRecords(int limit) {
+        this.mapper.limitScrubStatements();
+        this.mapper.limitScrubLockWait();
+        Integer last = this.mapper.lockScrubProgress();
+        Integer upTo = this.mapper.scrubEnd();
+        if (last == null || upTo == null || last >= upTo) {
+            return -1;
+        }
+        List<AuditScrubRow> batch = this.mapper.findForScrub(last, upTo, limit, StoredPayloads.READ_WHOLE,
+                StoredPayloads.BATCH_BYTES);
+        int rewritten = 0;
+        for (AuditScrubRow row : batch) {
+            String scrubbed = row.getPayload() != null || row.getHead() == null
+                    ? StoredPayloads.scrub(row.getAction(), row.getPayload())
+                    : StoredPayloads.scrubTooLarge(row.getHead(), row.getTail());
+            if (scrubbed != null && !Objects.equals(scrubbed, row.getPayload())) {
+                this.mapper.updatePayload(row.getId(), scrubbed);
+                rewritten++;
+            }
+        }
+        // None left: done (ids may have gaps up to upTo)
+        int next = batch.isEmpty() ? upTo : batch.get(batch.size() - 1).getId();
+        this.mapper.setScrubProgress(next);
+        return rewritten;
     }
 
     /**

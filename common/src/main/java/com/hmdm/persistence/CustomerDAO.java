@@ -101,10 +101,12 @@ public class CustomerDAO {
         this.eventService = eventService;
     }
 
+    /** Deletes the customer and its accounts. It takes the current user's password, as deleting an account does. */
     public void removeCustomerById(Integer id) {
         if (!SecurityContext.get().isSuperAdmin()) {
             throw SecurityException.onAdminDataAccessViolation("delete customer by ID " + id);
         }
+        userDAO.requireConfirmedPassword("delete customer " + id);
 
         Customer customer = this.mapper.findCustomerById(id);
         if (customer != null && !customer.isMaster()) {
@@ -168,10 +170,15 @@ public class CustomerDAO {
      */
     public static final String[] DEFAULT_DEVICE_SUFFIXES = {"001", "002", "003"};
 
+    /**
+     * Creates the customer and its admin account, and answers that account's credentials. It takes the current user's
+     * password, as creating an account does; checked here, before anything is written.
+     */
     public String insertCustomer(Customer customer) {
         if (!SecurityContext.get().isSuperAdmin()) {
             throw SecurityException.onAdminDataAccessViolation("create new customer account");
         }
+        userDAO.requireConfirmedPassword("create customer " + customer.getName());
         
         log.debug("Creating customer account: {}", customer);
 

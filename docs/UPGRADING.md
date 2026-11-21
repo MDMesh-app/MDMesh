@@ -203,6 +203,68 @@ exited or credentials cleared while the older agent ran.
 
 ### v0.5.1
 
+- **Account changes take your own password.** Scripts and API clients that create or delete users or customers,
+  change another account's password or email, change a customer's email (`PUT /rest/private/customers`), or call
+  `PUT /rest/private/users/superadmin/password` must now send `oldPassword`: the MD5 (hex) of the caller's own
+  password, as the console does. `DELETE /rest/private/users/other/{id}`
+  and `DELETE /rest/private/customers/{id}` now take a JSON body, `{"oldPassword": "..."}`. A wrong one counts as a
+  failed sign-in for the caller's account, toward the lockout ([Sign-in limits](OPERATIONS.md#sign-in-limits)), so stop
+  at the first `error.password.wrong`. A session signed in as another account can't make these changes at all.
+- **Admins limited to some device groups or configurations** can't give anyone access beyond their own, and can't
+  change, delete or sign in as an account that reaches more than they do.
+- **New accounts start with no access** in the console: choose their device groups and configurations.
+- **Everyone signs in to the console again once** after the update: sessions opened by an older release (which native
+  installs keep across a restart) end at their first request. Scripts and API clients using a JWT are not affected.
+- **A session signed in as another account** ends as soon as the admin who opened it could no longer open it: their
+  account is deleted, demoted or its password changed, or the account they signed in as now reaches more than they do.
+  From such a session, you can't sign in as yet another account. The audit log records the admin for what is done in
+  it (`impersonatedBy`, in the database and the audit API).
+- **Audit records hold no secrets.** A configuration or device change records only the fields that hold none, and
+  names the rest (`"wifiPassword": "<set>"`, `"applicationSettings": "<3 items>"`). Every other record has its
+  passwords, tokens, PINs and signed-URL parameters masked, and a body that isn't valid JSON, or is over 1 MB, is not
+  recorded.
+- **Old audit records are scrubbed in the background** the same way, starting 30 seconds after the server starts: the
+  server answers (and the update's health check passes) while it runs, and after a restart it goes on where it
+  stopped. On a test machine, 1 million records took about 2 minutes of work, so about 4 minutes in the background (it
+  works 3 seconds in every 5). The server logs "Audit records from before this release scrubbed" when it is done.
+  - Each record keeps its method, URI and User-Agent. Its body is stored again as a new record's would be: masked, or,
+    for a configuration or device change, only the fields that hold no secret. A body that isn't JSON, or is over 1 MB,
+    and the body of a request whose record no longer keeps one, is replaced with a note.
+  - Most old records are rewritten, so allow free disk space of about the size of `plugin_audit_log` until autovacuum
+    reclaims the old row versions (`VACUUM plugin_audit_log` does it at once).
+  - With several servers on one database, stop all of them before the update, then start them on 0.5.1: a server
+    still on the old release keeps writing unmasked records.
+  - If you go back to 0.5.0 without restoring its backup (`--allow-downgrade`, or a native install's WAR swapped back),
+    0.5.0 writes unmasked records again, and the scrub, once done, doesn't look at them. With the server stopped
+    (`docker compose stop server`, native: `systemctl stop mdmesh-server`), whether still 0.5.0 or already 0.5.1,
+    run this, then start 0.5.1, so the scrub takes them in:
+
+    ```bash
+    # Docker, in the install directory
+    docker compose exec -T postgres psql -U mdmesh -d mdmesh -c "UPDATE plugin_audit_scrub SET upToId = (SELECT COALESCE(MAX(id), 0) FROM plugin_audit_log) WHERE id = 1;"
+    # Native
+    sudo -u postgres psql -d mdmesh -c "UPDATE plugin_audit_scrub SET upToId = (SELECT COALESCE(MAX(id), 0) FROM plugin_audit_log) WHERE id = 1;"
+    ```
+
+    If you changed `DB_USER` or `DB_NAME`, use your values in place of `mdmesh`.
+- **Copies made before the update still hold those secrets:** the pre-update database dump the update took
+  (`/backups/<time>.sql` in the `backups` volume on Docker, `/opt/mdmesh/backups/` on native installs), older backups,
+  and the server logs (`docker compose logs server`, `journalctl -u mdmesh-server`). Change the provisioning Wi-Fi
+  password and any secrets kept in managed app settings, then delete the old dumps once you no longer need them for a
+  rollback, and prune the old logs. The access logs of Tomcat and of a reverse proxy also record the enrollment QR's
+  key, which is part of its URL (`/rest/public/qr/<key>`) and fetches the QR with the Wi-Fi password in it: prune
+  those too.
+- **With `LEGACY_DEVICE_API=1`, keep Headwind launcher devices and MDMesh agent devices in separate
+  configurations.** The launcher's routes no longer serve a configuration that an agent device uses, or that an
+  agent enrollment code can still enroll devices into, nor create launcher devices in it: the launcher gets the error
+  `error.configuration.agent.managed`, and the server log says which configuration. A code enrolls into the
+  configuration it names or, if it names none, into the default configuration for new devices (**Settings**), which
+  then counts too. A configuration named by its QR code key counts the same way, and the server no longer makes its
+  Headwind QR code. The routes answer requests for an agent device with the launcher's device-not-found error. To fix
+  a launcher device that gets the error, move it to a configuration no agent device or enrollment code uses. With
+  `LEGACY_DEVICE_API` off (the default), nothing changes.
+- With `LEGACY_DEVICE_API=1`, the launcher's sync now works for a configuration without a kiosk exit PIN. Before, it
+  failed with a server error.
 - **CVE-2026-114938 (OpenJDK).** The Base64 code of JDK 17.0.6 to 17.0.21 is affected on x86_64 CPUs with AVX-512.
   0.5.1 runs the server with `-XX:-UseBASE64Intrinsics`, which turns that code off. To protect a server before you
   update:

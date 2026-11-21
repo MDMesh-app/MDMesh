@@ -32,7 +32,13 @@ import java.io.Serializable;
 public class UserCredentials implements Serializable {
 
     private static final long serialVersionUID = 7107010132749776504L;
-    
+
+    /**
+     * <p>The request attribute holding the login a sign-in resource read from these credentials, so that the audit
+     * record names the account the sign-in ran for. Set only by the resource, and never holds the password.</p>
+     */
+    public static final String REQUEST_LOGIN = UserCredentials.class.getName() + ".login";
+
     @ApiModelProperty("A username to be used for authentication")
     private String login;
 

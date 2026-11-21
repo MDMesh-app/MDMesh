@@ -142,6 +142,22 @@ public class CryptoUtil {
         return md.digest();
     }
 
+    /**
+     * A short fingerprint of a secret for a log line (a QR-code key, a token): {@code sha256:} and the first 8 hex
+     * characters of its SHA-256. It tells requests for the same secret apart without revealing it.
+     */
+    public static String logFingerprint(String secret) {
+        if (secret == null) {
+            return "null";
+        }
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(secret.getBytes(StandardCharsets.UTF_8));
+            return "sha256:" + getLowerHexString(digest).substring(0, 8);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     /** Lowercase hex of {@code bytes}. */
     public static String getLowerHexString(byte[] bytes) {
         return getHexString(bytes).toLowerCase(java.util.Locale.ROOT);

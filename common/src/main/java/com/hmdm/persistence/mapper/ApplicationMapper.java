@@ -237,12 +237,17 @@ public interface ApplicationMapper {
     void removeApplicationVersionConfigurationsById(@Param("customerId") int customerId,
                                                     @Param("id") Integer applicationVersionId);
 
+    /** The links of the configurations the user may reach, and only their own customer's (a common app is shared). */
     @Delete({"DELETE FROM configurationApplications " +
             "WHERE applicationVersionId=#{id} " +
-            "AND configurationId IN (SELECT configurationId " +
+            "AND configurationId IN (SELECT userConfigurationAccess.configurationId " +
             "                        FROM userConfigurationAccess " +
-            "                        WHERE userId=#{userId})"})
-    void removeApplicationVersionConfigurationsForLimitedUser(@Param("userId") int userId,
+            "                        INNER JOIN configurations " +
+            "                                ON configurations.id = userConfigurationAccess.configurationId " +
+            "                        WHERE userConfigurationAccess.userId=#{userId} " +
+            "                        AND configurations.customerId=#{customerId})"})
+    void removeApplicationVersionConfigurationsForLimitedUser(@Param("customerId") int customerId,
+                                                              @Param("userId") int userId,
                                                               @Param("id") Integer applicationVersionId);
 
     void insertApplicationConfigurations(@Param("applicationId") Integer applicationId,

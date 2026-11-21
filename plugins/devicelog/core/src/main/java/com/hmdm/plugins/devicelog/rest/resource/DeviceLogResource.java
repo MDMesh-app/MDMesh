@@ -25,6 +25,7 @@ import com.hmdm.util.ExecutorRegistry;
 
 import javax.inject.Inject;
 import javax.inject.Singleton;
+import com.hmdm.persistence.LegacyDevice;
 import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.Device;
 import com.hmdm.plugin.service.PluginStatusCache;
@@ -231,11 +232,12 @@ public class DeviceLogResource {
                                @Context HttpServletRequest httpRequest) {
         logger.debug("#uploadLogs: {} => {}", deviceNumber, logs);
         try {
-            final Device dbDevice = this.unsecureDAO.getDeviceByNumber(deviceNumber);
-            if (dbDevice == null) {
+            LegacyDevice found = this.unsecureDAO.findLegacyDevice(deviceNumber, LegacyDevice.Lookup.NUMBER);
+            if (!found.isServed()) {
                 logger.error("Device {} was not found", deviceNumber);
-                return Response.DEVICE_NOT_FOUND_ERROR();
+                return found.refusal();
             }
+            final Device dbDevice = found.getDevice();
 
             SecurityContext.init(dbDevice.getCustomerId());
             try {
@@ -269,11 +271,12 @@ public class DeviceLogResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response getDeviceLogRules(@PathParam("deviceNumber") String deviceNumber) {
         try {
-            final Device dbDevice = this.unsecureDAO.getDeviceByNumber(deviceNumber);
-            if (dbDevice == null) {
+            LegacyDevice found = this.unsecureDAO.findLegacyDevice(deviceNumber, LegacyDevice.Lookup.NUMBER);
+            if (!found.isServed()) {
                 logger.error("Device {} was not found", deviceNumber);
-                return Response.DEVICE_NOT_FOUND_ERROR();
+                return found.refusal();
             }
+            final Device dbDevice = found.getDevice();
 
             SecurityContext.init(dbDevice.getCustomerId());
             try {

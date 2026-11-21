@@ -202,7 +202,7 @@ public class ApplicationSetting implements Serializable {
                 "id=" + id +
                 ", applicationId=" + applicationId +
                 ", name='" + name + '\'' +
-                ", value='" + value + '\'' +
+                ", value=" + (value == null ? null : "<set>") + // never the value: it can be a secret
                 ", comment='" + comment + '\'' +
                 ", readonly=" + readonly +
                 ", extRefId=" + extRefId +

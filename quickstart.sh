@@ -779,7 +779,7 @@ mdm_host_name() {
 mdm_site_dir() {
   local d
   MDMESH_SITE_DIR=''
-  mkdir -p site.d && chmod 755 site.d || { warn "Could not make site.d here: your own edge rules can't be added."; return 0; }
+  if ! { mkdir -p site.d && chmod 755 site.d; }; then warn "Could not make site.d here: your own edge rules can't be added."; return 0; fi
   if [ ! -e site.d/README ]; then
     printf '%s\n' "Your own rules for MDMesh's edge (Caddy). Every *.caddy file here is imported into the edge's site," \
       "after MDMesh's own settings. Updates never change this directory. Make each file readable by everyone" \

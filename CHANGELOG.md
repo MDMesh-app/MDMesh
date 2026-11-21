@@ -9,6 +9,16 @@ Unreleased.
 
 ## Unreleased
 
+Upgrading
+- Existing installs keep their mode and settings. To move one behind your own proxy, see
+  [UPGRADING, Changing the hosting mode](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#changing-the-hosting-mode).
+
+New
+- Install behind the nginx, Apache, Caddy or Traefik you already run: the quick start's third choice (or `--proxy`),
+  with ready configurations for each. Thanks @lared3294, @detobel36.
+- The quick start asks one plain question, how your phones will reach MDMesh; `--tunnel`, `--domain` and `--proxy` answer it.
+- Your own edge rules: Caddy imports `site.d/*.caddy` from the install directory, and updates never touch it.
+
 ## v0.5.1 — 2026-11-20
 
 Upgrading
@@ -23,14 +33,6 @@ Upgrading
   ([UPGRADING, v0.5.1](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v051)).
 - Quick start: `MDMESH_VERSION` now takes 0.5.0 or later; for 0.4.0 it stops and names that release's own
   `quickstart.sh`, as it already did for earlier releases.
-- Existing installs keep their mode and settings. To move one behind your own proxy, see
-  [UPGRADING, Changing the hosting mode](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#changing-the-hosting-mode).
-
-New
-- Install behind the nginx, Apache, Caddy or Traefik you already run: the quick start's third choice (or `--proxy`),
-  with ready configurations for each. Thanks @lared3294, @detobel36.
-- The quick start asks one plain question, how your phones will reach MDMesh; `--tunnel`, `--domain` and `--proxy` answer it.
-- Your own edge rules: Caddy imports `site.d/*.caddy` from the install directory, and updates never touch it.
 
 Heads-up
 - With `LEGACY_DEVICE_API=1`, Headwind launcher devices need a configuration that no MDMesh agent device uses and no

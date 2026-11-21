@@ -21,8 +21,10 @@ import {
   CardHeader,
   EmptyState,
   ErrorState,
+  Field,
   Menu,
   Modal,
+  PasswordInput,
   SearchInput,
   SkeletonRows,
   Table,
@@ -104,6 +106,8 @@ export function UsersSection({
   const deleteFocus = useRefocusAfterRemove();
   const shownDelete = useStickyValue(deleting);
   const [deleteError, setDeleteError] = useState('');
+  // Deleting an account takes the caller's own current password; kept for this dialog only
+  const [deletePassword, setDeletePassword] = useState('');
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
@@ -143,6 +147,7 @@ export function UsersSection({
     setEditingUser(null);
     setEditingRole(null);
     setDeleting(null);
+    setDeletePassword('');
     setData(null);
   }, [user]);
   const editUser = (target: ManagedUser | 'new') => {
@@ -157,15 +162,16 @@ export function UsersSection({
     setEditingUser(null);
     setEditingRole(null);
     setDeleting(null);
+    setDeletePassword('');
     toast.push('ok', title, body);
     setRevision((r) => r + 1);
   };
   const confirmDelete = async () => {
-    if (!deleting || busy) return;
+    if (!deleting || busy || (deleting.kind === 'user' && !deletePassword)) return;
     setBusy(true);
     setDeleteError('');
     try {
-      if (deleting.kind === 'user') await deleteUser(deleting.id);
+      if (deleting.kind === 'user') await deleteUser(deleting.id, deletePassword);
       else await deleteRole(deleting.id);
       // Gone from the list now, not when the reload lands: a failed reload can't leave it listed, nor a second
       // Delete reach it.
@@ -186,16 +192,20 @@ export function UsersSection({
   const askDelete = (kind: 'user' | 'role', id: number, name: string) => {
     deleteFocus.remember();
     setDeleteError('');
+    setDeletePassword('');
     setDeleting({ kind, id, name });
   };
   const cancelDelete = () => {
     deleteFocus.forget();
     setDeleting(null);
+    setDeletePassword('');
   };
   if (!capabilities.users) return null;
   const needle = q.trim().toLowerCase();
   const rolesTab = tab === 'roles' && !!data?.capabilities.roles;
   const iAmSuper = !!(user?.superAdmin || user?.userRole?.superAdmin);
+  // The server decides (UserResource.getUsers, UserDAO.manageableAccounts); the caller's own row has its own routes.
+  const beyondReach = (u: ManagedUser) => u.id !== user?.id && u.editable === false;
 
   /** What this account may do to another one (the server enforces the same). */
   const userActions = (u: ManagedUser): MenuItem[] => {
@@ -238,6 +248,11 @@ export function UsersSection({
               <span className="v2-users-who__line">
                 <Clip text={u.name || u.login} />
                 {u.id === user?.id ? <Badge tone="neutral">You</Badge> : null}
+                {beyondReach(u) ? (
+                  <Badge tone="neutral" title="This account reaches more than you do, or only a super-admin manages it.">
+                    Beyond your access
+                  </Badge>
+                ) : null}
               </span>
               {u.name ? <Clip text={u.login} sub /> : null}
             </span>
@@ -407,7 +422,12 @@ export function UsersSection({
             <Button size="lg" disabled={busy} onClick={cancelDelete}>
               Cancel
             </Button>
-            <Button variant="danger-primary" size="lg" disabled={busy} onClick={() => void confirmDelete()}>
+            <Button
+              variant="danger-primary"
+              size="lg"
+              disabled={busy || (shownDelete?.kind === 'user' && !deletePassword)}
+              onClick={() => void confirmDelete()}
+            >
               {busy ? 'Deleting…' : shownDelete?.kind === 'role' ? 'Delete role' : 'Delete user'}
             </Button>
           </>
@@ -418,6 +438,25 @@ export function UsersSection({
             ? 'Only a role no one is assigned to can be deleted.'
             : 'This account can no longer sign in to the console.'}
         </p>
+        {shownDelete?.kind === 'user' ? (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void confirmDelete();
+            }}
+          >
+            <Field label="Your current password" help="Needed to delete an account.">
+              <PasswordInput
+                value={deletePassword}
+                required
+                disabled={busy}
+                autoComplete="current-password"
+                toggleLabel="Show your current password"
+                onChange={(e) => setDeletePassword(e.target.value)}
+              />
+            </Field>
+          </form>
+        ) : null}
         {deleteError ? (
           <Callout tone="alert" role="alert">
             {deleteError}

@@ -11,9 +11,11 @@ import com.hmdm.persistence.mapper.CustomerMapper;
 import com.hmdm.persistence.mapper.UserMapper;
 import com.hmdm.rest.json.CustomerSearchRequest;
 import com.hmdm.rest.json.Response;
+import com.hmdm.security.LoginThrottle;
 import com.hmdm.security.SecurityContext;
 import com.hmdm.testsupport.FakeSessions;
 import com.hmdm.testsupport.Fakes;
+import com.hmdm.util.PasswordUtil;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -39,12 +41,13 @@ public class CustomerResourceTest {
     private Fakes.FakeMapper<UserMapper> users;
     private CustomerDAO customerDAO;
     private CustomerResource resource;
+    private Customer stored;
 
     @Before
     public void setUp() {
         customers = new Fakes.FakeMapper<>(CustomerMapper.class);
         users = new Fakes.FakeMapper<>(UserMapper.class);
-        Customer stored = new Customer();
+        stored = new Customer();
         stored.setId(2);
         stored.setName("tenant");
         stored.setFilesDir("secret-files-dir");
@@ -55,7 +58,8 @@ public class CustomerResourceTest {
                 "target/customer-resource-test", 2, null);
         UnsecureDAO unsecureDAO = new UnsecureDAO(null, users.mapper, null, null, null, null, null, null, userDAO, null,
                 customerDAO, null, customers.mapper, null, "target/customer-resource-test", 2, "com.hmdm.launcher");
-        resource = new CustomerResource(customerDAO, unsecureDAO, userDAO, null);
+        resource = new CustomerResource(customerDAO, unsecureDAO, userDAO, null, new LoginThrottle("", false,
+                "0123456789abcdef0123456789abcdef0123456789abcdef", ""));
     }
 
     @After
@@ -91,6 +95,126 @@ public class CustomerResourceTest {
             }
         }
         assertEquals(0, customers.calls.size());
+    }
+
+    /** A super-admin (MD5 of their password below), and customer 2 with an admin account on old@example.com. */
+    private static final String CALLER_MD5 = "5F4DCC3B5AA765D61D8327DEB882CF99";
+
+    private void customerWithAdmin() {
+        com.hmdm.persistence.domain.User caller = Fakes.superAdmin(1, 1);
+        caller.setLogin("root");
+        caller.setPassword(PasswordUtil.getHashFromMd5(CALLER_MD5));
+        SecurityContext.init(caller);
+        com.hmdm.persistence.domain.User admin = new com.hmdm.persistence.domain.User();
+        admin.setId(20);
+        admin.setLogin("tenant");
+        admin.setEmail("old@example.com");
+        admin.setCustomerId(2);
+        com.hmdm.persistence.domain.UserRole role = new com.hmdm.persistence.domain.UserRole();
+        role.setId(2);
+        admin.setUserRole(role);
+        users.answer("findByEmail", a -> "old@example.com".equals(a[0]) ? admin : null);
+        users.answer("findById", a -> Integer.valueOf(20).equals(a[0]) ? admin : null);
+        users.answer("findByLogin", a -> "root".equals(a[0]) ? caller : null);
+        stored.setEmail("old@example.com");
+    }
+
+    private static Customer edit(String email) {
+        Customer customer = new Customer();
+        customer.setId(2);
+        customer.setName("tenant");
+        customer.setEmail(email);
+        return customer;
+    }
+
+    @Test
+    public void changingTheEmailOfACustomersAdminTakesTheCallersCurrentPassword() {
+        customerWithAdmin();
+
+        Customer change = edit("new@example.com");
+        assertEquals("error.password.wrong", resource.updateCustomer(change, null).getMessage());
+        change.setOldPassword("00000000000000000000000000000001");
+        assertEquals("error.password.wrong", resource.updateCustomer(change, null).getMessage());
+        assertEquals(0, users.callsTo("updateIdentity").size());
+        assertEquals(0, customers.callsTo("update").size());
+
+        change.setOldPassword(CALLER_MD5);
+        assertEquals(Response.ResponseStatus.OK, resource.updateCustomer(change, null).getStatus());
+        assertEquals(1, users.callsTo("updateIdentity").size());
+    }
+
+    @Test
+    public void anEditKeepingTheEmailTakesNoPassword() {
+        customerWithAdmin();
+
+        assertEquals(Response.ResponseStatus.OK, resource.updateCustomer(edit("old@example.com"), null).getStatus());
+    }
+
+    @Test
+    public void theCurrentPasswordNeverLeavesInACustomer() throws Exception {
+        Customer customer = edit("a@example.com");
+        customer.setOldPassword(CALLER_MD5);
+
+        String json = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(customer);
+
+        assertTrue(json, !json.contains("oldPassword") && !json.contains(CALLER_MD5));
+        assertTrue(customer.toString(), !customer.toString().contains(CALLER_MD5));
+        assertEquals(CALLER_MD5, new com.fasterxml.jackson.databind.ObjectMapper()
+                .readValue("{\"oldPassword\":\"" + CALLER_MD5 + "\"}", Customer.class).getOldPassword());
+    }
+
+    private static Customer newCustomer() {
+        Customer customer = new Customer();
+        customer.setName("acme");
+        customer.setEmail("acme@example.com");
+        return customer;
+    }
+
+    private static com.hmdm.rest.json.CurrentPassword currentPassword(String md5) {
+        com.hmdm.rest.json.CurrentPassword body = new com.hmdm.rest.json.CurrentPassword();
+        body.setOldPassword(md5);
+        return body;
+    }
+
+    @Test
+    public void creatingACustomerTakesTheCallersCurrentPassword() {
+        customerWithAdmin();
+
+        Customer create = newCustomer();
+        assertEquals("error.password.wrong", resource.updateCustomer(create, null).getMessage());
+        create.setOldPassword("00000000000000000000000000000001");
+        assertEquals("error.password.wrong", resource.updateCustomer(create, null).getMessage());
+        assertEquals(0, customers.callsTo("insert").size());
+        assertEquals(0, users.callsTo("insert").size());
+
+        create.setOldPassword(CALLER_MD5);
+        resource.updateCustomer(create, null);      // the rest of the setup is not faked here
+        assertEquals(1, customers.callsTo("insert").size());
+    }
+
+    @Test
+    public void deletingACustomerTakesTheCallersCurrentPassword() {
+        customerWithAdmin();
+
+        assertEquals("error.password.wrong", resource.removeCustomer(2, null, null).getMessage());
+        assertEquals("error.password.wrong",
+                resource.removeCustomer(2, currentPassword("00000000000000000000000000000001"), null).getMessage());
+        assertEquals(0, customers.callsTo("delete").size());
+
+        assertEquals(Response.ResponseStatus.OK,
+                resource.removeCustomer(2, currentPassword(CALLER_MD5), null).getStatus());
+        assertEquals(1, customers.callsTo("delete").size());
+    }
+
+    @Test
+    public void theDaoRefusesACustomerCreateOrDeleteThatSkipsTheCheck() {
+        SecurityContext.init(Fakes.superAdmin(1, 1));
+
+        assertThrowsSecurity(() -> customerDAO.insertCustomer(newCustomer()));
+        assertThrowsSecurity(() -> customerDAO.removeCustomerById(2));
+        assertEquals(0, customers.callsTo("insert").size());
+        assertEquals(0, customers.callsTo("delete").size());
+        assertEquals(0, users.calls.size());
     }
 
     @Test
@@ -139,7 +263,21 @@ public class CustomerResourceTest {
         Response response = resource.impersonateCustomer(2, request(sessionWrites), null);
 
         assertEquals(Response.ResponseStatus.OK, response.getStatus());
-        assertEquals(java.util.Collections.singletonList(admin), sessionWrites);
+        // The account, the session format, and the super-admin's id
+        assertEquals(java.util.Arrays.asList(admin, 1, 1), sessionWrites);
+    }
+
+    @Test
+    public void aSessionSignedInAsAnotherAccountCannotSignInAsACustomersAdmin() throws Exception {
+        SecurityContext.init(Fakes.superAdmin(1, 1));
+        com.hmdm.testsupport.FakeSessions sessions = new com.hmdm.testsupport.FakeSessions();
+        com.hmdm.testsupport.FakeSessions.Session inner = sessions.existing("signed-in-as-another");
+        inner.attributes.put("impersonatedBy", 5);
+
+        assertDenied("impersonate", resource.impersonateCustomer(2, sessions.request(), null));
+        assertEquals(0, users.callsTo("findAll").size());
+        assertEquals(inner, sessions.all.get(sessions.all.size() - 1));
+        assertEquals(false, inner.invalidated);
     }
 
     @Test

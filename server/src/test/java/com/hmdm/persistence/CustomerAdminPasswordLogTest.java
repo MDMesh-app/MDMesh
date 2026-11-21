@@ -92,6 +92,7 @@ public class CustomerAdminPasswordLogTest {
         CustomerDAO dao = new CustomerDAO(customers.mapper, null, null, devices.mapper, new UserDAO(users.mapper, 2),
                 settings, null, "target/customer-admin-password-log-test", 2, events);
         SecurityContext.init(Fakes.superAdmin(1, 1));
+        SecurityContext.get().confirmCurrentPassword();      // as CustomerResource does once the password passes
         Customer customer = new Customer();
         customer.setName("tenant");
         customer.setPrefix("tn");
@@ -121,8 +122,10 @@ public class CustomerAdminPasswordLogTest {
         stored.setFilesDir(dir.getName());
         Fakes.FakeMapper<CustomerMapper> customers = new Fakes.FakeMapper<>(CustomerMapper.class);
         customers.answer("findCustomerById", a -> stored);
-        CustomerDAO dao = new CustomerDAO(customers.mapper, null, null, null, null, null, null, base.getPath(), 2, null);
+        CustomerDAO dao = new CustomerDAO(customers.mapper, null, null, null,
+                new UserDAO(new Fakes.FakeMapper<>(UserMapper.class).mapper, 2), null, null, base.getPath(), 2, null);
         SecurityContext.init(Fakes.superAdmin(1, 1));
+        SecurityContext.get().confirmCurrentPassword();
         java.io.PrintStream out = System.out;
         java.io.ByteArrayOutputStream printed = new java.io.ByteArrayOutputStream();
         System.setOut(new java.io.PrintStream(printed, true, "UTF-8"));

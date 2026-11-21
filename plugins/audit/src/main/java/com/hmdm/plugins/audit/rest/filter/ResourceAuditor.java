@@ -21,19 +21,19 @@
 
 package com.hmdm.plugins.audit.rest.filter;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.hmdm.persistence.domain.User;
 import com.hmdm.plugins.audit.persistence.domain.AuditLogRecord;
 import com.hmdm.plugins.audit.rest.AuditResource;
 import com.hmdm.rest.filter.BaseIPFilter;
 import com.hmdm.rest.json.Response;
+import com.hmdm.rest.json.UserCredentials;
+import com.hmdm.security.ConsoleSession;
 import com.hmdm.security.SecurityContext;
 import com.hmdm.security.jwt.JWTFilter;
 import com.hmdm.util.ClientAddress;
-import org.json.JSONException;
-import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -46,9 +46,12 @@ import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpSession;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Enumeration;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * <p>An auditor for a single request-response chain.</p>
@@ -65,11 +68,9 @@ class ResourceAuditor {
     private static final String sessionCredentials = "credentials";
 
     /**
-     * <p>Reads command bodies with the same defaults as the JSON provider that hands them to the resource.</p>
+     * <p>Reads request bodies with the same defaults as the JSON provider that hands them to the resource.</p>
      */
     private static final ObjectMapper COMMAND_MAPPER = new ObjectMapper();
-
-    private static final String NOT_STORED = "(not valid JSON, not stored)";
 
     /**
      * <p>A key in message resource bundle referring to description of action mapped to audited request.</p>
@@ -92,19 +93,36 @@ class ResourceAuditor {
     private final FilterChain chain;
 
     /**
-     * <p>A flag indicating if request data must be saved as a payload.</p>
+     * <p>How the request body is stored, or {@code null} if request data is not saved as a payload.</p>
      */
-    private final boolean payload;
+    private final AuditBody body;
 
-    /**
-     * <p>A flag indicating if the payload of an agent command must be masked in the saved request data.</p>
-     */
-    private final boolean maskCommandPayload;
+    /** plugin_audit_log.login is VARCHAR(100). */
+    static final int MAX_LOGIN = 100;
+
+    /** The most of the body read for the record, 0 for no cap but {@link ServletRequestAuditWrapper#MAX_BODY}. */
+    private final int bodyCap;
 
     /**
      * <p>A flag indicating if response is in Headwind MDM standard format and should be checked for errors.</p>
      */
     private final boolean checkResponse;
+
+    /**
+     * <p>The actions that sign the session in as another account. Their record names whoever was signed in before the
+     * request ran: afterwards, the session is the other account's.</p>
+     */
+    private static final Set<String> IMPERSONATIONS = new HashSet<>(Arrays.asList(
+            "plugin.audit.action.impersonate.user", "plugin.audit.action.impersonate.customer"));
+
+    /** Who was signed in before the request ran, for {@link #IMPERSONATIONS}. */
+    private User actorBefore;
+
+    /**
+     * In a session signed in as another account, the administrator who signed in as it, as the session was when the
+     * request came: the actions taken in it are the administrator's, not the account's alone.
+     */
+    private Integer impersonatedBy;
 
     private final BaseIPFilter remoteAddrResolver;
 
@@ -118,11 +136,11 @@ class ResourceAuditor {
      * <p>Constructs new <code>ResourceAuditor</code> instance. This implementation does nothing.</p>
      */
     ResourceAuditor(String auditLogActionKey, ServletRequest request, ServletResponse response,
-                    FilterChain chain, boolean payload, boolean maskCommandPayload, boolean checkResponse,
+                    FilterChain chain, AuditBody body, int bodyCap, boolean checkResponse,
                     String proxyIps, String ipHeader, List<String> trustedProxies, boolean privatePeersAreProxies)
             throws IOException {
         this.auditLogActionKey = auditLogActionKey;
-        if (payload) {
+        if (body != null) {
             // Wrap request only if we need to log it
             this.request = new ServletRequestAuditWrapper((HttpServletRequest)request);
         } else {
@@ -130,8 +148,8 @@ class ResourceAuditor {
         }
         this.response = new ServletResponseAuditWrapper((HttpServletResponse)response);
         this.chain = chain;
-        this.payload = payload;
-        this.maskCommandPayload = maskCommandPayload;
+        this.body = body;
+        this.bodyCap = bodyCap;
         this.checkResponse = checkResponse;
         this.remoteAddrResolver = new BaseIPFilter("", proxyIps, ipHeader);
         this.trustedProxies = trustedProxies;
@@ -172,6 +190,10 @@ class ResourceAuditor {
      * @throws ServletException if an unexpected error occurs.
      */
     void doProcess() throws IOException, ServletException {
+        if (IMPERSONATIONS.contains(auditLogActionKey)) {
+            actorBefore = actingUser((HttpServletRequest) this.request);
+        }
+        impersonatedBy = ConsoleSession.impersonatorOf((HttpServletRequest) this.request);
         chain.doFilter(this.request, this.response);
     }
 
@@ -184,26 +206,24 @@ class ResourceAuditor {
      */
     AuditLogRecord getAuditLogRecord() throws IOException {
         final HttpServletRequest httpRequest = (HttpServletRequest) this.request;
-        final User currentUser = actingUser(httpRequest);
+        final User currentUser = actorBefore != null ? actorBefore : actingUser(httpRequest);
 
         String action = this.auditLogActionKey;
         String payloadString = null;
         String requestedLogin = null;
-        if (payload) {
+        if (body != null) {
             ServletRequestAuditWrapper requestWrapper = (ServletRequestAuditWrapper)this.request;
             payloadString = "Method: " + requestWrapper.getMethod() + "\n" +
                     "URI: " + requestWrapper.getRequestURI();
-            String body = requestWrapper.getBody();
-            if (body != null && body.length() > 0) {
-                if (maskCommandPayload) {
-                    body = stripCommandPayload(requestWrapper.getRawBody());
-                } else if (needStripPassword(action)) {
-                    // Since we parse JSON anyway, let's extract and log the login from the request
-                    StripPasswordResponse response = stripPassword(body);
-                    body = response.result;
-                    requestedLogin = response.login;
+            byte[] rawBody = requestWrapper.getRawBody();
+            if (requestWrapper.isTooLarge()) {
+                payloadString += "\nBody: " + AuditBody.TOO_LARGE;
+            } else if (rawBody != null && rawBody.length > 0) {
+                // Never the body as sent: AuditBody masks every one, and refuses one it can't parse
+                payloadString += "\nBody: " + body.stored(rawBody, bodyCap);
+                if (currentUser == null) {
+                    requestedLogin = loginOf(rawBody);
                 }
-                payloadString += "\nBody: " + body;
             }
             payloadString += "\nUser-Agent: " + httpRequest.getHeader("User-Agent");
         }
@@ -218,16 +238,16 @@ class ResourceAuditor {
         } else {
             // 1 is the default customer ID, otherwise the record won't be visible
             logRecord.setCustomerId(1);
-            if (requestedLogin != null) {
-                logRecord.setLogin(requestedLogin);
+            // The login the sign-in resource ran. Only a body it refused leaves none, and then the body says what it can.
+            Object resourceLogin = httpRequest.getAttribute(UserCredentials.REQUEST_LOGIN);
+            String login = resourceLogin instanceof String ? (String) resourceLogin : requestedLogin;
+            if (login != null) {
+                // The column holds 100 characters; a sign-in can send any login, and the log line takes it too
+                logRecord.setLogin(login.length() > MAX_LOGIN ? login.substring(0, MAX_LOGIN) : login);
             }
         }
         if (this.response.getStatus() == 200) {
-            final byte[] content = this.response.getContent();
-            ObjectMapper objectMapper = new ObjectMapper();
-            final Response response = objectMapper.readValue(content, Response.class);
-            if (checkResponse &&
-                    (response == null || response.getStatus() != Response.ResponseStatus.OK)) {
+            if (checkResponse && !isOk(this.response.getContent())) {
                 logRecord.setErrorCode(1);
             } else {
                 logRecord.setErrorCode(0);
@@ -235,12 +255,30 @@ class ResourceAuditor {
         } else {
             logRecord.setErrorCode(2);
         }
-        if (payload) {
+        if (body != null) {
             logRecord.setPayload(payloadString);
         }
         logRecord.setAction(action);
+        // As AuthFilter checked the session (a session ended meanwhile is no session to ask), else as it was on arrival
+        Object markers = httpRequest.getAttribute(ConsoleSession.MARKERS);
+        logRecord.setImpersonatedBy(markers instanceof ConsoleSession.Markers
+                ? ((ConsoleSession.Markers) markers).impersonatedBy : impersonatedBy);
 
         return logRecord;
+    }
+
+    /**
+     * <p>Whether a response is Headwind's {@code {"status": "OK", ...}}. One that isn't JSON is not OK; the parse error
+     * is dropped, never thrown out of the filter: its message quotes the response text, which can hold a secret (an
+     * enrollment code), and the container would log it, with no audit record written.</p>
+     */
+    private static boolean isOk(byte[] content) {
+        try {
+            Response response = COMMAND_MAPPER.readValue(content, Response.class);
+            return response != null && response.getStatus() == Response.ResponseStatus.OK;
+        } catch (IOException | RuntimeException e) {
+            return false;
+        }
     }
 
     /**
@@ -269,87 +307,44 @@ class ResourceAuditor {
         return null;
     }
 
-    private boolean needStripPassword(String action) {
-        return "plugin.audit.action.user.login".equals(action) ||
-               "plugin.audit.action.jwt.login".equals(action) ||
-               "plugin.audit.action.password.changed".equals(action) ||
-               "plugin.audit.action.update.configuration".equals(action) ||
-               "plugin.audit.action.update.user".equals(action);
+    /** The body an agent command request is stored with ({@link AuditBody#COMMAND}). */
+    static String stripCommandPayload(byte[] rawBody) {
+        return AuditBody.COMMAND.stored(rawBody);
     }
 
     /**
-     * <p>Masks the payload of an agent command request, for one device ({"type", "payload", ...}) or many
-     * ({"deviceIds", "command": {"type", "payload", ...}}). A payload can carry a secret (a kiosk exit password, a
-     * new screen lock PIN), so it is never stored; the command type, the device IDs and the capability are kept.
-     * A body that is not a JSON object is not stored either.</p>
-     *
-     * <p>The body is parsed from its raw bytes with a default Jackson mapper, as the resource's JSON provider does,
-     * so the record shows what the resource ran (for duplicate keys, the last one; the encoding comes from the
-     * bytes, not the declared charset).</p>
+     * <p>The login a body names, for a record the resource left none on ({@link UserCredentials#REQUEST_LOGIN}): the
+     * login the resource's JSON binding would read from it, or none. It reads the body as Jackson does (a body Jackson
+     * refuses anywhere, invalid UTF-8 included, names no login: the resource refused it too, so nobody signed in) and
+     * the top-level fields only: just the value of {@code login} is decoded, nothing else of the body is kept, the
+     * last login counts, a scalar is a login, and an object or array as a login fails the binding, so it names
+     * none.</p>
      *
      * @param rawBody a request body as the client sent it.
-     * @return the request body to store in the audit log.
+     * @return the login, or {@code null} if the body names none or can't be read in full.
      */
-    static String stripCommandPayload(byte[] rawBody) {
-        try {
-            JsonNode root = COMMAND_MAPPER.readTree(rawBody);
-            if (root == null || !root.isObject()) {
-                return NOT_STORED;
+    private static String loginOf(byte[] rawBody) {
+        try (JsonParser parser = COMMAND_MAPPER.getFactory().createParser(rawBody)) {
+            if (parser.nextToken() != JsonToken.START_OBJECT) {
+                return null;
             }
-            maskCommandPayload((ObjectNode) root);
-            JsonNode command = root.get("command");
-            if (command != null && command.isObject()) {
-                maskCommandPayload((ObjectNode) command);
-            }
-            return COMMAND_MAPPER.writeValueAsString(root);
-        } catch (IOException e) {
-            return NOT_STORED;
-        }
-    }
-
-    private static void maskCommandPayload(ObjectNode command) {
-        JsonNode payload = command.get("payload");
-        if (payload != null && !payload.isNull()) {
-            command.put("payload", "******");
-        }
-    }
-
-    private class StripPasswordResponse {
-        String result;
-        String login;
-    }
-
-    private StripPasswordResponse stripPassword(String jsonPayload) {
-        StripPasswordResponse response = new StripPasswordResponse();
-        response.result = jsonPayload;
-        try {
-            boolean dirty = false;
-            JSONObject jsonObject = new JSONObject(jsonPayload);
-            if (jsonObject.has("newPassword")) {
-                jsonObject.put("newPassword", "******");
-                dirty = true;
-            }
-            if (jsonObject.has("oldPassword")) {
-                jsonObject.put("oldPassword", "******");
-                dirty = true;
-            }
-            if (jsonObject.has("password")) {
-                jsonObject.put("password", "******");
-                dirty = true;
-            }
-            if (jsonObject.has("confirm")) {
-                jsonObject.put("confirm", "******");
-                dirty = true;
-            }
-            if (dirty) {
-                response.result = jsonObject.toString();
-                if (jsonObject.has("login")) {
-                    response.login = jsonObject.getString("login");
+            String login = null;
+            boolean bindable = true;
+            JsonToken token;
+            while ((token = parser.nextToken()) == JsonToken.FIELD_NAME) {
+                boolean isLogin = "login".equals(parser.currentName());
+                JsonToken value = parser.nextToken();
+                if (isLogin) {
+                    bindable &= value.isScalarValue();
+                    login = value.isScalarValue() && value != JsonToken.VALUE_NULL ? parser.getText() : null;
+                } else if (value == JsonToken.VALUE_STRING) {
+                    parser.getText();               // read as the binding reads it: an undecodable value refuses it
                 }
+                parser.skipChildren();
             }
-        } catch (JSONException e) {
-            // Do not change anything if not a valid JSON
+            return token == JsonToken.END_OBJECT && bindable ? login : null;
+        } catch (IOException | RuntimeException e) {
+            return null;
         }
-        return response;
     }
 }

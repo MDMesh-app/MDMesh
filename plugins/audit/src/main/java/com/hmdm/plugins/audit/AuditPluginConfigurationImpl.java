@@ -27,10 +27,13 @@ import com.hmdm.plugins.audit.guice.module.AuditConfigureModule;
 import com.hmdm.plugins.audit.guice.module.AuditLiquibaseModule;
 import com.hmdm.plugins.audit.guice.module.AuditPersistenceModule;
 import com.hmdm.plugins.audit.guice.module.AuditRestModule;
+import com.hmdm.plugins.audit.guice.module.AuditScrubTaskModule;
+import com.hmdm.plugin.PluginTaskModule;
 
 import javax.servlet.ServletContext;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * <p>A configuration for <code>Audit</code> plugin.</p>
@@ -84,6 +87,14 @@ public class AuditPluginConfigurationImpl implements PluginConfiguration {
         modules.add(new AuditRestModule());
 
         return modules;
+    }
+
+    /** The background scrub of the audit records older releases stored ({@link AuditScrubTaskModule}). */
+    @Override
+    public Optional<List<Class<? extends PluginTaskModule>>> getTaskModules(ServletContext context) {
+        List<Class<? extends PluginTaskModule>> modules = new ArrayList<>();
+        modules.add(AuditScrubTaskModule.class);
+        return Optional.of(modules);
     }
 
 }

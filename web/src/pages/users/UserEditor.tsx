@@ -1,4 +1,5 @@
 import { useEffect, useId, useState } from 'react';
+import { fetchCurrentUser } from '../../api/auth';
 import {
   getUser,
   listAccessConfigurations,
@@ -27,6 +28,8 @@ import { MIN_LENGTH } from '../settings/ChangePasswordModal';
 export function AccessPicker({
   label,
   all,
+  allLocked = false,
+  allStored = false,
   onAll,
   items,
   selected,
@@ -34,6 +37,10 @@ export function AccessPicker({
 }: {
   label: string;
   all: boolean;
+  /** The caller doesn't reach all of these themselves, so the server would refuse to grant it. */
+  allLocked?: boolean;
+  /** The account had "all" when the editor opened: keeping it is no grant, so it can be checked again. */
+  allStored?: boolean;
   onAll: (all: boolean) => void;
   items: AccessItem[];
   selected: AccessItem[];
@@ -47,9 +54,14 @@ export function AccessPicker({
       <Checkbox
         className="v2-users-choice"
         checked={all}
+        // Never a checked box greyed out: a stored "all" can still be cleared, and checked again in the same edit
+        disabled={allLocked && !all && !allStored}
         onChange={(e) => onAll(e.target.checked)}
         label={`All ${label.toLowerCase()}`}
       />
+      {allLocked && !all && !allStored ? (
+        <p className="v2-users-help">Your own access is limited, so you can give only what you have.</p>
+      ) : null}
       {!all && (
         <>
           <div className="v2-users-choices">
@@ -110,8 +122,9 @@ export function UserEditor({
           name: '',
           email: '',
           userRole: { name: '', permissions: [] },
-          allDevicesAvailable: true,
-          allConfigAvailable: true,
+          // Nothing until chosen: "all" is a deliberate choice, and one the server refuses a limited admin
+          allDevicesAvailable: false,
+          allConfigAvailable: false,
           groups: [],
           configurations: [],
         }
@@ -124,6 +137,12 @@ export function UserEditor({
   const [busy, setBusy] = useState(false);
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
+  // The caller's own password, for the changes the server asks it for (see needsCurrentPassword)
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [askCurrent, setAskCurrent] = useState(false);
+  const [storedEmail, setStoredEmail] = useState('');
+  const [callerLimited, setCallerLimited] = useState({ devices: false, configs: false });
+  const [storedAll, setStoredAll] = useState({ devices: false, configs: false });
   const rulesId = useId();
   useEffect(() => {
     const controller = new AbortController();
@@ -131,10 +150,22 @@ export function UserEditor({
       target === 'new' ? Promise.resolve(null) : getUser(target.id!, controller.signal),
       listGroups(controller.signal),
       listAccessConfigurations(controller.signal),
+      // Only to grey out what the server would refuse: the editor opens without it, and the server still checks
+      fetchCurrentUser(controller.signal).catch(() => null),
     ])
-      .then(([user, g, c]) => {
+      .then(([user, g, c, caller]) => {
         if (controller.signal.aborted) return;
-        if (user) setDraft({ ...user, groups: user.groups ?? [], configurations: user.configurations ?? [] });
+        // The caller's access as the server has it now, not as it was at sign-in. The lists hold only what they reach.
+        const unlimited = !!(caller?.superAdmin || caller?.userRole?.superAdmin);
+        setCallerLimited({
+          devices: !unlimited && caller?.allDevicesAvailable === false,
+          configs: !unlimited && caller?.allConfigAvailable === false,
+        });
+        if (user) {
+          setDraft({ ...user, groups: user.groups ?? [], configurations: user.configurations ?? [] });
+          setStoredEmail(user.email ?? '');
+          setStoredAll({ devices: !!user.allDevicesAvailable, configs: !!user.allConfigAvailable });
+        }
         setGroups(g ?? []);
         setConfigs(c ?? []);
         setReady(true);
@@ -151,6 +182,10 @@ export function UserEditor({
   const matches = password === confirmation;
   const showRules = typed || target === 'new';
   const passwordValid = showRules ? longEnough && matches : true;
+  // Creating an account takes the caller's own password, and so does changing another account's email (recovery links
+  // go there) or password. askCurrent: the server asked for it anyway (the email changed meanwhile).
+  const needsCurrentPassword =
+    target === 'new' || typed || askCurrent || (draft?.email ?? '').trim() !== storedEmail.trim();
   const rules: Rule[] = [
     { key: 'len', label: `At least ${MIN_LENGTH} characters`, met: password ? longEnough : null },
     { key: 'match', label: 'Both passwords match', met: confirmation ? matches : null },
@@ -162,12 +197,21 @@ export function UserEditor({
       setError(longEnough ? 'The passwords do not match.' : `Use a password of at least ${MIN_LENGTH} characters.`);
       return;
     }
+    if (needsCurrentPassword && !currentPassword) {
+      setError('Enter your current password.');
+      return;
+    }
     setBusy(true);
     try {
-      await saveUser(draft, password);
+      await saveUser(draft, password, needsCurrentPassword ? currentPassword : '');
       onSaved();
     } catch (e) {
-      setError(managementError(e));
+      if (e instanceof Error && e.message === 'error.password.wrong' && !needsCurrentPassword) {
+        setAskCurrent(true);
+        setError('Enter your current password to save this change.');
+      } else {
+        setError(managementError(e));
+      }
     } finally {
       setBusy(false);
     }
@@ -191,7 +235,9 @@ export function UserEditor({
             variant="primary"
             type="submit"
             form="user-form"
-            disabled={!ready || !draft?.userRole?.id || !passwordValid || busy}
+            disabled={
+              !ready || !draft?.userRole?.id || !passwordValid || (needsCurrentPassword && !currentPassword) || busy
+            }
           >
             {busy ? 'Saving…' : 'Save user'}
           </Button>
@@ -277,9 +323,29 @@ export function UserEditor({
               />
             </Field>
             {showRules && <RuleList id={rulesId} rules={rules} />}
+            {needsCurrentPassword && (
+              <Field
+                label="Your current password"
+                help={
+                  target === 'new'
+                    ? 'Needed to create an account.'
+                    : 'Needed to change another account’s email or password.'
+                }
+              >
+                <PasswordInput
+                  value={currentPassword}
+                  required
+                  autoComplete="current-password"
+                  toggleLabel="Show your current password"
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                />
+              </Field>
+            )}
             <AccessPicker
               label="Device groups"
               all={draft.allDevicesAvailable}
+              allLocked={callerLimited.devices}
+              allStored={storedAll.devices}
               onAll={(allDevicesAvailable) => update({ allDevicesAvailable })}
               items={groups}
               selected={draft.groups}
@@ -288,6 +354,8 @@ export function UserEditor({
             <AccessPicker
               label="Configurations"
               all={draft.allConfigAvailable}
+              allLocked={callerLimited.configs}
+              allStored={storedAll.configs}
               onAll={(allConfigAvailable) => update({ allConfigAvailable })}
               items={configs}
               selected={draft.configurations}

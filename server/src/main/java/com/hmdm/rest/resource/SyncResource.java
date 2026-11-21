@@ -49,6 +49,7 @@ import com.hmdm.event.DeviceLocationUpdatedEvent;
 import com.hmdm.event.EventService;
 import com.hmdm.persistence.CustomerDAO;
 import com.hmdm.persistence.DeviceDAO;
+import com.hmdm.persistence.LegacyDevice;
 import com.hmdm.persistence.domain.ApplicationSetting;
 import com.hmdm.persistence.domain.ApplicationSettingType;
 import com.hmdm.persistence.domain.ApplicationVersion;
@@ -188,40 +189,26 @@ public class SyncResource {
         }
 
         try {
-            Device dbDevice = this.unsecureDAO.getDeviceByNumber(number);
-            boolean migration = false;
-            boolean foundByImeiOrSerial = false;
-
-            if (dbDevice == null) {
-                dbDevice = this.unsecureDAO.getDeviceByOldNumber(number);
-                migration = dbDevice != null;
-            }
-
-            if (dbDevice == null) {
-                dbDevice = this.unsecureDAO.getDeviceByImeiOrSerial(number);
-                foundByImeiOrSerial = dbDevice != null;
-                if (foundByImeiOrSerial) {
-                    logger.info("IMEI/Serial {}: assigned existing number: {}", number, dbDevice.getNumber());
-                }
-            }
+            LegacyDevice found = this.unsecureDAO.findLegacyDevice(number, LegacyDevice.Lookup.IMEI_OR_SERIAL);
 
             // Device creation on demand
-            if (dbDevice == null) {
+            if (found.isAbsent()) {
                 logger.info("Creating device {} with options {}", number, createOptions.toString());
-                dbDevice = unsecureDAO.createNewDeviceOnDemand(number, createOptions);
+                found = unsecureDAO.createLegacyDevice(number, createOptions);
             }
 
-            if (dbDevice != null) {
+            if (found.isServed()) {
+                Device dbDevice = found.getDevice();
                 // Protection against double enrollment
                 if (preventDuplicateEnrollment && dbDevice.getLastUpdate() != 0l) {
                     logger.warn("Device {} already enrolled. To enroll, delete device from the list and add back", dbDevice.getNumber());
                     return Response.DEVICE_EXISTS();
                 }
 
-                return getDeviceSettingInternal(dbDevice, migration, foundByImeiOrSerial, request, response);
+                return getDeviceSettingInternal(found, number, request, response);
             } else {
                 logger.warn("Requested device {} was not found", number);
-                return Response.DEVICE_NOT_FOUND_ERROR();
+                return found.refusal();
             }
         } catch (Exception e) {
             logger.error("Unexpected error when getting device settings", e);
@@ -254,37 +241,18 @@ public class SyncResource {
         }
 
         try {
-            Device dbDevice = this.unsecureDAO.getDeviceByNumber(number);
-            boolean migration = false;
-            boolean foundByImeiOrSerial = false;
-
-            if (dbDevice == null) {
-                dbDevice = this.unsecureDAO.getDeviceByOldNumber(number);
-                migration = dbDevice != null;
-            }
-
-            if (dbDevice == null) {
-                dbDevice = this.unsecureDAO.getDeviceByImeiOrSerial(number);
-                foundByImeiOrSerial = dbDevice != null;
-                if (foundByImeiOrSerial) {
-                    logger.info("IMEI/Serial {}: assigned existing number: {}", number, dbDevice.getNumber());
-                }
-            }
+            LegacyDevice found = this.unsecureDAO.findLegacyDevice(number, LegacyDevice.Lookup.IMEI_OR_SERIAL);
 
             // Device creation on demand
-            if (dbDevice == null) {
-                if (unsecureDAO.isSingleCustomer()) {
-                    dbDevice = unsecureDAO.createNewDeviceOnDemand(number);
-                } else {
-                    logger.warn("Not allowed to create devices in the multi-tenant setup");
-                }
+            if (found.isAbsent()) {
+                found = unsecureDAO.createLegacyDevice(number);
             }
 
-            if (dbDevice != null) {
-                return getDeviceSettingInternal(dbDevice, migration, foundByImeiOrSerial, request, response);
+            if (found.isServed()) {
+                return getDeviceSettingInternal(found, number, request, response);
             } else {
                 logger.warn("Requested device {} was not found", number);
-                return Response.DEVICE_NOT_FOUND_ERROR();
+                return found.refusal();
             }
         } catch (Exception e) {
             logger.error("Unexpected error when getting device settings", e);
@@ -293,9 +261,15 @@ public class SyncResource {
         }
     }
 
-    private Response getDeviceSettingInternal(Device dbDevice, boolean migration, boolean foundByImeiOrSerial,
+    private Response getDeviceSettingInternal(LegacyDevice found, String number,
                                            HttpServletRequest request,
                                            HttpServletResponse response) throws UnsupportedEncodingException {
+        final Device dbDevice = found.getDevice();
+        final boolean migration = found.getMatch() == LegacyDevice.Lookup.OLD_NUMBER;
+        final boolean foundByImeiOrSerial = found.getMatch() == LegacyDevice.Lookup.IMEI_OR_SERIAL;
+        if (foundByImeiOrSerial) {
+            logger.info("IMEI/Serial {}: assigned existing number: {}", number, dbDevice.getNumber());
+        }
 
         if (!migration && dbDevice.getOldNumber() != null) {
             // If a device requested the configuration by new device ID, the migration is completed
@@ -445,9 +419,8 @@ public class SyncResource {
         final List<ApplicationSetting> applicationSettings
                 = combineDeviceLogRules(configApplicationSettings, deviceAppSettings);
 
-        final Device dbDevice1 = dbDevice;
         data.setApplicationSettings(applicationSettings.stream()
-                .map(s -> new SyncApplicationSetting(s, dbDevice1))
+                .map(s -> new SyncApplicationSetting(s, dbDevice))
                 .collect(Collectors.toList()));
 
         final List<ConfigurationFile> configurationFiles = this.unsecureDAO.getConfigurationFiles(dbDevice);
@@ -529,24 +502,16 @@ public class SyncResource {
         logger.debug("/public/sync/info --> {}", deviceInfo);
 
         try {
-            Device dbDevice = this.unsecureDAO.getDeviceByNumber(deviceInfo.getDeviceId());
-            boolean migration = false;
-
-            if (dbDevice == null) {
-                dbDevice = this.unsecureDAO.getDeviceByOldNumber(deviceInfo.getDeviceId());
-                migration = dbDevice != null;
-            }
+            LegacyDevice found = this.unsecureDAO.findLegacyDevice(deviceInfo.getDeviceId(), LegacyDevice.Lookup.OLD_NUMBER);
 
             // Device creation on demand
-            if (dbDevice == null) {
-                if (unsecureDAO.isSingleCustomer()) {
-                    dbDevice = unsecureDAO.createNewDeviceOnDemand(deviceInfo.getDeviceId());
-                } else {
-                    logger.warn("Not allowed to create devices in the multi-tenant setup");
-                }
+            if (found.isAbsent()) {
+                found = unsecureDAO.createLegacyDevice(deviceInfo.getDeviceId());
             }
 
-            if (dbDevice != null) {
+            if (found.isServed()) {
+                final Device dbDevice = found.getDevice();
+                final boolean migration = found.getMatch() == LegacyDevice.Lookup.OLD_NUMBER;
                 if (!migration && dbDevice.getOldNumber() != null) {
                     // If a device sends data using a new device ID, the migration is completed
                     this.unsecureDAO.completeDeviceMigration(dbDevice.getId());
@@ -604,7 +569,7 @@ public class SyncResource {
                 return Response.OK();
             } else {
                 logger.warn("Requested device {} was not found", deviceInfo.getDeviceId());
-                return Response.DEVICE_NOT_FOUND_ERROR();
+                return found.refusal();
             }
         } catch (Exception e) {
             logger.error("Unexpected error when processing info submitted by device", e);
@@ -629,14 +594,14 @@ public class SyncResource {
         logger.debug("/public/sync/applicationSettings/{} --> {}", deviceNumber, applicationSettings);
 
         try {
-            Device dbDevice = this.unsecureDAO.getDeviceByNumber(deviceNumber);
-            if (dbDevice != null) {
-                this.unsecureDAO.saveDeviceApplicationSettings(dbDevice, applicationSettings.stream().map(s -> {
+            LegacyDevice found = this.unsecureDAO.findLegacyDevice(deviceNumber, LegacyDevice.Lookup.NUMBER);
+            if (found.isServed()) {
+                this.unsecureDAO.saveDeviceApplicationSettings(found.getDevice(), applicationSettings.stream().map(s -> {
                     ApplicationSetting applicationSetting = new ApplicationSetting();
                     applicationSetting.setApplicationPkg(s.getPackageId());
                     applicationSetting.setName(s.getName());
                     applicationSetting.setType(ApplicationSettingType.byId(s.getType()).orElse(ApplicationSettingType.STRING));
-                    applicationSetting.setReadonly(s.isReadonly());
+                    applicationSetting.setReadonly(Boolean.TRUE.equals(s.isReadonly()));
                     applicationSetting.setValue(s.getValue());
                     applicationSetting.setLastUpdate(s.getLastUpdate());
 
@@ -646,7 +611,7 @@ public class SyncResource {
                 return Response.OK();
             } else {
                 logger.warn("Requested device {} was not found", deviceNumber);
-                return Response.DEVICE_NOT_FOUND_ERROR();
+                return found.refusal();
             }
         } catch (Exception e) {
             logger.error("Unexpected error when saving device application settings for device {}", deviceNumber, e);

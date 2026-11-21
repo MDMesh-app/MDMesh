@@ -44,9 +44,16 @@ public class PushService {
         return enabled;
     }
 
-    // Use both ways to send a message, because the decision how to receive messages is done on the device (configuration)
+    /**
+     * Sends the message both ways, because the device's configuration decides how it receives messages. Never to an
+     * MDMesh agent device: the agent reads neither, and an MQTT topic is its device number, readable by any client of
+     * the broker.
+     */
     public int send(PushMessage message) {
         if (!enabled) {
+            return 0;
+        }
+        if (deviceDAO.isAgentDevice(message.getDeviceId())) {
             return 0;
         }
         pushSenderMqtt.send(message);

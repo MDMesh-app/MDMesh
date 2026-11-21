@@ -103,6 +103,8 @@ updates:
       docker-images: { patterns: ["*"] }
     ignore:
       # Base images use floating tags, so patch/security rebuilds come from the registry on every image build.
+      # Exception: tomcat (docker/server.Dockerfile, the server's runtime and its JDK) is pinned to an exact tag and
+      # digest, so a release ships the base it was tested on; its rebuilds and releases arrive in this group's PR.
       # Exception: caddy (docker/web.Dockerfile, the edge) is pinned to an exact release because a Caddy release can
       # change how docker/Caddyfile parses. It is deliberately NOT ignored: each release arrives in this group's PR,
       # and T0's `edge` job (scripts/edge-check.sh) validates the Caddyfile in every hosting mode against it.

@@ -117,4 +117,35 @@
         </rollback>
     </changeSet>
 
+    <changeSet id="plugin-audit-19.11.2026-scrub-progress" author="lunacy" context="common">
+        <comment>Table,new: plugin_audit_scrub, one row: how far the background scrub (AuditScrubTaskModule) has got
+            through the audit records older releases stored with secrets in them, and where it stops (the last record
+            this upgrade found; later ones are masked when written). The scrub itself runs in the server, in small
+            batches after startup, with the same masking as new records (StoredPayloads); this changeset only gives it
+            its place to start.</comment>
+        <sql>
+            CREATE TABLE plugin_audit_scrub (
+                id INT PRIMARY KEY CHECK (id = 1),
+                lastId INT NOT NULL,
+                upToId INT NOT NULL
+            );
+            INSERT INTO plugin_audit_scrub (id, lastId, upToId)
+                SELECT 1, 0, COALESCE(MAX(id), 0) FROM plugin_audit_log;
+        </sql>
+        <rollback>
+            DROP TABLE plugin_audit_scrub;
+        </rollback>
+    </changeSet>
+
+    <changeSet id="plugin-audit-19.11.2026-impersonatedBy" author="lunacy" context="common">
+        <comment>Column,new: plugin_audit_log#impersonatedBy: in a session signed in as another account, the id of the
+            administrator who signed in as it. NULL for every other record and for records written before.</comment>
+        <sql>
+            ALTER TABLE plugin_audit_log ADD COLUMN impersonatedBy INT;
+        </sql>
+        <rollback>
+            ALTER TABLE plugin_audit_log DROP COLUMN impersonatedBy;
+        </rollback>
+    </changeSet>
+
 </databaseChangeLog>

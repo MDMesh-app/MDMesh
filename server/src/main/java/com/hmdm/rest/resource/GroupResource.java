@@ -27,7 +27,6 @@ import javax.ws.rs.*;
 import javax.ws.rs.core.MediaType;
 
 import com.hmdm.persistence.UserDAO;
-import com.hmdm.persistence.domain.User;
 import com.hmdm.rest.json.LookupItem;
 import com.hmdm.security.SecurityContext;
 import io.swagger.annotations.Api;
@@ -141,11 +140,9 @@ public class GroupResource {
         } else {
             if (group.getId() == null) {
                 this.groupDAO.insertGroup(group);
-                User user = SecurityContext.get().getCurrentUser().get();
-                if (!user.isAllDevicesAvailable()) {
+                if (!SecurityContext.get().getCurrentUser().get().isAllDevicesAvailable()) {
                     // User should get permissions to view and edit a group he created
-                    user.getGroups().add(new LookupItem(group.getId(), null));
-                    userDAO.updateUserMainDetails(user);
+                    userDAO.grantOwnAccessToNewGroup(group.getId());
                 }
             } else {
                 this.groupDAO.updateGroup(group);

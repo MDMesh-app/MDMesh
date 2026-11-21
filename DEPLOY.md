@@ -9,13 +9,15 @@ passwords, and the admin must set its own password on first login.
 
 | Method | Needs | Choose it when |
 |--------|-------|----------------|
-| [A. Quick start](#option-a--quick-start-no-clone-published-images) | An x86_64 or Arm64 host, Docker with Compose v2, `curl`, `minisign` to check the script, `openssl` 3.0+ (or an older `openssl` and `minisign`) | You want the fastest path, with one-click updates and rollback. |
+| [A. Quick start](#option-a--quick-start-no-clone-published-images) | An x86_64 host, or Arm64 from 0.6.0; Docker with Compose v2, `curl`, `minisign` to check the script, `openssl` 3.0+ (or an older `openssl` and `minisign`) | You want the fastest path, with one-click updates and rollback. |
 | [B. From source](#option-b--from-source-clone--build) | Docker with Compose v2, a clone, and for `./setup.sh --update`: `git`, `curl`, `openssl` 3.0+ (or an older `openssl` and `minisign`). `python3` to verify the release for the QR (optional) | You want to build the images yourself. |
 | [C. Native](#option-c--native-no-docker) | Debian 12/13 or Ubuntu 24.04 on x86_64 or Arm64, root, `git` (`--update` installs `curl` and `openssl` when they are missing) | You don't want Docker, and you run your own TLS proxy. |
 
-All three run on x86_64 and Arm64 (aarch64): the published images hold both from the first release with Arm64 images
-(0.6.0) on, and docker pulls the host's. For an earlier release on Arm64, the quick start stops and says so before it
-pulls anything. 32-bit Arm is not supported.
+Native runs on x86_64 and Arm64 (aarch64). The published Docker images (Option A, and updates from Settings →
+Updates) hold both from 0.6.0 on, and docker pulls the host's; before 0.6.0 they are x86_64 (amd64) only. The 0.6.0
+and later quick start stops on Arm64 before it pulls anything when asked for an earlier release
+(`MDMESH_VERSION`); an earlier release's own quick start doesn't check, and fails at the image download. Option B
+builds the images on your host from base images that cover both. 32-bit Arm is not supported.
 
 Options A and B ask for the public hostname and set `BASE_URL=https://<hostname>`. Option C asks for the full base
 URL (`https://…`; `http://` is accepted too). See the [rules](docs/OPERATIONS.md#base-url-and-hostname-rules).

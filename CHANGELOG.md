@@ -9,11 +9,18 @@ Unreleased.
 
 ## Unreleased
 
+Upgrading
+- Forks that publish their own releases: record your release certificate's checksum in
+  `release/agent-signature-checksum` before you tag, and have Arm64 runners for the image builds
+  ([UPGRADING, v0.6.0 for forks](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v060-for-forks)).
+
 New
 - Arm64: the server, web and supervisor images are built for linux/amd64 and linux/arm64, so the quick start and
   one-click updates run on Arm64 hosts such as Oracle Ampere (#205, thanks @sgofferj). On any other architecture,
   or on Arm64 with an `MDMESH_VERSION` that has no Arm64 images, the quick start stops and says why before it pulls
   anything.
+- Settings → Updates: a newer release this server can't install (no images for its platform, or images under
+  another owner) is shown with the reason, instead of as an update that then fails or is retried automatically.
 
 ## v0.5.1 — 2026-11-20
 

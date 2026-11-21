@@ -295,7 +295,8 @@ private fork needs a paid Arm runner there.)
 - **Settings → Environments → New environment `release`:**
   - **Required reviewers:** at least one maintainer; tick **Prevent self-review**. Before approving, the reviewer
     opens the run and confirms the `gate` job ran and passed (tag on main's first-parent history, version newer than
-    every earlier release, annotation matches CHANGELOG.md) and that the tag is the one they expect.
+    every earlier release, annotation matches CHANGELOG.md), that the six `images` builds passed, and that the tag
+    is the one they expect.
   - **Deployment branches and tags:** *Selected branches and tags* → add a **tag** rule `v*`.
   - **Environment secrets:** the six secrets above (`MDM_RELEASE_STORE_B64`, `MDM_RELEASE_STORE_PASSWORD`,
     `MDM_RELEASE_KEY_ALIAS`, `MDM_RELEASE_KEY_PASSWORD`, `MINISIGN_SECRET_KEY`, `MINISIGN_PASSWORD`). Then delete any

@@ -41,8 +41,9 @@ APK.
 - **Older agents keep working after a server update.** The agent is a Device Owner app written in Kotlin. The server
   only sends it commands it reports it supports, and the agent protocol (`/agent/v1`) only ever adds fields. A test
   in CI checks this.
-- **One command installs the server, on x86_64 or Arm64.** It runs on Docker Compose with automatic HTTPS (Caddy) or
-  a Cloudflare Tunnel, or natively on Debian 12/13 and Ubuntu 24.04.
+- **One command installs the server.** It runs on Docker Compose with automatic HTTPS (Caddy) or a Cloudflare Tunnel,
+  or natively on Debian 12/13 and Ubuntu 24.04, on x86_64 or Arm64. The published Docker images cover Arm64 from
+  0.6.0.
 
 ## ■ Features
 
@@ -85,7 +86,7 @@ APK.
 
 ## ■ Quick start
 
-On a Linux host (x86_64 or Arm64) with Docker, Docker Compose v2, `curl`, `openssl` 3.0+ (or an older `openssl` and
+On a Linux host (x86_64, or Arm64 from 0.6.0) with Docker, Docker Compose v2, `curl`, `openssl` 3.0+ (or an older `openssl` and
 `minisign`), and either a domain in Cloudflare (for a Cloudflare Tunnel) or a domain pointed at the host with ports 80
 and 443 open:
 

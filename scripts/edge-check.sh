@@ -6,6 +6,7 @@
 #      accepts values (e.g. a bad TRUSTED_PROXIES) that only fail when the config is provisioned. Your own rules
 #      (site.d/*.caddy) are imported, and a broken one is an error. Behind your own proxy, the TRUSTED_PROXIES list
 #      docker/edge-peers.sh makes (`host`, single addresses) and the lists it refuses.
+#   1c. docs/proxies' nginx, Apache and Caddy configurations parse (nginx -t, httpd -t, caddy validate).
 #   2. `docker compose config -q` for every compose file / overlay / profile combination the installers use; what the
 #      proxy overlay publishes and passes to the edge.
 #   2b. A digest pin comes out of `docker compose config --images` whole, as supervisor/apply.sh requires of it.
@@ -63,6 +64,7 @@ MODES=(
   # EDGE_TRUSTED_PROXIES; `host` needs a gateway, which --network none lacks: it has its own check below).
   "behind your own proxy|SITE_ADDRESS=:8080 ACME_EMAIL= COMPOSE_PROFILES= TRUSTED_PROXIES= MDMESH_EXPOSURE=proxy EDGE_TRUSTED_PROXIES=192.0.2.10,2001:db8::/32 BASE_URL=https://mdm.example.com MDMESH_ORIGIN_TLS=0"
   "behind your own proxy, HTTPS origin|SITE_ADDRESS=:8080 ACME_EMAIL= COMPOSE_PROFILES= TRUSTED_PROXIES= MDMESH_EXPOSURE=proxy EDGE_TRUSTED_PROXIES=10.0.0.0/8 BASE_URL=https://mdm.example.com:8443 MDMESH_ORIGIN_TLS=1"
+  "behind your own proxy, HTTPS origin on an IPv6 address|SITE_ADDRESS=:8080 ACME_EMAIL= COMPOSE_PROFILES= TRUSTED_PROXIES= MDMESH_EXPOSURE=proxy EDGE_TRUSTED_PROXIES=192.0.2.10 BASE_URL=https://[2001:db8::5] MDMESH_ORIGIN_TLS=1"
 )
 for mode in "${MODES[@]}"; do
   label="${mode%%|*}"
@@ -159,6 +161,7 @@ PEER_CASES=(
   "host|EDGE_BIND=127.0.0.1:8080|172.19.0.1/32|:8080|off|"
   "host|EDGE_BIND=[::1]:8080|172.19.0.1/32|:8080|off|"
   "192.0.2.10|EDGE_BIND=0.0.0.0:8080|192.0.2.10/32|:8080|off|"
+  "192.0.2.10|MDMESH_ORIGIN_TLS=1 BASE_URL=https://[2001:db8::5]|192.0.2.10/32|https://[2001:db8::5]:8080|internal|2001:db8::5"
   "host||refused"
   "host|EDGE_BIND=0.0.0.0:8080|refused"
   "host|EDGE_BIND=10.0.0.5:8080|refused"
@@ -176,7 +179,8 @@ PEER_CASES=(
 for c in "${PEER_CASES[@]}"; do
   IFS='|' read -r list extra want <<< "$c"
   envs=(-e MDMESH_EXPOSURE=proxy -e "EDGE_TRUSTED_PROXIES=$list" -e BASE_URL=https://mdm.example.com -e SITE_ADDRESS=:8080)
-  [ -z "$extra" ] || envs+=(-e "$extra")
+  read -r -a extras <<< "$extra"
+  for e in ${extras[@]+"${extras[@]}"}; do envs+=(-e "$e"); done
   probe=$PEERS_PROBE
   # The "host" case that must be refused: no gateway at all (`ip` answers nothing).
   if [ "$list|$extra|$want" = "host||refused" ]; then probe=${probe/default via 172.19.0.1 dev eth0/}; fi
@@ -190,6 +194,30 @@ for c in "${PEER_CASES[@]}"; do
   elif [ "$rc" = 0 ] && [ "$out" = "${c#*|*|}" ]; then pass "TRUSTED_PROXIES='$list'${extra:+ $extra}: $out"
   else fail "TRUSTED_PROXIES='$list'${extra:+ $extra}: got '$out', want '${c#*|*|}'"; fi
 done
+
+# --- 1c. docs/proxies: the ready configurations parse with their own tool (nginx -t, httpd -t, caddy validate), as
+# written, with a throwaway certificate at the paths they name. tests/proxy-e2e runs each one (Traefik's too) for real. ---
+echo "docs/proxies (the ready configurations parse):"
+PX_D="$(mktemp -d)"; chmod 755 "$PX_D"
+mkdir -p "$PX_D/live/mdm.example.com"
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=mdm.example.com -keyout "$PX_D/live/mdm.example.com/privkey.pem" \
+  -out "$PX_D/live/mdm.example.com/fullchain.pem" >/dev/null 2>&1
+chmod -R a+rX "$PX_D"
+px_check() {  # px_check LABEL IMAGE COMMAND...: COMMAND in IMAGE, the configuration and the certificate mounted
+  local label=$1 image=$2 out; shift 2
+  if out="$(docker run --rm --network none -v "$ROOT/docs/proxies:/px:ro" -v "$PX_D:/etc/letsencrypt:ro" "$image" "$@" 2>&1)"; then
+    pass "docs/proxies: $label"
+  else
+    fail "docs/proxies: $label"; printf '%s\n' "$out" | tail -5 | sed 's/^/         /'
+  fi
+}
+px_check "nginx.conf: nginx -t" nginx:1.26-alpine sh -c 'cp /px/nginx.conf /etc/nginx/conf.d/mdmesh.conf && nginx -t'
+# shellcheck disable=SC2016  # expanded by the container's shell
+px_check "apache.conf: httpd -t" httpd:2.4-alpine sh -c 'c=/usr/local/apache2/conf/httpd.conf
+  sed -i -E "s/^#(LoadModule (ssl|proxy|proxy_http|headers|rewrite|socache_shmcb)_module)/\1/" "$c"
+  printf "Listen 443\nInclude /px/apache.conf\n" >> "$c" && httpd -t'
+px_check "Caddyfile: caddy validate" "$CADDY_IMAGE" caddy validate --config /px/Caddyfile --adapter caddyfile
+rm -rf -- "$PX_D"
 
 # --- 2. Compose files, each combination setup.sh / quickstart.sh / DEPLOY.md / DEV.md use. ---
 # A fixed env file with the required (:?) variables, so a developer's own .env or shell cannot change the result.

@@ -144,10 +144,12 @@ edge_url_host() {
 if [ "${MDMESH_EXPOSURE:-}" = proxy ]; then
   PROXY_TRUSTED_PEERS=$(edge_proxy_list "${EDGE_TRUSTED_PROXIES:-}" "${EDGE_BIND:-}") || exit 1
   if [ "${MDMESH_ORIGIN_TLS:-0}" = 1 ]; then
-    EDGE_ORIGIN_NAME=$(edge_url_host "${BASE_URL:-}")
-    case "$EDGE_ORIGIN_NAME" in ''|*[!0-9A-Za-z.:\[\]-]*) edge_refuse "MDMESH_ORIGIN_TLS=1 needs BASE_URL's host for the certificate (BASE_URL=${BASE_URL:-unset})" ;; esac
+    _host=$(edge_url_host "${BASE_URL:-}")
+    case "$_host" in ''|*[!0-9A-Za-z.:\[\]-]*) edge_refuse "MDMESH_ORIGIN_TLS=1 needs BASE_URL's host for the certificate (BASE_URL=${BASE_URL:-unset})" ;; esac
     EDGE_TLS=internal
-    SITE_ADDRESS="https://$EDGE_ORIGIN_NAME:8080"
+    # The site address keeps an IPv6 host's brackets; the name for default_sni (a TLS server name) has none.
+    SITE_ADDRESS="https://$_host:8080"
+    EDGE_ORIGIN_NAME=${_host#\[}; EDGE_ORIGIN_NAME=${EDGE_ORIGIN_NAME%\]}
   else
     EDGE_TLS=off
     SITE_ADDRESS=":8080"

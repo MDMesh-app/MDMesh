@@ -144,8 +144,12 @@ one address, `127.0.0.1:8080` by default. It asks:
 
 - **The public hostname** your proxy serves, e.g. `mdm.example.com` (`BASE_URL=https://mdm.example.com`).
 - **Where MDMesh listens** (`MDMESH_BIND`, default `127.0.0.1:8080`). Keep the default for a proxy on this machine.
-  For a proxy on another machine, an address of this one it reaches, e.g. `10.0.0.5:8080`, and keep that port off the
-  internet (a firewall rule that lets only your proxy in).
+  For a proxy on another machine, the address of this one on the network the proxy reaches it by, e.g.
+  `10.0.0.5:8080` (a private interface, not `0.0.0.0`, which also listens on a public one), and keep that port off the
+  internet. A firewall rule must go in Docker's `DOCKER-USER` chain: Docker publishes ports past ufw, firewalld and
+  your own `INPUT` rules. For example, with eth0 the public interface:
+  `iptables -I DOCKER-USER -i eth0 -p tcp -m conntrack --ctorigdstport 8080 ! -s <your proxy's IP> -j DROP`
+  ([Docker and iptables](https://docs.docker.com/engine/network/packet-filtering-firewalls/)).
 - **Your proxy's address, as MDMesh sees it** (`TRUSTED_PROXIES`, default `host`). MDMesh believes `X-Forwarded-For`
   (the client's address, for sign-in limits, the audit log and a device's public IP) and `X-Forwarded-Proto` from
   these addresses only. `host` means a proxy on this machine: Docker delivers its connections from the stack

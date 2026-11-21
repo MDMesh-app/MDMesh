@@ -49,6 +49,9 @@ err()  { printf '\033[1;31m%s\033[0m\n' "$*" >&2; }
 # The hosting modes, in one table (install/lib/modes.sh).
 # shellcheck source=install/lib/modes.sh
 . ./install/lib/modes.sh
+# One stack per Docker project name: never another directory's (install/lib/stack.sh).
+# shellcheck source=install/lib/stack.sh
+. ./install/lib/stack.sh
 # mdm_load_env: reads .env as sourcing it would, without running it (install/lib/dotenv.sh).
 # shellcheck source=install/lib/dotenv.sh
 . ./install/lib/dotenv.sh
@@ -406,6 +409,8 @@ if [ "$REUSE_ENV" = 1 ]; then
     exit 1
   fi
   mdm_load_env .env
+  # This directory's own stack is expected; another directory's is never touched.
+  mdm_stack_guard "${COMPOSE_PROJECT_NAME:-mdmesh}" 0
   version_preflight "${CURRENT_VERSION:-${SERVER_VERSION:-}}"
   _env_base_url=${BASE_URL:-}
   mdm_check_base_url BASE_URL || { err "Fix BASE_URL in .env, then re-run."; exit 1; }
@@ -424,6 +429,9 @@ else
     warn "--reset: regenerating .env. If the old database still exists it needs the OLD password —"
     warn "run 'docker compose down -v' first for a genuinely clean slate."
   fi
+  # A new .env: no other install's containers or volumes may exist, or compose would take them over with new secrets.
+  # --reset over this directory's own .env keeps its warning above instead.
+  if [ "$RESET" = 1 ] && [ -f .env ]; then mdm_stack_guard mdmesh 0; else mdm_stack_guard mdmesh 1; fi
   version_preflight ""
   mdm_mode_choose "Without Docker? Run sudo ./setup.sh --update --native (DEPLOY.md, Native)."
 

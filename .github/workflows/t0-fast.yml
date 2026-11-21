@@ -190,14 +190,14 @@ jobs:
       # --- edge: the Cloudflare-mode Caddyfile break (empty ACME_EMAIL) shipped because nothing parsed it. Validates
       # docker/Caddyfile in every hosting mode with the caddy image web.Dockerfile builds FROM, and every compose combo;
       # then checks /healthz and /healthz/supervisor report their upstream's health (503, never the SPA's 200). ---
-      # quickstart.sh carries a verbatim copy of install/lib/url.sh's, answers.sh's and modes.sh's functions (the region
+      # quickstart.sh carries a verbatim copy of install/lib/url.sh's, answers.sh's, modes.sh's and stack.sh's functions (the region
       # between each file's ">>> <name> functions" and "<<< <name> functions" markers): it runs from main but fetches
       # install/lib from the release it installs, which may predate them (see quickstart.sh). Fail when the copies differ.
       - if: matrix.name == 'edge' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).installers)
         name: quickstart.sh's BASE_URL check, answers and hosting-mode functions match install/lib
         run: |
           rc=0
-          for n in url.sh answers.sh modes.sh; do
+          for n in url.sh answers.sh modes.sh stack.sh; do
             fn() { sed -n "/^# >>> $n functions /,/^# <<< $n functions <<<\$/p" "$1"; }
             lib=$(fn "install/lib/$n"); qs=$(fn quickstart.sh)
             if [ -z "$lib" ] || [ "$lib" != "$qs" ]; then

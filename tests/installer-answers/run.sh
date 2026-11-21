@@ -54,6 +54,12 @@ chmod +x "$WORK/stubs-chmod/chmod"
 # With STUB_DOCKER_OK=1, `docker compose version` succeeds (so setup.sh gets past its checks); anything else still fails.
 # shellcheck disable=SC2016  # the stub's own variables
 sed -i '2i [ "${STUB_DOCKER_OK:-}" = 1 ] \&\& [ "$1 $2" = "compose version" ] \&\& exit 0' "$WORK/stubs/docker"
+# With STUB_DOCKER_OK=1, `docker ps` and `docker volume ls` (what install/lib/stack.sh asks) print STUB_DOCKER_PS (the
+# working directories of the project's containers, one per line) and STUB_DOCKER_VOLUMES (its volumes): none unset. Logged.
+# shellcheck disable=SC2016  # the stub's own variables
+sed -i '2i [ "${STUB_DOCKER_OK:-}" = 1 ] \&\& [ "$1" = ps ] \&\& { [ -z "${STUB_LOG:-}" ] || echo "$0 $*" >> "$STUB_LOG"; [ -z "${STUB_DOCKER_PS:-}" ] || printf "%s\\n" "$STUB_DOCKER_PS"; exit 0; }' "$WORK/stubs/docker"
+# shellcheck disable=SC2016  # the stub's own variables
+sed -i '2i [ "${STUB_DOCKER_OK:-}" = 1 ] \&\& [ "$1 $2" = "volume ls" ] \&\& { [ -z "${STUB_LOG:-}" ] || echo "$0 $*" >> "$STUB_LOG"; [ -z "${STUB_DOCKER_VOLUMES:-}" ] || printf "%s\\n" "$STUB_DOCKER_VOLUMES"; exit 0; }' "$WORK/stubs/docker"
 # With STUB_DOCKER_INFO, `docker info` prints it (what install/lib/modes.sh reads to tell rootless Docker apart).
 sed -i '2i [ -n "${STUB_DOCKER_INFO:-}" ] \&\& [ "$1" = info ] \&\& { echo "$STUB_DOCKER_INFO"; exit 0; }' "$WORK/stubs/docker"
 
@@ -807,6 +813,58 @@ qs_run
 { grep -qF "Don't delete that .env" "$WORK/out/e" && grep -qxF DB_PASSWORD=keepme "$WORK/qs7/mdmesh/.env" && [ ! -e "$WORK/PWNED" ]; } \
   || { fail "quickstart.sh over a finished install does not leave it alone, saying how"; show; }
 ok
+
+# One stack per Docker project (install/lib/stack.sh): a quick start or setup.sh in a second directory never touches an
+# install elsewhere. Refused before any question or compose command: another directory's containers (named), containers
+# only the updater recreated (/project), and, for a new .env, volumes with no containers. A re-run in the install's own
+# directory (its containers, the updater's /project ones beside them) goes on.
+stack_refused() {  # stack_refused WHAT WANT: the run was refused with WANT in its errors, and ran no compose command
+  { grep -qF -- "$2" "$WORK/out/e" && grep -qF 'Nothing was changed.' "$WORK/out/e" && ! grep -q '/docker compose ' "$WORK/docker.log"; } \
+    || { fail "$1 is not refused before compose runs (want: $2)"; show; }
+  ok
+}
+mkdir -p "$WORK/qs9"
+qs_fresh() {  # qs_fresh [NAME=VALUE...]: a new quick start in $WORK/qs9/mdmesh (stdin empty)
+  rm -rf -- "$WORK/qs9/mdmesh"; : > "$WORK/docker.log"
+  (cd "$WORK/qs9" && env -i PATH="$WORK/stubs:$PATH" HOME="$WORK" STUB_LOG="$WORK/docker.log" STUB_DOCKER_OK=1 "$@" \
+    bash "$REPO/quickstart.sh" < /dev/null > "$WORK/out/o" 2> "$WORK/out/e") || true
+}
+qs_fresh STUB_DOCKER_PS="$(printf '/srv/mdmesh\n/project\n/srv/mdmesh')"
+stack_refused "a new quick start beside an install in /srv/mdmesh" 'An MDMesh install already exists in /srv/mdmesh (Docker project mdmesh)'
+grep -qF 'Settings → Updates' "$WORK/out/e" && grep -q 'label=com.docker.compose.project=mdmesh' "$WORK/docker.log" && [ ! -e "$WORK/qs9/mdmesh/.env" ] \
+  || { fail "the refusal does not say how to update the other install, or asked the wrong project"; show; }
+qs_fresh STUB_DOCKER_PS=/project
+stack_refused "a new quick start beside an install only the updater's labels name" "'docker compose ls' shows where"
+qs_fresh STUB_DOCKER_VOLUMES="$(printf 'mdmesh_pgdata\nmdmesh_mdmeshdata')"
+stack_refused "a new quick start over another install's volumes" 'docker volume rm mdmesh_pgdata mdmesh_mdmeshdata'
+# No other stack: on to the first question.
+qs_fresh
+grep -qF 'How will your phones reach MDMesh?' "$WORK/out/o" || { fail "a new quick start with no other stack does not ask"; show; }
+ok
+# Resuming its own unfinished install: its own containers and volumes are expected; another directory's are not.
+qs_dir; qs_env > "$WORK/qs7/mdmesh/.env"; chmod 600 "$WORK/qs7/mdmesh/.env"
+qs_run STUB_DOCKER_PS="$(printf '%s\n/project' "$WORK/qs7/mdmesh")" STUB_DOCKER_VOLUMES=mdmesh_pgdata
+grep -q '/docker compose pull$' "$WORK/docker.log" || { fail "quickstart.sh does not resume beside its own containers"; show; }
+ok
+qs_dir; qs_env > "$WORK/qs7/mdmesh/.env"; chmod 600 "$WORK/qs7/mdmesh/.env"
+qs_run STUB_DOCKER_PS=/srv/mdmesh
+stack_refused "a resumed quick start beside an install in /srv/mdmesh" 'An MDMesh install already exists in /srv/mdmesh'
+# setup.sh: a new .env (a fresh clone) beside another install or over its volumes; a re-run beside its own stack goes on,
+# beside another directory's it is refused.
+rm -rf -- "$WORK/src9"; mkdir -p "$WORK/src9/install"; cp -- "$REPO/setup.sh" "$WORK/src9/"; cp -R -- "$REPO/install/lib" "$WORK/src9/install/"
+setup_run "$WORK/src9" MDMESH_NONINTERACTIVE=1 MDMESH_MODE=domain MDMESH_HOST=mdm.example.com STUB_DOCKER_PS=/opt/mdmesh
+stack_refused "setup.sh in a fresh clone beside an install in /opt/mdmesh" 'An MDMesh install already exists in /opt/mdmesh'
+[ ! -e "$WORK/src9/.env" ] || { fail "setup.sh wrote a .env before refusing"; show; }
+setup_run "$WORK/src9" MDMESH_NONINTERACTIVE=1 MDMESH_MODE=domain MDMESH_HOST=mdm.example.com STUB_DOCKER_VOLUMES=mdmesh_pgdata
+stack_refused "setup.sh in a fresh clone over another install's volumes" 'docker volume rm mdmesh_pgdata'
+setup_run "$WORK/src9" MDMESH_NONINTERACTIVE=1 MDMESH_MODE=domain MDMESH_HOST=mdm.example.com
+[ "$(up_args)" = '-f docker-compose.yml -f docker-compose.domain.yml' ] || { fail "setup.sh with no other stack does not start one"; show; }
+ok
+setup_run "$WORK/src9" STUB_DOCKER_PS="$(printf '%s\n/project' "$WORK/src9")" STUB_DOCKER_VOLUMES=mdmesh_pgdata
+[ "$(up_args)" = '-f docker-compose.yml -f docker-compose.domain.yml' ] || { fail "a setup.sh re-run beside its own stack does not go on"; show; }
+ok
+setup_run "$WORK/src9" STUB_DOCKER_PS=/opt/mdmesh
+stack_refused "a setup.sh re-run beside an install in /opt/mdmesh" 'An MDMesh install already exists in /opt/mdmesh'
 
 if [ -e "$WORK/stubs.called" ]; then fail "a dry run ran a command that changes the host: $(cat "$WORK/stubs.called")"; fi
 

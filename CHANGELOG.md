@@ -20,6 +20,10 @@ New
 - Your own edge rules: Caddy imports `site.d/*.caddy` from the install directory, and updates never touch it.
 
 Fixes
+- The quick start, or `./setup.sh` in a new clone, run in a second directory no longer takes over an install that
+  already exists elsewhere on the machine (both use the Docker project `mdmesh`): it stops before changing anything,
+  names that install's directory and says how to update it. Over the data volumes of an install whose containers are
+  gone, it stops too, instead of starting with a database password that can't work.
 - An update (or Roll back) counts as healthy only when the edge stays up too, not just the server: an edge the new
   release can't start, say over a rule in `site.d`, is rolled back instead of leaving the console unreachable.
 

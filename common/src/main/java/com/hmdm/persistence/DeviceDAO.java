@@ -153,6 +153,11 @@ public class DeviceDAO extends AbstractDAO<Device> {
         return getList(customerId -> this.mapper.getDeviceIdsByConfigurationId(customerId, configurationId));
     }
 
+    /** Whether the MDMesh agent enrolled the device (it has a check-in secret), whoever asks. */
+    public boolean isAgentDevice(int deviceId) {
+        return this.mapper.isAgentDevice(deviceId);
+    }
+
     public List<ApplicationSetting> getDeviceApplicationSettings(int deviceId) {
         final Device dbDevice = requireAccessible(
                 getSingleRecord(() -> this.mapper.getDeviceById(deviceId), SecurityException::onDeviceAccessViolation));
@@ -368,6 +373,7 @@ public class DeviceDAO extends AbstractDAO<Device> {
     public void insertDevice(Device device) {
         insertRecord(device, d -> {
             requireUsableConfiguration(d.getConfigurationId(), null);
+            requireUsableGroups(d.getGroups(), null);
             d.updateFastSearch(fastSearchChars);
             this.mapper.insertDevice(d);
             if (d.getGroups() != null && !d.getGroups().isEmpty()) {
@@ -409,6 +415,7 @@ public class DeviceDAO extends AbstractDAO<Device> {
                 throw new AgentDeviceRenameException(agentNumber);
             }
             requireUsableConfiguration(device.getConfigurationId(), dbDevice.getConfigurationId());
+            requireUsableGroups(device.getGroups(), dbDevice.getGroups());
             device.setCustomerId(dbDevice.getCustomerId());
             device.updateFastSearch(fastSearchChars);
 
@@ -494,6 +501,40 @@ public class DeviceDAO extends AbstractDAO<Device> {
         }
         if (!isConfigurationUsableByUser(configurationId)) {
             throw SecurityException.onConfigurationAccessViolation(configurationId);
+        }
+    }
+
+    /**
+     * Whether the current user may put devices in all these groups: groups of the user's own customer and, for a user
+     * limited to some device groups, only those. None at all is fine; a null id is not.
+     */
+    public boolean areGroupsUsableByUser(Collection<Integer> groupIds) {
+        if (groupIds.isEmpty()) {
+            return true;
+        }
+        if (groupIds.contains(null)) {
+            return false;
+        }
+        final Set<Integer> distinct = new HashSet<>(groupIds);
+        return SecurityContext.get().getCurrentUser()
+                .map(u -> this.mapper.countUsableGroups(u.getId(), u.getCustomerId(), distinct) == distinct.size())
+                .orElse(false);
+    }
+
+    /**
+     * A device may be put only in groups usable by the current user ({@link #areGroupsUsableByUser}), all or none of
+     * them; a group it is already in may stay, as the console sends the device's groups back as they were.
+     */
+    private void requireUsableGroups(List<LookupItem> groups, List<LookupItem> currentGroups) {
+        if (groups == null || groups.isEmpty()) {
+            return;
+        }
+        final Set<Integer> current = currentGroups == null ? Collections.emptySet()
+                : currentGroups.stream().map(LookupItem::getId).collect(Collectors.toSet());
+        final List<Integer> added = groups.stream().map(LookupItem::getId).filter(id -> !current.contains(id))
+                .collect(Collectors.toList());
+        if (!areGroupsUsableByUser(added)) {
+            throw SecurityException.onCustomerDataAccessViolation(added.get(0), "group");
         }
     }
 

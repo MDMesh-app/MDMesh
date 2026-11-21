@@ -81,7 +81,7 @@ public class AgentEnrollmentTransactionTest {
 
     /**
      * A device added the way the console (DeviceDAO.insertDeviceWithinLimit) and on-demand creation
-     * (UnsecureDAO.createNewDeviceOnDemand) add one: the shared rule, then the insert, in one transaction.
+     * (UnsecureDAO.createLegacyDevice) add one: the shared rule, then the insert, in one transaction.
      */
     public static class ConsoleAdd {
         private final TestDeviceMapper mapper;

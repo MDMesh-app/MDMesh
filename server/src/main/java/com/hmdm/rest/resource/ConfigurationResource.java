@@ -289,11 +289,9 @@ public class ConfigurationResource {
                     this.configurationDAO.insertConfiguration(configuration);
                     // Saved: the copy is the configuration's now, whatever fails after this.
                     imageApplied = null;
-                    User user = SecurityContext.get().getCurrentUser().get();
-                    if (!user.isAllConfigAvailable()) {
+                    if (!SecurityContext.get().getCurrentUser().get().isAllConfigAvailable()) {
                         // User should get permissions to edit a configuration he created
-                        user.getConfigurations().add(new LookupItem(configuration.getId(), null));
-                        userDAO.updateUserMainDetails(user);
+                        userDAO.grantOwnAccessToNewConfiguration(configuration.getId());
                     }
                 } else {
                     if (!configurationDAO.hasConfigurationAccess(id)) {
@@ -557,11 +555,9 @@ public class ConfigurationResource {
             } finally {
                 if (held != null) held.release();
             }
-            User user = SecurityContext.get().getCurrentUser().get();
-            if (!user.isAllConfigAvailable()) {
+            if (!SecurityContext.get().getCurrentUser().get().isAllConfigAvailable()) {
                 // User should get permissions to edit a configuration he created
-                user.getConfigurations().add(new LookupItem(copy.getId(), null));
-                userDAO.updateUserMainDetails(user);
+                userDAO.grantOwnAccessToNewConfiguration(copy.getId());
             }
             return Response.OK();
         }

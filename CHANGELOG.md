@@ -10,13 +10,58 @@ Unreleased.
 ## Unreleased
 
 Upgrading
-- Quick start: `MDMESH_VERSION` now takes 0.5.0 or later; for 0.4.0 it stops and names that release's own
-  `quickstart.sh`, as it already did for earlier releases.
 - On its first start the server deletes the commands, state, events and locations of devices deleted before this
   release. No screen showed them ([UPGRADING.md](docs/UPGRADING.md#unreleased)).
 - Quick start: `HEALTH_TIMEOUT` in `.env` sets how many seconds an updated server gets to answer before the update is
   rolled back (default 180, at least 30). Raise it before an update whose database work may take longer; to have it
   count for this update, get this release's supervisor first ([UPGRADING.md](docs/UPGRADING.md#unreleased)).
+
+Fixes
+- Agent rollout: a device already on a newer agent counts as updated and is no longer sent the older APK, which it
+  refused, so the rollout never finished. Versions now compare as numbers (0.10.0 is newer than 0.9.0).
+- Deleting a device, or a customer, now deletes the device's commands, state, events and locations too, and renaming
+  a device keeps them. Before, a device added later with the same number showed them as its own. A check-in or command
+  that races the delete is answered as for an unknown device, not with a server error.
+- The API refuses to change the number of a device enrolled with the agent (`error.device.number.agent`): the agent
+  signs in with that number and could not check in again. Other devices are renamed as before.
+- Bulk delete deletes nothing when one of the devices is out of the user's reach. Otherwise each device is deleted on
+  its own, and when some can't be, the console keeps those selected to delete again. Before, a failure partway left
+  some deleted and still answered OK.
+- Bulk configuration and group changes apply to every selected device or to none, and a configuration change must
+  name one. Taking devices out of a group the user may not use is refused, as putting them in one already was.
+
+## v0.5.1 — 2026-11-20
+
+Upgrading
+- Update every server: this is a security release, so it can't wait for 0.6.0. The updater (supervisor) is
+  unchanged. Quick-start installs: apply the update from Settings → Updates. From source: `./setup.sh --update`.
+  Native installs: `sudo ./setup.sh --update --native`. The agent fixes below need agent 0.5.1, which devices get
+  from the server as usual.
+- Account changes take your own password: scripts and API clients that create or delete users or customers, or change
+  another account's password or email, must now send `oldPassword`. Everyone signs in to the console again once, and
+  new accounts start with no access. Old audit records are masked in the background after the update: allow free disk
+  space of about the size of `plugin_audit_log`, and with several servers on one database, stop them all first
+  ([UPGRADING, v0.5.1](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v051)).
+- Quick start: `MDMESH_VERSION` now takes 0.5.0 or later; for 0.4.0 it stops and names that release's own
+  `quickstart.sh`, as it already did for earlier releases.
+
+Heads-up
+- With `LEGACY_DEVICE_API=1`, Headwind launcher devices need a configuration that no MDMesh agent device uses and no
+  agent enrollment code enrolls into: the launcher's routes no longer serve such a configuration or create devices in
+  it, and answer requests for an agent device with the launcher's device-not-found error
+  ([UPGRADING, v0.5.1](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v051)).
+
+Security
+- Account access: admins limited to some device groups or configurations can't give or reach access beyond their own,
+  and account changes take the current password. Secrets are masked in audit records, old ones included, and sign-in
+  requests have size limits.
+- Legacy device API (`LEGACY_DEVICE_API=1`): its routes no longer serve an agent device's configuration, and check
+  their requests more strictly. Changing a device's groups stays within the user's own customer.
+- CVE-2026-114938 (OpenJDK Base64, x86_64 with AVX-512): the server runs with `-XX:-UseBASE64Intrinsics` on Docker
+  and native installs. The Docker image moves to Temurin 17.0.21.1, and the native installer's own JDK to 17.0.21.1;
+  `--update` upgrades a distribution JDK 17 when a fixed one is available. To protect a server before you update:
+  [UPGRADING, v0.5.1](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v051).
+- Thanks to @lared3294 for the report.
 
 Fixes
 - Commands: the server refuses a command, Install configuration apps and Retry apply for a device marked Wiped
@@ -29,22 +74,26 @@ Fixes
   says `native update, <from> → <to>`. The update from 0.5.0 still asks once (add `-y` to skip).
 - `./setup.sh --update` no longer refuses a clone on a release branch (`release/vX.Y.Z`) as "ahead" of that release
   once it is squash-merged: a clone on an older release moves on; only one newer than the release needs `--allow-downgrade`.
-- Agent rollout: a device already on a newer agent counts as updated and is no longer sent the older APK, which it
-  refused, so the rollout never finished. Versions now compare as numbers (0.10.0 is newer than 0.9.0).
-- Deleting a device, or a customer, now deletes the device's commands, state, events and locations too, and renaming
-  a device keeps them. Before, a device added later with the same number showed them as its own. A check-in or command
-  that races the delete is answered as for an unknown device, not with a server error.
-- The API refuses to change the number of a device enrolled with the agent (`error.device.number.agent`): the agent
-  signs in with that number and could not check in again. Other devices are renamed as before.
-- Bulk delete deletes nothing when one of the devices is out of the user's reach. Otherwise each device is deleted on
-  its own, and when some can't be, the console keeps those selected to delete again. Before, a failure partway left
-  some deleted and still answered OK.
-- Bulk configuration and group changes apply to every selected device or to none. A group change naming a group the
-  user may not use is refused, as one naming such a configuration was; a configuration change must name one.
 - Agent: a settings file damaged by the device's storage (after a power loss) no longer makes every kiosk and
   configuration command fail with "Unable to parse preferences proto." or crash the kiosk screen. The agent keeps a
   copy of each file and restores it, or the configured kiosk, and the device page shows a `storageRecovered` event
   (#220).
+- Agent: Factory reset from the console lifts the configuration's Factory reset: Block for the wipe, and puts it back
+  if the wipe can't start or the device hasn't reset within 10 minutes. Some vendor recoveries honour the block and
+  stopped mid-wipe (HyperOS, #222). Until the device resets, for at most 10 minutes, commands other than configuration
+  changes and another wipe are reported expired, not run.
+- Agent: Lock on a device with no screen lock set still turns the screen off, and its result now says the device isn't
+  protected.
+- Agent: after a boot or an agent update, the agent re-applies the newest configuration the server sent, not the last
+  one it applied in full. Before, a configuration with one failed setting could have its other settings undone by a
+  reboot. Until such a configuration applies in full, the device reports it as not in sync, so the server re-sends it.
+- Console: a configuration the device reports out of date now shows as "Out of date on the device", with the cause
+  when the device reported one (storage recovered, a factory reset that didn't start, a failed re-apply). It showed
+  "Reset by device (Wi-Fi turned back on)", which named only one of the causes.
+- With `LEGACY_DEVICE_API=1`, the launcher's sync works for a configuration without a kiosk exit PIN.
+
+Under the hood
+- Dependencies: Jackson 2.23.0 (server); vite 8.3.8, @vitejs/plugin-react 6.3.0 (console).
 
 ## v0.5.0 — 2026-11-17
 

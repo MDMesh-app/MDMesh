@@ -15,6 +15,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.*;
+import java.security.interfaces.RSAKey;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 
@@ -33,12 +34,16 @@ public class RsaKeyService {
 
     private String baseDirectory;
 
+    /** The block size of the key last read; 0 before one is, or after it could not be. */
+    private volatile int blockBytes;
+
     @Inject
     public RsaKeyService(@Named("base.directory") String baseDirectory) {
         this.baseDirectory = baseDirectory;
     }
 
     public boolean generateKeys() {
+        blockBytes = 0;
         try {
             KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA");
             kpg.initialize(1024);
@@ -81,9 +86,11 @@ public class RsaKeyService {
             PKCS8EncodedKeySpec ks = new PKCS8EncodedKeySpec(bytes);
             KeyFactory kf = KeyFactory.getInstance("RSA");
             PrivateKey pvt = kf.generatePrivate(ks);
+            blockBytes = blockBytesOf(pvt);
             return pvt;
         } catch (Exception e) {
             e.printStackTrace();
+            blockBytes = 0;
             return null;
         }
     }
@@ -110,6 +117,24 @@ public class RsaKeyService {
             e.printStackTrace();
             return null;
         }
+    }
+
+    /**
+     * The size in bytes of the block this server's key encrypts to (the length of its modulus): what a client's
+     * ciphertext is. Kept from the key last read ({@link #getPrivateKey}, which every decrypt calls), so a replaced key
+     * counts from its first use. 0 when there is no key.
+     */
+    public int blockBytes() {
+        int cached = blockBytes;
+        if (cached > 0) {
+            return cached;
+        }
+        getPrivateKey();
+        return blockBytes;
+    }
+
+    private static int blockBytesOf(PrivateKey key) {
+        return key instanceof RSAKey ? (((RSAKey) key).getModulus().bitLength() + 7) / 8 : 0;
     }
 
     public String decrypt(byte[] encrypted) {

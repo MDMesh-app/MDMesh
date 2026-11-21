@@ -22,6 +22,7 @@
 package com.hmdm.persistence.domain;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.io.Serializable;
 import java.util.Objects;
@@ -37,6 +38,10 @@ public class Customer implements Serializable {
     private Integer id;
     private String name;
     private String email;
+
+    /** The caller's current password, for a change of {@link #email}. Comes with a request only: never stored or sent. */
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    private String oldPassword;
     private String description;
     private String filesDir;
     private boolean master = false;
@@ -167,6 +172,14 @@ public class Customer implements Serializable {
 
     public void setName(String name) {
         this.name = name;
+    }
+
+    public String getOldPassword() {
+        return oldPassword;
+    }
+
+    public void setOldPassword(String oldPassword) {
+        this.oldPassword = oldPassword;
     }
 
     public String getEmail() {

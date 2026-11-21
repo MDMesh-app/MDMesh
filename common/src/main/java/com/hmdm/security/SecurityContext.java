@@ -47,6 +47,9 @@ public class SecurityContext {
      */
     private final Integer customerId;
 
+    /** Whether this request gave the current user's password; a context lasts for one request. */
+    private boolean currentPasswordConfirmed;
+
     /**
      * <p>Constructs new <code>SecurityContext</code> instance.</p>
      */
@@ -99,6 +102,16 @@ public class SecurityContext {
      */
     public Optional<User> getCurrentUser() {
         return Optional.ofNullable(this.currentUser);
+    }
+
+    /** Records that this request gave the current user's password, and that it was right. */
+    public void confirmCurrentPassword() {
+        this.currentPasswordConfirmed = true;
+    }
+
+    /** True when this request gave the current user's password ({@link #confirmCurrentPassword}). */
+    public boolean isCurrentPasswordConfirmed() {
+        return this.currentPasswordConfirmed;
     }
 
     /**

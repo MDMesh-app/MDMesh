@@ -75,7 +75,8 @@ public class DeviceCreateOptions implements Serializable {
     public String toString() {
         return "DeviceCreateOptions{" +
                 "customer='" + customer + '\'' +
-                ", configuration='" + configuration + '\'' +
+                // The QR-code key fetches the QR, which holds the Wi-Fi password: only its fingerprint
+                ", configuration=" + com.hmdm.util.CryptoUtil.logFingerprint(configuration) +
                 ", groups=" + groups +
                 '}';
     }

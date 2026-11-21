@@ -33,7 +33,7 @@ const ROW: Record<IssueKind, { action: RowAction; phrase: string }> = {
   outOfSync: { action: 'sync', phrase: 'a configuration out of sync' },
   agentTooOld: { action: 'agent', phrase: 'an out-of-date agent' },
   deferred: { action: 'open', phrase: 'deferred settings' },
-  reset: { action: 'sync', phrase: 'Wi-Fi turned back on by the device' },
+  reset: { action: 'sync', phrase: 'a configuration out of date on the device' },
 };
 
 /** Row wording, tone and action for a configuration issue (summarizeStatus output) or offline. */

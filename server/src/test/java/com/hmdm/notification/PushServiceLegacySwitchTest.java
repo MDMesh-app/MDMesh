@@ -35,6 +35,8 @@ public class PushServiceLegacySwitchTest {
 
     private final List<String> sent = new ArrayList<>();
     private final List<String> lookups = new ArrayList<>();
+    /** Devices the MDMesh agent enrolled (with a check-in secret). */
+    private final List<Integer> agentDevices = new ArrayList<>();
 
     private PushSender sender(String name) {
         return new PushSender() {
@@ -68,6 +70,9 @@ public class PushServiceLegacySwitchTest {
                 d.setId(deviceId);
                 return d;
             }
+            @Override public boolean isAgentDevice(int deviceId) {
+                return agentDevices.contains(deviceId);
+            }
         };
         return new PushService(sender("mqtt"), sender("polling"), configurations, devices, legacy);
     }
@@ -97,6 +102,26 @@ public class PushServiceLegacySwitchTest {
         assertEquals(Arrays.asList(
                 "mqtt:7:" + PushMessage.TYPE_CONFIG_UPDATED, "polling:7:" + PushMessage.TYPE_CONFIG_UPDATED,
                 "mqtt:8:" + PushMessage.TYPE_CONFIG_UPDATED, "polling:8:" + PushMessage.TYPE_CONFIG_UPDATED), sent);
+    }
+
+    @Test
+    public void anAgentDeviceGetsNoPushOverEitherSender() {
+        agentDevices.add(8);
+        PushService push = service(true);
+        PushMessage m = new PushMessage();
+        m.setDeviceId(8);
+        m.setMessageType(PushMessage.TYPE_CONFIG_UPDATED);
+
+        assertEquals(0, push.send(m));
+        push.notifyDeviceOnSettingUpdate(8);
+        push.notifyDeviceOnApplicationSettingUpdate(8);
+        push.sendSimpleMessage(8, PushMessage.TYPE_CONFIG_UPDATED);
+        assertTrue(sent.toString(), sent.isEmpty());
+
+        // A launcher device beside it still gets its pushes
+        push.notifyDevicesOnUpdate(1);
+        assertEquals(Arrays.asList(
+                "mqtt:7:" + PushMessage.TYPE_CONFIG_UPDATED, "polling:7:" + PushMessage.TYPE_CONFIG_UPDATED), sent);
     }
 
     @Test

@@ -220,6 +220,7 @@ public class DeviceHistoryOnDeleteTest {
         deviceWithHistory(other);
 
         SecurityContext.init(Fakes.superAdmin(1, 1));
+        SecurityContext.get().confirmCurrentPassword(); // as CustomerResource does once the password passes
         try {
             injector.getInstance(CustomerDAO.class).removeCustomerById(doomed);
         } finally {

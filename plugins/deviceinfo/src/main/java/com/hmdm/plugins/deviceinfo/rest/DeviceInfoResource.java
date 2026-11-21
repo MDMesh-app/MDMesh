@@ -24,6 +24,7 @@ package com.hmdm.plugins.deviceinfo.rest;
 import com.hmdm.event.DeviceLocationUpdatedEvent;
 import com.hmdm.event.EventService;
 import com.hmdm.persistence.DeviceDAO;
+import com.hmdm.persistence.LegacyDevice;
 import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.Device;
 import com.hmdm.plugin.service.PluginStatusCache;
@@ -141,11 +142,12 @@ public class DeviceInfoResource {
     public Response saveDeviceInfo(@PathParam("deviceNumber") String deviceNumber, List<DeviceDynamicInfo> data) {
         try {
             // Find device and set the device ID for records
-            Device dbDevice = this.unsecureDAO.getDeviceByNumber(deviceNumber);
-            if (dbDevice == null) {
+            LegacyDevice found = this.unsecureDAO.findLegacyDevice(deviceNumber, LegacyDevice.Lookup.NUMBER);
+            if (!found.isServed()) {
                 logger.error("Device {} was not found", deviceNumber);
-                return Response.DEVICE_NOT_FOUND_ERROR();
+                return found.refusal();
             }
+            final Device dbDevice = found.getDevice();
 
             SecurityContext.init(dbDevice.getCustomerId());
             try {

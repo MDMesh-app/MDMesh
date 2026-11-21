@@ -33,6 +33,13 @@ import org.apache.ibatis.annotations.Update;
  */
 public interface AgentEnrollmentTokenMapper {
 
+    /**
+     * A token that can still enroll a device at {@code #{now}}: a use left, not stopped, not expired. SQL over the
+     * table's unqualified columns, shared by {@link #claim} and DeviceMapper.isAgentConfiguration.
+     */
+    String LIVE = "(used = false AND useCount < maxUses AND revokedAt IS NULL " +
+            "AND (expiresAt IS NULL OR expiresAt > #{now}))";
+
     @Insert({"INSERT INTO agentEnrollmentToken (token, customerId, used, createdAt, expiresAt, configurationId, " +
             "maxUses, useCount) " +
             "VALUES (#{token}, #{customerId}, #{used}, #{createdAt}, #{expiresAt}, #{configurationId}, " +
@@ -52,8 +59,7 @@ public interface AgentEnrollmentTokenMapper {
      * row before the update).
      */
     @Update({"UPDATE agentEnrollmentToken SET useCount = useCount + 1, used = (useCount + 1 >= maxUses) " +
-            "WHERE id = #{id} AND used = false AND useCount < maxUses AND revokedAt IS NULL " +
-            "AND (expiresAt IS NULL OR expiresAt > #{now})"})
+            "WHERE id = #{id} AND " + LIVE})
     int claim(@Param("id") Integer id, @Param("now") long now);
 
     /**

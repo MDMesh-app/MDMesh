@@ -1,4 +1,5 @@
 import { apiClient } from './client';
+import type { DeviceEvent } from './events';
 
 export interface ConfigStatus {
   configurationId?: number | null;
@@ -49,9 +50,53 @@ export function parseOutcomes(detail: string | null | undefined): ConfigOutcomes
   } catch { return null; }
 }
 
-/** Applied revision an agent (0.3.4+) reports after turning Wi-Fi back on by itself (Wi-Fi radio self-heal). */
+/**
+ * Applied revision an agent reports when its configuration is out of date on the device, so the server re-sends it:
+ * after turning Wi-Fi back on by itself (Wi-Fi radio self-heal, 0.3.4+), recovering storage, lifting Factory reset:
+ * Block for a wipe, holding a newer configuration that didn't fully apply, or failing to re-apply it after a restart.
+ */
 export const DEVICE_RESET_REVISION = '0'.repeat(64);
-export const DEVICE_RESET_LABEL = 'Reset by device (Wi-Fi turned back on)';
+export const DEVICE_RESET_LABEL = 'Out of date on the device';
+
+/** Device events that leave the configuration out of date on the device, and what each means for it. */
+const STALE_CAUSES: Readonly<Record<string, string>> = {
+  storageRecovered: 'The device restored settings its storage had damaged.',
+  wipeNotStarted: 'A factory reset didn’t start, so the device went back to its settings.',
+  configReapplyFailed: 'The device couldn’t fully apply its configuration again after a restart.',
+};
+
+/**
+ * How long before the device first reported the configuration out of date an event may be and still explain it. The
+ * agent records the event just before a check-in (the heartbeat's is at most about 10 minutes away), and the event
+ * carries the device's clock while the report time is the server's. An older one (a device offline for hours after it)
+ * names no cause rather than a wrong one.
+ */
+export const STALE_CAUSE_WINDOW_MS = 15 * 60_000;
+
+/**
+ * Why the configuration is out of date on the device: the latest event that explains it, from around [appliedAt] (when
+ * the device first reported it, ConfigStatus.appliedAt) on, and after the last config.apply that completed. That apply
+ * re-applied the whole configuration, so an event before it was resolved, and the device is out of date again for
+ * another reason (PR #227 review). Only a config.apply brings it back in date: the device's own re-apply leaves it
+ * marked out of date. Null when none explains it: the Wi-Fi radio self-heal records no event, and an older event would
+ * mislabel today's state. Events carry the device's clock, the rest the server's, so this assumes a roughly right device
+ * clock: one running fast can still name an event the apply resolved.
+ */
+export function staleCause(
+  events: ReadonlyArray<DeviceEvent> | undefined,
+  status: Pick<ConfigStatus, 'appliedAt' | 'lastCommand'>,
+): string | null {
+  if (status.appliedAt == null) return null;
+  const since = status.appliedAt - STALE_CAUSE_WINDOW_MS;
+  const applied = status.lastCommand?.status === 'done' ? status.lastCommand.completedAt : undefined;
+  let latest: DeviceEvent | null = null;
+  for (const e of events ?? []) {
+    if (!(e.type in STALE_CAUSES) || e.ts < since || (applied != null && e.ts <= applied)) continue;
+    if (!latest || e.ts > latest.ts) latest = e;
+  }
+  return latest ? STALE_CAUSES[latest.type] : null;
+}
+
 /** In sync, but the agent skipped some settings on purpose (e.g. Wi-Fi radio Off while Wi-Fi is the only network). */
 export const SOME_DEFERRED_LABEL = 'In sync (some settings deferred)';
 

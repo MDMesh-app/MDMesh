@@ -290,8 +290,9 @@ public class DeviceResource {
                 return Response.OK();
             }
         } catch (SecurityException e) {
-            log.warn("Device save refused: not accessible to user {}; nothing changed",
-                    SecurityContext.get().getCurrentUserName());
+            // A device, configuration or group this user may not use: nothing was saved
+            log.warn("Device save refused for user {}: {}; nothing changed",
+                    SecurityContext.get().getCurrentUserName(), e.getMessage());
             return Response.PERMISSION_DENIED();
         } catch (DeviceDAO.AgentDeviceRenameException e) {
             log.warn("Device {} not renamed: {}", device.getId(), e.getMessage());

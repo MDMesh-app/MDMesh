@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { ConfigSyncSummary } from '../api/configSync';
+import { DEVICE_RESET_LABEL, type ConfigSyncSummary } from '../api/configSync';
 import type { DeviceView } from '../api/devices';
-import { isCleanSummary, presenceOf, suspectDevices } from './fleetHealth';
+import { ISSUE_REASON, isCleanSummary, issueKind, presenceOf, suspectDevices } from './fleetHealth';
 import { ONLINE_WINDOW_MS } from './presence';
 
 const NOW = 1_800_000_000_000;
@@ -53,5 +53,12 @@ describe('suspectDevices', () => {
   it('leaves out wiped devices, even one whose last check-in is recent: they can’t need attention', () => {
     const list = [device(1), device(2, { wipedAt: RECENT }), device(3, { lastUpdate: QUIET })];
     expect(suspectDevices(list, summary, NOW).map((d) => d.id)).toEqual([1]);
+  });
+});
+
+describe('a configuration out of date on the device', () => {
+  it('is an issue with a neutral reason, not the Wi-Fi self-heal', () => {
+    expect(issueKind({ tone: 'warn', label: DEVICE_RESET_LABEL })).toBe('reset');
+    expect(ISSUE_REASON.reset).toBe('Configuration out of date on the device');
   });
 });

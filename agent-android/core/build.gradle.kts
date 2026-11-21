@@ -83,4 +83,6 @@ dependencies {
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.kotlinx.coroutines.test)
+    // WorkManagerTestInitHelper: the scheduled wipe-hold check on real WorkManager.
+    testImplementation(libs.work.testing)
 }

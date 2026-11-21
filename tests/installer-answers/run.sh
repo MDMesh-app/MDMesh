@@ -710,6 +710,49 @@ RC=0; out=$(env -i bash -c '. "$1"; r=""
 [ "$out" = "r=" ] || fail "modes.sh: mdm_compose_has_proxy or mdm_proxy_version_problem got these wrong: $out"
 ok
 
+# A setup.sh re-run to the end, with a docker stub that answers like a running stack (server booted, database seeded):
+# the always-run database repairs run whether or not the edge stays up; an edge that doesn't stay up then fails the
+# run, after the summary, with its logs.
+mkdir -p "$WORK/stubs-full"
+# shellcheck disable=SC2016  # the stub's own variables
+printf '%s\n' '#!/bin/sh' 'echo "docker $*" >> "$STUB_LOG"' 'case "$*" in' \
+  '  *"exec -T -u mdmesh server cat"*) echo OK ;;' \
+  '  *psql*"FROM settings)||"*) echo 1/0 ;;' \
+  '  *psql*"createnewdevices AND"*) echo 1 ;;' \
+  '  *psql*) cat > "$STUB_LOG.stdin" ;;' \
+  '  "compose ps -a -q caddy") echo edge1 ;;' \
+  '  "inspect "*) echo "$STUB_EDGE t0" ;;' \
+  '  "compose logs"*) echo "the edge log line" ;;' \
+  'esac' 'exit 0' > "$WORK/stubs-full/docker"
+chmod +x "$WORK/stubs-full/docker"
+for e in restarting running; do
+  rm -rf -- "$WORK/src10"; mkdir -p "$WORK/src10/install"; cp -- "$REPO/setup.sh" "$WORK/src10/"; cp -R -- "$REPO/install/lib" "$REPO/install/sql" "$WORK/src10/install/"
+  printf '%s\n' DB_PASSWORD=x HASH_SECRET=y BASE_URL=https://mdm.example.com SITE_ADDRESS=mdm.example.com \
+    COMPOSE_FILE=docker-compose.yml:docker-compose.domain.yml COMPOSE_PROFILES= IMAGE_OWNER=local > "$WORK/src10/.env"
+  : > "$WORK/full.log"; RC=0
+  (cd "$WORK/src10" && env -i PATH="$WORK/stubs-full:$PATH" HOME="$WORK" STUB_LOG="$WORK/full.log" STUB_EDGE=$e MDM_EDGE_SETTLE=0 \
+    bash ./setup.sh < /dev/null > "$WORK/out/o" 2> "$WORK/out/e") || RC=$?
+  repairs=$(grep -n 'createnewdevices AND' "$WORK/full.log" | head -1 | cut -d: -f1); edge=$(grep -n '^docker inspect ' "$WORK/full.log" | head -1 | cut -d: -f1)
+  if [ "$e" = running ]; then
+    { [ "$RC" = 0 ] && grep -qF '== MDMesh is up ==' "$WORK/out/o"; } || { fail "setup.sh to the end with its edge up does not succeed"; show; }
+  else
+    { [ "$RC" != 0 ] && [ -n "$repairs" ] && [ -n "$edge" ] && [ "$repairs" -lt "$edge" ] && grep -qF 'the edge log line' "$WORK/out/e" \
+      && grep -qF 'its edge is not up' "$WORK/out/e" && grep -qF 'Console:' "$WORK/out/o"; } \
+      || { fail "setup.sh with its edge down: repairs not run first, or no summary, or not a failure (rc $RC)"; show; }
+  fi
+  ok
+done
+
+# A site.d that is a link is not connected either, saying what it is (no chmod hint).
+rm -rf -- "$WORK/src7"; mkdir -p "$WORK/src7/install" "$WORK/elsewhere"; ln -s "$WORK/elsewhere" "$WORK/src7/site.d"
+cp -- "$REPO/setup.sh" "$WORK/src7/"; cp -R -- "$REPO/install/lib" "$WORK/src7/install/"
+printf '%s\n' DB_PASSWORD=x HASH_SECRET=y BASE_URL=https://mdm.example.com SITE_ADDRESS=mdm.example.com \
+  COMPOSE_FILE=docker-compose.yml:docker-compose.domain.yml COMPOSE_PROFILES= IMAGE_OWNER=local > "$WORK/src7/.env"
+setup_run "$WORK/src7"
+{ grep -qF 'it is a link or not a directory' "$WORK/out/o" "$WORK/out/e" && ! grep -qF 'chmod go-w' "$WORK/out/o" "$WORK/out/e" \
+  && ! grep -q '^MDMESH_SITE_DIR=' "$WORK/src7/.env"; } || { fail "setup.sh with site.d a link: no clear message, or connected"; show; }
+ok
+
 # Moved out of the proxy mode with TRUSTED_PROXIES="host" left in .env: a re-run says to clear it, and goes on.
 rm -rf -- "$WORK/src7"; mkdir -p "$WORK/src7/install"; cp -- "$REPO/setup.sh" "$WORK/src7/"; cp -R -- "$REPO/install/lib" "$WORK/src7/install/"
 printf '%s\n' DB_PASSWORD=x HASH_SECRET=y BASE_URL=https://mdm.example.com SITE_ADDRESS=mdm.example.com 'TRUSTED_PROXIES="host"' \
@@ -830,13 +873,18 @@ qs_run MDMESH_MODE=proxy
 ok
 # Refused before anything is sourced or run: a value .env must not hold, image pins that aren't the manifest's, an .env
 # others may read, a directory or a file in it that others may write.
-for c in 'BASE_URL=https://x.example.com/'"'"';drop' 'BASE_URL=https://a\b.example.com' 'IMAGE_OWNER=Me' 'GITHUB_REPO=../x' \
-         'CURRENT_VERSION=0.6.0;id' 'COMPOSE_FILE=docker-compose.yml:evil.yml' "WEB_VERSION=0.6.0@sha256:$D1" \
-         'perm:.env:644' 'perm:.:775' 'perm:install/lib/db.sh:666' \
-         'COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml|MDMESH_BIND=127.0.0.1:8080|TRUSTED_PROXIES="0.0.0.0/0"' \
-         'COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml|MDMESH_BIND=0.0.0.0:8080|TRUSTED_PROXIES="host"' \
-         'COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml|MDMESH_BIND=127.0.0.1:8080|TRUSTED_PROXIES=' \
-         'MDMESH_SITE_DIR=/etc' 'MDMESH_SITE_DIR=site.d'; do
+# Each case is "CASE#MESSAGE": the refusal must be this case's own, not an earlier check's.
+for c in 'BASE_URL=https://x.example.com/'"'"';drop#.env: BASE_URL is not valid' 'BASE_URL=https://a\b.example.com#.env: BASE_URL is not valid' \
+         'IMAGE_OWNER=Me#.env: IMAGE_OWNER' 'GITHUB_REPO=../x#.env: GITHUB_REPO' \
+         'CURRENT_VERSION=0.6.0;id#.env: CURRENT_VERSION is not a release version' \
+         'COMPOSE_FILE=docker-compose.yml:evil.yml#not a hosting mode the quick start writes' \
+         "WEB_VERSION=0.6.0@sha256:$D1#.env: WEB_VERSION is not the image" \
+         'perm:.env:644#must belong to you (or root) and be private to you' 'perm:.:775#chmod go-w' 'perm:install/lib/db.sh:666#chmod go-w' \
+         'COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml|MDMESH_BIND=127.0.0.1:8080|TRUSTED_PROXIES="0.0.0.0/0"#.env: TRUSTED_PROXIES has "0.0.0.0/0"' \
+         'COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml|MDMESH_BIND=0.0.0.0:8080|TRUSTED_PROXIES="host"#.env: TRUSTED_PROXIES and MDMESH_BIND: host' \
+         'COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml|MDMESH_BIND=127.0.0.1:8080|TRUSTED_PROXIES=#.env: TRUSTED_PROXIES is empty' \
+         'MDMESH_SITE_DIR=/etc#.env: MDMESH_SITE_DIR is not this install' 'MDMESH_SITE_DIR=site.d#.env: MDMESH_SITE_DIR is not this install'; do
+  want=${c##*#}; c=${c%#*}
   qs_dir
   case "$c" in
     perm:*) qs_env > "$WORK/qs7/mdmesh/.env"; chmod 600 "$WORK/qs7/mdmesh/.env"
@@ -844,8 +892,8 @@ for c in 'BASE_URL=https://x.example.com/'"'"';drop' 'BASE_URL=https://a\b.examp
     *) IFS='|' read -r -a kv <<< "$c"; qs_env "${kv[@]}" > "$WORK/qs7/mdmesh/.env"; chmod 600 "$WORK/qs7/mdmesh/.env" ;;
   esac
   qs_run
-  { [ ! -e "$WORK/PWNED" ] && ! grep -q '/docker compose ' "$WORK/docker.log" && grep -qF 'Nothing was changed.' "$WORK/out/e"; } \
-    || { fail "quickstart.sh resumes over a bad install directory or .env ($c)"; show; }
+  { [ ! -e "$WORK/PWNED" ] && ! grep -q '/docker compose ' "$WORK/docker.log" && grep -qF 'Nothing was changed.' "$WORK/out/e" \
+    && grep -qF -- "$want" "$WORK/out/e"; } || { fail "quickstart.sh resumes over a bad install directory or .env ($c), or not for its own reason ($want)"; show; }
   ok
 done
 # A proxy-mode install resumes with its own sound values: its site.d, and a proxy list that fits its bind.
@@ -871,6 +919,12 @@ for p in .:775 install:775 install/lib/db.sh:664 .env:660; do
     || { fail "quickstart.sh trusts its own pre-existing group-writable ${p%:*}, or changes it"; show; }
   ok
 done
+# A finished install's directory (no marker) is left alone, saying so first, also when a 0002 umask left it open.
+qs_dir; rm -f -- "$WORK/qs7/mdmesh/.quickstart-unfinished"; qs_env > "$WORK/qs7/mdmesh/.env"; chmod 600 "$WORK/qs7/mdmesh/.env"
+chmod 775 "$WORK/qs7/mdmesh"; qs_run
+{ grep -qF "Don't delete that .env" "$WORK/out/e" && ! grep -qF 'chmod go-w' "$WORK/out/e"; } \
+  || { fail "quickstart.sh over a finished install in an open directory does not say it leaves it alone, first"; show; }
+ok
 # A directory another user owns (one found on this system, not world-writable), and /tmp itself: refused.
 other=$(find /var /usr /etc -maxdepth 3 -type d ! -user 0 ! -user "$(id -u)" ! -perm -002 -perm -001 -print -quit 2>/dev/null || true)
 for d in /tmp ${other:+"$other"}; do

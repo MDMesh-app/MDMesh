@@ -677,8 +677,6 @@ if ! grep -q '^OK' <<< "$INIT_RESULT"; then
   printf '%s\n' "${INIT_RESULT:0:2000}" | tr -d '\000-\010\013-\037\177' | sed 's/^/    /'   # the server's text: no control chars
   err "Fix the issue above and re-run ./setup.sh (it reuses your .env; no need to start over)."; exit 1
 fi
-# The edge too: MDMesh is reached only through it.
-mdm_edge_up || { err "Fix the issue above and re-run ./setup.sh (it reuses your .env; no need to start over)."; exit 1; }
 
 # Data safety: hmdm_init.en.sql is FRESH-DB-ONLY — it DELETEs configurations and re-inserts demo
 # rows, so it must NEVER run against live data. The gate is the settings row (only the seed creates
@@ -718,8 +716,19 @@ if ! mdm_post_seed install/sql/post_seed.sql; then
   err "Post-seed repairs failed — device enrollment would not work. Fix the error above and re-run ./setup.sh."; exit 1
 fi
 
+# The edge too: MDMesh is reached only through it. Checked after the seed and the repairs, which don't need it, so the
+# database is right either way; a failure still prints what follows (a new admin password is shown only here), then
+# fails the run.
+EDGE_UP=1
+mdm_edge_up || EDGE_UP=0
+
 echo
-say "== MDMesh is up =="
+if [ "$EDGE_UP" = 1 ]; then
+  say "== MDMesh is up =="
+else
+  err "== MDMesh is installed, but its edge is not up (above), so it can't be reached yet. Fix that, then run"
+  err "   ./setup.sh again (it reuses your .env; the details below stay valid). =="
+fi
 echo "  Console:        ${BASE_URL}"
 echo "  REST API base:  ${BASE_URL}/rest"
 echo "  Recovery page:  ${BASE_URL}/recovery"
@@ -746,3 +755,5 @@ if [ -n "${VITE_AGENT_CHECKSUM:-}" ]; then
 else
   echo "Host the agent APK and enroll devices from the console's Enroll page (it builds the QR with ${BASE_URL})."
 fi
+# Not reachable without its edge: the run fails, after the details above.
+[ "$EDGE_UP" = 1 ] || exit 1

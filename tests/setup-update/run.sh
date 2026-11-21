@@ -335,5 +335,29 @@ for c in nosig:"has a published, signed manifest" otherkey:"is not signed by the
   expect_refused "bad-${c%%:*}" "${c%%:*}" "a release with ${c%%:*}" "${c#*:}"
 done
 
+# Behind your own proxy (0.6.0 on), never to a release before 0.6.0, --allow-downgrade or not, dry run or not: that
+# release's setup.sh and edge don't know the mode. An origin whose only release is v0.5.9; the same move without the
+# proxy overlay goes on (with --allow-downgrade), so the refusal is the mode's.
+"${G[@]}" clone -q "$O" "$WORK/origin4"
+for t in $("${G[@]}" -C "$WORK/origin4" tag -l 'v9*'); do "${G[@]}" -C "$WORK/origin4" tag -d "$t" > /dev/null; done
+"${G[@]}" -C "$WORK/origin4" tag -a -m old v0.5.9 "$c900"
+manifest "$R/old" v0.5.9 0.5.9 "$c900" "$WORK/k.key"
+for a in '' --allow-downgrade dry; do
+  clone "proxy$a" '' "$WORK/origin4"
+  printf '%s\n' 'COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml' 'CURRENT_VERSION=0.6.0' > "$WORK/proxy$a/.env"
+  case "$a" in
+    dry) upd "proxy$a" old MDMESH_DRY_RUN=1 -- ;;
+    *) upd "proxy$a" old -- $a ;;
+  esac
+  { [ "$RC" != 0 ] && grep -qF 'This install runs behind your own proxy, which v0.5.9 can' "$WORK/out" && head_is "proxy$a" "$cmain"; } \
+    || { fail "--update ${a:-} to v0.5.9 behind your own proxy is not refused"; show; }
+  ok
+done
+clone domain059 '' "$WORK/origin4"
+printf '%s\n' 'COMPOSE_FILE=docker-compose.yml:docker-compose.domain.yml' 'CURRENT_VERSION=0.6.0' > "$WORK/domain059/.env"
+upd domain059 old -- --allow-downgrade
+{ head_is domain059 "$c900" && grep -q 'Checked out v0.5.9' "$WORK/out"; } || { fail "--update --allow-downgrade to v0.5.9 in domain mode is refused"; show; }
+ok
+
 if [ "$FAILS" != 0 ]; then echo "setup --update: $FAILS failure(s)" >&2; exit 1; fi
 echo "setup --update: all $CHECKS checks passed"

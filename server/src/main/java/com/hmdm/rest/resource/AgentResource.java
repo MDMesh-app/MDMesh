@@ -106,6 +106,10 @@ public class AgentResource {
     private static final Pattern EVENT_TYPE = Pattern.compile("^[A-Za-z0-9._-]{1,64}$");
     /** devices.hardwareid is VARCHAR(128). */
     private static final int MAX_HARDWARE_ID_CHARS = 128;
+    /** device_state's androidRelease, agentVersion and powerMode columns. */
+    private static final int MAX_ANDROID_RELEASE_CHARS = 32;
+    private static final int MAX_AGENT_VERSION_CHARS = 64;
+    private static final int MAX_POWER_MODE_CHARS = 16;
     private static final int MAX_TELEMETRY_CHARS = 256 * 1024;
     // Each result is one UPDATE. Current agents send at most 1000 per check-in; the rest of a backlog follows on the
     // next ones. Past this count the server stops and reports how many it took (resultsAccepted), so the agent
@@ -413,18 +417,23 @@ public class AgentResource {
         // Persist the latest device-state snapshot (powers the admin console).
         String appliedRevision = validRevision(deviceNumber,
                 request.getState() == null ? null : request.getState().getAppliedConfigRevision());
+        // A state value the database can't store would fail its write, and with it every check-in from the device.
+        String agentVersion = request.getState() == null ? null
+                : storable(deviceNumber, "agentVersion", request.getState().getAgentVersion(), MAX_AGENT_VERSION_CHARS);
         if (request.getState() != null) {
             AgentDeviceState s = request.getState();
+            String androidRelease = storable(deviceNumber, "androidRelease", s.getAndroidRelease(),
+                    MAX_ANDROID_RELEASE_CHARS);
             DeviceState row = new DeviceState();
             row.setDeviceNumber(deviceNumber);
             row.setBattery(s.getBattery());
             row.setCharging(s.getCharging());
             row.setLocked(s.getLocked());
             row.setKioskActive(s.getKioskActive());
-            row.setAndroidRelease(s.getAndroidRelease());
+            row.setAndroidRelease(androidRelease);
             row.setLastBootAt(s.getLastBootAt());
-            row.setAgentVersion(s.getAgentVersion());
-            row.setPowerMode(s.getPowerMode());
+            row.setAgentVersion(agentVersion);
+            row.setPowerMode(storable(deviceNumber, "powerMode", s.getPowerMode(), MAX_POWER_MODE_CHARS));
             row.setAppliedConfigRevision(appliedRevision);
             row.setAppliedConfigAt(null);
             // The server (not the device) knows the public IP — inject it into the census JSON.
@@ -446,15 +455,15 @@ public class AgentResource {
             commandDAO.upsertState(row);
             // Mirror the Android version into the device row (infojson) so the device LIST — which
             // reads infojson->>'androidVersion', not the state table — shows it.
-            String androidRelease = s.getAndroidRelease();
-            if (androidRelease != null && !androidRelease.trim().isEmpty()) {
-                commandDAO.updateAndroidVersion(deviceNumber, androidRelease.trim());
+            if (androidRelease != null && !androidRelease.isEmpty()) {
+                commandDAO.updateAndroidVersion(deviceNumber, androidRelease);
             }
             // Append the reported location (dynamic.location) to the device's breadcrumb trail.
             recordLocation(deviceNumber, tel);
         }
 
-        int eventsAccepted = ingestEvents(device, request.getEvents());
+        int eventsAccepted = ingestEvents(device, request.getEvents(),
+                AgentProtocol.atLeast(request.getProtocolVersion(), 1, 12));
 
         // Ack results from previously-delivered commands.
         int resultsAccepted = 0;
@@ -514,7 +523,6 @@ public class AgentResource {
                 capsJson != null ? capsJson : commandDAO.getDeviceCapabilities(deviceNumber));
         long now = System.currentTimeMillis();
 
-        String agentVersion = request.getState() == null ? null : request.getState().getAgentVersion();
         String configAgentVersion = null;
         String appsRevision = null;
         boolean configCapable = AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, deviceTokens);
@@ -582,9 +590,12 @@ public class AgentResource {
      * one check-in can't flood device_event. An event with no valid type is skipped, and so is one whose data the
      * database refuses (SQL state class 22 or 23): both count as consumed, so the agent doesn't resend them forever. Any
      * other database error (a lost connection, a failover) is not the event's fault: the events stop there, uncounted,
-     * and the agent sends them again. The rest of the check-in goes on, so a short blip doesn't cost its results.
+     * and the agent sends them again. The rest of the check-in goes on, so a short blip doesn't cost its results. Only
+     * when {@code countsAccepted}, though: an agent before protocol 1.12 ignores {@code eventsAccepted} and drops its
+     * whole batch on a successful check-in, so for it the error fails the check-in, as it did before 1.12, and the agent
+     * sends the batch again.
      */
-    private int ingestEvents(Device device, List<AgentTelemetryEvent> events) {
+    private int ingestEvents(Device device, List<AgentTelemetryEvent> events, boolean countsAccepted) {
         if (events == null) {
             return 0;
         }
@@ -626,6 +637,9 @@ public class AgentResource {
                 if (state == null || !(state.startsWith("22") || state.startsWith("23"))) {
                     logger.warn("Device {} events not stored ({}, SQL state {}): the agent resends them from {}",
                             deviceNumber, ex.getClass().getSimpleName(), state, e.getType());
+                    if (!countsAccepted) {
+                        throw ex;
+                    }
                     break;
                 }
                 logger.warn("Device {} event {} refused by the database (SQL state {}): skipped", deviceNumber,
@@ -666,6 +680,23 @@ public class AgentResource {
             }
         }
         return out.toString();
+    }
+
+    /**
+     * The trimmed device-reported {@code value} of {@code field}, or null when there is none, it carries a control
+     * character (PostgreSQL refuses a NUL) or it is longer than its column's {@code max}.
+     */
+    private static String storable(String deviceNumber, String field, String value, int max) {
+        String v = value == null ? null : value.trim();
+        if (v == null || v.isEmpty()) {
+            return v;
+        }
+        if (v.chars().anyMatch(Character::isISOControl) || v.length() > max) {
+            logger.warn("Device {} reported a {} the server can't store ({} characters, at most {}, no control "
+                    + "characters): ignored", deviceNumber, field, v.length(), max);
+            return null;
+        }
+        return v;
     }
 
     /**

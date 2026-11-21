@@ -1,5 +1,7 @@
 package com.mdmesh.proto
 
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 
 /**
@@ -46,8 +48,14 @@ data class AgentEnrollResponse(
 )
 
 /** POST /checkin body: re-advertise capabilities, ack prior commands, pull the next batch. */
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class AgentCheckInRequest(
+    /**
+     * Always sent, unlike other defaults (protocol 1.12): the server learns from it that this agent keeps the events
+     * past `eventsAccepted`. To an agent that doesn't say, it can't report a partial batch, so it fails the check-in.
+     */
+    @EncodeDefault
     val protocolVersion: String = ProtocolJson.PROTOCOL_VERSION,
     val deviceId: String,
     val capabilities: Capabilities,

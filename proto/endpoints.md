@@ -125,6 +125,9 @@ them, counted from the first, the server consumed; the agent drops those and sen
 server stores at most 500 per check-in. It skips an event whose `type` isn't 1 to 64 of `A-Z a-z 0-9 . _ -`, or whose
 data the database refuses (SQL state class 22 or 23), and counts it as consumed. Any other database error (a lost
 connection, a failover) stops the events there, uncounted, so the agent sends that event and the ones after it again.
+That needs an agent that reads `eventsAccepted`, so agents send `protocolVersion` on every check-in from 1.12 on (they
+leave out other defaults). For a check-in without it, or below 1.12, such an error fails the check-in instead, as before
+1.12: an older agent drops its whole batch on a successful check-in, and keeps it for a retry on a failed one.
 A server without `eventsAccepted` stores the first 100 and drops the rest without saying so, so an agent sends at most
 100 until a response carries the field, and then up to 500. An agent keeps at most 500 events waiting besides the
 batch a check-in is sending; past that it drops the oldest and puts one `eventsDropped` event in front, whose `detail`

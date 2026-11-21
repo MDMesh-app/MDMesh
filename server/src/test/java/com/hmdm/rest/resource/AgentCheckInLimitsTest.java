@@ -16,6 +16,7 @@ import com.hmdm.rest.json.agent.AgentCapabilities;
 import com.hmdm.rest.json.agent.AgentCheckInRequest;
 import com.hmdm.rest.json.agent.AgentCommandResult;
 import com.hmdm.rest.json.agent.AgentDeviceState;
+import com.hmdm.rest.json.agent.AgentProtocol;
 import com.hmdm.rest.json.agent.AgentTelemetryEvent;
 import com.hmdm.rest.resource.support.AppReconciler;
 import com.hmdm.rest.resource.support.ConfigAppInstaller;
@@ -40,6 +41,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 /** One authenticated check-in can only cause a bounded amount of database work and storage. */
 public class AgentCheckInLimitsTest {
@@ -88,8 +90,13 @@ public class AgentCheckInLimitsTest {
             return "{\"device\":[\"lock\"]}";
         }
         @Override public List<AgentCommand> listPending(String n) { return Collections.emptyList(); }
-        @Override public void upsertState(DeviceState s) { telemetry = s.getTelemetry(); }
-        @Override public void updateAndroidVersion(String n, String v) { }
+        DeviceState state;
+        final List<String> androidVersions = new ArrayList<>();
+        @Override public void upsertState(DeviceState s) {
+            state = s;
+            telemetry = s.getTelemetry();
+        }
+        @Override public void updateAndroidVersion(String n, String v) { androidVersions.add(v); }
         @Override public void recordLocation(DeviceLocation l) { locations.add(l); }
         @Override public void insertEvent(String n, String type, Long ts, String detail) {
             if (type.equals(rejectedType)) {
@@ -322,10 +329,129 @@ public class AgentCheckInLimitsTest {
         // Not the event's fault: counted as consumed, the agent would delete it and every event after it.
         commands.rejectedType = "kioskReturn";
         commands.rejectedState = "08006";
-        Response r = checkinEvents(event("boot", null), event("kioskReturn", "x"), event("lowBattery", "12%"));
+        AgentCheckInRequest req = new AgentCheckInRequest();
+        req.setProtocolVersion("1.12");
+        req.setEvents(Arrays.asList(event("boot", null), event("kioskReturn", "x"), event("lowBattery", "12%")));
+        Response r = checkin(req);
         assertEquals(Response.ResponseStatus.OK, r.getStatus());
         assertEquals(Collections.singletonList("boot"), commands.events);
         assertEquals(1, eventsAccepted(r));
+    }
+
+    @Test
+    public void aLostDatabaseFailsTheCheckInOfAnAgentThatCountsItsWholeBatchDelivered() {
+        // Agents before protocol 1.12 don't send their version and ignore eventsAccepted: a successful check-in would
+        // cost them the event that wasn't stored and every one after it. A failed one keeps their batch for a retry.
+        for (String version : Arrays.asList(null, "1.11", "1.x")) {
+            commands.events.clear();
+            commands.rejectedType = "kioskReturn";
+            commands.rejectedState = "08006";
+            AgentCheckInRequest req = new AgentCheckInRequest();
+            req.setProtocolVersion(version);
+            req.setEvents(Arrays.asList(event("boot", null), event("kioskReturn", "x"), event("lowBattery", "12%")));
+            try {
+                checkin(req);
+                fail("protocol " + version + ": the check-in must fail");
+            } catch (PersistenceException expected) {
+                assertEquals(Collections.singletonList("boot"), commands.events);
+            }
+        }
+    }
+
+    @Test
+    public void anOlderAgentStillSkipsAnEventTheDatabaseRefuses() {
+        // Its data, not the database: a retry would fail the same way, forever.
+        commands.rejectedType = "kioskReturn";
+        Response r = checkinEvents(event("boot", null), event("kioskReturn", "x"), event("lowBattery", "12%"));
+        assertEquals(Response.ResponseStatus.OK, r.getStatus());
+        assertEquals(Arrays.asList("boot", "lowBattery"), commands.events);
+    }
+
+    @Test
+    public void readsTheProtocolVersionAsNumbers() {
+        assertTrue(AgentProtocol.atLeast("1.12", 1, 12));
+        assertTrue(AgentProtocol.atLeast("1.100", 1, 12));
+        assertTrue(AgentProtocol.atLeast("2.0", 1, 12));
+        assertFalse(AgentProtocol.atLeast("1.9", 1, 12));
+        assertFalse(AgentProtocol.atLeast("1.11", 1, 12));
+        assertFalse(AgentProtocol.atLeast(null, 1, 12));
+        assertFalse(AgentProtocol.atLeast("", 1, 12));
+        assertFalse(AgentProtocol.atLeast("1.12.1", 1, 12));
+        assertFalse(AgentProtocol.atLeast("1.99999999999", 1, 12));
+        assertFalse(AgentProtocol.atLeast("-2.0", 1, 12));
+    }
+
+    private AgentDeviceState state(String androidRelease, String agentVersion, String powerMode) {
+        AgentDeviceState s = new AgentDeviceState();
+        s.setAndroidRelease(androidRelease);
+        s.setAgentVersion(agentVersion);
+        s.setPowerMode(powerMode);
+        return s;
+    }
+
+    /** What the server stores of each device-sent state string, at most: its device_state column's length. */
+    private static final java.util.Map<String, Integer> STATE_STRING_COLUMNS = new java.util.HashMap<>();
+    static {
+        STATE_STRING_COLUMNS.put("androidRelease", 32);
+        STATE_STRING_COLUMNS.put("agentVersion", 64);
+        STATE_STRING_COLUMNS.put("powerMode", 16);
+        STATE_STRING_COLUMNS.put("appliedConfigRevision", 64);
+    }
+
+    @Test
+    public void everyStateStringIsBoundedBeforeItIsStored() throws Exception {
+        // A new state field must get a rule here and in AgentResource: an unbounded one wedges the device's check-ins.
+        for (java.lang.reflect.Field f : AgentDeviceState.class.getDeclaredFields()) {
+            if (f.getType() != String.class || java.lang.reflect.Modifier.isStatic(f.getModifiers())) continue;
+            Integer max = STATE_STRING_COLUMNS.get(f.getName());
+            assertTrue("AgentDeviceState." + f.getName() + " has no storage rule", max != null);
+            StringBuilder poison = new StringBuilder("1\0");
+            while (poison.length() <= max) poison.append('a');
+            AgentDeviceState s = new AgentDeviceState();
+            f.setAccessible(true);
+            f.set(s, poison.toString());
+            AgentCheckInRequest req = new AgentCheckInRequest();
+            req.setState(s);
+            commands.androidVersions.clear();
+
+            assertEquals(f.getName(), Response.ResponseStatus.OK, checkin(req).getStatus());
+            java.lang.reflect.Field stored = DeviceState.class.getDeclaredField(f.getName());
+            stored.setAccessible(true);
+            assertNull(f.getName(), stored.get(commands.state));
+            assertTrue(f.getName(), commands.androidVersions.isEmpty());
+        }
+    }
+
+    @Test
+    public void storesTheReportedStateStrings() {
+        AgentCheckInRequest req = new AgentCheckInRequest();
+        req.setState(state(" 16 ", "0.5.2", "adaptive"));
+        assertEquals(Response.ResponseStatus.OK, checkin(req).getStatus());
+        assertEquals("16", commands.state.getAndroidRelease());
+        assertEquals("0.5.2", commands.state.getAgentVersion());
+        assertEquals("adaptive", commands.state.getPowerMode());
+        assertEquals(Collections.singletonList("16"), commands.androidVersions);
+    }
+
+    @Test
+    public void ignoresStateStringsTheDatabaseCantStoreSoTheCheckInGoesThrough() {
+        // A NUL, or a value longer than its column, fails the state upsert, and with it every check-in from the device:
+        // its events and results would never be delivered.
+        String long33 = "abcdefghijklmnopqrstuvwxyz0123456";
+        AgentCheckInRequest req = new AgentCheckInRequest();
+        req.setState(state("1\0.1", long33 + long33, "alwaysOnAlwaysOn!"));
+        req.setEvents(Collections.singletonList(event("boot", null)));
+        Response r = checkin(req);
+        assertEquals(Response.ResponseStatus.OK, r.getStatus());
+        assertNull(commands.state.getAndroidRelease());
+        assertNull(commands.state.getAgentVersion());
+        assertNull(commands.state.getPowerMode());
+        assertTrue(commands.androidVersions.isEmpty());
+        assertEquals(1, eventsAccepted(r));
+
+        req.setState(state(long33, null, null));
+        checkin(req);
+        assertNull(commands.state.getAndroidRelease());
     }
 
     @Test

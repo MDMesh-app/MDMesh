@@ -19,6 +19,17 @@ class ProtocolJsonTest {
     }
 
     @Test
+    fun `a check-in says which protocol the agent speaks`() {
+        // The server keeps a check-in retryable for an agent that can't take a partial eventsAccepted (before 1.12):
+        // it knows this one can only from the version it sends, though encodeDefaults is off.
+        val encoded = json.encodeToString(
+            AgentCheckInRequest.serializer(),
+            AgentCheckInRequest(deviceId = "d", capabilities = Capabilities()),
+        )
+        assertTrue(encoded, "\"protocolVersion\":\"${ProtocolJson.PROTOCOL_VERSION}\"" in encoded)
+    }
+
+    @Test
     fun `ignores unknown keys for forward compatibility`() {
         val payload = """
             {

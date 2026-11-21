@@ -36,19 +36,6 @@ public interface DeviceMapper {
     void insertDeviceGroups(@Param("id") Integer deviceId,
                             @Param("groups") List<Integer> groups);
 
-    /**
-     * How many of these groups (distinct ids) the user may put a device in: groups of the customer the user belongs to,
-     * every one of them for a user with all devices available, else those userDeviceGroupsAccess grants. Same rule as
-     * getAllGroups, the groups the console offers.
-     */
-    @Select({"<script>SELECT COUNT(*) FROM groups INNER JOIN users ON users.id = #{userId} " +
-            "WHERE groups.customerId = #{customerId} AND users.customerId = #{customerId} AND groups.id IN " +
-            "<foreach item='groupId' collection='groupIds' open='(' separator=',' close=')'>#{groupId}</foreach> " +
-            "AND (users.allDevicesAvailable = TRUE OR EXISTS (SELECT 1 FROM userDeviceGroupsAccess access " +
-            "WHERE access.groupId = groups.id AND access.userId = users.id))</script>"})
-    int countUsableGroups(@Param("userId") int userId, @Param("customerId") int customerId,
-                          @Param("groupIds") java.util.Collection<Integer> groupIds);
-
     @Delete({"DELETE FROM deviceGroups " +
             "WHERE deviceId=#{deviceId} " +
             "  AND groupId IN ( " +
@@ -198,13 +185,17 @@ public interface DeviceMapper {
             "            WHERE configurations.id = #{configurationId} AND configurations.customerId = devices.customerId)"})
     int updateDevicesConfiguration(@Param("ids") Integer[] ids, @Param("configurationId") Integer configurationId);
 
-    /** The customer's groups the user may put devices in: as {@link #removeDeviceGroupsByDeviceId} decides. */
+    /**
+     * The groups the user may put devices in (or take them out of): groups of the customer the user belongs to, every
+     * one of them for a user with all devices available, else those userDeviceGroupsAccess grants. Same rule as
+     * getAllGroups, the groups the console offers. The one rule for every device-group change in DeviceDAO.
+     */
     String USABLE_GROUPS =
             "SELECT groups.id FROM groups INNER JOIN users ON users.id = #{userId} " +
-            "WHERE groups.customerId = #{customerId} " +
-            "AND (users.allDevicesAvailable AND users.customerId = #{customerId} " +
+            "WHERE groups.customerId = #{customerId} AND users.customerId = #{customerId} " +
+            "AND (users.allDevicesAvailable = TRUE " +
             "     OR EXISTS (SELECT 1 FROM userDeviceGroupsAccess access " +
-            "                WHERE groups.id = access.groupId AND access.userId = users.id))";
+            "                WHERE access.groupId = groups.id AND access.userId = users.id))";
 
     /** The ids among {@code groupIds} that aren't {@link #USABLE_GROUPS}, in order. */
     @Select({"SELECT g.id FROM unnest(#{groupIds,typeHandler=org.apache.ibatis.type.ArrayTypeHandler}) AS g(id) " +

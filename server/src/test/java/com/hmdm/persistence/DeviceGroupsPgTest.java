@@ -259,6 +259,84 @@ public class DeviceGroupsPgTest {
         assertFalse(dao.areGroupsUsableByUser(Collections.singletonList(closed)));
     }
 
+    @Test
+    public void aBulkRegroupIntoAnotherCustomersGroupChangesNoDevice() throws Exception {
+        int a = device(open);
+        int b = device();
+        SecurityContext.init(admin);
+
+        refused(() -> dao.updateDevicesGroups(Arrays.asList(a, b), lookups(closed, foreign), true));
+
+        assertEquals(Collections.singletonList(open), groupsOf(a));
+        assertEquals(Collections.emptyList(), groupsOf(b));
+    }
+
+    @Test
+    public void aBulkRegroupIntoAGroupTheUserMayNotUseChangesNoDevice() throws Exception {
+        int a = device(open);
+        int b = device(open);
+        SecurityContext.init(limited);
+
+        refused(() -> dao.updateDevicesGroups(Arrays.asList(a, b), lookups(closed), true));
+
+        assertEquals(Collections.singletonList(open), groupsOf(a));
+        assertEquals(Collections.singletonList(open), groupsOf(b));
+    }
+
+    @Test
+    public void aBulkRemovalFromAGroupTheUserMayNotUseChangesNoDevice() throws Exception {
+        int a = device(open, closed);
+        int b = device(open, closed);
+        SecurityContext.init(limited);
+
+        refused(() -> dao.updateDevicesGroups(Arrays.asList(a, b), lookups(open, closed), false));
+
+        assertEquals(Arrays.asList(open, closed), groupsOf(a));
+        assertEquals(Arrays.asList(open, closed), groupsOf(b));
+    }
+
+    @Test
+    public void aBulkRegroupWithAGroupThatDoesNotExistChangesNoDevice() throws Exception {
+        int a = device(open);
+        SecurityContext.init(admin);
+
+        refused(() -> dao.updateDevicesGroups(Collections.singletonList(a), lookups(closed, 2_000_000_000), true));
+
+        assertEquals(Collections.singletonList(open), groupsOf(a));
+    }
+
+    @Test
+    public void aBulkRegroupWithinTheUsersOwnGroupsChangesEveryDevice() throws Exception {
+        int a = device(open);
+        int b = device();
+        SecurityContext.init(admin);
+
+        dao.updateDevicesGroups(Arrays.asList(a, b), lookups(open, closed, closed), true);
+        assertEquals(Arrays.asList(open, closed), groupsOf(a));
+        assertEquals(Arrays.asList(open, closed), groupsOf(b));
+
+        dao.updateDevicesGroups(Arrays.asList(a, b), lookups(closed), false);
+        assertEquals(Collections.singletonList(open), groupsOf(a));
+        assertEquals(Collections.singletonList(open), groupsOf(b));
+    }
+
+    @Test
+    public void anAccessRowToAnotherCustomersGroupGrantsNothing() throws Exception {
+        // Only groups of the user's own customer count, whatever userDeviceGroupsAccess says
+        User granted = user(false);
+        sql("INSERT INTO " + schema + ".userDeviceGroupsAccess (userId, groupId) VALUES (" + granted.getId() + ", "
+                + open + "), (" + granted.getId() + ", " + foreign + ")");
+        int device = device(open);
+        SecurityContext.init(granted);
+
+        assertFalse(dao.areGroupsUsableByUser(Collections.singletonList(foreign)));
+        refused(() -> dao.updateDevicesGroups(Collections.singletonList(device), lookups(foreign), true));
+        Device change = edit(device, open, foreign);
+        refused(() -> dao.updateDevice(change));
+
+        assertEquals(Collections.singletonList(open), groupsOf(device));
+    }
+
     // ---------------------------------------------------------------------------------------------------- helpers
 
     private static void refused(Runnable change) {

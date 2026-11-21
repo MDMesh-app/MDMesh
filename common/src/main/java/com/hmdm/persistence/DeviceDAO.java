@@ -265,21 +265,16 @@ public class DeviceDAO extends AbstractDAO<Device> {
     @Transactional
     public List<Integer> applyDevicesGroups(Integer[] orderedIds, List<LookupItem> groups, boolean add) {
         List<Integer> devices = lockAccessible(orderedIds).stream().map(Device::getId).collect(Collectors.toList());
-        Integer[] groupIds = groups == null ? new Integer[0]
-                : groups.stream().map(LookupItem::getId).filter(Objects::nonNull).distinct().toArray(Integer[]::new);
-        if (groupIds.length == 0) {
+        List<Integer> named = groups == null ? Collections.emptyList()
+                : groups.stream().map(LookupItem::getId).collect(Collectors.toList());
+        // Every group named, to add or to remove, must be one the user may use, as a configuration must be: else
+        // nothing changes.
+        requireUsableGroupIds(named);
+        if (named.isEmpty() || devices.isEmpty()) {
             return devices;
         }
-        User user = SecurityContext.get().getCurrentUser()
-                .orElseThrow(() -> SecurityException.onCustomerDataAccessViolation(groupIds[0], "group"));
-        // Every group named must be one the user may use, as a configuration must be: else nothing changes.
-        List<Integer> unusable = this.mapper.unusableGroups(user.getId(), user.getCustomerId(), groupIds);
-        if (!unusable.isEmpty()) {
-            throw SecurityException.onCustomerDataAccessViolation(unusable.get(0), "group");
-        }
-        if (devices.isEmpty()) {
-            return devices;
-        }
+        User user = SecurityContext.get().getCurrentUser().get(); // requireUsableGroupIds refuses without one
+        Integer[] groupIds = named.stream().distinct().toArray(Integer[]::new);
         Integer[] deviceIds = devices.toArray(new Integer[0]);
         if (add) {
             this.mapper.addDevicesToGroups(user.getId(), user.getCustomerId(), deviceIds, groupIds);
@@ -406,6 +401,11 @@ public class DeviceDAO extends AbstractDAO<Device> {
     @Transactional
     public boolean applyDeviceUpdate(Device device) {
         boolean[] updated = {false};
+        // Locked before it is read, as a delete or a bulk change locks it: the groups and configuration checked
+        // against are the ones this update replaces.
+        if (device.getId() != null) {
+            this.mapper.lockDevices(new Integer[]{device.getId()});
+        }
         updateById(device.getId(), this::getAccessibleDeviceForUpdate, dbDevice -> {
             // An agent signs in with its device number, which it never learns anew: renamed, it could not check in
             // again. Read under the row's lock, so the number checked is the one this update replaces. Any other
@@ -505,20 +505,12 @@ public class DeviceDAO extends AbstractDAO<Device> {
     }
 
     /**
-     * Whether the current user may put devices in all these groups: groups of the user's own customer and, for a user
-     * limited to some device groups, only those. None at all is fine; a null id is not.
+     * Whether the current user may put devices in all these groups, or take them out of them ({@link
+     * DeviceMapper#USABLE_GROUPS}): groups of the user's own customer and, for a user limited to some device groups,
+     * only those. None at all is fine; a null id is not.
      */
     public boolean areGroupsUsableByUser(Collection<Integer> groupIds) {
-        if (groupIds.isEmpty()) {
-            return true;
-        }
-        if (groupIds.contains(null)) {
-            return false;
-        }
-        final Set<Integer> distinct = new HashSet<>(groupIds);
-        return SecurityContext.get().getCurrentUser()
-                .map(u -> this.mapper.countUsableGroups(u.getId(), u.getCustomerId(), distinct) == distinct.size())
-                .orElse(false);
+        return unusableGroups(groupIds).isEmpty();
     }
 
     /**
@@ -531,11 +523,30 @@ public class DeviceDAO extends AbstractDAO<Device> {
         }
         final Set<Integer> current = currentGroups == null ? Collections.emptySet()
                 : currentGroups.stream().map(LookupItem::getId).collect(Collectors.toSet());
-        final List<Integer> added = groups.stream().map(LookupItem::getId).filter(id -> !current.contains(id))
-                .collect(Collectors.toList());
-        if (!areGroupsUsableByUser(added)) {
-            throw SecurityException.onCustomerDataAccessViolation(added.get(0), "group");
+        requireUsableGroupIds(groups.stream().map(LookupItem::getId).filter(id -> !current.contains(id))
+                .collect(Collectors.toList()));
+    }
+
+    /** @throws SecurityException one of the groups is not {@link #areGroupsUsableByUser usable} (named in it) */
+    private void requireUsableGroupIds(Collection<Integer> groupIds) {
+        List<Integer> unusable = unusableGroups(groupIds);
+        if (!unusable.isEmpty()) {
+            throw SecurityException.onCustomerDataAccessViolation(unusable.get(0), "group");
         }
+    }
+
+    /** Those of the groups the current user may not use, in id order (a null id as 0); empty when all are usable. */
+    private List<Integer> unusableGroups(Collection<Integer> groupIds) {
+        if (groupIds == null || groupIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        if (groupIds.stream().anyMatch(Objects::isNull)) {
+            return Collections.singletonList(0);
+        }
+        final Integer[] distinct = groupIds.stream().distinct().sorted().toArray(Integer[]::new);
+        return SecurityContext.get().getCurrentUser()
+                .map(u -> this.mapper.unusableGroups(u.getId(), u.getCustomerId(), distinct))
+                .orElseGet(() -> Arrays.asList(distinct));
     }
 
     /** The stored device for a change, if the current user may access it; a security exception otherwise. */

@@ -13,7 +13,8 @@ Before you update, read the [version notes](#version-notes) for each release you
 ## How updates work
 
 The **supervisor** offers only GitHub releases whose signed manifest verifies. On quick-start installs it also
-applies them: it backs up the database, then rolls back if the new version fails its health check
+applies them: it backs up the database, then rolls back if the new version fails its health check (from 0.6.0's
+updater on, the edge must also stay up)
 ([settings](OPERATIONS.md#updater-supervisor)). If no update shows up, see the `[verify]` line in
 `docker compose logs supervisor` (native: `journalctl -u mdmesh-supervisor`).
 

@@ -19,6 +19,10 @@ New
 - The quick start asks one plain question, how your phones will reach MDMesh; `--tunnel`, `--domain` and `--proxy` answer it.
 - Your own edge rules: Caddy imports `site.d/*.caddy` from the install directory, and updates never touch it.
 
+Fixes
+- An update (or Roll back) counts as healthy only when the edge stays up too, not just the server: an edge the new
+  release can't start, say over a rule in `site.d`, is rolled back instead of leaving the console unreachable.
+
 ## v0.5.1 — 2026-11-20
 
 Upgrading

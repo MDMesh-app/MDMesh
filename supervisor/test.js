@@ -795,7 +795,10 @@ t.test('an unverifiable release logs why (HTTP status / minisign), without secre
 // thing. Failure knobs (env): STUB_FAIL_RE (egrep on the args → exit 1), STUB_PSQL_FAIL=1 (the restore psql, the one
 // run with -c BEGIN, prints an ERROR and exits 3, as psql -v ON_ERROR_STOP=1 does). Like the real restore, the stub
 // psql fails when its input does not end with the COMMIT apply.sh/rollback.sh add after a complete dump (they send a
-// RAISE instead). curl succeeds unless STUB_CURL_FAIL=1. ---
+// RAISE instead). curl succeeds unless STUB_CURL_FAIL=1. The edge (caddy) is up and stays up, unless STUB_EDGE says
+// otherwise: "restarting" (its config doesn't load), "flapping" (it restarted between two looks), or "gone" (no
+// container); with STUB_EDGE_BAD_WEB, only while .env's WEB_VERSION starts with that value (an edge the new web image
+// can't start, the old one can). ---
 function makeStubs(dir) {
   const fs = require('fs'), path = require('path');
   const bin = path.join(dir, 'bin');
@@ -814,6 +817,18 @@ case "$*" in
   "image inspect "*)
     # RepoDigests of the image named by the last argument: that very ref, unless STUB_REPO_DIGESTS says otherwise.
     printf '%s\n' "\${STUB_REPO_DIGESTS:-\${@: -1}}";;
+  "compose ps -a -q caddy")
+    edge=\${STUB_EDGE:-up}
+    if [ -n "\${STUB_EDGE_BAD_WEB:-}" ] && ! grep -q "^WEB_VERSION=\${STUB_EDGE_BAD_WEB}" .env; then edge=up; fi
+    [ "$edge" = gone ] || echo edge1;;
+  "inspect --format "*)
+    edge=\${STUB_EDGE:-up}
+    if [ -n "\${STUB_EDGE_BAD_WEB:-}" ] && ! grep -q "^WEB_VERSION=\${STUB_EDGE_BAD_WEB}" .env; then edge=up; fi
+    case "$edge" in
+      restarting) echo "restarting 2026-11-01T00:00:00Z";;
+      flapping) echo "running 2026-11-01T00:00:0$(grep -c '^inspect ' "$STUB_LOG")Z";;
+      *) echo "running 2026-11-01T00:00:00Z";;
+    esac;;
   *" pg_dump "*) echo "-- stub dump"; echo "SELECT 1;"; echo "-- PostgreSQL database dump complete";;
   *" psql "*"-c BEGIN "*)
     cat > "$STUB_LOG.stdin"
@@ -837,7 +852,7 @@ function makeDeploy(envText) {
   const log = path.join(dir, 'docker.log');
   fs.writeFileSync(log, '');
   const env = { ...process.env, PATH: bin + path.delimiter + process.env.PATH, STUB_LOG: log, COMPOSE_PROJECT_DIR: project,
-    BACKUP_DIR: backups, HEALTH_TIMEOUT: '5', HEALTH_URL: 'http://stub/health' };
+    BACKUP_DIR: backups, HEALTH_TIMEOUT: '5', HEALTH_URL: 'http://stub/health', EDGE_SETTLE: '0' };
   return { dir, project, backups, log, env,
     envFile: () => fs.readFileSync(path.join(project, '.env'), 'utf8'),
     calls: () => fs.readFileSync(log, 'utf8').split('\n').filter(Boolean) };
@@ -1136,6 +1151,45 @@ t.test('apply.sh: a failed health check rolls back with the same safe restore; a
     a.match(r.err, /^ERR .*server is stopped/mi);
     const c2 = d.calls();
     a.equal(c2.slice(idx(c2, PSQL_RE) + 1).filter((c) => /^compose up /.test(c)).length, 0, 'server left stopped:\n' + c2.join('\n'));
+  } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+});
+
+t.test('apply.sh and rollback.sh: healthy means the edge stays up too; an edge the new release cannot start is rolled back', () => {
+  const fs = require('fs');
+  const base = 'SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n';
+  // The new web image's edge doesn't start (a site.d rule it refuses, say), the old one does: rolled back, and the reason
+  // names the edge and where to look.
+  for (const edge of ['restarting', 'flapping', 'gone']) {
+    const d = makeDeploy(base);
+    try {
+      const r = runScript('apply.sh', applyArgs('0.0.2'), { ...d.env, STUB_EDGE: edge, STUB_EDGE_BAD_WEB: '0.0.2' });
+      a.equal(r.code, 1, edge + ': ' + r.all);
+      a.match(r.err, /^ERR the edge \(caddy\) did not stay up.*docker compose logs caddy/m, edge);
+      a.match(r.out, /PHASE rollback/);
+      a.match(r.out, /PHASE rolled_back/, edge + ': the old edge starts: ' + r.all);
+      const calls = d.calls();
+      assertSafeRestoreOrder(calls.slice(idx(calls, /^compose up /) + 1), r.all);
+      a.match(d.envFile(), /^WEB_VERSION=0\.0\.1$/m);
+    } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+  }
+  // An edge that stays up is healthy: the update is done (and the server's health alone is not enough: above).
+  let d = makeDeploy(base);
+  try {
+    const r = runScript('apply.sh', applyArgs('0.0.2'), d.env);
+    a.equal(r.code, 0, r.all);
+    a.match(r.out, /PHASE done/);
+    a.ok(d.calls().some((c) => c === 'compose ps -a -q caddy'), 'the edge was looked at');
+  } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+  // rollback.sh: an edge that doesn't stay up after the rollback fails it, saying so.
+  d = makeDeploy('SERVER_VERSION=0.0.2\nWEB_VERSION=0.0.2\nCURRENT_VERSION=0.0.2\n');
+  try {
+    fs.writeFileSync(require('path').join(d.backups, 'latest'), '20261101-120000\n');
+    fs.writeFileSync(require('path').join(d.backups, '20261101-120000.env'), base);
+    fs.writeFileSync(require('path').join(d.backups, '20261101-120000.sql'), 'SELECT 1;\n-- PostgreSQL database dump complete\n');
+    const r = runScript('rollback.sh', [], { ...d.env, STUB_EDGE: 'restarting' });
+    a.notEqual(r.code, 0, r.all);
+    a.match(r.err, /^ERR the edge \(caddy\) did not stay up/m);
+    a.match(r.out, /PHASE failed/);
   } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
 });
 

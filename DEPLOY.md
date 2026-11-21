@@ -232,7 +232,9 @@ Make the file readable by everyone (`chmod 644`), check it, then restart the edg
 docker compose exec caddy caddy validate --config /etc/caddy/Caddyfile && docker compose restart caddy
 ```
 
-A rule that doesn't parse stops the edge, and with it the console and `/recovery`, until it is fixed. `.env`'s
+A rule that doesn't parse stops the edge, and with it the console and `/recovery`, until it is fixed. An update whose
+edge doesn't start with your rules (a rule the new Caddy refuses) is rolled back by itself, like one whose server
+fails its health check; `docker compose logs caddy` says which rule. `.env`'s
 `MDMESH_SITE_DIR` names the directory (an absolute path, so the updater mounts the same one). An install from
 before 0.6.0 gets it at its first `./setup.sh` run (from source), or as in
 [Upgrading, v0.6.0](docs/UPGRADING.md#v060) (quick start).

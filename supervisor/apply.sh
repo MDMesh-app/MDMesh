@@ -58,15 +58,9 @@ set_env() {
   fi
 }
 
-# --- health: poll the server's unauthenticated /public/name until 200 or timeout ---
-healthy() {
-  local deadline=$(( $(date +%s) + HEALTH_TIMEOUT ))
-  while [ "$(date +%s)" -lt "$deadline" ]; do
-    if curl -fsS -m 5 "$HEALTH_URL" >/dev/null 2>&1; then return 0; fi
-    sleep 5
-  done
-  return 1
-}
+# --- health: the server answers its unauthenticated /public/name, and the edge stays up (supervisor/health.sh) ---
+# shellcheck source=supervisor/health.sh
+. "${BASH_SOURCE[0]%/*}/health.sh"
 
 # --- restore_db <dump> <log>: put the database back to the pre-update dump. Returns non-zero after ERR lines. ---
 # The dump is plain SQL from `pg_dump` of the database before the update. So:

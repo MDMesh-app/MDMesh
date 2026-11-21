@@ -17,6 +17,7 @@ import com.hmdm.rest.json.UserCredentials;
 import com.hmdm.rest.json.view.user.UserView;
 import com.hmdm.security.LoginThrottle;
 import com.hmdm.service.EmailService;
+import com.hmdm.service.RsaKeyService;
 import com.hmdm.testsupport.FakeSessions;
 import com.hmdm.testsupport.Fakes;
 import com.hmdm.util.BackgroundTaskRunnerService;
@@ -75,16 +76,136 @@ public class AuthResourceTest {
         };
         EmailService email = new EmailService("smtp.example.com", 25, false, false, "", "", "", "", "mdm@localhost",
                 "", "", "", "");
-        resource = new AuthResource(unsecureDAO, null, unsecureDAO, tasks, email, null, false, auth, new LoginThrottle("", true,
-                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "https://mdm.example.com"));
+        newResource = rsa -> new AuthResource(unsecureDAO, null, unsecureDAO, tasks, email, rsa, rsa != null, auth,
+                new LoginThrottle("", true, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                        "https://mdm.example.com"));
+        resource = newResource.apply(null);
+    }
+
+    /** An AuthResource built as in {@link #setUp}; with an RSA key service, it takes passwords encrypted (transmit.password). */
+    private java.util.function.Function<RsaKeyService, AuthResource> newResource;
+
+    /** A 1024-bit key: answers "right" for any ciphertext and records each one it is asked to decrypt. */
+    private static class FakeRsa extends RsaKeyService {
+        final java.util.List<byte[]> decrypted = new java.util.ArrayList<>();
+
+        FakeRsa() {
+            super(".");
+        }
+
+        @Override
+        public int blockBytes() {
+            return 128;
+        }
+
+        @Override
+        public String decrypt(byte[] encrypted) {
+            decrypted.add(encrypted);
+            return "right";
+        }
+    }
+
+    private static String base64(int bytes) {
+        return java.util.Base64.getEncoder().encodeToString(new byte[bytes]);
+    }
+
+    private static String repeat(char c, int n) {
+        char[] chars = new char[n];
+        java.util.Arrays.fill(chars, c);
+        return new String(chars);
     }
 
     @Test
-    public void signupIsNeverOffered() {
-        Response response = resource.options();
+    public void anEncryptedPasswordOfOneBlockOfTheKeyIsDecrypted() throws Exception {
+        FakeRsa rsa = new FakeRsa();
+        resource = newResource.apply(rsa);
+        String block = base64(128);
+        assertEquals(172, block.length());
 
-        assertFalse(((AuthOptionsResponse) response.getData()).isSignup());
-        assertTrue("recovery is still offered with SMTP set", ((AuthOptionsResponse) response.getData()).isRecover());
+        Response response = login(credentials(block), request());
+
+        assertEquals(Response.ResponseStatus.OK, response.getStatus());
+        assertEquals(1, rsa.decrypted.size());
+        assertEquals(128, rsa.decrypted.get(0).length);
+    }
+
+    @Test
+    public void aBlockWithoutItsLeadingZeroByteIsDecrypted() throws Exception {
+        // Clients such as JSEncrypt drop a leading zero byte (about 1 sign-in in 128-256): 127 bytes, still 172
+        // characters, ending in "=="
+        FakeRsa rsa = new FakeRsa();
+        resource = newResource.apply(rsa);
+        String shortBlock = base64(127);
+        assertEquals(172, shortBlock.length());
+        assertTrue(shortBlock.endsWith("=="));
+
+        Response response = login(credentials(shortBlock), request());
+
+        assertEquals(Response.ResponseStatus.OK, response.getStatus());
+        assertEquals(1, rsa.decrypted.size());
+        assertEquals(127, rsa.decrypted.get(0).length);
+    }
+
+    @Test
+    public void anEncryptedPasswordNotOneBlockOfTheKeyIsRefusedBeforeItIsDecoded() throws Exception {
+        String block = base64(128);
+        String[] refused = {
+                repeat('A', 1024 * 1024),                       // well-formed base64, a megabyte
+                repeat('A', 128) + "=",                         // 129 characters
+                base64(126), base64(130),                       // 168 and 176 characters
+                base64(129),                                    // 172 characters, unpadded: 129 bytes
+                block.substring(0, 170) + "!=",                 // 172 characters, not all base64
+                block.substring(0, 170) + "-=",                 // base64url's alphabet
+                block.substring(0, 171) + " ",
+                base64(127).substring(0, 171) + "A",            // 127 bytes' length, padding replaced
+                base64(126) + "A==A",                           // 172 characters, padding in the middle
+                "=" + block.substring(1),
+                "not base64!", "", null};
+        for (int i = 0; i < refused.length; i++) {
+            FakeRsa rsa = new FakeRsa();
+            resource = newResource.apply(rsa);
+
+            Response response = login(credentials(refused[i]), request());
+
+            assertEquals("case " + i, Response.ResponseStatus.ERROR, response.getStatus());
+            assertTrue("case " + i, rsa.decrypted.isEmpty());
+        }
+    }
+
+    @Test
+    public void aKeyThatCannotBeReadDecryptsNothing() throws Exception {
+        FakeRsa rsa = new FakeRsa() {
+            @Override
+            public int blockBytes() {
+                return 0;
+            }
+        };
+        resource = newResource.apply(rsa);
+
+        Response response = login(credentials(base64(128)), request());
+
+        assertEquals(Response.ResponseStatus.ERROR, response.getStatus());
+        assertTrue(rsa.decrypted.isEmpty());
+    }
+
+    @Test
+    public void aRefusedEncryptedPasswordTakesAsLongAsAPasswordCheck() throws Exception {
+        // An unknown login pays one bcrypt check; a password refused for its shape must too, or the time tells the
+        // login exists. The two are timed in turn, so a slow moment of the machine weighs on both.
+        long check = Long.MAX_VALUE;
+        long refused = Long.MAX_VALUE;
+        for (int i = 0; i < 3; i++) {
+            long start = System.nanoTime();
+            com.hmdm.util.PasswordUtil.passwordMatch("not base64!", null);
+            check = Math.min(check, System.nanoTime() - start);
+
+            resource = newResource.apply(new FakeRsa());
+            start = System.nanoTime();
+            login(credentials("not base64!"), request());
+            refused = Math.min(refused, System.nanoTime() - start);
+        }
+
+        assertTrue("refused in " + refused + " ns, a check takes " + check + " ns", refused >= check / 2);
     }
 
     @Test

@@ -67,7 +67,8 @@ update ([v0.5.0](#v050)); every update from then on is pinned. If you set `SUPER
 `sudo apt-get install git curl openssl`); as root with `--native` it installs them itself. It comes with 0.5.0: a clone from 0.4.x moves to it once
 with `git fetch --tags && git checkout v0.5.0 && ./setup.sh --update` ([v0.5.0](#v050)). A clone that is on `main` and
 already has `--update` can be ahead of the newest release: over an install, `--update` then stops rather than run
-older code. Wait for the next release and run it then, or pass `--allow-downgrade` to go to the release now.
+older code. Wait for the next release and run it then, or pass `--allow-downgrade` to go to the release now. A clone
+still on a release branch (`release/vX.Y.Z`, squash-merged into the release) is not ahead: `--update` moves it on.
 
 setup.sh takes no backup, so dump the database first ([command](OPERATIONS.md#backups-and-restore)). Don't use
 `docker compose up -d --build` alone: only setup.sh updates `CURRENT_VERSION` and the image tags from the
@@ -91,12 +92,17 @@ sudo ./setup.sh --update --native
 
 From 0.4.x, move the clone to 0.5.0 once with `git fetch --tags && git checkout v0.5.0 && sudo ./setup.sh --update --native` ([v0.5.0](#v050)): 0.4.x has no `--update`.
 
-Choose **Keep** (the default) or **Erase** (type `ERASE`). Keep runs migrations and leaves all data and the
-enrollment secret alone, after a `pg_dump` to `/opt/mdmesh/backups/` ([restore](OPERATIONS.md#backups-and-restore)).
+Over an install, `--update` asks nothing. It shows `MDMesh · native update, <from> → <to>` and keeps the data, the
+base URL and the port, as `-y` does. From 0.5.0 it still asks once, because 0.5.0's `--update` doesn't tell the
+installer it is an update: add `-y` to skip the questions.
+
+Run without `--update` (`sudo ./setup.sh --native`), the installer asks you to type `yes`, then for the base URL and
+the port, then to choose **Keep** (the default) or **Erase** (type `ERASE`). Keep runs migrations and leaves all data
+and the enrollment secret alone, after a `pg_dump` to `/opt/mdmesh/backups/` ([restore](OPERATIONS.md#backups-and-restore)).
 
 - **Base URL:** kept from the last run (`base.url` in `ROOT.xml`). An interactive run offers it as the default, and
-  `-y` uses it. Set `BASE_URL` to change it.
-- **Unattended (`-y`):** never erases unless you set `REPLACE_DATA=yes`. It keeps the current port unless you set
+  `--update` and `-y` use it. Set `BASE_URL` to change it.
+- **Unattended (`--update`, `-y`):** never erases unless you set `REPLACE_DATA=yes`. It keeps the current port unless you set
   `HTTP_PORT`.
 - **Interrupted run:** run the same command again. It picks up where the last run stopped.
 - **Settings:** SMTP, `LEGACY_DEVICE_API`, `PROXY_ADDRESSES`, `GITHUB_REPO` and `GITHUB_TOKEN` carry over from earlier runs, Erase
@@ -238,6 +244,9 @@ don't get Clear PIN lockout (the console disables it for a device on an older ag
 older agents). It also works with a 0.4.0 server, which sends none of these and ignores the attempt id: an
 enrollment there works as before, it just can't be resumed.
 
+Downgrading the agent below 0.5.1 and upgrading again can bring back agent state removed meanwhile, such as a kiosk
+exited or credentials cleared while the older agent ran.
+
 ## Version notes
 
 ### v0.6.0
@@ -261,6 +270,104 @@ enrollment there works as before, it just can't be resumed.
   (`up -d` recreates the edge with the directory mounted; updates read both files, so they keep it.)
 - **A rollback below 0.6.0** of an install you moved to the proxy mode is refused by the updater: move it back first
   ([how](#changing-the-hosting-mode)).
+
+### v0.5.1
+
+- **Account changes take your own password.** Scripts and API clients that create or delete users or customers,
+  change another account's password or email, change a customer's email (`PUT /rest/private/customers`), or call
+  `PUT /rest/private/users/superadmin/password` must now send `oldPassword`: the MD5 (hex) of the caller's own
+  password, as the console does. `DELETE /rest/private/users/other/{id}`
+  and `DELETE /rest/private/customers/{id}` now take a JSON body, `{"oldPassword": "..."}`. A wrong one counts as a
+  failed sign-in for the caller's account, toward the lockout ([Sign-in limits](OPERATIONS.md#sign-in-limits)), so stop
+  at the first `error.password.wrong`. A session signed in as another account can't make these changes at all.
+- **Admins limited to some device groups or configurations** can't give anyone access beyond their own, and can't
+  change, delete or sign in as an account that reaches more than they do.
+- **New accounts start with no access** in the console: choose their device groups and configurations.
+- **Everyone signs in to the console again once** after the update: sessions opened by an older release (which native
+  installs keep across a restart) end at their first request. Scripts and API clients using a JWT are not affected.
+- **A session signed in as another account** ends as soon as the admin who opened it could no longer open it: their
+  account is deleted, demoted or its password changed, or the account they signed in as now reaches more than they do.
+  From such a session, you can't sign in as yet another account. The audit log records the admin for what is done in
+  it (`impersonatedBy`, in the database and the audit API).
+- **Audit records hold no secrets.** A configuration or device change records only the fields that hold none, and
+  names the rest (`"wifiPassword": "<set>"`, `"applicationSettings": "<3 items>"`). Every other record has its
+  passwords, tokens, PINs and signed-URL parameters masked, and a body that isn't valid JSON, or is over 1 MB, is not
+  recorded.
+- **Old audit records are scrubbed in the background** the same way, starting 30 seconds after the server starts: the
+  server answers (and the update's health check passes) while it runs, and after a restart it goes on where it
+  stopped. On a test machine, 1 million records took about 2 minutes of work, so about 4 minutes in the background (it
+  works 3 seconds in every 5). The server logs "Audit records from before this release scrubbed" when it is done.
+  - Each record keeps its method, URI and User-Agent. Its body is stored again as a new record's would be: masked, or,
+    for a configuration or device change, only the fields that hold no secret. A body that isn't JSON, or is over 1 MB,
+    and the body of a request whose record no longer keeps one, is replaced with a note.
+  - Most old records are rewritten, so allow free disk space of about the size of `plugin_audit_log` until autovacuum
+    reclaims the old row versions (`VACUUM plugin_audit_log` does it at once).
+  - With several servers on one database, stop all of them before the update, then start them on 0.5.1: a server
+    still on the old release keeps writing unmasked records.
+  - If you go back to 0.5.0 without restoring its backup (`--allow-downgrade`, or a native install's WAR swapped back),
+    0.5.0 writes unmasked records again, and the scrub, once done, doesn't look at them. With the server stopped
+    (`docker compose stop server`, native: `systemctl stop mdmesh-server`), whether still 0.5.0 or already 0.5.1,
+    run this, then start 0.5.1, so the scrub takes them in:
+
+    ```bash
+    # Docker, in the install directory
+    docker compose exec -T postgres psql -U mdmesh -d mdmesh -c "UPDATE plugin_audit_scrub SET upToId = (SELECT COALESCE(MAX(id), 0) FROM plugin_audit_log) WHERE id = 1;"
+    # Native
+    sudo -u postgres psql -d mdmesh -c "UPDATE plugin_audit_scrub SET upToId = (SELECT COALESCE(MAX(id), 0) FROM plugin_audit_log) WHERE id = 1;"
+    ```
+
+    If you changed `DB_USER` or `DB_NAME`, use your values in place of `mdmesh`.
+- **Copies made before the update still hold those secrets:** the pre-update database dump the update took
+  (`/backups/<time>.sql` in the `backups` volume on Docker, `/opt/mdmesh/backups/` on native installs), older backups,
+  and the server logs (`docker compose logs server`, `journalctl -u mdmesh-server`). Change the provisioning Wi-Fi
+  password and any secrets kept in managed app settings, then delete the old dumps once you no longer need them for a
+  rollback, and prune the old logs. The access logs of Tomcat and of a reverse proxy also record the enrollment QR's
+  key, which is part of its URL (`/rest/public/qr/<key>`) and fetches the QR with the Wi-Fi password in it: prune
+  those too.
+- **With `LEGACY_DEVICE_API=1`, keep Headwind launcher devices and MDMesh agent devices in separate
+  configurations.** The launcher's routes no longer serve a configuration that an agent device uses, or that an
+  agent enrollment code can still enroll devices into, nor create launcher devices in it: the launcher gets the error
+  `error.configuration.agent.managed`, and the server log says which configuration. A code enrolls into the
+  configuration it names or, if it names none, into the default configuration for new devices (**Settings**), which
+  then counts too. A configuration named by its QR code key counts the same way, and the server no longer makes its
+  Headwind QR code. The routes answer requests for an agent device with the launcher's device-not-found error. To fix
+  a launcher device that gets the error, move it to a configuration no agent device or enrollment code uses. With
+  `LEGACY_DEVICE_API` off (the default), nothing changes.
+- With `LEGACY_DEVICE_API=1`, the launcher's sync now works for a configuration without a kiosk exit PIN. Before, it
+  failed with a server error.
+- **CVE-2026-114938 (OpenJDK).** The Base64 code of JDK 17.0.6 to 17.0.21 is affected on x86_64 CPUs with AVX-512.
+  0.5.1 runs the server with `-XX:-UseBASE64Intrinsics`, which turns that code off. To protect a server before you
+  update:
+  - **Docker (quick start and from source):** add `SERVER_JAVA_OPTS=-XX:-UseBASE64Intrinsics` to `.env` (if the line
+    is already there, add the flag to its value, quoted), then run `docker compose up -d server` to recreate the
+    container. A quick-start install made before v0.3.2 also needs the `JAVA_OPTS` line in its compose file
+    ([OPERATIONS](OPERATIONS.md#temporary-debug-log)).
+  - **Native:** `sudo ./setup.sh --update --native`. It sets the flag, and upgrades a JDK 17 from your distribution's
+    packages when apt has a newer one. Until you can update, add the flag in a drop-in, then restart. If you already
+    set `JAVA_OPTS` there, add the flag to that line, and quote the whole setting when it holds several flags
+    (unquoted, systemd keeps only the first):
+
+    ```bash
+    sudo systemctl edit mdmesh-server
+    # in the editor, under [Service]:
+    #   Environment="JAVA_OPTS=-XX:-UseBASE64Intrinsics"
+    # or, with flags you already had:
+    #   Environment="JAVA_OPTS=-Xmx1g -XX:-UseBASE64Intrinsics"
+    sudo systemctl restart mdmesh-server
+    ```
+
+  On Docker, going back to a release before 0.5.1 (`--allow-downgrade`, or a rollback) drops the flag again, so keep
+  the `.env` line if you might.
+
+  To check a running server, look for `= false` and `{command line}`:
+
+  ```bash
+  # Docker, in the install directory (before v0.2.7 the server ran as root: leave out -u mdmesh)
+  docker compose exec -u mdmesh server jcmd org.apache.catalina.startup.Bootstrap VM.flags -all | grep UseBASE64Intrinsics
+  # Native, as root (or with sudo -u mdmesh in place of runuser -u mdmesh --)
+  runuser -u mdmesh -- "$(systemctl show -p Environment --value mdmesh-server | tr ' ' '\n' | sed -n 's/^JAVA_HOME=//p')/bin/jcmd" \
+    org.apache.catalina.startup.Bootstrap VM.flags -all | grep UseBASE64Intrinsics
+  ```
 
 ### v0.5.0
 

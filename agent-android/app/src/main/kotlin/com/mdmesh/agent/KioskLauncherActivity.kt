@@ -15,6 +15,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.distinctUntilChanged
 import com.mdmesh.agent.service.CheckInService
@@ -565,13 +566,22 @@ class KioskLauncherActivity : ComponentActivity() {
             // Null once the exit ran; otherwise why it was refused.
             val refused = withContext(NonCancellable) {
                 var started = false
-                val result = applier.exit(handBackHome = true, force = true, expected = kiosk) {
-                    started = true
-                    runCatching { if (isFinishing.not()) stopLockTask() }
-                    // Lock task is already left: a failed log write must not throw out between the exit's steps
-                    // (the next start would settle the half-exited kiosk back in kiosk). The exit goes on without it.
-                    runCatching { events.record("kioskExit", "exited on-device") }
-                        .onFailure { Log.w(TAG, "recording the on-device kiosk exit failed", it) }
+                // A storage error (the kiosk state unreadable, #220) is the exit's failure, never a crash of HOME.
+                // Before its steps it is a refusal like any other; after them the exit is as far as it got, and the
+                // next start settles the rest from the journal.
+                val result = runCatching {
+                    applier.exit(handBackHome = true, force = true, expected = kiosk) {
+                        started = true
+                        runCatching { if (isFinishing.not()) stopLockTask() }
+                        // Lock task is already left: a failed log write must not throw out between the exit's steps
+                        // (the next start would settle the half-exited kiosk back in kiosk). The exit goes on.
+                        runCatching { events.record("kioskExit", "exited on-device") }
+                            .onFailure { Log.w(TAG, "recording the on-device kiosk exit failed", it) }
+                    }
+                }.getOrElse {
+                    if (it is CancellationException) throw it
+                    Log.w(TAG, "on-device kiosk exit failed", it)
+                    KioskResult.Failed(it.message ?: "kiosk exit failed")
                 }
                 // Refused before it started: still in this kiosk (or the one that replaced it), still pinned.
                 if (!started) return@withContext result

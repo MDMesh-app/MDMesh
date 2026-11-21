@@ -10,11 +10,13 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.mdmesh.agent.admin.AdminReceiver
 import com.mdmesh.policy.CapabilityRegistry
 import com.mdmesh.policy.PolicyOutcome
+import com.mdmesh.policy.ReleasablePolicy
 import com.mdmesh.policy.TogglePolicy
 import com.mdmesh.policy.UserRestrictions
 import com.mdmesh.policy.camera.CameraPolicy
 import com.mdmesh.policy.factoryreset.FactoryResetPolicy
 import com.mdmesh.policy.factoryreset.FactoryResetPolicyFactory
+import com.mdmesh.policy.factoryreset.FactoryResetWipeHold
 import com.mdmesh.policy.location.LocationServicesPolicy
 import com.mdmesh.policy.safeboot.SafeBootPolicy
 import com.mdmesh.policy.safeboot.SafeBootPolicyFactory
@@ -116,7 +118,7 @@ class DevicePolicyEffectTest {
 
     @Test
     fun factoryResetFalseBlocksTheWipeAndTrueReleasesIt() {
-        val policy = requireNotNull(FactoryResetPolicyFactory.create(handle)) {
+        val policy = requireNotNull(FactoryResetPolicyFactory.create(handle, FactoryResetWipeHold())) {
             "factoryReset resolved no strategy on a Device Owner — the probe chain is broken"
         }
 
@@ -242,7 +244,7 @@ class DevicePolicyEffectTest {
                 // setEnabled deliberately locks the setting. Restore the pre-test lock state too, otherwise every
                 // instrumentation test leaves Settings unable to change Location even when it began unlocked.
                 if (!state.getValue(restrictionKey(UserRestrictions.DISALLOW_CONFIG_LOCATION))) {
-                    locationPolicy.release()
+                    (locationPolicy as? ReleasablePolicy)?.release()
                 }
             }
         }

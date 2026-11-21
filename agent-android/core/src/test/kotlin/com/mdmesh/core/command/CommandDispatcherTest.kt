@@ -1,5 +1,6 @@
 package com.mdmesh.core.command
 
+import com.mdmesh.policy.factoryreset.FactoryResetWipeHold
 import com.mdmesh.proto.CommandEnvelope
 import com.mdmesh.proto.CommandResult
 import com.mdmesh.proto.CommandStatus
@@ -57,6 +58,69 @@ class CommandDispatcherTest {
         )
 
         assertEquals(CommandStatus.EXPIRED, result.status)
+    }
+
+    /** #222: only the configuration and another wipe run after an accepted wipe; the rest is reported not run. */
+    @Test
+    fun `runs no other command after a wipe is accepted and reports it not run, not failed`() = runTest {
+        var wiping = false
+        val ran = mutableListOf<String>()
+        val wipe = object : CommandHandler {
+            override val type = "device.wipe"
+            override suspend fun handle(command: CommandEnvelope): CommandResult {
+                wiping = true // as DeviceWipeHandler sets the hold just before the wipe call returns
+                return CommandResults.done(command)
+            }
+        }
+        val enter = object : CommandHandler {
+            override val type = "kiosk.enter"
+            override suspend fun handle(command: CommandEnvelope): CommandResult {
+                ran += command.commandId
+                return CommandResults.done(command)
+            }
+        }
+        val dispatcher = CommandDispatcher(listOf(wipe, enter), wiping = { wiping })
+
+        val wiped = dispatcher.dispatch(envelope("device.wipe").copy(commandId = "w"))
+        val skipped = dispatcher.dispatch(envelope("kiosk.enter").copy(commandId = "k"))
+
+        assertEquals(CommandStatus.DONE, wiped.status)
+        assertEquals(CommandStatus.EXPIRED, skipped.status)
+        assertEquals(CommandDispatcher.NOT_RUN_WIPING, skipped.detail)
+        assertEquals(emptyList<String>(), ran)
+    }
+
+    /**
+     * PR #227 review: the configuration still applies during the hold (the factory reset policy defers Block itself,
+     * and the document is saved for the expiry's re-apply), and a repeat wipe of a lost device isn't refused.
+     */
+    @Test
+    fun `config apply, policy apply and a repeat wipe still run during the hold`() = runTest {
+        val types = listOf("config.apply", "policy.apply", "device.wipe")
+        val dispatcher = CommandDispatcher(types.map(::EchoHandler), wiping = { true })
+
+        val results = types.map { dispatcher.dispatch(envelope(it).copy(commandId = it)) }
+
+        assertEquals(types.map { CommandStatus.DONE }, results.map { it.status })
+    }
+
+    /** A wipe that hasn't rebooted the device within the bound isn't coming: commands run again. */
+    @Test
+    fun `runs commands again once the wipe hold expires`() = runTest {
+        var nowMs = 0L
+        var expired = 0
+        val hold = FactoryResetWipeHold(nowMs = { nowMs }, onExpired = { expired++ })
+        val dispatcher = CommandDispatcher(listOf(EchoHandler("device.lock")), wiping = { hold.held })
+        hold.hold()
+
+        nowMs = FactoryResetWipeHold.MAX_HOLD_MS - 1
+        val within = dispatcher.dispatch(envelope("device.lock").copy(commandId = "a"))
+        nowMs = FactoryResetWipeHold.MAX_HOLD_MS
+        val after = dispatcher.dispatch(envelope("device.lock").copy(commandId = "b"))
+
+        assertEquals(CommandStatus.EXPIRED, within.status)
+        assertEquals(CommandStatus.DONE, after.status)
+        assertEquals(1, expired)
     }
 
     @Test

@@ -82,9 +82,18 @@ public class AuditRuleSpellingTest {
         sample(ResourceAuditInfo.UPDATE_PLUGINS, "POST", "/rest/plugin/main/private/disabled");
         sample(ResourceAuditInfo.UPDATE_USER, "PUT", "/rest/private/users");
         sample(ResourceAuditInfo.REMOVE_USER, "DELETE", "/rest/private/users/other/1");
+        sample(ResourceAuditInfo.UPDATE_ROLE, "PUT", "/rest/private/roles");
+        sample(ResourceAuditInfo.REMOVE_ROLE, "DELETE", "/rest/private/roles/1");
         sample(ResourceAuditInfo.UPDATE_GROUP, "PUT", "/rest/private/groups");
         sample(ResourceAuditInfo.REMOVE_GROUP, "DELETE", "/rest/private/groups/1");
         sample(ResourceAuditInfo.PASSWORD_CHANGED, "PUT", "/rest/private/users/current");
+        sample(ResourceAuditInfo.UPDATE_USER_DETAILS, "PUT", "/rest/private/users/details");
+        sample(ResourceAuditInfo.SUPERADMIN_PASSWORD, "PUT", "/rest/private/users/superadmin/password");
+        sample(ResourceAuditInfo.UPDATE_CUSTOMER, "PUT", "/rest/private/customers");
+        sample(ResourceAuditInfo.REMOVE_CUSTOMER, "DELETE", "/rest/private/customers/2");
+        sample(ResourceAuditInfo.IMPERSONATE_USER, "POST", "/rest/private/users/impersonate/2");
+        sample(ResourceAuditInfo.IMPERSONATE_CUSTOMER, "POST", "/rest/private/customers/impersonate/2");
+        sample(ResourceAuditInfo.PASSWORD_RESET_BY_LINK, "POST", "/rest/public/passwordReset/reset");
         sample(ResourceAuditInfo.DEVICE_COMMAND, "POST", "/rest/private/agent/v1/devices/h0001/commands");
         sample(ResourceAuditInfo.BULK_DEVICE_COMMAND, "POST", "/rest/private/agent/v1/bulk/commands");
         sample(ResourceAuditInfo.SYNC_DEVICE_APPS, "POST", "/rest/private/agent/v1/devices/h0001/syncApps");

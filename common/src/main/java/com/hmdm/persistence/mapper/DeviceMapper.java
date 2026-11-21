@@ -36,6 +36,19 @@ public interface DeviceMapper {
     void insertDeviceGroups(@Param("id") Integer deviceId,
                             @Param("groups") List<Integer> groups);
 
+    /**
+     * How many of these groups (distinct ids) the user may put a device in: groups of the customer the user belongs to,
+     * every one of them for a user with all devices available, else those userDeviceGroupsAccess grants. Same rule as
+     * getAllGroups, the groups the console offers.
+     */
+    @Select({"<script>SELECT COUNT(*) FROM groups INNER JOIN users ON users.id = #{userId} " +
+            "WHERE groups.customerId = #{customerId} AND users.customerId = #{customerId} AND groups.id IN " +
+            "<foreach item='groupId' collection='groupIds' open='(' separator=',' close=')'>#{groupId}</foreach> " +
+            "AND (users.allDevicesAvailable = TRUE OR EXISTS (SELECT 1 FROM userDeviceGroupsAccess access " +
+            "WHERE access.groupId = groups.id AND access.userId = users.id))</script>"})
+    int countUsableGroups(@Param("userId") int userId, @Param("customerId") int customerId,
+                          @Param("groupIds") java.util.Collection<Integer> groupIds);
+
     @Delete({"DELETE FROM deviceGroups " +
             "WHERE deviceId=#{deviceId} " +
             "  AND groupId IN ( " +
@@ -174,6 +187,25 @@ public interface DeviceMapper {
 
     @Select({"SELECT COUNT(*) > 0 FROM groups WHERE id = #{groupId} AND customerId = #{customerId}"})
     boolean isCustomerGroup(@Param("groupId") int groupId, @Param("customerId") int customerId);
+
+    /**
+     * Whether the MDMesh agent enrolled the device: it has a check-in secret (AgentEnrollmentDAO creates the device
+     * and gives it its secret in one transaction, so a device row never changes between the two kinds).
+     */
+    @Select({"SELECT EXISTS (SELECT 1 FROM devices WHERE id = #{id} AND agentSecretHash IS NOT NULL)"})
+    boolean isAgentDevice(@Param("id") int id);
+
+    /**
+     * Whether the configuration is agent-managed: an agent-enrolled device ({@link #isAgentDevice}) uses it, or an
+     * enrollment token live at {@code now} would enroll a device into it (the token's own configuration or, for a
+     * token without one, its customer's default configuration for new devices).
+     */
+    @Select({"SELECT EXISTS (SELECT 1 FROM devices " +
+            "WHERE configurationId = #{configurationId} AND agentSecretHash IS NOT NULL) " +
+            "OR EXISTS (SELECT 1 FROM agentEnrollmentToken WHERE " + AgentEnrollmentTokenMapper.LIVE + " " +
+            "AND (configurationId = #{configurationId} OR (configurationId IS NULL AND customerId IN " +
+            "(SELECT customerId FROM settings WHERE newDeviceConfigurationId = #{configurationId}))))"})
+    boolean isAgentConfiguration(@Param("configurationId") int configurationId, @Param("now") long now);
 
     @Update({"UPDATE devices SET description = #{description} WHERE id = #{deviceId}"})
     void updateDeviceDescription(@Param("deviceId") Integer deviceId,

@@ -40,7 +40,7 @@ jobs:
           # suite itself. Listed explicitly: the kit's fail-closed **/Dockerfile* does not match
           # docker/server.Dockerfile (.github/** and docker-compose* fail closed anyway).
           filters: |
-            e2e: pom.xml, common/**, jwt/**, notification/**, plugins/**, server/**, proto/**, install/**, docker/entrypoint.sh, docker/server.Dockerfile, .dockerignore, docker-compose.yml, docker-compose.dev.yml, docker/dev.env, scripts/dev-seed.sh, scripts/agent-v1-e2e.sh
+            e2e: pom.xml, common/**, jwt/**, notification/**, plugins/**, server/**, proto/**, install/**, docker/entrypoint.sh, docker/server.Dockerfile, .dockerignore, docker-compose.yml, docker-compose.dev.yml, docker/dev.env, scripts/dev-seed.sh, scripts/agent-v1-e2e.sh, scripts/server-jvm-check.sh
 
   agent-e2e:
     name: agent-e2e
@@ -64,6 +64,17 @@ jobs:
       - name: Build + start the dev stack's postgres + server
         # The suite talks to the API directly; caddy and supervisor are not needed (server depends only on postgres).
         run: docker compose --env-file docker/dev.env up -d --build postgres server
+
+      # The dev stack sets CATALINA_OPTS (the debugger agent): -XX:-UseBASE64Intrinsics (install/tomcat-setenv.sh) must
+      # still be in effect, as with a deployment's SERVER_JAVA_OPTS. release.yml checks the published image the same way.
+      # Then the image on its own, as release.yml checks it before a push, with JAVA_OPTS asking for
+      # -XX:+UseBASE64Intrinsics: a deployment's SERVER_JAVA_OPTS can't turn the code back on.
+      - name: Server JVM runs with -XX:-UseBASE64Intrinsics (CVE-2026-114938, OpenJDK)
+        run: |
+          scripts/server-jvm-check.sh --container "$(docker compose --env-file docker/dev.env ps -q server)"
+          img=$(docker compose --env-file docker/dev.env config --format json \
+                | python3 -c 'import sys,json; print(json.load(sys.stdin)["services"]["server"]["image"])')
+          scripts/server-jvm-check.sh --image "$img"
 
       - name: Seed (scripts/dev-seed.sh; waits for the first boot)
         run: |

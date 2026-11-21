@@ -24,17 +24,32 @@ const account: ManagedUser = {
   configurations: [{ id: 4, name: 'Kiosk' }],
   editable: true,
 };
+/** MD5 of "password" and of the caller's own "my-own-secret", as the console sends them. */
+const PASSWORD_MD5 = '5F4DCC3B5AA765D61D8327DEB882CF99';
+const MY_SECRET = 'my-own-secret';
+const MY_SECRET_MD5 = 'CE92A62EEF7AC5BD657D8E82E613F1C7';
 function open(
-  { user = ROLES.admin, manageUsers = true, manageRoles = true, path = '/settings', others = [account] } = {} as {
+  {
+    user = ROLES.admin,
+    manageUsers = true,
+    manageRoles = true,
+    path = '/settings',
+    others = [account],
+    current = null,
+  } = {} as {
     user?: AuthUser;
     manageUsers?: boolean;
     manageRoles?: boolean;
     path?: string;
     others?: ManagedUser[];
+    /** What GET /users/current answers: the caller as the server has them now. */
+    current?: AuthUser | null;
   },
 ) {
   const fetch = stubApi((path) => {
     switch (path.replace('/rest/private', '')) {
+      case '/users/current':
+        return current;
       case '/users/management':
         return { users: manageUsers, roles: manageRoles };
       case '/users/all':
@@ -63,10 +78,30 @@ async function rowAction(name: string, item: string) {
   fireEvent.click(await screen.findByRole('button', { name: `More actions for ${name}` }));
   fireEvent.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: item }));
 }
-const body = (fetch: ReturnType<typeof open>, path: string) => {
-  const call = fetch.mock.calls.find(([p, init]) => String(p).endsWith(path) && init?.method === 'PUT');
+const body = (fetch: ReturnType<typeof open>, path: string, method = 'PUT') => {
+  const call = fetch.mock.calls.find(([p, init]) => String(p).endsWith(path) && init?.method === method);
   return call ? JSON.parse(String(call[1]?.body)) : undefined;
 };
+/** Answers every write with `message` as the server's error, and the rest as before. */
+function refuseWrites(fetch: ReturnType<typeof open>, message: string) {
+  const original = fetch.getMockImplementation()!;
+  fetch.mockImplementation((input, init) =>
+    init?.method === 'PUT' || init?.method === 'DELETE'
+      ? Promise.resolve(new Response(JSON.stringify({ status: 'ERROR', message, data: null })))
+      : original(input, init),
+  );
+}
+/** A new user's form, filled in up to the caller's current password. */
+async function fillNewUser() {
+  fireEvent.click(await screen.findByRole('button', { name: 'New user' }));
+  const dialog = within(await screen.findByRole('dialog'));
+  const login = await dialog.findByLabelText('Login');
+  fireEvent.change(login, { target: { value: 'new-operator' } });
+  chooseOption(dialog.getByLabelText('Role'), { value: '7' });
+  fireEvent.change(dialog.getByLabelText('Password'), { target: { value: 'password' } });
+  fireEvent.change(dialog.getByLabelText('Confirm password'), { target: { value: 'password' } });
+  return { dialog, form: login.closest('form')! };
+}
 
 describe('Users & roles administration', () => {
   it('places administration inside Settings without adding a main navigation item', async () => {
@@ -139,10 +174,9 @@ describe('Users & roles administration', () => {
     chooseOption(dialog.getByLabelText('Role'), { value: '7' });
     fireEvent.change(dialog.getByLabelText('Password'), { target: { value: 'password' } });
     fireEvent.change(dialog.getByLabelText('Confirm password'), { target: { value: 'password' } });
-    fireEvent.click(dialog.getByRole('checkbox', { name: 'All device groups' }));
     fireEvent.click(dialog.getByRole('checkbox', { name: 'Warehouse' }));
-    fireEvent.click(dialog.getByRole('checkbox', { name: 'All configurations' }));
     fireEvent.click(dialog.getByRole('checkbox', { name: 'Kiosk' }));
+    fireEvent.change(dialog.getByLabelText('Your current password'), { target: { value: MY_SECRET } });
     fireEvent.submit(login.closest('form')!);
     await waitFor(() =>
       expect(body(fetch, '/private/users')).toEqual({
@@ -150,7 +184,8 @@ describe('Users & roles administration', () => {
         name: '',
         email: '',
         userRole: { id: 7 },
-        newPassword: '5F4DCC3B5AA765D61D8327DEB882CF99',
+        newPassword: PASSWORD_MD5,
+        oldPassword: MY_SECRET_MD5,
         allDevicesAvailable: false,
         allConfigAvailable: false,
         groups: [{ id: 9 }],
@@ -167,6 +202,8 @@ describe('Users & roles administration', () => {
     const name = await dialog.findByLabelText('Name');
     fireEvent.change(name, { target: { value: 'Updated operator' } });
     expect((dialog.getByRole('checkbox', { name: 'Warehouse' }) as HTMLInputElement).checked).toBe(true);
+    // Neither the email nor the password changes, so the caller's own password is not asked for
+    expect(dialog.queryByLabelText('Your current password')).toBeNull();
     fireEvent.submit(name.closest('form')!);
     await waitFor(() =>
       expect(body(fetch, '/private/users')).toEqual({
@@ -214,6 +251,188 @@ describe('Users & roles administration', () => {
       'Use a password of at least 8 characters.',
     );
     expect(body(fetch, '/private/users')).toBeUndefined();
+  });
+
+  it('starts a new account with no access until it is chosen', async () => {
+    open();
+    fireEvent.click(await screen.findByRole('button', { name: 'New user' }));
+    const dialog = within(await screen.findByRole('dialog'));
+    const all = (await dialog.findByRole('checkbox', { name: 'All device groups' })) as HTMLInputElement;
+    expect(all.checked).toBe(false);
+    expect(all.disabled).toBe(false);
+    expect((dialog.getByRole('checkbox', { name: 'All configurations' }) as HTMLInputElement).checked).toBe(false);
+    expect((dialog.getByRole('checkbox', { name: 'Warehouse' }) as HTMLInputElement).checked).toBe(false);
+  });
+
+  it('offers a limited admin only the access they have, and never a checked box they cannot clear', async () => {
+    const limited: AuthUser = { ...ROLES.admin, allDevicesAvailable: false, allConfigAvailable: false };
+    open({ user: limited, current: limited });
+    fireEvent.click(await screen.findByRole('button', { name: 'New user' }));
+    const dialog = within(await screen.findByRole('dialog'));
+    const all = (await dialog.findByRole('checkbox', { name: 'All device groups' })) as HTMLInputElement;
+    expect(all.checked).toBe(false);
+    expect(all.disabled).toBe(true);
+    expect((dialog.getByRole('checkbox', { name: 'All configurations' }) as HTMLInputElement).disabled).toBe(true);
+    expect(dialog.getAllByText('Your own access is limited, so you can give only what you have.')).toHaveLength(2);
+    // Their own groups and configurations stay open to choose
+    expect((dialog.getByRole('checkbox', { name: 'Warehouse' }) as HTMLInputElement).disabled).toBe(false);
+  });
+
+  it('lets a limited admin check a stored "All" again within the same edit', async () => {
+    const limited: AuthUser = { ...ROLES.admin, allDevicesAvailable: false, allConfigAvailable: false };
+    const wide: ManagedUser = { ...account, allDevicesAvailable: true };
+    const fetch = open({ user: limited, current: limited, others: [wide] });
+    const original = fetch.getMockImplementation()!;
+    fetch.mockImplementation((input, init) =>
+      String(input).endsWith('/users/8')
+        ? Promise.resolve(new Response(JSON.stringify({ status: 'OK', message: null, data: wide })))
+        : original(input, init),
+    );
+    await rowAction('operator', 'Edit');
+    const dialog = within(await screen.findByRole('dialog'));
+    const all = (await dialog.findByRole('checkbox', { name: 'All device groups' })) as HTMLInputElement;
+    await waitFor(() => expect(all.checked).toBe(true));
+    fireEvent.click(all);
+    expect(all.checked).toBe(false);
+    expect(all.disabled).toBe(false);
+    fireEvent.click(all);
+    expect(all.checked).toBe(true);
+    // Configurations were never "All": still not the limited admin's to give
+    expect((dialog.getByRole('checkbox', { name: 'All configurations' }) as HTMLInputElement).disabled).toBe(true);
+  });
+
+  it('opens the editor when the caller’s own access can’t be read', async () => {
+    const fetch = open();
+    await screen.findByRole('button', { name: 'More actions for operator' });
+    const original = fetch.getMockImplementation()!;
+    fetch.mockImplementation((input, init) =>
+      String(input).endsWith('/users/current')
+        ? Promise.resolve(new Response('', { status: 500 }))
+        : original(input, init),
+    );
+    await rowAction('operator', 'Edit');
+    const dialog = within(await screen.findByRole('dialog'));
+    expect(await dialog.findByLabelText('Name')).toBeTruthy();
+    expect((dialog.getByRole('checkbox', { name: 'Warehouse' }) as HTMLInputElement).checked).toBe(true);
+  });
+
+  it('asks for the caller’s own password to create an account', async () => {
+    const fetch = open();
+    const { dialog, form } = await fillNewUser();
+    const save = dialog.getByRole('button', { name: 'Save user' });
+    expect(dialog.getByText('Needed to create an account.')).toBeTruthy();
+    expect(save).toHaveProperty('disabled', true);
+    fireEvent.submit(form);
+    expect(await dialog.findByRole('alert')).toHaveProperty('textContent', 'Enter your current password.');
+    expect(body(fetch, '/private/users')).toBeUndefined();
+
+    fireEvent.change(dialog.getByLabelText('Your current password'), { target: { value: MY_SECRET } });
+    expect(save).toHaveProperty('disabled', false);
+    fireEvent.submit(form);
+    await waitFor(() => expect(body(fetch, '/private/users')?.oldPassword).toBe(MY_SECRET_MD5));
+    expect(await screen.findByText('User saved')).toBeTruthy();
+  });
+
+  it('asks for the caller’s own password to change another account’s email or password', async () => {
+    const fetch = open();
+    await rowAction('operator', 'Edit');
+    const dialog = within(await screen.findByRole('dialog'));
+    const email = await dialog.findByLabelText('Email');
+    fireEvent.change(email, { target: { value: 'new@example.org' } });
+    expect(dialog.getByLabelText('Your current password')).toBeTruthy();
+    expect(dialog.getByText('Needed to change another account’s email or password.')).toBeTruthy();
+    // Back to the stored address: nothing to confirm
+    fireEvent.change(email, { target: { value: ' op@example.org ' } });
+    expect(dialog.queryByLabelText('Your current password')).toBeNull();
+    fireEvent.change(dialog.getByLabelText('New password'), { target: { value: 'password' } });
+    fireEvent.change(dialog.getByLabelText('Confirm password'), { target: { value: 'password' } });
+    fireEvent.change(dialog.getByLabelText('Your current password'), { target: { value: MY_SECRET } });
+    fireEvent.submit(email.closest('form')!);
+    await waitFor(() =>
+      expect(body(fetch, '/private/users')).toMatchObject({ newPassword: PASSWORD_MD5, oldPassword: MY_SECRET_MD5 }),
+    );
+    expect(await screen.findByText('User saved')).toBeTruthy();
+  });
+
+  it('says plainly when the caller’s own password is wrong or the change is beyond their access', async () => {
+    const fetch = open();
+    const { dialog, form } = await fillNewUser();
+    refuseWrites(fetch, 'error.password.wrong');
+    fireEvent.change(dialog.getByLabelText('Your current password'), { target: { value: 'not-it' } });
+    fireEvent.submit(form);
+    expect(await dialog.findByRole('alert')).toHaveProperty('textContent', 'Your current password is not correct.');
+
+    refuseWrites(fetch, 'error.permission.denied');
+    fireEvent.submit(form);
+    await waitFor(() =>
+      expect(dialog.getByRole('alert').textContent).toBe(
+        'Not allowed. You can give only the access you have, and change only accounts within your own access.',
+      ),
+    );
+  });
+
+  it('asks for the caller’s own password when the server needs it for a change the form did not show', async () => {
+    // Someone changed the account's email meanwhile, so this save would change it back
+    const fetch = open();
+    await rowAction('operator', 'Edit');
+    const dialog = within(await screen.findByRole('dialog'));
+    const name = await dialog.findByLabelText('Name');
+    refuseWrites(fetch, 'error.password.wrong');
+    fireEvent.submit(name.closest('form')!);
+    expect(await dialog.findByRole('alert')).toHaveProperty(
+      'textContent',
+      'Enter your current password to save this change.',
+    );
+    expect(dialog.getByLabelText('Your current password')).toBeTruthy();
+  });
+
+  it('asks for the caller’s own password to delete an account and sends it with the delete only', async () => {
+    const fetch = open();
+    await rowAction('operator', 'Delete');
+    const dialog = within(await screen.findByRole('alertdialog'));
+    const remove = dialog.getByRole('button', { name: 'Delete user' });
+    expect(remove).toHaveProperty('disabled', true);
+    fireEvent.change(dialog.getByLabelText('Your current password'), { target: { value: MY_SECRET } });
+    expect(remove).toHaveProperty('disabled', false);
+    fireEvent.click(remove);
+    await waitFor(() =>
+      expect(body(fetch, '/private/users/other/8', 'DELETE')).toEqual({ oldPassword: MY_SECRET_MD5 }),
+    );
+    expect(await screen.findByText('User deleted')).toBeTruthy();
+  });
+
+  it('keeps a delete refused over the caller’s password open, with the reason', async () => {
+    const fetch = open();
+    await rowAction('operator', 'Delete');
+    const dialog = within(await screen.findByRole('alertdialog'));
+    refuseWrites(fetch, 'error.password.wrong');
+    fireEvent.change(dialog.getByLabelText('Your current password'), { target: { value: 'not-it' } });
+    fireEvent.click(dialog.getByRole('button', { name: 'Delete user' }));
+    expect(await dialog.findByRole('alert')).toHaveProperty('textContent', 'Your current password is not correct.');
+  });
+
+  it('says why a change that needs the caller’s password is refused while signed in as another account', async () => {
+    const fetch = open();
+    await rowAction('operator', 'Delete');
+    const dialog = within(await screen.findByRole('alertdialog'));
+    refuseWrites(fetch, 'error.password.impersonated');
+    fireEvent.change(dialog.getByLabelText('Your current password'), { target: { value: MY_SECRET } });
+    fireEvent.click(dialog.getByRole('button', { name: 'Delete user' }));
+    expect(await dialog.findByRole('alert')).toHaveProperty(
+      'textContent',
+      'You are signed in as another account, so this needs its owner. Sign in with your own account to do it.',
+    );
+  });
+
+  it('marks the accounts the caller cannot administer and offers no action on them', async () => {
+    const wider = { ...account, id: 13, login: 'fleet-lead', name: '', allDevicesAvailable: true, editable: false };
+    open({ others: [account, wider] });
+    const table = await screen.findByRole('table', { name: 'Users' });
+    const row = (await within(table).findByText('fleet-lead')).closest('tr')!;
+    expect(within(row).getByText('Beyond your access')).toBeTruthy();
+    expect(within(row).queryByRole('button')).toBeNull();
+    const own = within(table).getByText('operator').closest('tr')!;
+    expect(within(own).queryByText('Beyond your access')).toBeNull();
   });
 
   it('saves role permissions by ID and preserves the description', async () => {

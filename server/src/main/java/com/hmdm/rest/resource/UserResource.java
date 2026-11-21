@@ -37,6 +37,7 @@ import io.swagger.annotations.Authorization;
 import com.hmdm.persistence.UserDAO;
 import com.hmdm.persistence.domain.User;
 import com.hmdm.persistence.domain.UserRole;
+import com.hmdm.rest.json.CurrentPassword;
 import com.hmdm.rest.json.Response;
 import com.hmdm.security.ConsoleSession;
 import com.hmdm.security.LoginThrottle;
@@ -76,7 +77,7 @@ public class UserResource {
     private UserDAO userDAO;
     private CommonDAO settingsDAO;
     private UnsecureDAO unsecureDAO;
-    private LoginThrottle loginThrottle;
+    private CurrentPasswordCheck currentPassword;
 
     /**
      * <p>A constructor required by Swagger.</p>
@@ -92,7 +93,7 @@ public class UserResource {
         this.userDAO = userDAO;
         this.settingsDAO = settingsDAO;
         this.unsecureDAO = unsecureDAO;
-        this.loginThrottle = loginThrottle;
+        this.currentPassword = new CurrentPasswordCheck(userDAO, unsecureDAO, loginThrottle);
     }
 
     /** Capabilities are computed by the server; the console never guesses the configured org-admin role ID. */
@@ -188,10 +189,11 @@ public class UserResource {
                     } else {
                         userDetails = userDAO.findAllUsers("%" + filter + "%");
                     }
+                    java.util.function.Predicate<User> manageable = userDAO.manageableAccounts();
                     userDetails.forEach(u -> {
                         u.setPassword(null);
                         u.setAuthToken(null);
-                        u.setEditable(!u.getId().equals(currentUser.getId()));
+                        u.setEditable(!u.getId().equals(currentUser.getId()) && manageable.test(u));
                     });
                     return Response.OK(userDetails);
                 })
@@ -243,12 +245,14 @@ public class UserResource {
     // =================================================================================================================
     @ApiOperation(
             value = "Create or update user",
-            notes = "Creates a new user account (if id is not provided) or update existing one otherwise."
+            notes = "Creates a new user account (if id is not provided) or update existing one otherwise. Creating an "
+                    + "account, or changing another account's email or password, takes the caller's current password "
+                    + "in oldPassword (MD5, in hex)."
     )
     @PUT
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response updateUser(User user) {
+    public Response updateUser(User user, @Context HttpServletRequest req) {
         return SecurityContext.get().getCurrentUser().map(u -> {
             if (!u.getUserRole().isSuperAdmin() && !this.userDAO.isOrgAdmin(u)) {
                 logger.warn("Failed to update user {}: must be org admin or superadmin", user.getLogin());
@@ -258,8 +262,16 @@ public class UserResource {
                 return Response.ERROR("error.user.login");
             }
             user.setLogin(user.getLogin().trim());
-            if ((user.getId() == null || (user.getNewPassword() != null && !user.getNewPassword().isEmpty())) &&
-                    !PasswordUtil.isMd5Hex(user.getNewPassword())) {
+            if (user.getEmail() != null) {
+                user.setEmail(user.getEmail().trim());      // stored as compared (UserDAO.isEmailChange)
+            }
+            boolean passwordGiven = user.getNewPassword() != null && !user.getNewPassword().isEmpty();
+            if (user.getId() == null && !passwordGiven) {
+                return Response.ERROR("error.password.empty");      // required for a new account, optional for an edit
+            }
+            if (passwordGiven && !PasswordUtil.isMd5Hex(user.getNewPassword())) {
+                // Clients send MD5(password) in hex; anything else is refused before anything is written
+                logger.warn("Failed to update user {}: the new password is not an MD5 in hex", user.getLogin());
                 return Response.ERROR("error.password.empty");
             }
             try {
@@ -272,7 +284,15 @@ public class UserResource {
                     logger.warn("Failed to update user {}: own account", u.getLogin());
                     return Response.PERMISSION_DENIED();
                 }
-                if (user.getId() != null) {
+                if (user.getId() == null) {
+                    // Creating an account takes the caller's current password
+                    Response refused = currentPassword.refused(u, user.getOldPassword(), req);
+                    if (refused != null) {
+                        logger.warn("Failed to create user {}: current password of {} not accepted",
+                                user.getLogin(), u.getLogin());
+                        return refused;
+                    }
+                } else {
                     // Update the persisted account, and only one the caller is allowed to administer
                     User target = this.userDAO.getManagedUser(user.getId());
                     if (target == null) {
@@ -280,6 +300,15 @@ public class UserResource {
                     }
                     user.setCustomerId(target.getCustomerId());
                     user.setPasswordReset(target.isPasswordReset());
+                    if (passwordGiven || UserDAO.isEmailChange(target.getEmail(), user.getEmail())) {
+                        // Either change takes the caller's current password
+                        Response refused = currentPassword.refused(u, user.getOldPassword(), req);
+                        if (refused != null) {
+                            logger.warn("Failed to update user {}: current password of {} not accepted",
+                                    target.getLogin(), u.getLogin());
+                            return refused;
+                        }
+                    }
                 }
                 String userEmail = user.getEmail();
                 if (userEmail != null && !userEmail.equals("")) {
@@ -296,11 +325,6 @@ public class UserResource {
                         logger.error("Failed to create user {}: duplicate login", user.getLogin());
                         return Response.ERROR("error.duplicate.login");
                     }
-                    // Password is required for new users only
-                    if (user.getNewPassword() == null) {
-                        logger.warn("Failed to create user {}: empty password", user.getLogin());
-                        return Response.ERROR("error.password.empty");
-                    }
                     user.setCustomerId(SecurityContext.get().getCurrentUser().get().getCustomerId());
                     updatePasswordWithReset(user, user.getNewPassword(), settings.isPasswordReset());
                     this.userDAO.insert(user);
@@ -312,7 +336,7 @@ public class UserResource {
                     }
                     this.userDAO.updateUserMainDetails(user);
                     // Update password only if it's specified
-                    if (user.getNewPassword() != null && !user.getNewPassword().isEmpty()) {
+                    if (passwordGiven) {
                         updatePasswordWithReset(user, user.getNewPassword(), settings.isPasswordReset());
                         this.userDAO.updatePassword(user);
                     }
@@ -348,13 +372,16 @@ public class UserResource {
     // =================================================================================================================
     @ApiOperation(
             value = "Delete user",
-            notes = "Deletes a user account referenced by the specified ID"
+            notes = "Deletes a user account referenced by the specified ID. The body carries the caller's current "
+                    + "password: {\"oldPassword\": \"<MD5, in hex>\"}."
     )
     @DELETE
     @Path("/other/{id}")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response deleteUser(@PathParam("id") @ApiParam("User ID") int id) {
+    public Response deleteUser(@PathParam("id") @ApiParam("User ID") int id,
+                               @ApiParam("The caller's current password") CurrentPassword body,
+                               @Context HttpServletRequest req) {
         return SecurityContext.get().getCurrentUser().map(u -> {
             if (!u.getUserRole().isSuperAdmin() && !this.userDAO.isOrgAdmin(u)) {
                 logger.warn("Failed to delete user {}: must be org admin or superadmin", id);
@@ -362,7 +389,20 @@ public class UserResource {
             }
             try {
                 // Throws unless the caller is allowed to administer the account
-                userDAO.getManagedUser(id);
+                User target = userDAO.getManagedUser(id);
+                if (target == null) {
+                    return Response.ERROR("error.user.not.found");
+                }
+                if (target.getId().equals(u.getId())) {
+                    return Response.ERROR("Can't remove self");
+                }
+                // Deleting an account takes the caller's current password
+                Response refused = currentPassword.refused(u, body == null ? null : body.getOldPassword(), req);
+                if (refused != null) {
+                    logger.warn("Failed to delete user {}: current password of {} not accepted",
+                            target.getLogin(), u.getLogin());
+                    return refused;
+                }
                 userDAO.deleteUser(id);
                 return Response.OK();
             } catch (SecurityException e) {
@@ -403,28 +443,42 @@ public class UserResource {
             if (dbUser == null) {
                 return Response.ERROR("error.user.not.found");
             }
-            if (user.getEmail() == null || user.getEmail().trim().equals("")) {
-                dbUser.setEmail("");
-            } else if (!user.getEmail().equalsIgnoreCase(dbUser.getEmail())) {
-                // Password recovery links go to this address: changing it takes the caller's current password
-                Response refused = currentPasswordRefused(u, user.getOldPassword(), req);
+            String email = user.getEmail() == null ? "" : user.getEmail().trim();
+            boolean blank = email.isEmpty();
+            // Password recovery links go to this address: changing it takes the caller's current password. Removing
+            // your own address does not, removing someone else's does. The one rule of UserDAO.isEmailChange, which
+            // the DAO checks again.
+            boolean changing = UserDAO.isEmailChange(dbUser.getEmail(), email) && (!blank || !self);
+            if (changing) {
+                Response refused = currentPassword.refused(u, user.getOldPassword(), req);
                 if (refused != null) {
                     logger.warn("Failed to update email of user {}: current password of {} not accepted",
                             dbUser.getLogin(), u.getLogin());
                     return refused;
                 }
-                // Email must be unique
-                User user2 = unsecureDAO.findByEmail(user.getEmail());
-                if (user2 != null) {
-                    logger.warn("User with email {} already exists, id {}", user.getEmail(), user2.getId());
+            }
+            // Null keeps the address as it is under the lock: one changed meanwhile is never put back
+            String newEmail = null;
+            if (blank) {
+                // A removal only when there was an address read: else one set meanwhile would be blanked
+                newEmail = UserDAO.isEmailChange(dbUser.getEmail(), "") ? "" : null;
+            } else if (changing) {
+                // Email must be unique (the lookup ignores case: a case-only change finds this account itself)
+                User user2 = unsecureDAO.findByEmail(email);
+                if (user2 != null && !user2.getId().equals(dbUser.getId())) {
+                    logger.warn("User with email {} already exists, id {}", email, user2.getId());
                     return Response.ERROR("error.duplicate.email");
                 }
-                dbUser.setEmail(user.getEmail());
+                newEmail = email;
             }
-            dbUser.setName(user.getName());
             try {
-                userDAO.updateUserMainDetails(dbUser);
-                return Response.OK("success.operation.completed", dbUser);
+                // Name and email only, onto the row as it is now: the role and access read above are never written
+                User stored = userDAO.updateUserIdentity(dbUser.getId(), null, user.getName(), newEmail);
+                return Response.OK("success.operation.completed", stored);
+            } catch (SecurityException e) {
+                // The account changed meanwhile and is beyond the caller now (UserDAO checks again)
+                logger.warn("Failed to update details of user {}: not allowed for {}", user.getId(), u.getLogin());
+                return Response.PERMISSION_DENIED();
             } catch (Exception e) {
                 e.printStackTrace();
                 return Response.INTERNAL_ERROR();
@@ -474,10 +528,17 @@ public class UserResource {
     @Path("/superadmin/password")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response updatePasswordBySuperAdmin(User user) {
+    public Response updatePasswordBySuperAdmin(User user, @Context HttpServletRequest req) {
         if (SecurityContext.get().isSuperAdmin()) {
             if (!PasswordUtil.isMd5Hex(user.getNewPassword())) {
                 return Response.ERROR("error.password.empty");
+            }
+            Response refused = currentPassword.refused(SecurityContext.get().getCurrentUser().orElse(null),
+                    user.getOldPassword(), req);
+            if (refused != null) {
+                logger.warn("Failed to update password of user {}: current password of {} not accepted", user.getId(),
+                        SecurityContext.get().getCurrentUserName());
+                return refused;
             }
             user.setNewPassword(PasswordUtil.getHashFromMd5(user.getNewPassword()));
             userDAO.updatePasswordBySuperAdmin(user);
@@ -502,8 +563,20 @@ public class UserResource {
                 logger.warn("Failed to impersonate as user {}: must be admin", id);
                 return Response.PERMISSION_DENIED();
             }
+            if (ConsoleSession.isImpersonated(req)) {
+                // The new session would name and re-check only this account, not the admin who opened this one
+                logger.warn("Failed to impersonate as user {}: already signed in as another account", id);
+                return Response.PERMISSION_DENIED();
+            }
 
-            User user = this.userDAO.getUserDetails(id);
+            User user;
+            try {
+                // Only an account the caller administers: same customer, and access their own covers
+                user = this.userDAO.getManagedUser(id);
+            } catch (SecurityException e) {
+                logger.warn("Failed to impersonate as user {}: not allowed for {}", id, u.getLogin());
+                return Response.PERMISSION_DENIED();
+            }
             if (user == null) {
                 logger.warn("Failed to impersonate as user {}: user not found", id);
                 return Response.INTERNAL_ERROR();
@@ -519,35 +592,11 @@ public class UserResource {
 
             user.setPassword(null);
 
-            ConsoleSession.start(req, user);
+            ConsoleSession.startImpersonated(req, user, u);
 
             return Response.OK( user );
 
         }).orElse(Response.PERMISSION_DENIED());
-    }
-
-    /**
-     * Null when {@code password} is the current password of {@code currentUser}; else the error to answer. The check
-     * counts against the same limits as sign-in (LoginThrottle): a session is no way to guess its password without a
-     * limit either, and failures here lock that account like failed sign-ins do.
-     */
-    private Response currentPasswordRefused(User currentUser, String password, HttpServletRequest req) {
-        if (password == null || password.isEmpty() || currentUser == null) {
-            return Response.ERROR("error.password.wrong");
-        }
-        User dbUser = userDAO.findByLoginOrEmail(currentUser.getLogin());
-        if (dbUser == null || !dbUser.getId().equals(currentUser.getId())) {
-            return Response.ERROR("error.password.wrong");
-        }
-        LoginThrottle.Verdict verdict = loginThrottle.begin(req, dbUser, dbUser.getLogin());
-        if (!verdict.allowed()) {
-            return Response.ERROR(AuthResource.TOO_MANY_ATTEMPTS);
-        }
-        if (!unsecureDAO.checkPasswordUnsecure(dbUser, password)) {
-            return Response.ERROR("error.password.wrong");
-        }
-        loginThrottle.succeeded(verdict.attempt());
-        return null;
     }
 
     private Response updatePassword(User dbUser, User user, HttpServletRequest req) {
@@ -555,7 +604,7 @@ public class UserResource {
             logger.warn("Failed to update password for {}: current password not match", user.getLogin());
             return Response.ERROR("error.password.wrong");
         }
-        Response refused = currentPasswordRefused(dbUser, user.getOldPassword(), req);
+        Response refused = currentPassword.refused(dbUser, user.getOldPassword(), req);
         if (refused != null) {
             logger.warn("Failed to update password for {}: current password not accepted", user.getLogin());
             return refused;

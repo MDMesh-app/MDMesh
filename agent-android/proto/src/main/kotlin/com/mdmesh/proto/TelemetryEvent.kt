@@ -19,4 +19,15 @@ object EventType {
     const val CONNECTIVITY = "connectivityChange"
     const val LOW_BATTERY = "lowBattery"
     const val ENROLLED = "enrolled"
+
+    /**
+     * A store the storage damaged was recovered; detail "<store> from <mirror|configuration|lock task|empty>" (#220).
+     */
+    const val STORAGE_RECOVERED = "storageRecovered"
+
+    /** The boot/update re-apply of the newest delivered configuration failed in part; detail names what failed. */
+    const val CONFIG_REAPPLY_FAILED = "configReapplyFailed"
+
+    /** An accepted factory reset did not reboot the device in time; the agent resumed and restores its policies. */
+    const val WIPE_NOT_STARTED = "wipeNotStarted"
 }

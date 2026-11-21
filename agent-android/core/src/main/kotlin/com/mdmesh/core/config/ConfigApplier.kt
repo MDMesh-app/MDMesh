@@ -17,6 +17,7 @@ import com.mdmesh.proto.ConfigApplyResult
 import com.mdmesh.proto.ConfigOutcome
 import com.mdmesh.proto.DeviceAction
 import com.mdmesh.proto.KioskApplyPayload
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -67,6 +68,12 @@ class ConfigApplier(
 
     suspend fun apply(doc: ConfigApplyPayload): ConfigApplyResult = mutex.withLock { applyDeliveredLocked(doc) }
 
+    /**
+     * Runs [block] with no apply in progress and none able to start. `device.wipe` lifts Factory reset: Block
+     * for the wipe; a boot re-apply must not put it back in between (#222).
+     */
+    suspend fun <T> exclusive(block: suspend () -> T): T = mutex.withLock { block() }
+
     private suspend fun applyDeliveredLocked(doc: ConfigApplyPayload): ConfigApplyResult {
         // What came before: the last saved document, and the last delivered one if a failed section kept it unsaved.
         val previous = listOfNotNull(store.load(), store.delivered)
@@ -85,8 +92,8 @@ class ConfigApplier(
      * not installed; without this they would wait for the server's re-send, an hour later, while the app ran under
      * the device-wide auto-grant. An update may also request a configured permission the old version didn't.
      *
-     * A delivered document that is not applied yet is applied whole, exactly as the server's re-send would, so it is
-     * saved (and reported in sync) when nothing else fails. An applied one gets only this app's rules again; if one
+     * A delivered document that is not saved yet is applied whole, exactly as the server's re-send would, so it is
+     * saved (and reported in sync) when nothing else fails. The saved one gets only this app's rules again; if one
      * fails, the revision is marked stale so the server re-sends the document. Null when no rule names the app.
      */
     suspend fun applyAfterInstall(packageName: String): ConfigApplyResult? = mutex.withLock {
@@ -95,10 +102,9 @@ class ConfigApplier(
             entry.permissions.map { (permission, state) -> AppPermissionRule(packageName, permission, state) }
         }
         if (rules.isEmpty()) return@withLock null
-        val applied = store.revision()
-        if (applied != doc.revision && applied != ConfigStateStore.STALE_REVISION) {
-            return@withLock applyDeliveredLocked(doc)
-        }
+        // Against the saved document, not revision(): a stale mark (a wipe, storage recovery, the Wi-Fi self-heal) must
+        // not cut an unsaved newer document down to this app's rules.
+        if (doc.revision != store.load()?.revision) return@withLock applyDeliveredLocked(doc)
         val outcomes = rules.associate { it.key to setRule(it) }
         if (outcomes.values.any(ConfigOutcome::isFailed)) store.markStale()
         ConfigApplyResult(doc.revision, outcomes)
@@ -135,7 +141,7 @@ class ConfigApplier(
      * @param toggles the supported toggle policies, read once for this document.
      * @param previous the documents whose keys this one may stop managing.
      * @param unreleased outcome keys whose release (or kiosk exit) failed before: released again.
-     * @param persist false for the boot re-apply: the document is already stored (or stale until re-sent).
+     * @param persist false for the boot re-apply: never saved there, so the server re-sends what isn't saved yet.
      */
     private suspend fun applyLocked(
         doc: ConfigApplyPayload,
@@ -151,21 +157,20 @@ class ConfigApplier(
             outcomes["$POLICIES$key"] = if (errored != null) {
                 ConfigOutcome.failed(errored.reason)
             } else {
-                toOutcome(toggles[key]?.setEnabled(enabled))
+                section("policy $key") { toOutcome(toggles[key]?.setEnabled(enabled)) }
             }
         }
         val previousKeys = previous.flatMap { it.policies.keys } +
             unreleased.filter { it.startsWith(POLICIES) }.map { it.removePrefix(POLICIES) }
         releaseUnmanaged(doc, toggles, previousKeys.toSet(), outcomes)
         val previousKiosk = previous.any { it.kiosk != null } || KIOSK in unreleased
-        applyKiosk(doc, previousKiosk)?.let { outcomes[KIOSK] = it }
+        section(KIOSK) { applyKiosk(doc, previousKiosk) }?.let { outcomes[KIOSK] = it }
         // Last: the policies and the kiosk are now what this document says, so Safe Mode can follow both. The
         // setting is the delivered document's (ConfiguredSafeModeSetting): this one on a normal apply (recorded as
         // delivered above), and on the boot re-apply the newer one the server sent, if any. Only a failed block is
         // reported, on policies.safeBoot, so the document is re-applied.
-        (kiosk.syncSafeMode() as? KioskResult.Failed)?.let {
-            outcomes["$POLICIES${SafeBootPolicy.CAPABILITY_KEY}"] = ConfigOutcome.failed(it.reason)
-        }
+        section("safe mode") { (kiosk.syncSafeMode() as? KioskResult.Failed)?.let { ConfigOutcome.failed(it.reason) } }
+            ?.let { outcomes["$POLICIES${SafeBootPolicy.CAPABILITY_KEY}"] = it }
         doc.location?.let { loc ->
             outcomes["location"] = runCatching { setLocationMode(loc.mode); ConfigOutcome.APPLIED }
                 .getOrElse { ConfigOutcome.failed(it.message ?: "location mode") }
@@ -197,14 +202,14 @@ class ConfigApplier(
         val desiredRules = desired.flatMap { entry -> entry.permissions.map { (permission, state) ->
             AppPermissionRule(entry.packageName, permission, state)
         } }
-        desiredRules.forEach { rule -> outcomes[rule.key] = setRule(rule) }
+        desiredRules.forEach { rule -> outcomes[rule.key] = section(rule.key) { setRule(rule) } }
         val priorRules = priorAppPermissionRules(previous) +
             unreleased.filter { it.startsWith(APP_PERMISSIONS) && it !in appPermissionKeys(doc) }
             .mapNotNull(::ruleFromKey)
         val desiredKeys = desiredRules.map { it.key }.toSet()
         priorRules.distinctBy { it.key }.filter { it.key !in desiredKeys }.forEach { rule ->
-            appPermissionOutcome(appPermissions.release(rule.packageName, rule.permission))
-                .takeIf(ConfigOutcome::isFailed)
+            section(rule.key) { appPermissionOutcome(appPermissions.release(rule.packageName, rule.permission)) }
+                ?.takeIf(ConfigOutcome::isFailed)
                 ?.let { outcomes[rule.key] = it }
         }
         if (outcomes.none { (key, outcome) ->
@@ -259,7 +264,8 @@ class ConfigApplier(
         outcomes: MutableMap<String, String>,
     ) {
         for (key in previousKeys - doc.policies.keys) {
-            releaseOutcome(toggles, key)?.takeIf(ConfigOutcome::isFailed)?.let { outcomes["$POLICIES$key"] = it }
+            section("policy $key") { releaseOutcome(toggles, key) }
+                ?.takeIf(ConfigOutcome::isFailed)?.let { outcomes["$POLICIES$key"] = it }
         }
     }
 
@@ -273,6 +279,22 @@ class ConfigApplier(
             return ConfigOutcome.failed(errored.reason).takeIf { mayNeedRelease }
         }
         return (toggles[key] as? ReleasablePolicy)?.let { toOutcome(it.release()) }
+    }
+
+    /**
+     * Runs one section of the document. One that throws (a storage error in the kiosk state, a policy's own bug) is
+     * that section's failure, reported and retried with the re-sent document; the sections after it still apply and
+     * the result still reaches the server. Thrown out instead, it ended the document midway, after it was recorded
+     * as delivered (#220). Cancellation still propagates.
+     */
+    // T is String or String?: a failed outcome is either. Exceptions only: an Error (out of memory) is not a section's.
+    @Suppress("UNCHECKED_CAST", "TooGenericExceptionCaught")
+    private inline fun <T : String?> section(what: String, apply: () -> T): T = try {
+        apply()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        ConfigOutcome.failed(e.message ?: "$what threw ${e.javaClass.simpleName}") as T
     }
 
     /** @return the kiosk outcome, or null when nothing was asserted or exited (the key is then omitted). */
@@ -295,11 +317,23 @@ class ConfigApplier(
     }
 
     /**
-     * Re-run the last fully-applied document (after boot / self-update). Null when nothing is persisted. Not saved
-     * again: a stale document ([selfHealWifiRadio]) stays stale until the server re-sends it.
+     * Re-run the newest document the server delivered (after boot / self-update, or when a wipe hold ends), or the
+     * last saved one on a store from before delivered documents were kept. Null when there is none.
+     *
+     * The delivered one, not the saved one: a document with a failed section is never saved but may have changed the
+     * device, e.g. set Factory reset: Block over a saved Allow (PR #227). Replaying the saved one would put the older
+     * setting back. Not saved here, so a failed section is never reported applied.
+     *
+     * A saved document whose re-apply fails in part is marked stale, as [applyAfterInstall] does: the device no
+     * longer matches its revision, so the server sees the drift and re-sends it rather than taking the device as
+     * converged. An unsaved delivered one needs no mark: its revision differs from the saved one, so the check-in
+     * reports it stale anyway (`reportedRevision`).
      */
     suspend fun reapplyPersisted(): ConfigApplyResult? = mutex.withLock {
-        store.load()?.let { applyLocked(it, toggles(), listOf(it), persist = false) }
+        val saved = store.load()
+        val doc = store.delivered ?: saved ?: return@withLock null
+        applyLocked(doc, toggles(), listOfNotNull(saved, doc).distinct(), persist = false)
+            .also { if (!succeeded(it) && doc.revision == saved?.revision) store.markStale() }
     }
 
     /**

@@ -229,16 +229,82 @@ public class UnsecureDAO {
         userMapper.resetLoginFailTime();
     }
 
+    /** Any device by its number. The Headwind launcher's routes use {@link #findLegacyDevice} instead. */
     public Device getDeviceByNumber(String number) {
         return this.deviceMapper.getDeviceByNumber(number);
     }
 
-    public Device getDeviceByOldNumber(String number) {
-        return this.deviceMapper.getDeviceByOldNumber(number);
+    // =================================================================================================================
+    // The Headwind launcher's device API (on only with legacy.device.api; LegacyDeviceApiFilter lists its routes).
+    //
+    // One rule for all of it: the launcher proves nothing but a device number, so the API never reaches what the
+    // MDMesh agent's authenticated API owns. It never reaches an agent-enrolled device (one with a check-in secret),
+    // however it is named, and never serves, or creates a device into, an agent-managed configuration: one such a
+    // device uses, or one a live agent enrollment token would enroll into (DeviceMapper.isAgentConfiguration). Every launcher route finds its device with findLegacyDevice (or findLegacyDeviceById), creates one
+    // only with createLegacyDevice and reads a configuration by QR key only with getLegacyConfigurationByQRCodeKey; a
+    // refused request is logged here and answered with LegacyDevice#refusal, and the route writes nothing.
+    // =================================================================================================================
+
+    /**
+     * The launcher device {@code identifier} names, resolved as far as {@code widest} (number, then old number, then
+     * IMEI or serial). The first device found is the one: a refused device never lets the lookup go on to another
+     * device, nor a route create one with its number.
+     */
+    public LegacyDevice findLegacyDevice(String identifier, LegacyDevice.Lookup widest) {
+        LegacyDevice.Lookup match = LegacyDevice.Lookup.NUMBER;
+        Device device = this.deviceMapper.getDeviceByNumber(identifier);
+        if (device == null && widest.compareTo(LegacyDevice.Lookup.OLD_NUMBER) >= 0) {
+            match = LegacyDevice.Lookup.OLD_NUMBER;
+            device = this.deviceMapper.getDeviceByOldNumber(identifier);
+        }
+        if (device == null && widest.compareTo(LegacyDevice.Lookup.IMEI_OR_SERIAL) >= 0) {
+            match = LegacyDevice.Lookup.IMEI_OR_SERIAL;
+            device = this.deviceMapper.getDeviceByImeiOrSerial(identifier);
+        }
+        return device == null ? LegacyDevice.absent() : legacyDevice(device, match);
     }
 
-    public Device getDeviceByImeiOrSerial(String number) {
-        return this.deviceMapper.getDeviceByImeiOrSerial(number);
+    /** The launcher device with this id (a message's device, say), under the same rule as {@link #findLegacyDevice}. */
+    public LegacyDevice findLegacyDeviceById(Integer id) {
+        Device device = id == null ? null : this.deviceMapper.getDeviceById(id);
+        return device == null ? LegacyDevice.absent() : legacyDevice(device, null);
+    }
+
+    /**
+     * The configuration with this QR code key, for the launcher's provisioning QR code; null when there is none or it
+     * is agent-managed.
+     */
+    public Configuration getLegacyConfigurationByQRCodeKey(String key) {
+        Configuration configuration = this.configurationMapper.getConfigurationByQRCodeKey(key);
+        if (configuration != null && isAgentConfiguration(configuration.getId())) {
+            logAgentConfigurationRefused("QR code of", configuration.getId());
+            return null;
+        }
+        return configuration;
+    }
+
+    private LegacyDevice legacyDevice(Device device, LegacyDevice.Lookup match) {
+        if (this.deviceMapper.isAgentDevice(device.getId())) {
+            logger.warn("Headwind launcher request for device {} refused: the MDMesh agent enrolled it",
+                    device.getNumber());
+            return LegacyDevice.agentDevice();
+        }
+        if (isAgentConfiguration(device.getConfigurationId())) {
+            logAgentConfigurationRefused("device " + device.getNumber() + " in", device.getConfigurationId());
+            return LegacyDevice.agentConfiguration();
+        }
+        return LegacyDevice.served(device, match);
+    }
+
+    private boolean isAgentConfiguration(Integer configurationId) {
+        return configurationId != null
+                && this.deviceMapper.isAgentConfiguration(configurationId, System.currentTimeMillis());
+    }
+
+    private static void logAgentConfigurationRefused(String what, Integer configurationId) {
+        logger.warn("Headwind launcher request for {} configuration {} refused: MDMesh agent devices use that "
+                + "configuration, or an agent enrollment code enrolls into it. Give launcher devices a configuration "
+                + "no agent device or enrollment code uses.", what, configurationId);
     }
 
     public List<ApplicationSetting> getDeviceAppSettings(int deviceId) {
@@ -380,11 +446,6 @@ public class UnsecureDAO {
     public ApplicationVersion findApplicationVersionById(Integer appId) {
         ApplicationVersion app = this.applicationMapper.findVersionById(appId);
         return app;
-    }
-
-
-    public Configuration getConfigurationByQRCodeKey(String id) {
-        return this.configurationMapper.getConfigurationByQRCodeKey(id);
     }
 
     private static final Function<ApplicationSetting, String> appSettingMapKeyGenerator = (s) -> s.getApplicationPkg() + "," + s.getName();
@@ -632,13 +693,25 @@ public class UnsecureDAO {
         return configurationId != null && this.deviceMapper.isCustomerConfiguration(configurationId, customerId);
     }
 
-    public Device createNewDeviceOnDemand(String deviceId) {
-
+    /**
+     * A launcher device created on demand with {@code deviceId}, which {@link #findLegacyDevice} found
+     * {@link LegacyDevice#isAbsent() absent}: in the single customer's default configuration for new devices, when its
+     * settings create devices on demand and that configuration is not agent-managed. Never on a multi-tenant install.
+     */
+    public LegacyDevice createLegacyDevice(String deviceId) {
+        if (!isSingleCustomer()) {
+            logger.warn("Not allowed to create devices in the multi-tenant setup");
+            return LegacyDevice.absent();
+        }
         Settings settings = getSingleCustomerSettings();
         if (settings.isCreateNewDevices()) {
             Device newDevice = new Device();
             newDevice.setCustomerId(settings.getCustomerId());
             newDevice.setConfigurationId(settings.getNewDeviceConfigurationId());
+            if (isAgentConfiguration(newDevice.getConfigurationId())) {
+                logAgentConfigurationRefused("new device " + deviceId + " in", newDevice.getConfigurationId());
+                return LegacyDevice.agentConfiguration();
+            }
             Integer groupId = settings.getNewDeviceGroupId();
             if (isCustomerGroup(groupId, settings.getCustomerId())) {
                 List<LookupItem> groups = new LinkedList<>();
@@ -650,28 +723,39 @@ public class UnsecureDAO {
             insertDevice(newDevice);
             logger.info("New device {} added", deviceId);
 
-            return getDeviceByNumber(deviceId);
+            return createdLegacyDevice(deviceId);
         } else {
             logger.warn("Creating new devices disabled by settings");
-            return null;
+            return LegacyDevice.absent();
         }
     }
 
+    private LegacyDevice createdLegacyDevice(String deviceId) {
+        Device device = getDeviceByNumber(deviceId);
+        return device == null ? LegacyDevice.absent() : LegacyDevice.served(device, LegacyDevice.Lookup.NUMBER);
+    }
+
+    /**
+     * A launcher device created on demand with {@code deviceId}, which {@link #findLegacyDevice} found
+     * {@link LegacyDevice#isAbsent() absent}: in the configuration whose QR code key the options name, else in the
+     * customer's default configuration for new devices when its settings create devices on demand; never in an
+     * agent-managed configuration, and within the customer's device limit.
+     */
     @Transactional
-    public Device createNewDeviceOnDemand(String deviceId, DeviceCreateOptions createOptions) {
+    public LegacyDevice createLegacyDevice(String deviceId, DeviceCreateOptions createOptions) {
         int customerId = DEFAULT_CUSTOMER_ID;
         int deviceLimit = 0;
         if (!isSingleCustomer()) {
             if (createOptions.getCustomer() == null) {
                 logger.warn("Customer is not set, device not created");
-                return null;
+                return LegacyDevice.absent();
             }
             Customer customer = customerMapper.findCustomerByName(createOptions.getCustomer());
             if (customer != null) {
                 customerId = customer.getId();
             } else {
                 logger.warn("Failed to get a customer by name '" + createOptions.getCustomer() + "', device not created");
-                return null;
+                return LegacyDevice.absent();
             }
             deviceLimit = customer.getDeviceLimit();
         }
@@ -684,12 +768,13 @@ public class UnsecureDAO {
         if (createOptions.getConfiguration() != null) {
             Configuration configuration = configurationMapper.getConfigurationByQRCodeKey(createOptions.getConfiguration());
             if (configuration == null) {
-                logger.warn("Failed to get a configuration by key " + createOptions.getConfiguration() + ", device not created");
-                return null;
+                logger.warn("Failed to get a configuration by key {}, device not created",
+                        CryptoUtil.logFingerprint(createOptions.getConfiguration()));
+                return LegacyDevice.absent();
             } else if (configuration.getCustomerId() != customerId) {
-                logger.warn("Configuration with key " + createOptions.getConfiguration() + " doesn't belong to customer " +
+                logger.warn("Configuration " + configuration.getId() + " doesn't belong to customer " +
                         customerId + ", device not created");
-                return null;
+                return LegacyDevice.absent();
             } else {
                 newDevice.setConfigurationId(configuration.getId());
             }
@@ -698,12 +783,16 @@ public class UnsecureDAO {
             if (settings.getNewDeviceConfigurationId() != null
                     && !isCustomerConfiguration(settings.getNewDeviceConfigurationId(), customerId)) {
                 logger.warn("Default configuration of customer {} does not belong to it, device not created", customerId);
-                return null;
+                return LegacyDevice.absent();
             }
             newDevice.setConfigurationId(settings.getNewDeviceConfigurationId());
         } else {
             logger.warn("Creating new devices disabled by settings, configuration ID not set");
-            return null;
+            return LegacyDevice.absent();
+        }
+        if (isAgentConfiguration(newDevice.getConfigurationId())) {
+            logAgentConfigurationRefused("new device " + deviceId + " in", newDevice.getConfigurationId());
+            return LegacyDevice.agentConfiguration();
         }
 
         if (createOptions.getGroups() != null) {
@@ -745,14 +834,14 @@ public class UnsecureDAO {
             return n == null ? 0L : n;
         })) {
             logger.warn("New device " + deviceId + " not created by customer " + customerId + ": license limit");
-            return null;
+            return LegacyDevice.absent();
         }
         newDevice.setNumber(deviceId);
         newDevice.setLastUpdate(0L);
         insertDevice(newDevice);
         logger.info("New device {} added", deviceId);
 
-        return getDeviceByNumber(deviceId);
+        return createdLegacyDevice(deviceId);
     }
 
     public void updateDeviceFastSearch(int fastSearchChars) {

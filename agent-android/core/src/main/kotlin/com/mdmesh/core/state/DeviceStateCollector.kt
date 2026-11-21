@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.SystemClock
 import com.mdmesh.core.power.PowerModeStore
 import com.mdmesh.core.store.ConfigStateStore
+import com.mdmesh.core.store.reportedRevision
 import com.mdmesh.proto.AgentDeviceStateDto
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -39,7 +40,7 @@ class DeviceStateCollector @Inject constructor(
             lastBootAt = System.currentTimeMillis() - SystemClock.elapsedRealtime(),
             agentVersion = installedVersionName(),
             powerMode = powerModeStore.get(),
-            appliedConfigRevision = configStateStore.revision(),
+            appliedConfigRevision = configStateStore.reportedRevision(),
         )
     }
 

@@ -29,6 +29,7 @@ import com.hmdm.persistence.domain.Settings;
 import com.hmdm.persistence.domain.User;
 import com.hmdm.persistence.domain.UserRole;
 import com.hmdm.rest.json.Response;
+import com.hmdm.rest.json.UserCredentials;
 import com.hmdm.util.WindowLimiter;
 import com.hmdm.security.SecurityContext;
 import com.hmdm.service.EmailService;
@@ -131,11 +132,14 @@ public class PasswordResetResource {
     @Path("/reset")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response updatePassword(User newData) {
+    public Response updatePassword(User newData, @Context HttpServletRequest req) {
         try {
             User user = unsecureDAO.findByPasswordResetToken(newData.getPasswordResetToken());
             if (user == null) {
                 return Response.ERROR("error.user.not.found");
+            }
+            if (req != null) {
+                req.setAttribute(UserCredentials.REQUEST_LOGIN, user.getLogin());   // for the audit record
             }
 
             if (!PasswordUtil.isMd5Hex(newData.getNewPassword())) {

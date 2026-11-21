@@ -13,7 +13,8 @@
 #     secret; the same answers from an answers file give another plan;
 #   - a default differs (a dry run with only the required answers and MDMESH_NONINTERACTIVE=1 shows each default);
 #   - a required answer can be left out under MDMESH_NONINTERACTIVE=1, or a question without an answer isn't asked;
-#   - an example value in the contract is accepted or refused differently by the script, or by the contract's regex.
+#   - an example value in the contract is accepted or refused differently by the script, or by the contract's regex;
+#   - install/lib/jdk.sh misjudges a JDK 17 version, or the native installer stops setting -XX:-UseBASE64Intrinsics.
 #
 # Every installer run here is a dry run, in a temporary copy (setup.sh and the native installer) or a temporary working
 # directory (quickstart.sh), with an empty environment and stdin from /dev/null: nothing is installed, and a question
@@ -409,6 +410,51 @@ for line in "${REFUSE[@]}"; do
     || fail "dotenv: $(printf '%q' "$line") is not refused naming line 2 only (rc $RC): $out"
   ok
 done
+
+# install/lib/jdk.sh: which JDK 17 builds have the Base64 decoder bug of CVE-2026-114938 (OpenJDK), 17.0.6 to 17.0.21,
+# as javac -version, java.version or a Temurin image's JAVA_VERSION spell them. And the native installer runs the
+# server with -XX:-UseBASE64Intrinsics (in the CATALINA_OPTS its unit gets; T2 checks the running JVM).
+for c in "17.0.6 affected" "17.0.13 affected" "17.0.21 affected" "jdk-17.0.21+9 affected" "17.0.21.1 unaffected" \
+         "jdk-17.0.21.1+2 unaffected" "17.0.21.1_2 unaffected" "17.0.22 unaffected" "17.0.5 unaffected" "17.0.4.1 unaffected" "17 other" \
+         "21.0.9 other" "11.0.29 other" "'' other" "17.0.x other"; do
+  read -r v want <<< "$c"; [ "$v" != "''" ] || v=""
+  got=$(bash -c '. "$1"; if mdm_jdk17_base64_affected "$2"; then echo affected; elif mdm_jdk17_base64_unaffected "$2"; then echo unaffected; else echo other; fi' \
+        _ "$REPO/install/lib/jdk.sh" "$v")
+  [ "$got" = "$want" ] || fail "jdk.sh: JDK '$v' is $got, want $want"
+  ok
+done
+grep -qE '^export CATALINA_OPTS="(.* )?-XX:-UseBASE64Intrinsics( |")' "$REPO/install/install-native.sh" \
+  || fail "install-native.sh no longer sets -XX:-UseBASE64Intrinsics in CATALINA_OPTS"
+# shellcheck disable=SC2016  # the installer's own text
+grep -qF 'Environment="CATALINA_OPTS=${CATALINA_OPTS}"' "$REPO/install/install-native.sh" \
+  || fail "install-native.sh's server unit no longer gets CATALINA_OPTS"
+# Tomcat's bin/setenv.sh (the Docker image's and a native install's) appends the flag to whatever CATALINA_OPTS holds.
+for pre in "" "-Dx=1 -Xmx1g"; do
+  # shellcheck disable=SC2016  # $1 and $CATALINA_OPTS are the inner sh's
+  got=$(env -i CATALINA_OPTS="$pre" sh -c '. "$1"; printf %s "$CATALINA_OPTS"' _ "$REPO/install/tomcat-setenv.sh")
+  [ "$got" = "${pre:+$pre }-XX:-UseBASE64Intrinsics" ] || fail "install/tomcat-setenv.sh turns CATALINA_OPTS '$pre' into '$got'"
+done
+# A native install writes it where there is none, rewrites its own (the marker line) and leaves an operator's alone: a
+# file without the marker, a link (even to ours) or a directory.
+mkdir -p "$WORK/setenv"
+sstate() { bash -c '. "$1"; mdm_setenv_state "$2"' _ "$REPO/install/lib/jdk.sh" "$1"; }
+grep -qxF -- "$(bash -c '. "$1"; printf %s "$MDM_SETENV_MARKER"' _ "$REPO/install/lib/jdk.sh")" "$REPO/install/tomcat-setenv.sh" \
+  || fail "install/tomcat-setenv.sh lacks install/lib/jdk.sh's MDM_SETENV_MARKER line"
+[ "$(sstate "$WORK/setenv/none.sh")" = absent ] || fail "setenv.sh: a missing file is not 'absent'"
+cp -- "$REPO/install/tomcat-setenv.sh" "$WORK/setenv/ours.sh"
+[ "$(sstate "$WORK/setenv/ours.sh")" = ours ] || fail "setenv.sh: ours is not 'ours'"
+# shellcheck disable=SC2016  # the operator's file's own text
+printf 'CATALINA_OPTS="$CATALINA_OPTS -Xmx2g"\n' >"$WORK/setenv/theirs.sh"
+[ "$(sstate "$WORK/setenv/theirs.sh")" = theirs ] || fail "setenv.sh: an operator's own is not 'theirs'"
+ln -s ours.sh "$WORK/setenv/link.sh"; mkdir "$WORK/setenv/dir.sh"
+[ "$(sstate "$WORK/setenv/link.sh")$(sstate "$WORK/setenv/dir.sh")" = theirstheirs ] || fail "setenv.sh: a link or a directory is not 'theirs'"
+# shellcheck disable=SC2016  # the installer's own text
+{ grep -qF 'case "$(mdm_setenv_state "$CATALINA/bin/setenv.sh" svc_cat)" in' "$REPO/install/install-native.sh" \
+  && grep -qxF '  absent|ours) tc_write bin/setenv.sh cat "$REPO/install/tomcat-setenv.sh" ;;' "$REPO/install/install-native.sh"; } \
+  || fail "install-native.sh no longer writes Tomcat's bin/setenv.sh only when it is absent or ours"
+grep -qxF 'COPY install/tomcat-setenv.sh /usr/local/tomcat/bin/setenv.sh' "$REPO/docker/server.Dockerfile" \
+  || fail "docker/server.Dockerfile no longer installs Tomcat's bin/setenv.sh"
+ok
 
 # Answers typed at a question get the same rules as pre-set ones: a wrong one is refused (never echoing a token) and
 # asked again. A real setup.sh run in a copy, answering on stdin; it stops at the docker stub after writing .env.

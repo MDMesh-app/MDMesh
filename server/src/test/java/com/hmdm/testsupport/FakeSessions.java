@@ -109,10 +109,24 @@ public final class FakeSessions {
         return current == null ? null : current.proxy;
     }
 
-    /** A request that has only these sessions (every other method answers null). */
+    /**
+     * A request that has only these sessions and its own attributes (every other method answers null). Like Tomcat: it
+     * names the session it came with ({@code getRequestedSessionId}) even once that session has ended, and then has no
+     * session ({@code getSession(false)} is null).
+     */
     public HttpServletRequest request() {
+        String requested = current == null ? null : current.id;
+        Map<String, Object> attributes = new LinkedHashMap<>();
         return (HttpServletRequest) Proxy.newProxyInstance(FakeSessions.class.getClassLoader(),
                 new Class<?>[]{HttpServletRequest.class},
-                (proxy, method, args) -> "getSession".equals(method.getName()) ? getSession(args) : null);
+                (proxy, method, args) -> {
+                    switch (method.getName()) {
+                        case "getSession": return getSession(args);
+                        case "getRequestedSessionId": return requested;
+                        case "getAttribute": return attributes.get((String) args[0]);
+                        case "setAttribute": attributes.put((String) args[0], args[1]); return null;
+                        default: return null;
+                    }
+                });
     }
 }

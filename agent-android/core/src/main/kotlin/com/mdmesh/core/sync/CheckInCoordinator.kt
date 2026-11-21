@@ -13,6 +13,7 @@ import com.mdmesh.core.telemetry.TelemetrySource
 import com.mdmesh.proto.AgentCheckInRequest
 import com.mdmesh.proto.EventType
 import androidx.annotation.VisibleForTesting
+import com.mdmesh.policy.factoryreset.FactoryResetWipeHold
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
@@ -62,6 +63,12 @@ class CheckInCoordinator @Inject constructor(
      * batch there would freeze it (and risk an ANR).
      */
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    /**
+     * Each cycle first ends a wipe hold past its deadline. The heartbeat alarm checks in even in Doze, when the hold's
+     * own check (WipeHoldExpiryWorker) may wait for a maintenance window; and the expiry's event goes out in this
+     * check-in.
+     */
+    private val wipeHold: FactoryResetWipeHold = FactoryResetWipeHold(),
 ) {
 
     @VisibleForTesting
@@ -211,6 +218,7 @@ class CheckInCoordinator @Inject constructor(
     }
 
     private suspend fun cycle(): Boolean {
+        wipeHold.expireIfDue()
         val deviceId = enrollment.ensureEnrolled()
         val authorization = "Bearer ${identity.secret().orEmpty()}"
         val matrix = capabilitySource.matrix(deviceId)

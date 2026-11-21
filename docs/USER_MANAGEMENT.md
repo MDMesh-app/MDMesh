@@ -15,11 +15,16 @@ through `GET /rest/private/users/management`; the console does not assume an adm
 Create an account with a unique login, a password, a role and optionally a name and email. The console asks for a
 password of at least 8 characters, as Change password does. Leave both password fields empty when editing to keep the
 existing password. Setting another account's password ends its existing sessions and applies the server's password
-reset policy. An edit without a password preserves any pending password reset.
+reset policy. An edit without a password preserves any pending password reset. Creating an account, deleting one,
+and changing another account's email or password ask for your own current password, on the server too: API clients
+send its MD5 (hex) as `oldPassword` in the body of `PUT /rest/private/users` or `DELETE /rest/private/users/other/{id}`.
 
 Access can cover all devices/configurations, or selected device groups/configurations. A restricted list with nothing
-selected grants access to none. The editor loads the account's complete access lists before allowing a save, and an
-unavailable access-options request blocks saving so it cannot silently replace restrictions.
+selected grants access to none, and a new account starts that way. The editor loads the account's complete access
+lists before allowing a save, and an unavailable access-options request blocks saving so it cannot silently replace
+restrictions. Nobody but a super-admin can give access they don't have themselves: the "All" options are unavailable
+if you are limited to a selection. An account that reaches more than you do is marked "Beyond your access" and can't
+be opened, edited, deleted or signed in as.
 
 Your own account cannot be edited or deleted here; change your password in **Settings**. Only a super-admin can edit
 or delete a super-admin account. The console shows no Delete button for super-admin accounts, but the server accepts
@@ -34,8 +39,9 @@ assign the available roles to accounts in their organization.
 
 The role editor lists only editable roles. The built-in organization-admin and super-admin roles are protected on the
 server, including against direct API calls. Only permission IDs from the server's assignable permission list are
-accepted. A role assigned to any account cannot be deleted: reassign the accounts first. Role and permission changes
-are transactional. Role descriptions survive list/edit/save round trips.
+accepted, and an organization admin can add only permissions their own role holds. A role assigned to any account
+cannot be deleted: reassign the accounts first. Role and permission changes are transactional and recorded in the
+audit log. Role descriptions survive list/edit/save round trips.
 
 Permission checks run on every server request. An open console refreshes its role when the tab becomes visible again
 or the page is reloaded, as in v0.4.0.

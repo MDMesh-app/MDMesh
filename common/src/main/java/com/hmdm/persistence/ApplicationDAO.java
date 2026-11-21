@@ -649,7 +649,8 @@ public class ApplicationDAO extends AbstractLinkedDAO<Application, ApplicationCo
 
         if (application.isCommon() || application.getCustomerId() == userCustomerId) {
             if (!user.isAllConfigAvailable()) {
-                this.mapper.removeApplicationVersionConfigurationsForLimitedUser(user.getId(), applicationVersionId);
+                this.mapper.removeApplicationVersionConfigurationsForLimitedUser(userCustomerId, user.getId(),
+                        applicationVersionId);
             } else {
                 this.mapper.removeApplicationVersionConfigurationsById(userCustomerId, applicationVersionId);
             }

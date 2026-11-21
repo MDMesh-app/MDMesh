@@ -158,3 +158,7 @@ export const apiClient = {
   postForm: <T>(path: string, form: FormData, signal?: AbortSignal) =>
     request<T>(path, { method: 'POST', body: form, signal }),
 };
+
+/** A DELETE with a JSON body (deleting an account sends the caller's current password). Not part of the SDK. */
+export const deleteWithBody = <T>(path: string, body: unknown, signal?: AbortSignal) =>
+  request<T>(path, { method: 'DELETE', body, signal });

@@ -7,6 +7,7 @@ import com.mdmesh.policy.camera.CameraPolicy
 import com.mdmesh.policy.camera.CameraPolicyFactory
 import com.mdmesh.policy.factoryreset.FactoryResetPolicy
 import com.mdmesh.policy.factoryreset.FactoryResetPolicyFactory
+import com.mdmesh.policy.factoryreset.FactoryResetWipeHold
 import com.mdmesh.policy.location.LocationServicesPolicy
 import com.mdmesh.policy.location.LocationServicesPolicyFactory
 import com.mdmesh.policy.safeboot.SafeBootPolicy
@@ -44,6 +45,8 @@ class CapabilityRegistry(
     private val wifiRadio: WifiRadio? = null,
     /** Persisted `wifiRadio` off state (self-heal across reboots); in memory when not given. */
     private val wifiRadioState: WifiRadioOffState = InMemoryWifiRadioOffState(),
+    /** Shared with `device.wipe`: holds Factory reset: Block off once a wipe is accepted (#222). */
+    private val wipeHold: FactoryResetWipeHold = FactoryResetWipeHold(),
 ) {
 
     /** Probe errors, logged once per key and error class per interval, plus the recovery. */
@@ -66,7 +69,7 @@ class CapabilityRegistry(
             ScreenshotsPolicy.CAPABILITY_KEY to { ScreenshotsPolicyFactory.create(handle) },
             BluetoothPolicy.CAPABILITY_KEY to { BluetoothPolicyFactory.create(handle) },
             UsbStoragePolicy.CAPABILITY_KEY to { UsbStoragePolicyFactory.create(handle) },
-            FactoryResetPolicy.CAPABILITY_KEY to { FactoryResetPolicyFactory.create(handle) },
+            FactoryResetPolicy.CAPABILITY_KEY to { FactoryResetPolicyFactory.create(handle, wipeHold) },
             SafeBootPolicy.CAPABILITY_KEY to { SafeBootPolicyFactory.create(handle) },
             WifiRadioPolicy.CAPABILITY_KEY to { WifiRadioPolicyFactory.create(handle, wifiRadio, wifiRadioState) },
         ),

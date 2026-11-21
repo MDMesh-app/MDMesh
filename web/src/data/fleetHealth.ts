@@ -45,7 +45,7 @@ export const ISSUE_REASON: Record<IssueKind, string> = {
   outOfSync: 'Configuration out of sync',
   agentTooOld: 'Agent too old for configuration sync',
   deferred: 'Some settings deferred',
-  reset: 'Wi-Fi turned back on by the device',
+  reset: 'Configuration out of date on the device',
 };
 
 export const ISSUE_TONE: Record<IssueKind, 'alert' | 'warn'> = {

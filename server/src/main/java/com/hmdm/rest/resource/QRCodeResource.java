@@ -136,9 +136,10 @@ public class QRCodeResource {
                                                     @QueryParam("useId") @ApiParam("Which parameter to use as a device ID") String useId,
                                                     @QueryParam("group") @ApiParam("Groups to assign when creating a device") List<String> groups,
                                                     @Context HttpServletRequest req) {
-        logger.info("Generating JSON for configuration key: {}", id);
+        // Never the key itself: it fetches the QR, which holds the Wi-Fi password
+        logger.info("Generating JSON for configuration key {}", CryptoUtil.logFingerprint(id));
         try {
-            Configuration configuration = this.unsecureDAO.getConfigurationByQRCodeKey(id);
+            Configuration configuration = this.unsecureDAO.getLegacyConfigurationByQRCodeKey(id);
             if (configuration != null) {
                 String miscExtrasEntry = "";
                 if (configuration.getAdminExtras() != null) {
@@ -157,7 +158,7 @@ public class QRCodeResource {
                         miscExtrasEntry);
                 return javax.ws.rs.core.Response.ok(res).build();
             } else {
-                logger.error("Configuration not found for key: {}", id);
+                logger.error("Configuration not found for key {}", CryptoUtil.logFingerprint(id));
                 return javax.ws.rs.core.Response.serverError().build();
             }
 
@@ -193,9 +194,9 @@ public class QRCodeResource {
                                                     @QueryParam("useId") @ApiParam("Which parameter to use as a device ID") String useId,
                                                     @QueryParam("group") @ApiParam("Groups to assign when creating a device") List<String> groups,
                                                     @Context HttpServletRequest req) {
-        logger.info("Generating QR-code image for configuration key: {}", id);
+        logger.info("Generating QR-code image for configuration key {}", CryptoUtil.logFingerprint(id));
         try {
-            Configuration configuration = this.unsecureDAO.getConfigurationByQRCodeKey(id);
+            Configuration configuration = this.unsecureDAO.getLegacyConfigurationByQRCodeKey(id);
             if (configuration != null) {
                 Integer mainAppId = configuration.getMainAppId();
                 if (mainAppId != null) {
@@ -212,8 +213,9 @@ public class QRCodeResource {
                             } catch (ApkChecksumUnavailableException e) {
                                 // Android requires a package (or signature) checksum next to the download
                                 // location; a remote APK is never downloaded here just to compute it.
-                                logger.warn("QR-code key {}: no checksum for the main app version {} ({}); host the APK "
-                                        + "on this server to generate a provisioning QR", id, appVersion.getId(), e.getMessage());
+                                logger.warn("Configuration {}: no checksum for the main app version {} ({}); host the APK "
+                                        + "on this server to generate a provisioning QR", configuration.getId(),
+                                        appVersion.getId(), e.getMessage());
                                 return javax.ws.rs.core.Response.status(javax.ws.rs.core.Response.Status.CONFLICT)
                                         .type(MediaType.TEXT_PLAIN)
                                         .entity("The main app APK is not hosted on this server, so its checksum is unknown. "
@@ -288,7 +290,8 @@ public class QRCodeResource {
                                 "}\n");
                         final String s = sb.toString();
 
-                        logger.info("The base for QR code generation:\n{}", s);
+                        // Not the text itself: it holds the Wi-Fi password, the QR parameters and admin extras
+                        logger.info("QR code generated for configuration {}", configuration.getId());
 
                         return javax.ws.rs.core.Response.ok( (StreamingOutput) output -> {
                             int imageSize = qrImageSize(size);
@@ -301,13 +304,13 @@ public class QRCodeResource {
                                 .header( "Content-Type", "image/png" ).build();
 
                     } else {
-                        logger.info("Main app for configuration for QR-code key {} does not have URL set", id);
+                        logger.info("Main app for configuration {} does not have URL set", configuration.getId());
                     }
                 } else {
-                    logger.info("Configuration for QR-code key {} does not have a main app set", id);
+                    logger.info("Configuration {} does not have a main app set", configuration.getId());
                 }
             } else {
-                logger.info("Configuration not found for QR-code key: {}", id);
+                logger.info("Configuration not found for QR-code key {}", CryptoUtil.logFingerprint(id));
             }
 
             return javax.ws.rs.core.Response.ok().build();

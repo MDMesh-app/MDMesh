@@ -115,10 +115,13 @@
                  INNER JOIN userRoles ON userRoles.id = users.userRoleId
                  LEFT JOIN userRolePermissions urp ON urp.roleid = userRoles.id
                  LEFT JOIN permissions ON urp.permissionid = permissions.id
+                 <!-- Only the account's own customer's groups and configurations: a row naming another customer's
+                      (shared mode) would show its name and count as access -->
                  LEFT JOIN userDeviceGroupsAccess ON users.id = userDeviceGroupsAccess.userId
-                 LEFT JOIN groups ON userDeviceGroupsAccess.groupId = groups.id
+                 LEFT JOIN groups ON userDeviceGroupsAccess.groupId = groups.id AND groups.customerId = users.customerId
                  LEFT JOIN userConfigurationAccess ON users.id = userConfigurationAccess.userId
                  LEFT JOIN configurations ON userConfigurationAccess.configurationId = configurations.id
+                                         AND configurations.customerId = users.customerId
     </sql>
 
     <select id="findByLogin" resultMap="userFull">

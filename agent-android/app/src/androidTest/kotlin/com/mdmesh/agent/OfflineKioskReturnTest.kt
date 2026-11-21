@@ -19,7 +19,7 @@ import com.mdmesh.agent.admin.AdminReceiver
 import com.mdmesh.core.config.ConfigApplier
 import com.mdmesh.core.kiosk.AndroidKioskHomeSwitch
 import com.mdmesh.core.kiosk.KioskApplier
-import com.mdmesh.core.store.DataStoreKioskStateStore
+import com.mdmesh.core.store.AgentDataStores
 import com.mdmesh.core.store.SharedPrefsConfigStateStore
 import com.mdmesh.core.store.configuredKiosk
 import com.mdmesh.core.telemetry.EventLog
@@ -67,7 +67,7 @@ class OfflineKioskReturnTest {
         assumeTrue("Requires an Android emulator", Build.HARDWARE == "ranchu" || Build.HARDWARE == "goldfish")
         val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
         assumeTrue("Requires a disposable Device Owner emulator", dpm.isDeviceOwnerApp(context.packageName))
-        store = DataStoreKioskStateStore(context)
+        store = AgentDataStores.stores(context).kioskStateStore()
         assumeTrue("Do not overwrite an existing kiosk", store.load() == null)
         config = SharedPrefsConfigStateStore(context)
         assumeTrue("Do not overwrite an existing configuration", config.load() == null && config.delivered == null)

@@ -9,6 +9,7 @@ import com.mdmesh.proto.CommandEnvelope
 import com.mdmesh.proto.CommandResult
 import com.mdmesh.proto.CommandStatus
 import com.mdmesh.core.net.ResponseEnvelope
+import com.mdmesh.policy.factoryreset.FactoryResetWipeHold
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -85,6 +86,7 @@ class CheckInCoordinatorTest {
         events: com.mdmesh.core.telemetry.EventSink? = null,
         tokens: FakeTokenProvider = FakeTokenProvider("t"),
         identity: FakeIdentity = FakeIdentity(initialId = identityId, initialSecret = "sek-1"),
+        wipeHold: FactoryResetWipeHold = FactoryResetWipeHold(),
     ): CheckInCoordinator {
         val eventSink = events ?: object : com.mdmesh.core.telemetry.EventSink {
             override fun record(type: String, detail: String?) {}
@@ -109,6 +111,7 @@ class CheckInCoordinatorTest {
             syncStatus = syncStatus,
             installIntegrity = installIntegrity,
             ioDispatcher = ioDispatcher,
+            wipeHold = wipeHold,
         )
     }
 
@@ -181,6 +184,40 @@ class CheckInCoordinatorTest {
 
         assertEquals(listOf("boot"), api.checkInRequests.last().events.map { it.type })
         assertTrue("gone once delivered", com.mdmesh.core.telemetry.EventLog(store).drain().isEmpty())
+    }
+
+    /**
+     * PR #227 review: every check-in cycle, the heartbeat's included, ends a wipe hold past its deadline, even offline.
+     * The heartbeat alarm still fires in Doze, when WipeHoldExpiryWorker may wait for a maintenance window.
+     */
+    @Test
+    fun `a check-in ends an expired wipe hold even when the server is out of reach`() = runTest {
+        var nowMs = 0L
+        var expired = 0
+        val hold = FactoryResetWipeHold(nowMs = { nowMs }) { expired++ }
+        hold.hold()
+        nowMs = FactoryResetWipeHold.MAX_HOLD_MS
+        val api = FakeMdmApi().apply { checkInThrows = IOException("network down") }
+
+        runCatching { coordinator(api, PendingResults(), wipeHold = hold).runOnce() }
+
+        assertEquals(1, expired)
+        assertFalse(hold.held)
+    }
+
+    @Test
+    fun `the wipeNotStarted event an expiry records goes out with that check-in`() = runTest {
+        val store = FakeEventStore()
+        val events = com.mdmesh.core.telemetry.EventLog(store)
+        var nowMs = 0L
+        val hold = FactoryResetWipeHold(nowMs = { nowMs }) { events.record("wipeNotStarted") }
+        hold.hold()
+        nowMs = FactoryResetWipeHold.MAX_HOLD_MS
+        val api = FakeMdmApi()
+
+        coordinator(api, PendingResults(), events = events, wipeHold = hold).runOnce()
+
+        assertEquals(listOf("wipeNotStarted"), api.checkInRequests.last().events.map { it.type })
     }
 
     @Test

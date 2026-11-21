@@ -33,6 +33,8 @@ export interface AuthUser {
   superAdmin?: boolean;
   /** False for a user an admin limited to some device groups (User.allDevicesAvailable; absent counts as true). */
   allDevicesAvailable?: boolean;
+  /** False for a user an admin limited to some configurations (User.allConfigAvailable; absent counts as true). */
+  allConfigAvailable?: boolean;
   /** May apply, roll back or schedule updates: a super-admin, or the admin of a single-customer install (0.3.8+). */
   deploymentAdmin?: boolean;
   singleCustomer?: boolean;
@@ -62,6 +64,11 @@ export function isTooManyAttempts(err: unknown): boolean {
 }
 
 export const TOO_MANY_MESSAGE = 'Too many failed sign-ins. Wait a few minutes, then try again.';
+
+/** The server's answer to a password check in a session signed in as another account (error.password.impersonated). */
+export const IMPERSONATED = 'error.password.impersonated';
+export const IMPERSONATED_MESSAGE =
+  'You are signed in as another account, so this needs its owner. Sign in with your own account to do it.';
 
 export interface AuthOptions {
   signup: boolean;
@@ -98,8 +105,8 @@ export async function login(
  * the users row with its role and the role's permissions, the same data AuthFilter checks every request against).
  * Its `authToken` and `passwordResetToken` are write-only on that object, so the answer carries neither.
  */
-export async function fetchCurrentUser(): Promise<AuthUser | null> {
-  return apiClient.get<AuthUser | null>('/private/users/current');
+export async function fetchCurrentUser(signal?: AbortSignal): Promise<AuthUser | null> {
+  return apiClient.get<AuthUser | null>('/private/users/current', signal);
 }
 
 export async function logout(): Promise<void> {

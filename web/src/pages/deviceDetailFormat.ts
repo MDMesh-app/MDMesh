@@ -174,9 +174,9 @@ export function makeModel(manufacturer?: string, model?: string): string | undef
    Configuration status
    --------------------------------------------------------------------------------------------------------------- */
 
-/** Short revision for display, 7 characters as git shows them ("8b04d7a"); "Reset by device" for the agent's self-heal marker. */
+/** Short revision for display, 7 characters as git shows them ("8b04d7a"); "Out of date" for the agent's stale marker. */
 export function shortRevision(r?: string | null): string {
-  if (r === DEVICE_RESET_REVISION) return 'Reset by device';
+  if (r === DEVICE_RESET_REVISION) return 'Out of date';
   return r ? r.slice(0, 7) : DASH;
 }
 
@@ -209,9 +209,22 @@ export function commandStatus(status: string): { kind: StatusKind; label?: strin
   }
 }
 
+/**
+ * Device events the agent reports as something to look at (#220's storage recovery, a failed boot re-apply, a factory
+ * reset that didn't start, #222; a full agent buffer that dropped events).
+ */
+export const WARN_EVENTS: ReadonlySet<string> = new Set([
+  'lowBattery',
+  'kioskCrashLoop',
+  'storageRecovered',
+  'configReapplyFailed',
+  'wipeNotStarted',
+  'eventsDropped',
+]);
+
 export function eventTone(type: string): StatusTone {
   if (type === 'kioskPinLockout') return 'alert';
-  if (type === 'lowBattery' || type === 'kioskCrashLoop' || type === 'eventsDropped') return 'warn';
+  if (WARN_EVENTS.has(type)) return 'warn';
   if (type === 'enrolled' || type === 'appInstalled') return 'ok';
   return 'idle';
 }

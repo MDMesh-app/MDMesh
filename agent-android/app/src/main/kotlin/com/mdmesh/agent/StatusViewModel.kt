@@ -35,6 +35,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.flowOn
@@ -75,8 +76,12 @@ class StatusViewModel @Inject constructor(
     /**
      * Device Owner, lock task and the configured kiosk, read again whenever the kiosk or its configuration changes
      * (entering or leaving a kiosk changes the lock-task state) and on [refresh]. Off the main thread.
+     *
+     * Each source stands alone (#220): the kiosk store is only a trigger and starts with one, so a store that can't be
+     * read (its flow retries without emitting) never holds back the facts or the rest of the screen.
      */
-    private val facts = combine(configStore.configuredKioskFlow(), sources.kioskStore.flow(), refreshes) { _, _, _ ->
+    private val kioskChanges = sources.kioskStore.flow().map { }.onStart { emit(Unit) }
+    private val facts = combine(configStore.configuredKioskFlow(), kioskChanges, refreshes) { _, _, _ ->
         readFacts()
     }.flowOn(Dispatchers.Default)
         .distinctUntilChanged()
@@ -99,7 +104,7 @@ class StatusViewModel @Inject constructor(
             sources.enrollTokens.credentialsLostMarks,
             sources.syncStatus.lastSuccessAtMsChanges,
             sources.syncStatus.lastError,
-        ),
+        ).onStart { emit(StatusUiState.DeviceIdUi.Loading) }, // the id may wait for storage; the screen doesn't
         returning,
         copied,
     ) { f, id, r, c -> stateOf(f, id, r).copy(copied = c) }

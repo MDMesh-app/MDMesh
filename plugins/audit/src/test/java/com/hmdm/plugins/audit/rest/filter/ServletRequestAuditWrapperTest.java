@@ -77,6 +77,18 @@ public class ServletRequestAuditWrapperTest {
         assertEquals("", wrapper.getBody());
     }
 
+    @Test
+    public void aBodyOverTheLimitGoesToTheResourceWholeAndIsNotKept() throws IOException {
+        byte[] sent = new byte[ServletRequestAuditWrapper.MAX_BODY + 5000];
+        java.util.Arrays.fill(sent, (byte) 'x');
+        ServletRequestAuditWrapper wrapper = new ServletRequestAuditWrapper(request(sent, null));
+
+        assertEquals(true, wrapper.isTooLarge());
+        assertArrayEquals(sent, readAll(wrapper.getInputStream()));
+        assertEquals(false, new ServletRequestAuditWrapper(request(new byte[ServletRequestAuditWrapper.MAX_BODY], null))
+                .isTooLarge());
+    }
+
     private static HttpServletRequest request(byte[] body, String characterEncoding) {
         ByteArrayInputStream in = new ByteArrayInputStream(body);
         ServletInputStream servletInputStream = new ServletInputStream() {

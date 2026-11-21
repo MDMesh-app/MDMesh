@@ -291,12 +291,17 @@ public class SyncResponse implements Serializable, SyncResponseInt {
             }
         }
 
-        this.password = CryptoUtil.getMD5String(password);
+        this.password = launcherPassword(password);
         this.applications = (
                 applications != null ?
                         applications.stream().map(SyncApplication::new).collect(Collectors.toList())
                         : new LinkedList<>()
         );
+    }
+
+    /** The kiosk exit PIN as the launcher compares it (MD5 hex); none when the configuration has none set. */
+    private static String launcherPassword(String pin) {
+        return pin == null ? null : CryptoUtil.getMD5String(pin);
     }
 
     public SyncResponse(Configuration settings, List<Application> applications, Device device) {
@@ -317,7 +322,7 @@ public class SyncResponse implements Serializable, SyncResponseInt {
             }
         }
 
-        this.password = CryptoUtil.getMD5String(settings.getPassword());
+        this.password = launcherPassword(settings.getPassword());
         this.applications = (
                 applications != null ?
                         applications.stream().map(SyncApplication::new).collect(Collectors.toList())

@@ -165,8 +165,9 @@ reach the edge directly, so no peer is believed; `host` means nothing outside th
 saying so in `docker compose logs caddy`). `MDMESH_BIND` and `MDMESH_ORIGIN_TLS` can stay; nothing else reads them.
 Then step 4.
 
-A release before 0.6.0 doesn't know the proxy mode, so while an install runs behind your own proxy the updater refuses
-an update or a Roll back to one, saying so, and changes nothing. Move the install back to its old mode first.
+A release before 0.6.0 doesn't know the proxy mode, so while an install runs behind your own proxy the updater (and
+`./setup.sh --update`) refuses an update or a Roll back to one, saying so, and changes nothing. Move the install back
+to its old mode first. The updater refuses one too while `TRUSTED_PROXIES` still says `host`: set `TRUSTED_PROXIES=`.
 
 ## Recovery and rollback
 

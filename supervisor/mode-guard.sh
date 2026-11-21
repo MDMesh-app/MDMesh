@@ -1,18 +1,28 @@
 # shellcheck shell=bash
 # Sourced by apply.sh and rollback.sh: the one rule for the versions an install's hosting mode allows.
 #
-# mode_problem VERSION: prints why this install can't run VERSION (nothing when it can). Behind your own proxy (its
-# COMPOSE_FILE, in the supervisor's environment or .env, lists docker-compose.proxy.yml) the edge must be 0.6.0 or
-# later: an older web image doesn't know the mode, so it would believe no proxy (every client one address for the
-# sign-in limits) and serve no HTTPS origin (MDMESH_ORIGIN_TLS=1). A version that isn't X.Y.Z (latest) is let through:
-# there is nothing to compare.
+# mode_problem VERSION: prints why this install can't run VERSION (nothing when it can). A version that isn't X.Y.Z
+# (latest) is let through: there is nothing to compare. Before 0.6.0 (the web image's edge doesn't know these):
+#   - behind your own proxy (COMPOSE_FILE, in the supervisor's environment or .env, lists docker-compose.proxy.yml): the
+#     older edge would believe no proxy (every client one address for the sign-in limits) and serve no HTTPS origin;
+#   - TRUSTED_PROXIES (.env) still saying `host`, as an install moved out of the proxy mode may have left it: the
+#     0.6.0 edge ignores it, an older one hands it to Caddy, which refuses its whole configuration.
 mode_problem() {
-  local v=${1%%@*} files
-  files="${COMPOSE_FILE:-}:$(grep -E '^COMPOSE_FILE=' "${ENV_FILE:-/project/.env}" 2>/dev/null | head -1 | cut -d= -f2- | tr -d "\"'\r")"
-  # As written by the installers, or ./docker-compose.proxy.yml or a path ending in it, as a hand edit might.
-  case ":$files:" in *:docker-compose.proxy.yml:*|*/docker-compose.proxy.yml:*) ;; *) return 0 ;; esac
+  local v=${1%%@*} files proxies
   [[ "$v" =~ ^([0-9]+)\.([0-9]+)\.[0-9]+ ]] || return 0
-  if [ "$((10#${BASH_REMATCH[1]}))" -eq 0 ] && [ "$((10#${BASH_REMATCH[2]}))" -lt 6 ]; then
-    echo "this install runs behind your own proxy (docker-compose.proxy.yml), which came in 0.6.0, so it can't go to ${v}: that version's edge doesn't know the mode. Move the install back to its earlier hosting mode first (docs/UPGRADING.md, Changing the hosting mode), then try again. Nothing was changed."
-  fi
+  [ "$((10#${BASH_REMATCH[1]}))" -eq 0 ] && [ "$((10#${BASH_REMATCH[2]}))" -lt 6 ] || return 0
+  files="${COMPOSE_FILE:-}:$(_mode_env COMPOSE_FILE)"
+  # As written by the installers, or ./docker-compose.proxy.yml or a path ending in it, as a hand edit might.
+  case ":$files:" in
+    *:docker-compose.proxy.yml:*|*/docker-compose.proxy.yml:*)
+      echo "this install runs behind your own proxy (docker-compose.proxy.yml), which came in 0.6.0, so it can't go to ${v}: that version's edge doesn't know the mode. Move the install back to its earlier hosting mode first (docs/UPGRADING.md, Changing the hosting mode), then try again. Nothing was changed."
+      return 0 ;;
+  esac
+  proxies=" $(_mode_env TRUSTED_PROXIES | tr ',' ' ') "
+  case "$proxies" in
+    *" host "*)
+      echo "TRUSTED_PROXIES in .env still says host (left from the proxy mode), which ${v}'s edge can't read: it would not start. Set TRUSTED_PROXIES= in .env (docs/UPGRADING.md, Changing the hosting mode), then try again. Nothing was changed." ;;
+  esac
 }
+# _mode_env KEY: KEY's value in .env, without quotes.
+_mode_env() { grep -E "^$1=" "${ENV_FILE:-/project/.env}" 2>/dev/null | head -1 | cut -d= -f2- | tr -d "\"'\r"; }

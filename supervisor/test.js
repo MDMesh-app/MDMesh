@@ -960,6 +960,29 @@ t.test('behind your own proxy, apply.sh and rollback.sh refuse a release before 
       a.match(r.all, /^ERR this install runs behind your own proxy/m);
     } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
   }
+  // Moved out of the proxy mode with TRUSTED_PROXIES="host" left: an older edge would hand it to Caddy and not start.
+  for (const tp of ['"host"', 'host,192.0.2.10']) {
+    const envText = `SERVER_VERSION=0.6.0\nWEB_VERSION=0.6.0\nCURRENT_VERSION=0.6.0\nCOMPOSE_FILE=docker-compose.yml:docker-compose.domain.yml\nTRUSTED_PROXIES=${tp}\n`;
+    d = makeDeploy(envText);
+    try {
+      const r = runScript('apply.sh', applyArgs('0.5.9'), d.env);
+      a.notEqual(r.code, 0, tp + ': ' + r.all);
+      a.match(r.all, /^ERR TRUSTED_PROXIES in \.env still says host .*Set TRUSTED_PROXIES= in \.env/m);
+      a.ok(!d.calls().some((c) => c.includes('pg_dump') || c.includes(' up ')), 'nothing was backed up or recreated');
+      a.equal(d.envFile(), envText);
+      a.equal(runScript('apply.sh', applyArgs('0.6.1'), d.env).code, 0, 'a 0.6.x edge drops host: allowed');
+    } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+  }
+  d = makeDeploy('SERVER_VERSION=0.6.0\nWEB_VERSION=0.6.0\nCURRENT_VERSION=0.6.0\nTRUSTED_PROXIES="host"\n');
+  try {
+    fs.writeFileSync(path.join(d.backups, 'latest'), '20261101-120000\n');
+    fs.writeFileSync(path.join(d.backups, '20261101-120000.env'), 'SERVER_VERSION=0.5.1@sha256:aa\nWEB_VERSION=0.5.1@sha256:bb\nCURRENT_VERSION=0.5.1\n');
+    fs.writeFileSync(path.join(d.backups, '20261101-120000.sql'), 'SELECT 1;\n-- PostgreSQL database dump complete\n');
+    const r = runScript('rollback.sh', [], d.env);
+    a.notEqual(r.code, 0, r.all);
+    a.match(r.all, /^ERR TRUSTED_PROXIES in \.env still says host/m);
+    a.ok(!d.calls().some((c) => c.includes('psql') || c.includes(' up ')), 'nothing was restored');
+  } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
   d = makeDeploy('SERVER_VERSION=0.6.0\nWEB_VERSION=0.6.0\nCURRENT_VERSION=0.6.0\nCOMPOSE_FILE=docker-compose.yml:docker-compose.domain.yml\n');
   try {
     a.equal(runScript('apply.sh', applyArgs('0.5.9'), d.env).code, 0, 'another mode is not held back');

@@ -55,9 +55,10 @@ chmod +x "$WORK/stubs-chmod/chmod"
 # shellcheck disable=SC2016  # the stub's own variables
 sed -i '2i [ "${STUB_DOCKER_OK:-}" = 1 ] \&\& [ "$1 $2" = "compose version" ] \&\& exit 0' "$WORK/stubs/docker"
 # With STUB_DOCKER_OK=1, `docker ps` and `docker volume ls` (what install/lib/stack.sh asks) print STUB_DOCKER_PS (the
-# working directories of the project's containers, one per line) and STUB_DOCKER_VOLUMES (its volumes): none unset. Logged.
+# working directories of the project's containers, one per line; "-": a container that names none) and
+# STUB_DOCKER_VOLUMES (its volumes): none unset. Logged.
 # shellcheck disable=SC2016  # the stub's own variables
-sed -i '2i [ "${STUB_DOCKER_OK:-}" = 1 ] \&\& [ "$1" = ps ] \&\& { [ -z "${STUB_LOG:-}" ] || echo "$0 $*" >> "$STUB_LOG"; [ -z "${STUB_DOCKER_PS:-}" ] || printf "%s\\n" "$STUB_DOCKER_PS"; exit 0; }' "$WORK/stubs/docker"
+sed -i '2i [ "${STUB_DOCKER_OK:-}" = 1 ] \&\& [ "$1" = ps ] \&\& { [ -z "${STUB_LOG:-}" ] || echo "$0 $*" >> "$STUB_LOG"; [ -z "${STUB_DOCKER_PS:-}" ] || printf "%s\\n" "$STUB_DOCKER_PS" | sed -e "s/^-\$//" -e "s/^/dir:/"; exit 0; }' "$WORK/stubs/docker"
 # shellcheck disable=SC2016  # the stub's own variables
 sed -i '2i [ "${STUB_DOCKER_OK:-}" = 1 ] \&\& [ "$1 $2" = "volume ls" ] \&\& { [ -z "${STUB_LOG:-}" ] || echo "$0 $*" >> "$STUB_LOG"; [ -z "${STUB_DOCKER_VOLUMES:-}" ] || printf "%s\\n" "$STUB_DOCKER_VOLUMES"; exit 0; }' "$WORK/stubs/docker"
 # With STUB_DOCKER_INFO, `docker info` prints it (what install/lib/modes.sh reads to tell rootless Docker apart).
@@ -787,18 +788,44 @@ ok
 # others may read, a directory or a file in it that others may write.
 for c in 'BASE_URL=https://x.example.com/'"'"';drop' 'BASE_URL=https://a\b.example.com' 'IMAGE_OWNER=Me' 'GITHUB_REPO=../x' \
          'CURRENT_VERSION=0.6.0;id' 'COMPOSE_FILE=docker-compose.yml:evil.yml' "WEB_VERSION=0.6.0@sha256:$D1" \
-         'perm:.env:644' 'perm:.:775' 'perm:install/lib/db.sh:666'; do
+         'perm:.env:644' \
+         'COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml|MDMESH_BIND=127.0.0.1:8080|TRUSTED_PROXIES="0.0.0.0/0"' \
+         'COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml|MDMESH_BIND=0.0.0.0:8080|TRUSTED_PROXIES="host"' \
+         'COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml|MDMESH_BIND=127.0.0.1:8080|TRUSTED_PROXIES=' \
+         'MDMESH_SITE_DIR=/etc' 'MDMESH_SITE_DIR=site.d'; do
   qs_dir
   case "$c" in
     perm:*) qs_env > "$WORK/qs7/mdmesh/.env"; chmod 600 "$WORK/qs7/mdmesh/.env"
             p=${c#perm:}; chmod "${p##*:}" "$WORK/qs7/mdmesh/${p%:*}" ;;
-    *) qs_env "$c" > "$WORK/qs7/mdmesh/.env"; chmod 600 "$WORK/qs7/mdmesh/.env" ;;
+    *) IFS='|' read -r -a kv <<< "$c"; qs_env "${kv[@]}" > "$WORK/qs7/mdmesh/.env"; chmod 600 "$WORK/qs7/mdmesh/.env" ;;
   esac
   qs_run
   { [ ! -e "$WORK/PWNED" ] && ! grep -q '/docker compose ' "$WORK/docker.log" && grep -qF 'Nothing was changed.' "$WORK/out/e"; } \
     || { fail "quickstart.sh resumes over a bad install directory or .env ($c)"; show; }
   ok
 done
+# A proxy-mode install resumes with its own sound values: its site.d, and a proxy list that fits its bind.
+qs_dir; qs_env COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml MDMESH_BIND=127.0.0.1:8080 'TRUSTED_PROXIES="host 192.0.2.10"' \
+  "MDMESH_SITE_DIR=$WORK/qs7/mdmesh/site.d" > "$WORK/qs7/mdmesh/.env"; chmod 600 "$WORK/qs7/mdmesh/.env"
+qs_run
+grep -q '/docker compose pull$' "$WORK/docker.log" || { fail "quickstart.sh does not resume a sound proxy-mode install"; show; }
+ok
+# This user's own paths left group-writable by a login umask of 0002 (Debian and Ubuntu's default for a regular user)
+# are made writable by this user only, and the install goes on; a new quick start under umask 0002 makes its directory
+# writable by this user only.
+for p in .:775 install/lib/db.sh:666 install:777; do
+  qs_dir; qs_env > "$WORK/qs7/mdmesh/.env"; chmod 600 "$WORK/qs7/mdmesh/.env"; chmod "${p##*:}" "$WORK/qs7/mdmesh/${p%:*}"
+  (umask 002; qs_run)
+  { grep -q '/docker compose pull$' "$WORK/docker.log" && [ -z "$(find "$WORK/qs7/mdmesh" \( -perm -020 -o -perm -002 \) -print)" ] \
+    && [ ! -e "$WORK/PWNED" ]; } || { fail "quickstart.sh under umask 0002 does not fix its own group-writable ${p%:*} and go on"; show; }
+  ok
+done
+mkdir -p "$WORK/qs9"; rm -rf -- "$WORK/qs9/mdmesh"; : > "$WORK/docker.log"
+(umask 002; cd "$WORK/qs9" && env -i PATH="$WORK/stubs:$PATH" HOME="$WORK" STUB_LOG="$WORK/docker.log" STUB_DOCKER_OK=1 \
+  bash "$REPO/quickstart.sh" < /dev/null > "$WORK/out/o" 2> "$WORK/out/e") || true
+{ grep -qF 'How will your phones reach MDMesh?' "$WORK/out/o" && [ "$(stat -c %a "$WORK/qs9/mdmesh")" = 755 ]; } \
+  || { fail "a new quick start under umask 0002 refuses its own directory"; show; }
+ok
 # A directory another user owns (one found on this system, not world-writable), and /tmp itself: refused.
 other=$(find /var /usr /etc -maxdepth 3 -type d ! -user 0 ! -user "$(id -u)" ! -perm -002 -perm -001 -print -quit 2>/dev/null || true)
 for d in /tmp ${other:+"$other"}; do
@@ -849,6 +876,30 @@ ok
 qs_dir; qs_env > "$WORK/qs7/mdmesh/.env"; chmod 600 "$WORK/qs7/mdmesh/.env"
 qs_run STUB_DOCKER_PS=/srv/mdmesh
 stack_refused "a resumed quick start beside an install in /srv/mdmesh" 'An MDMesh install already exists in /srv/mdmesh'
+# A container of the project that names no directory (a compose too old to record it): refused, even beside its own.
+qs_dir; qs_env > "$WORK/qs7/mdmesh/.env"; chmod 600 "$WORK/qs7/mdmesh/.env"
+qs_run STUB_DOCKER_PS="$(printf '%s\n-' "$WORK/qs7/mdmesh")"
+stack_refused "a resumed quick start beside a container that names no directory" "'docker compose ls' shows where"
+# mdm_edge_up (install/lib/stack.sh): the edge running and the same run a moment later; otherwise it fails, showing the
+# edge's last log lines. A stub docker: STUB_EDGE says what inspect sees.
+mkdir -p "$WORK/stubs-edge"
+# shellcheck disable=SC2016  # the stub's own variables
+printf '%s\n' '#!/bin/sh' 'case "$*" in' \
+  '  "compose ps -a -q caddy") [ "$STUB_EDGE" = gone ] || echo edge1 ;;' \
+  '  "inspect "*) n=$(cat "$STUB_N" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$STUB_N"' \
+  '    case "$STUB_EDGE" in restarting) echo "restarting t0" ;; flapping) echo "running t$n" ;; *) echo "running t0" ;; esac ;;' \
+  '  "compose logs --tail 20 caddy") echo "Error: adapting config: site.d/bad.caddy:1 - unrecognized directive" ;;' \
+  'esac' > "$WORK/stubs-edge/docker"
+chmod +x "$WORK/stubs-edge/docker"
+for e in up restarting flapping gone; do
+  rm -f -- "$WORK/edge.n"
+  RC=0; env -i PATH="$WORK/stubs-edge:$PATH" STUB_EDGE=$e STUB_N="$WORK/edge.n" MDM_EDGE_SETTLE=0 \
+    bash -c 'err() { printf "%s\n" "$*" >&2; }; . "$1"; mdm_edge_up' _ "$REPO/install/lib/stack.sh" > "$WORK/out/o" 2> "$WORK/out/e" || RC=$?
+  if [ "$e" = up ]; then [ "$RC" = 0 ] || { fail "mdm_edge_up: an edge that stays up is not up"; show; }
+  else { [ "$RC" != 0 ] && grep -qF 'The edge (caddy) did not stay up' "$WORK/out/e" && grep -qF 'site.d/bad.caddy' "$WORK/out/e"; } \
+    || { fail "mdm_edge_up: an edge that is $e is up, or no logs shown"; show; }; fi
+  ok
+done
 # setup.sh: a new .env (a fresh clone) beside another install or over its volumes; a re-run beside its own stack goes on,
 # beside another directory's it is refused.
 rm -rf -- "$WORK/src9"; mkdir -p "$WORK/src9/install"; cp -- "$REPO/setup.sh" "$WORK/src9/"; cp -R -- "$REPO/install/lib" "$WORK/src9/install/"

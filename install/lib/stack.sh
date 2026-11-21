@@ -7,6 +7,7 @@
 # address the first install's containers: compose would stop them and recreate them with the new directory's secrets
 # against the first install's database (production down). And a new .env over the volumes of an install whose .env is
 # gone gives the server a password the database never had. Both are refused here, before any compose command.
+# And an install is reported up only once its edge stays up (mdm_edge_up).
 
 # >>> stack.sh functions (quickstart.sh keeps a verbatim copy) >>>
 # mdm_stack_guard PROJECT NEW: stops the installer when Docker already has a stack of PROJECT that is not this
@@ -14,16 +15,17 @@
 # one is refused, naming it. (Containers the updater recreated say /project, its own mount of the install directory:
 # they don't count either way.) With NEW=1 (no .env here yet: the installer writes a new one) any container or volume of
 # PROJECT is refused, since a new .env's secrets can't work with them; NEW=0 (this directory's .env is used) allows this
-# directory's own. Fails closed when Docker can't be asked.
+# directory's own. Fails closed when Docker can't be asked, and on a container that names no directory.
 mdm_stack_guard() {
-  local project=$1 new=$2 here dirs d other='' ours=0 n=0 vols
+  local project=$1 new=$2 here dirs d other='' ours=0 n=0 unknown=0 vols
   here=$(pwd -P)
   dirs=$(docker ps -a --filter "label=com.docker.compose.project=$project" \
-    --format '{{.Label "com.docker.compose.project.working_dir"}}') \
+    --format 'dir:{{.Label "com.docker.compose.project.working_dir"}}') \
     || { err "Could not list Docker's containers (docker ps failed, above): not starting anything. Nothing was changed."; exit 1; }
   while IFS= read -r d; do
     [ -n "$d" ] || continue
-    n=$((n + 1))
+    n=$((n + 1)); d=${d#dir:}
+    [ -n "$d" ] || { unknown=1; continue; }
     [ "$d" != /project ] || continue
     if [ "$d" -ef "$here" ]; then ours=1; else other="$other$d
 "; fi
@@ -31,10 +33,10 @@ mdm_stack_guard() {
 $dirs
 EOF
   other=$(printf '%s' "$other" | sort -u | tr '\n' ' ' | sed 's/ $//')
-  if [ -n "$other" ] || { [ "$n" -gt 0 ] && { [ "$new" = 1 ] || [ "$ours" = 0 ]; }; }; then
+  if [ -n "$other" ] || [ "$unknown" = 1 ] || { [ "$n" -gt 0 ] && { [ "$new" = 1 ] || [ "$ours" = 0 ]; }; }; then
     if [ -n "$other" ]; then
       err "An MDMesh install already exists in $other (Docker project $project)."
-    elif [ "$ours" = 1 ]; then
+    elif [ "$ours" = 1 ] && [ "$unknown" = 0 ]; then
       err "The containers of an MDMesh install in this directory exist, but its .env is gone (Docker project $project)."
     else
       err "An MDMesh install already exists on this machine (Docker project $project; 'docker compose ls' shows where)."
@@ -54,5 +56,22 @@ EOF
     err "Nothing was changed."
     exit 1
   fi
+}
+# mdm_edge_up: the edge (caddy, which every phone and browser reaches MDMesh through) is running, and still the same run
+# MDM_EDGE_SETTLE seconds later (default 5): an edge that can't load its configuration (a rule in site.d, proxy
+# settings docker/edge-peers.sh refuses) exits at start and is restarted over and over. When it isn't, it says so with
+# the edge's last log lines, and fails. Run from the install directory, after `docker compose up`.
+mdm_edge_up() {
+  local id a='' b=''
+  id=$(docker compose ps -a -q caddy 2> /dev/null | head -1)
+  if [ -n "$id" ]; then
+    a=$(docker inspect --format '{{.State.Status}} {{.State.StartedAt}}' "$id" 2> /dev/null) || a=''
+    sleep "${MDM_EDGE_SETTLE:-5}"
+    b=$(docker inspect --format '{{.State.Status}} {{.State.StartedAt}}' "$id" 2> /dev/null) || b=''
+    if [ "${a%% *}" = running ] && [ "$a" = "$b" ]; then return 0; fi
+  fi
+  err "The edge (caddy) did not stay up (${b:-${a:-no container}}), so MDMesh can't be reached. Its last log lines:"
+  docker compose logs --tail 20 caddy 2>&1 | sed 's/^/    /' >&2 || true
+  return 1
 }
 # <<< stack.sh functions <<<

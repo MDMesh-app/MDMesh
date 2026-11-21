@@ -21,6 +21,9 @@ set -euo pipefail
 # CDPATH's directories, not the current one — silently building or reading from a same-named directory elsewhere. Unset
 # it for this script and its children.
 unset CDPATH
+# What this script makes is writable by its user only, whatever the login umask (Debian and Ubuntu give a regular user
+# 0002): the directory check below refuses group- or world-writable paths, and the secrets are written mode 600 anyway.
+umask 022
 
 REPO="MDMesh-app/MDMesh"
 IMAGE_OWNER_DEFAULT="mdmesh-app"
@@ -812,16 +815,17 @@ mdm_mode_env() {
 # one is refused, naming it. (Containers the updater recreated say /project, its own mount of the install directory:
 # they don't count either way.) With NEW=1 (no .env here yet: the installer writes a new one) any container or volume of
 # PROJECT is refused, since a new .env's secrets can't work with them; NEW=0 (this directory's .env is used) allows this
-# directory's own. Fails closed when Docker can't be asked.
+# directory's own. Fails closed when Docker can't be asked, and on a container that names no directory.
 mdm_stack_guard() {
-  local project=$1 new=$2 here dirs d other='' ours=0 n=0 vols
+  local project=$1 new=$2 here dirs d other='' ours=0 n=0 unknown=0 vols
   here=$(pwd -P)
   dirs=$(docker ps -a --filter "label=com.docker.compose.project=$project" \
-    --format '{{.Label "com.docker.compose.project.working_dir"}}') \
+    --format 'dir:{{.Label "com.docker.compose.project.working_dir"}}') \
     || { err "Could not list Docker's containers (docker ps failed, above): not starting anything. Nothing was changed."; exit 1; }
   while IFS= read -r d; do
     [ -n "$d" ] || continue
-    n=$((n + 1))
+    n=$((n + 1)); d=${d#dir:}
+    [ -n "$d" ] || { unknown=1; continue; }
     [ "$d" != /project ] || continue
     if [ "$d" -ef "$here" ]; then ours=1; else other="$other$d
 "; fi
@@ -829,10 +833,10 @@ mdm_stack_guard() {
 $dirs
 EOF
   other=$(printf '%s' "$other" | sort -u | tr '\n' ' ' | sed 's/ $//')
-  if [ -n "$other" ] || { [ "$n" -gt 0 ] && { [ "$new" = 1 ] || [ "$ours" = 0 ]; }; }; then
+  if [ -n "$other" ] || [ "$unknown" = 1 ] || { [ "$n" -gt 0 ] && { [ "$new" = 1 ] || [ "$ours" = 0 ]; }; }; then
     if [ -n "$other" ]; then
       err "An MDMesh install already exists in $other (Docker project $project)."
-    elif [ "$ours" = 1 ]; then
+    elif [ "$ours" = 1 ] && [ "$unknown" = 0 ]; then
       err "The containers of an MDMesh install in this directory exist, but its .env is gone (Docker project $project)."
     else
       err "An MDMesh install already exists on this machine (Docker project $project; 'docker compose ls' shows where)."
@@ -852,6 +856,23 @@ EOF
     err "Nothing was changed."
     exit 1
   fi
+}
+# mdm_edge_up: the edge (caddy, which every phone and browser reaches MDMesh through) is running, and still the same run
+# MDM_EDGE_SETTLE seconds later (default 5): an edge that can't load its configuration (a rule in site.d, proxy
+# settings docker/edge-peers.sh refuses) exits at start and is restarted over and over. When it isn't, it says so with
+# the edge's last log lines, and fails. Run from the install directory, after `docker compose up`.
+mdm_edge_up() {
+  local id a='' b=''
+  id=$(docker compose ps -a -q caddy 2> /dev/null | head -1)
+  if [ -n "$id" ]; then
+    a=$(docker inspect --format '{{.State.Status}} {{.State.StartedAt}}' "$id" 2> /dev/null) || a=''
+    sleep "${MDM_EDGE_SETTLE:-5}"
+    b=$(docker inspect --format '{{.State.Status}} {{.State.StartedAt}}' "$id" 2> /dev/null) || b=''
+    if [ "${a%% *}" = running ] && [ "$a" = "$b" ]; then return 0; fi
+  fi
+  err "The edge (caddy) did not stay up (${b:-${a:-no container}}), so MDMesh can't be reached. Its last log lines:"
+  docker compose logs --tail 20 caddy 2>&1 | sed 's/^/    /' >&2 || true
+  return 1
 }
 # <<< stack.sh functions <<<
 
@@ -915,8 +936,13 @@ cd -P -- "$DIR"
 # Everything here is read, sourced or handed to docker as this user (often root): the directory and whatever the quick
 # start uses in it must belong to this user or root, and nobody else may write them. A directory someone else made (in
 # /tmp, say) is refused, so they can't plant a .env, a compose file or db.sh, or swap a verified file before it runs.
+# This user's own paths that a looser umask left group- or world-writable (an earlier run's, under 0002) are made
+# writable by this user only, the directory first: from then on nobody else can change what is in it.
 for _p in . install install/lib install/sql .env .quickstart-unfinished $MDM_QUICKSTART_FILES docker-compose.yml site.d; do
   [ -e "$_p" ] || [ -L "$_p" ] || continue
+  if [ ! -L "$_p" ] && [ -O "$_p" ] && [ -n "$(find "$_p" -prune \( -perm -020 -o -perm -002 \) -print 2>/dev/null)" ]; then
+    chmod go-w -- "$_p" || true
+  fi
   if [ -L "$_p" ] || [ -z "$(find "$_p" -prune \( -user "$EUID" -o -user 0 \) ! -perm -020 ! -perm -002 -print 2>/dev/null)" ]; then
     err "$(pwd)/${_p#./}: the install directory and what is in it must belong to you (or root), not be links, and be"
     err "writable by nobody else. Install into a directory of your own (MDMESH_DIR). Nothing was changed."
@@ -1052,7 +1078,15 @@ resume_install() {
   PROXY_BIND=$(envval MDMESH_BIND); ORIGIN_TLS=$(envval MDMESH_ORIGIN_TLS)
   if [ "$MODE" = 3 ]; then
     _mdm_bind_ok "$PROXY_BIND" || { err ".env: MDMESH_BIND is not an address and port. Nothing was changed."; exit 1; }
+    # The proxies the edge believes: as a fresh run checks the answer, and `host` only with a loopback bind.
+    _MDM_WHY=''; _mdm_proxies_check "$(envval TRUSTED_PROXIES)"
+    { [ -z "$_MDM_WHY" ] && [ -n "$_MDM_V" ]; } || { err ".env: TRUSTED_PROXIES ${_MDM_WHY:-is empty}. Nothing was changed."; exit 1; }
+    v=$(mdm_proxy_trust_problem "$PROXY_BIND" "$_MDM_V")
+    [ -z "$v" ] || { err ".env: TRUSTED_PROXIES and MDMESH_BIND: $v. Nothing was changed."; exit 1; }
   fi
+  # Your own edge rules: this install's site.d (as mdm_site_dir writes it), or none.
+  v=$(envval MDMESH_SITE_DIR)
+  [ -z "$v" ] || [ "$v" = "$(pwd -P)/site.d" ] || { err ".env: MDMESH_SITE_DIR is not this install's site.d ($(pwd -P)/site.d). Nothing was changed."; exit 1; }
   verify_release
   for v in "SERVER_VERSION|$SERVER_TAG" "WEB_VERSION|$WEB_TAG" "SUPERVISOR_VERSION|$SUPERVISOR_TAG"; do
     [ "$(envval "${v%%|*}")" = "${v#*|}" ] || { err ".env: ${v%%|*} is not the image release v${RELEASE}'s signed manifest pins. Nothing was changed."; exit 1; }
@@ -1104,6 +1138,8 @@ finish_install() {
     printf '%s\n' "${INIT_RESULT:0:2000}" | tr -d '\000-\010\013-\037\177' | sed 's/^/    /'   # the server's text: no control chars
     err "$RESUME_HINT"; exit 1
   fi
+  # The edge too, before the database is seeded (so a run resumed after fixing it still finds a fresh database).
+  mdm_edge_up || { err "$RESUME_HINT"; exit 1; }
 
   # Same rules as setup.sh (shared install/lib/db.sh): seed only a fresh database, verify the seed, then
   # the always-run repairs that switch on QR/token enrollment (this step used to be missing here).

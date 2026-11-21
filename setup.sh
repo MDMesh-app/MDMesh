@@ -658,6 +658,8 @@ if ! grep -q '^OK' <<< "$INIT_RESULT"; then
   printf '%s\n' "${INIT_RESULT:0:2000}" | tr -d '\000-\010\013-\037\177' | sed 's/^/    /'   # the server's text: no control chars
   err "Fix the issue above and re-run ./setup.sh (it reuses your .env; no need to start over)."; exit 1
 fi
+# The edge too: MDMesh is reached only through it.
+mdm_edge_up || { err "Fix the issue above and re-run ./setup.sh (it reuses your .env; no need to start over)."; exit 1; }
 
 # Data safety: hmdm_init.en.sql is FRESH-DB-ONLY — it DELETEs configurations and re-inserts demo
 # rows, so it must NEVER run against live data. The gate is the settings row (only the seed creates

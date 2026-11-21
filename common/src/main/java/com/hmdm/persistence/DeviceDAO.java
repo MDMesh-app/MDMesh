@@ -208,7 +208,7 @@ public class DeviceDAO extends AbstractDAO<Device> {
                 removeDeviceById(id); // its own transaction (Guice intercepts the call)
                 result.deleted.add(id);
             } catch (RuntimeException e) {
-                log.warn("Bulk delete: device {} not deleted: {}", id, e.getClass().getSimpleName());
+                log.warn("Bulk delete: device {} not deleted: {}: {}", id, e.getClass().getSimpleName(), e.getMessage());
                 result.notDeleted.add(id);
             }
         }
@@ -324,7 +324,12 @@ public class DeviceDAO extends AbstractDAO<Device> {
         public final List<Integer> notDeleted = new ArrayList<>();
     }
 
+    /** Moves the device to the configuration; its row is locked before it is read, as {@link #updateDevice} does. */
+    @Transactional
     public void updateDeviceConfiguration(Integer deviceId, Integer configurationId) {
+        if (deviceId != null) {
+            this.mapper.lockDevices(new Integer[]{deviceId});
+        }
         updateById(
                 deviceId,
                 this::getAccessibleDeviceForUpdate,

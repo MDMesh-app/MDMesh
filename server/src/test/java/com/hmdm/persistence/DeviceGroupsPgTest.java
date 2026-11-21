@@ -337,6 +337,46 @@ public class DeviceGroupsPgTest {
         assertEquals(Collections.singletonList(open), groupsOf(device));
     }
 
+    @Test
+    public void anEditChecksTheGroupsAsTheyAreOnceItHoldsTheDevice() throws Exception {
+        // Another transaction holds the device and takes it out of `closed`. An edit sent meanwhile, keeping `closed`
+        // (which the limited user may keep but not add), must wait and check against the groups that transaction
+        // leaves: read before the lock, `closed` would look already there and be put back.
+        int device = device(open, closed);
+        Device change = edit(device, open, closed);
+        String url = URL + (URL.contains("?") ? "&" : "?") + "currentSchema=" + schema;
+        try (Connection other = DriverManager.getConnection(url, user(), password()); Statement s = other.createStatement()) {
+            other.setAutoCommit(false);
+            s.execute("SELECT id FROM devices WHERE id = " + device + " FOR UPDATE");
+            s.execute("DELETE FROM deviceGroups WHERE deviceId = " + device + " AND groupId = " + closed);
+
+            java.util.concurrent.CompletableFuture<Throwable> edit = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                SecurityContext.init(limited);
+                try {
+                    dao.updateDevice(change);
+                    return null;
+                } catch (Throwable t) {
+                    return t;
+                } finally {
+                    SecurityContext.release();
+                }
+            });
+            long deadline = System.currentTimeMillis() + 10_000;
+            while (scalar("SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' "
+                    + "AND query ILIKE '%FOR UPDATE%' AND pid <> pg_backend_pid()") == 0) {
+                assertFalse("the edit never waited for the device's lock", edit.isDone());
+                assertTrue("the edit never waited for the device's lock", System.currentTimeMillis() < deadline);
+                Thread.sleep(20);
+            }
+            other.commit();
+
+            Throwable outcome = edit.get(10, java.util.concurrent.TimeUnit.SECONDS);
+            assertTrue("expected the edit to be refused, got " + outcome, outcome instanceof SecurityException);
+        }
+        assertEquals(Collections.singletonList(open), groupsOf(device));
+        assertEquals("unchanged", descriptionOf(device));
+    }
+
     // ---------------------------------------------------------------------------------------------------- helpers
 
     private static void refused(Runnable change) {

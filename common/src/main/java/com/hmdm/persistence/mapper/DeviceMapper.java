@@ -36,18 +36,8 @@ public interface DeviceMapper {
     void insertDeviceGroups(@Param("id") Integer deviceId,
                             @Param("groups") List<Integer> groups);
 
-    @Delete({"DELETE FROM deviceGroups " +
-            "WHERE deviceId=#{deviceId} " +
-            "  AND groupId IN ( " +
-            "      SELECT groups.id " +
-            "      FROM groups " +
-            "      INNER JOIN users ON users.id = #{userId} " +
-            "      WHERE groups.customerId = #{customerId} " +
-            "      AND (users.allDevicesAvailable AND users.customerId = #{customerId} " +
-            "           OR " +
-            "           EXISTS (SELECT 1 FROM userDeviceGroupsAccess access WHERE groups.id = access.groupId AND access.userId = users.id)" +
-            "      )" +
-            "  )"})
+    /** Takes the device out of every group the user may use ({@link #USABLE_GROUPS}); the others stay. */
+    @Delete({"DELETE FROM deviceGroups WHERE deviceId = #{deviceId} AND groupId IN (" + USABLE_GROUPS + ")"})
     void removeDeviceGroupsByDeviceId(
             @Param("userId") int userId,
             @Param("customerId") int customerId,

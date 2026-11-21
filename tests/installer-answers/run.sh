@@ -521,9 +521,16 @@ qs_arch aarch64 MDMESH_VERSION=0.5.0
 ok
 # A release before 0.5.0 on Arm64: not sent to that release's own quickstart.sh (its images are x86_64 only too).
 qs_arch aarch64 MDMESH_VERSION=0.4.0
-{ grep -qF 'Release v0.4.0 has no images for this host (linux/arm64), only for linux/amd64' "$WORK/out/e" \
+{ grep -qF 'Release v0.4.0 of MDMesh-app/MDMesh has no images for this host (linux/arm64), only for linux/amd64.' "$WORK/out/e" \
+  && grep -qF "MDMesh's releases have Arm64 images from 0.6.0" "$WORK/out/e" \
   && ! grep -qF 'refs/tags/v0.4.0/quickstart.sh' "$WORK/out/e" && ! grep -q 'curl' "$WORK/children4.log"; } \
   || { fail "quickstart.sh sends Arm64 to a release before 0.5.0"; show; }
+ok
+# A fork's releases: no advice about MDMesh's versions, which say nothing about the fork's images.
+qs_arch aarch64 MDMESH_VERSION=0.4.0 MDMESH_REPO=acme/mdm
+{ grep -qF 'Release v0.4.0 of acme/mdm has no images for this host (linux/arm64)' "$WORK/out/e" \
+  && grep -qF 'Use a release whose images include linux/arm64' "$WORK/out/e" && ! grep -qF '0.6.0' "$WORK/out/e"; } \
+  || { fail "quickstart.sh gives a fork's users MDMesh's version advice"; show; }
 ok
 qs_arch x86_64 MDMESH_VERSION=0.5.0
 { grep -qF 'Verifying release v0.5.0' "$WORK/out/o" && ! grep -q 'no images for this host\|built for x86_64' "$WORK/out/e"; } \

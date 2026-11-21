@@ -17,7 +17,8 @@ Native runs on x86_64 and Arm64 (aarch64). The published Docker images (Option A
 Updates) hold both from 0.6.0 on, and docker pulls the host's; before 0.6.0 they are x86_64 (amd64) only. The 0.6.0
 and later quick start stops on Arm64 before it pulls anything when asked for an earlier release
 (`MDMESH_VERSION`); an earlier release's own quick start doesn't check, and fails at the image download. Option B
-builds the images on your host from base images that cover both. 32-bit Arm is not supported.
+builds the images on your host from base images that cover both; CI builds them on Arm64, but doesn't test
+`setup.sh` there. 32-bit Arm is not supported.
 
 Options A and B ask for the public hostname and set `BASE_URL=https://<hostname>`. Option C asks for the full base
 URL (`https://…`; `http://` is accepted too). See the [rules](docs/OPERATIONS.md#base-url-and-hostname-rules).

@@ -64,6 +64,8 @@ DA=sha256:$(printf %064d 0 | tr 0 a); DB=sha256:$(printf %064d 0 | tr 0 b); DC=s
 [ "$(digest_of "linux/amd64=$DA" "linux/arm64=$DB")" = "$D1" ] || fail "image-digest.sh refused the index of the tested builds"
 ! digest_of "linux/amd64=$DA" "linux/arm64=$DC" 2>/dev/null || fail "image-digest.sh pinned an index holding another arm64 build"
 ! digest_of "linux/amd64=sha256:abc" linux/arm64 2>/dev/null || fail "image-digest.sh accepted a malformed child digest"
+! digest_of "linux/amd64=$DA" "linux/amd64=$DA" 2>/dev/null || fail "image-digest.sh accepted a platform given twice"
+! digest_of linux/amd64 linux/amd64 linux/arm64 2>/dev/null || fail "image-digest.sh accepted a platform asked for twice"
 index "$(plat a linux amd64)" "$(plat b linux arm64 v8)" "$(plat c unknown unknown)" > "$T/inspect.json"
 ! digest_of "linux/amd64=$DA" "linux/arm64=$DB" 2>/dev/null || fail "image-digest.sh pinned an index with an extra manifest"
 [ "$(digest_of linux/amd64 linux/arm64)" = "$D1" ] || fail "image-digest.sh without child digests refused attestation entries"

@@ -23,6 +23,10 @@ entries = [("%s/%s" % ((x.get("platform") or {}).get("os"), (x.get("platform") o
            for x in m.get("manifests", [])]
 got = [p for p, _ in entries]
 has = ", ".join(got) or "no index, one image"
+asked = [w.partition("=")[0] for w in want]
+if len(set(asked)) != len(asked):
+    args = " ".join(want)
+    sys.exit(f"image-digest.sh: a platform is given more than once ({args})")
 pinned = 0
 for w in want:
     plat, _, child = w.partition("=")

@@ -88,7 +88,9 @@ jobs:
         image: [server, web, supervisor]
         arch: [amd64, arm64]   # the release job's PLATFORMS, as linux/<arch>
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
-    # An image build takes minutes; a stuck Arm runner queue or build must not hold the release for the 6 h default.
+    # An image build takes minutes; a stuck build must not hold the release for the 6 h default. This counts from when
+    # a runner picks the job up: a job waiting for a runner (an Arm one a private fork doesn't have) waits until GitHub
+    # gives up on it, after 24 h (UPGRADING, v0.6.0 for forks).
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -280,7 +282,9 @@ jobs:
             srcs=(); tested=()
             for plat in "${plats[@]}"; do
               arch=${plat#linux/}
-              d=$(cat "$RUNNER_TEMP/digest/${img}-${arch}")
+              f="$RUNNER_TEMP/digest/${img}-${arch}"
+              [ -s "$f" ] || { echo "::error::no ${img} build for ${plat}: keep PLATFORMS and the images job's matrix.arch in step"; exit 1; }
+              d=$(cat "$f")
               echo "$d" | grep -Eqx 'sha256:[0-9a-f]{64}' || { echo "::error::no digest for ${img} ${plat}"; exit 1; }
               srcs+=("${REPO}@${d}"); tested+=("${plat}=${d}")
             done

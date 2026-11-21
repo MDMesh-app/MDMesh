@@ -203,18 +203,19 @@ exited or credentials cleared while the older agent ran.
 
 ### v0.6.0 for forks
 
-For forks that publish their own releases with `.github/workflows/release.yml` (RELEASING.md). Each of these stops
-the release with an error before anything is tagged or published, but it may leave untagged images in your GHCR
-packages:
+For forks that publish their own releases with `.github/workflows/release.yml` (RELEASING.md). Neither of these
+tags or publishes anything, but either may leave untagged images in your GHCR packages:
 
 - **Record your release certificate.** `release/agent-signature-checksum` holds MDMesh's release certificate, and
-  the release refuses a signed APK with another one. Put your own there in a PR to your main branch before you tag:
+  the release stops with an error on a signed APK with another one. Put your own there in a PR to your main branch before you tag:
   `release/apk-checksum.sh` prints it for an APK signed with your key, and it is `components.apk.signatureChecksum`
   in your earlier releases' signed manifests.
 - **Arm64 runners.** The images are built for linux/amd64 and linux/arm64, each on its own runner; Arm64 on
-  `ubuntu-24.04-arm`, which GitHub provides free for public repositories only. A private fork needs a paid Arm runner
-  under that label, or must drop `arm64` from the `images` job's matrix and `linux/arm64` from the release job's
-  `PLATFORMS` together; its releases then serve x86_64 only, and its quick start and updater say so on Arm64.
+  `ubuntu-24.04-arm`, which GitHub provides free for public repositories only. Without one, the release doesn't fail:
+  its Arm64 `images` jobs wait for a runner that never comes, and GitHub cancels them after 24 hours. A private fork
+  needs a paid Arm runner under that label, or drops Arm64: remove `arm64` from the `images` job's `matrix.arch` and
+  `linux/arm64` from the release job's `PLATFORMS`, in the same commit. Its releases then serve x86_64 only, and its
+  quick start and updater say so on Arm64.
 
 ### v0.5.1
 

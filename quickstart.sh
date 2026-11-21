@@ -525,11 +525,17 @@ case "$HOST_ARCH" in
   *) err "MDMesh's images are built for x86_64 and Arm64 (aarch64); this host is ${HOST_ARCH}. Nothing was installed."
      exit 1 ;;
 esac
-# no_host_images VERSION PLATFORMS: release VERSION has no images for this host; stop, saying what it has instead.
+# no_host_images VERSION PLATFORMS: release VERSION of GH_REPO has no images for this host; stop, saying what it has
+# instead. Which later releases have them is known only for MDMesh's own (Arm64 from 0.6.0); a fork's may never.
 no_host_images() {
-  err "Release v$1 has no images for this host (linux/${HOST_ARCH}), only for ${2//,/, }. Install a release with"
-  err "Arm64 images (0.6.0 or later; leave MDMESH_VERSION unset for the latest), or use the native install"
-  err "(DEPLOY.md, Option C). Nothing was installed."
+  err "Release v$1 of ${GH_REPO} has no images for this host (linux/${HOST_ARCH}), only for ${2//,/, }."
+  if [ "${GH_REPO,,}" = mdmesh-app/mdmesh ]; then
+    err "MDMesh's releases have Arm64 images from 0.6.0: leave MDMESH_VERSION unset for the latest, or use the native"
+    err "install (DEPLOY.md, Option C). Nothing was installed."
+  else
+    err "Use a release whose images include linux/${HOST_ARCH}, or the native install (DEPLOY.md, Option C)."
+    err "Nothing was installed."
+  fi
   exit 1
 }
 

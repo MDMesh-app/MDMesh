@@ -15,10 +15,11 @@ COPY install ./install
 RUN cp server/build.properties.example server/build.properties || true
 RUN mvn -q -B -DskipTests package
 
-# Pinned by digest (Dependabot bumps it), so a release ships the base it was tested on. This one has JDK 17.0.21, which
-# is affected by CVE-2026-114938 (OpenJDK) on x86_64: install/tomcat-setenv.sh turns the affected code off, and release.yml
-# checks the built image (scripts/server-jvm-check.sh).
-FROM tomcat:9.0.124-jdk17-temurin@sha256:716ec89cfd66eb8938d0d14b7f276c6c9263660ca998a39798e8cc58a2defc3a
+# Pinned by digest (Dependabot bumps it), so a release ships the base it was tested on. Its amd64 image has JDK 17.0.21.1,
+# with the fix for CVE-2026-114938 (OpenJDK); its arm64 image still has 17.0.21, where the bug can't run (it is x86_64-only).
+# install/tomcat-setenv.sh turns the affected code off on either, and release.yml checks the built image
+# (scripts/server-jvm-check.sh).
+FROM tomcat:9.0.124-jdk17-temurin@sha256:3a78549294409e66975d1a02507be2dc42561877d52f8dbe62f0fca196d199d6
 RUN rm -rf /usr/local/tomcat/webapps/*
 COPY --from=build /src/server/target/launcher.war /usr/local/tomcat/webapps/ROOT.war
 # App base directory (data, plugins, email templates). /opt/mdmesh should be a volume

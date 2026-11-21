@@ -242,9 +242,8 @@ JDK17_VER=17.0.21.1+2
 case "$(uname -m)" in
   x86_64)  NODE_ARCH=x64   NODE_SHA=6e1db87ef58b8819e5d5402eff1536491b18edd8eb7bee5ef7897876e88dc5ff
            JDK17_ARCH=x64     JDK17_SHA=0b0ac5eab6db6abaec68c9913bcddb31321e5da411c45073d520d9c125e6f7b4 ;;
-  # Temurin has no aarch64 build of 17.0.21.1 yet. The bug it fixes, CVE-2026-114938 (OpenJDK), is x86_64-only.
   aarch64) NODE_ARCH=arm64 NODE_SHA=724282c3b43aec998aa9527380465b45d229e021b58035f5f4f63095eabfe5d5
-           JDK17_VER=17.0.20.1+1 JDK17_ARCH=aarch64 JDK17_SHA=457b57af8f9c93ec39080bb8c764f559dc8c89a6da1a39d718a400b7890d3e41 ;;
+           JDK17_ARCH=aarch64 JDK17_SHA=1d808f4b558e9de63d8ba3ead21ffc8b9de204894eff3c19d52c1480aa17cc58 ;;
   *)       NODE_ARCH="" JDK17_ARCH="" ;;
 esac
 # Tomcat lifecycle helpers. CATALINA_PID lets `catalina.sh stop -force` actually kill a JVM that ignores

@@ -4,9 +4,9 @@
   "title": "AgentCheckInRequest",
   "type": "object",
   "additionalProperties": true,
-  "required": ["protocolVersion", "deviceId", "capabilities"],
+  "required": ["deviceId", "capabilities"],
   "properties": {
-    "protocolVersion": { "type": "string", "pattern": "^\\d+\\.\\d+$", "description": "Agents before 1.12 leave it out. The server keeps a check-in retryable for those (a database error that stops its events fails it), as they count every event delivered on success." },
+    "protocolVersion": { "type": "string", "pattern": "^\\d+\\.\\d+$", "description": "Sent on every check-in from 1.12 on; agents before 1.12 leave it out. The server keeps a check-in retryable for those (a database error that stops its events fails it), as they count every event delivered on success." },
     "deviceId": { "type": "string" },
     "capabilities": { "$ref": "capability-matrix.schema.json#/properties/capabilities" },
     "results": {

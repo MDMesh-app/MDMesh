@@ -15,6 +15,9 @@ Fixes
   older ones it dropped.
 - Check-ins: a device whose reported Android release, agent version or power mode the server can't store (too long,
   or with a control character) no longer fails every check-in; the server ignores that value and logs it.
+- Enrollment and check-ins: a hardware id longer than 128 characters or with a control character is ignored, so the
+  device enrolls and checks in without it. Before, one too long or holding a NUL failed the enrollment on every
+  retry, and every check-in.
 
 Under the hood
 - Agent protocol 1.12 (additive): the check-in response's `eventsAccepted`, the check-in request's `protocolVersion`

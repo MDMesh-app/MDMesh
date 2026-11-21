@@ -101,8 +101,9 @@ class EventLog internal constructor(private val store: Store) : EventSink {
 
     override fun delivered(accepted: Int?) {
         synchronized(LOCK) {
-            val inFlight = load(IN_FLIGHT)
-            val rest = inFlight.drop((accepted ?: OLD_SERVER_EVENTS).coerceAtLeast(0))
+            // An in-flight batch that can't be read is not what the check-in sent: keep its marker, never sent.
+            val sent = decodeOrNull(store.get(IN_FLIGHT))
+            val rest = sent?.drop((accepted ?: OLD_SERVER_EVENTS).coerceAtLeast(0)) ?: load(IN_FLIGHT)
             if (rest.isEmpty()) {
                 store.put(IN_FLIGHT to null)
             } else {

@@ -111,6 +111,17 @@ class EventLogTest {
         assertEquals(1, EventLog.droppedCount(sent.first()))
     }
 
+    @Test fun `delivered keeps the marker for an in-flight batch it can't read, which was never sent`() {
+        // The batch on disk was damaged after it went out: what the server took can't be told apart, so the gap is
+        // reported rather than an unsent marker counted as delivered.
+        val store = FakeStore().apply { values["events_in_flight"] = "{not json" }
+        val log = EventLog(store)
+        log.delivered(accepted = 5)
+        val kept = log.buffered()
+        assertEquals(listOf(EventType.EVENTS_DROPPED), kept.map { it.type })
+        assertEquals(EventLog.UNREADABLE_DETAIL, kept.single().detail)
+    }
+
     @Test fun `delivered drops what the server consumed and keeps the rest in front`() {
         val store = FakeStore().apply { values["events"] = EventLog.encode(events(1..300)) }
         val log = EventLog(store)

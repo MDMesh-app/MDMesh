@@ -9,6 +9,7 @@ import com.hmdm.persistence.AgentCommandDAO;
 import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.AgentCommand;
 import com.hmdm.persistence.domain.Device;
+import com.hmdm.persistence.domain.DeviceEvent;
 import com.hmdm.persistence.domain.DeviceLocation;
 import com.hmdm.persistence.domain.DeviceState;
 import com.hmdm.rest.json.Response;
@@ -30,12 +31,21 @@ import org.apache.ibatis.exceptions.PersistenceException;
 import org.junit.Before;
 import org.junit.Test;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -46,10 +56,10 @@ import static org.junit.Assert.fail;
 /** One authenticated check-in can only cause a bounded amount of database work and storage. */
 public class AgentCheckInLimitsTest {
 
-    private static final String SECRET = "s3cret";
-    private static final String DEVICE = "dev-1";
+    static final String SECRET = "s3cret";
+    static final String DEVICE = "dev-1";
 
-    private static final class FakeUnsecureDAO extends UnsecureDAO {
+    static final class FakeUnsecureDAO extends UnsecureDAO {
         FakeUnsecureDAO() {
             super(null, null, null, null, null, null, null, null, null, null, null, null, null, null, "unused", 0, null);
         }
@@ -105,24 +115,46 @@ public class AgentCheckInLimitsTest {
             events.add(type);
             eventDetails.add(detail);
         }
+        /** Calls of {@link #insertEvents}: the batch, all or nothing like the real transaction. */
+        int batches;
+        @Override public void insertEvents(String n, List<DeviceEvent> rows) {
+            if (rows.isEmpty()) return;
+            batches++;
+            for (DeviceEvent row : rows) {
+                if (row.getType().equals(rejectedType)) {
+                    throw new PersistenceException(new SQLException("refused", rejectedState));
+                }
+            }
+            for (DeviceEvent row : rows) {
+                events.add(row.getType());
+                eventDetails.add(row.getDetail());
+            }
+        }
         @Override public void recordKioskReturn(String n, Long ts, String detail) {
             insertEvent(n, "kioskReturn", ts, detail);
         }
         @Override public void updateHardwareId(String n, String id) { hardwareIds.add(id); }
     }
 
-    private static final class NoopReconciler extends ConfigReconciler {
+    static final class NoopReconciler extends ConfigReconciler {
         Set<String> tokens;
         NoopReconciler() { super(null, null, Fakes.noExtensionPoints()); }
         @Override public boolean reconcile(Device d, Set<String> t, String rev, String agentVersion,
                                            String configAgentVersion, long now, long receivedAt) { tokens = t; return false; }
     }
 
-    private static final class NoopRequeuer extends RolloutRequeuer {
+    static final class NoopRequeuer extends RolloutRequeuer {
         NoopRequeuer() { super(null); }
         @Override public boolean requeue(Device d, long now) { return false; }
     }
 
+    private static final class RecordingAlert extends KioskLockoutAlert {
+        final List<String> types = new ArrayList<>();
+        RecordingAlert() { super(null, null, null); }
+        @Override public void onEvent(Device device, String type, String detail) { types.add(type); }
+    }
+
+    private RecordingAlert alerts;
     private FakeCommandDAO commands;
     private NoopReconciler reconciler;
     private AgentResource resource;
@@ -130,11 +162,12 @@ public class AgentCheckInLimitsTest {
     @Before
     public void setUp() {
         commands = new FakeCommandDAO();
+        alerts = new RecordingAlert();
         reconciler = new NoopReconciler();
         resource = new AgentResource(new FakeUnsecureDAO(), null, commands,
                 new ConfigAppInstaller(null, null, null, null), reconciler, new AppReconciler(null, null, null, null),
                 new NoopRequeuer(),
-                new InstallHashes(null, null), new KioskLockoutAlert(null, null, null), null);
+                new InstallHashes(null, null), alerts, null);
     }
 
     private Response checkin(AgentCheckInRequest req) {
@@ -334,8 +367,40 @@ public class AgentCheckInLimitsTest {
         req.setEvents(Arrays.asList(event("boot", null), event("kioskReturn", "x"), event("lowBattery", "12%")));
         Response r = checkin(req);
         assertEquals(Response.ResponseStatus.OK, r.getStatus());
-        assertEquals(Collections.singletonList("boot"), commands.events);
-        assertEquals(1, eventsAccepted(r));
+        // The batch is one transaction: nothing stored, so nothing the agent resends is stored twice.
+        assertTrue(commands.events.toString(), commands.events.isEmpty());
+        assertEquals(0, eventsAccepted(r));
+    }
+
+    @Test
+    public void aLostDatabaseCountsTheSkippedEventsBeforeTheBatch() {
+        commands.rejectedType = "boot";
+        commands.rejectedState = "08006";
+        AgentCheckInRequest req = new AgentCheckInRequest();
+        req.setProtocolVersion("1.12");
+        req.setEvents(Arrays.asList(event("not valid!", null), event("boot", null)));
+        assertEquals(1, eventsAccepted(checkin(req)));
+    }
+
+    @Test
+    public void storesTheEventsAsOneBatch() {
+        Response r = checkinEvents(event("boot", null), event("kioskReturn", "x"), event("lowBattery", "12%"));
+        assertEquals(1, commands.batches);
+        assertEquals(Arrays.asList("boot", "kioskReturn", "lowBattery"), commands.events);
+        assertEquals(3, eventsAccepted(r));
+    }
+
+    @Test
+    public void aRefusedEventRaisesNoLockoutAlert() {
+        commands.rejectedType = "kioskPinLockout";
+        checkinEvents(event("kioskPinLockout", "5 attempts"), event("boot", null));
+        assertEquals(Collections.singletonList("boot"), alerts.types);
+    }
+
+    @Test
+    public void storedEventsReachTheLockoutAlert() {
+        checkinEvents(event("kioskPinLockout", "5 attempts"), event("boot", null));
+        assertEquals(Arrays.asList("kioskPinLockout", "boot"), alerts.types);
     }
 
     @Test
@@ -353,7 +418,7 @@ public class AgentCheckInLimitsTest {
                 checkin(req);
                 fail("protocol " + version + ": the check-in must fail");
             } catch (PersistenceException expected) {
-                assertEquals(Collections.singletonList("boot"), commands.events);
+                assertTrue(commands.events.toString(), commands.events.isEmpty());
             }
         }
     }
@@ -389,36 +454,48 @@ public class AgentCheckInLimitsTest {
         return s;
     }
 
-    /** What the server stores of each device-sent state string, at most: its device_state column's length. */
-    private static final java.util.Map<String, Integer> STATE_STRING_COLUMNS = new java.util.HashMap<>();
-    static {
-        STATE_STRING_COLUMNS.put("androidRelease", 32);
-        STATE_STRING_COLUMNS.put("agentVersion", 64);
-        STATE_STRING_COLUMNS.put("powerMode", 16);
-        STATE_STRING_COLUMNS.put("appliedConfigRevision", 64);
+    /** The device-sent state strings AgentResource has a storage rule for (storable, validRevision). */
+    private static final Set<String> STATE_STRINGS_WITH_A_RULE = new HashSet<>(
+            Arrays.asList("androidRelease", "agentVersion", "powerMode", "appliedConfigRevision"));
+
+    /** The column's length in the Liquibase changelog, the smallest where the name is declared more than once. */
+    private static int columnLength(String column) throws Exception {
+        Path changelog = Paths.get("src", "main", "resources", "liquibase", "db.changelog.xml");
+        if (!Files.exists(changelog)) changelog = Paths.get("server").resolve(changelog);
+        String xml = new String(Files.readAllBytes(changelog), StandardCharsets.UTF_8);
+        Matcher m = Pattern.compile("(?i)(?<![a-z])" + column + "\\s+VARCHAR\\((\\d+)\\)").matcher(xml);
+        int length = Integer.MAX_VALUE;
+        while (m.find()) length = Math.min(length, Integer.parseInt(m.group(1)));
+        assertTrue(column + " has no VARCHAR column in the changelog", length != Integer.MAX_VALUE);
+        return length;
+    }
+
+    /** Checks in with only {@code field} of the state set to {@code value}; returns what was stored for it. */
+    private Object storedState(Field field, String value) throws Exception {
+        AgentDeviceState s = new AgentDeviceState();
+        field.setAccessible(true);
+        field.set(s, value);
+        AgentCheckInRequest req = new AgentCheckInRequest();
+        req.setState(s);
+        assertEquals(field.getName(), Response.ResponseStatus.OK, checkin(req).getStatus());
+        Field stored = DeviceState.class.getDeclaredField(field.getName());
+        stored.setAccessible(true);
+        return stored.get(commands.state);
     }
 
     @Test
     public void everyStateStringIsBoundedBeforeItIsStored() throws Exception {
         // A new state field must get a rule here and in AgentResource: an unbounded one wedges the device's check-ins.
-        for (java.lang.reflect.Field f : AgentDeviceState.class.getDeclaredFields()) {
-            if (f.getType() != String.class || java.lang.reflect.Modifier.isStatic(f.getModifiers())) continue;
-            Integer max = STATE_STRING_COLUMNS.get(f.getName());
-            assertTrue("AgentDeviceState." + f.getName() + " has no storage rule", max != null);
-            StringBuilder poison = new StringBuilder("1\0");
-            while (poison.length() <= max) poison.append('a');
-            AgentDeviceState s = new AgentDeviceState();
-            f.setAccessible(true);
-            f.set(s, poison.toString());
-            AgentCheckInRequest req = new AgentCheckInRequest();
-            req.setState(s);
-            commands.androidVersions.clear();
-
-            assertEquals(f.getName(), Response.ResponseStatus.OK, checkin(req).getStatus());
-            java.lang.reflect.Field stored = DeviceState.class.getDeclaredField(f.getName());
-            stored.setAccessible(true);
-            assertNull(f.getName(), stored.get(commands.state));
-            assertTrue(f.getName(), commands.androidVersions.isEmpty());
+        for (Field f : AgentDeviceState.class.getDeclaredFields()) {
+            if (f.getType() != String.class || Modifier.isStatic(f.getModifiers())) continue;
+            assertTrue("AgentDeviceState." + f.getName() + " has no storage rule",
+                    STATE_STRINGS_WITH_A_RULE.contains(f.getName()));
+            int max = columnLength(f.getName());
+            // 'a' is a hex digit, so a full-length value is a well-formed revision too.
+            String longest = new String(new char[max]).replace('\0', 'a');
+            assertEquals(f.getName() + " fits its column", longest, storedState(f, longest));
+            assertNull(f.getName() + " one too long", storedState(f, longest + "a"));
+            assertNull(f.getName() + " with a NUL", storedState(f, "a\0a"));
         }
     }
 

@@ -9,6 +9,8 @@ const PIN = { server: 'ghcr.io/mdmesh-app/mdmesh-server@sha256:' + 'a'.repeat(64
   web: 'ghcr.io/mdmesh-app/mdmesh-web@sha256:' + 'b'.repeat(64),
   supervisor: 'ghcr.io/mdmesh-app/mdmesh-supervisor@sha256:' + 'c'.repeat(64) };
 const applyArgs = (v, pins = PIN) => [v, pins.server, pins.web, pins.supervisor];
+// components.platforms of a release with Arm64 images: the tests pass on either kind of host (CI runs them on both).
+const PLATFORMS = 'linux/amd64,linux/arm64';
 
 t.test('semverGt', () => {
   a.equal(semverGt('1.2.4', '1.2.3'), true);
@@ -208,7 +210,8 @@ t.test('envValue — reads KEY=value from .env text the way apply.sh get_env doe
 });
 
 t.test('imagePins — the three digest-pinned refs, under the owner this install pulls from, or why not', () => {
-  const m = (images, version = '0.5.0') => ({ version, components: { serverImage: 'ghcr.io/mdmesh-app/mdmesh-server:' + version, images } });
+  const m = (images, version = '0.5.0') => ({ version,
+    components: { serverImage: 'ghcr.io/mdmesh-app/mdmesh-server:' + version, images, platforms: PLATFORMS } });
   a.deepEqual(imagePins(m(PIN), 'mdmesh-app'), PIN);
   a.deepEqual(imagePins(m(PIN), null), PIN, 'no IMAGE_OWNER in .env: compose\'s default owner');
   // A release from tooling before digest pinning (tags only): refused, saying so.
@@ -231,8 +234,25 @@ t.test('imagePins — the three digest-pinned refs, under the owner this install
     /pins its web image at ghcr\.io\/mdmesh-app\/mdmesh-server/, 'each image must be its own repository');
 });
 
+t.test('imagePins — the release has images for this host\'s platform (components.platforms)', () => {
+  const m = (platforms) => ({ version: '0.6.0', components: { images: PIN, ...(platforms === undefined ? {} : { platforms }) } });
+  a.deepEqual(imagePins(m(PLATFORMS), 'mdmesh-app', 'linux/amd64'), PIN);
+  a.deepEqual(imagePins(m(PLATFORMS), 'mdmesh-app', 'linux/arm64'), PIN);
+  // A manifest from before Arm64 images has no platforms: linux/amd64 only.
+  a.deepEqual(imagePins(m(undefined), 'mdmesh-app', 'linux/amd64'), PIN);
+  a.equal(imagePins(m(undefined), 'mdmesh-app', 'linux/arm64').error,
+    'the signed release 0.6.0 has no images for this host (linux/arm64), only for linux/amd64, so it cannot be applied');
+  a.match(imagePins(m('linux/amd64'), 'mdmesh-app', 'linux/arm64').error, /no images for this host \(linux\/arm64\)/);
+  a.match(imagePins(m(PLATFORMS), 'mdmesh-app', 'linux/arm').error, /no images for this host \(linux\/arm\)/, 'a whole name, not a prefix');
+  for (const bad of [['linux/amd64'], 7, null, '']) {
+    a.match(imagePins(m(bad), 'mdmesh-app', 'linux/amd64').error, /no images for this host/, String(bad));
+  }
+  // Without a platform argument: the one this supervisor runs on (docker pulled it from the same kind of index).
+  a.deepEqual(imagePins(m(PLATFORMS), 'mdmesh-app'), PIN);
+});
+
 t.test('applyRefusal — the Update guard says what is actually true', () => {
-  const m = (v) => ({ version: v, components: { images: PIN } });
+  const m = (v) => ({ version: v, components: { images: PIN, platforms: PLATFORMS } });
   a.equal(applyRefusal({ manifest: m('0.0.3'), current: '0.0.2', skipVersion: null }), null, 'a newer verified release applies');
   a.equal(applyRefusal({ manifest: m('0.0.3'), current: '0.0.2', skipVersion: '0.0.3' }), null, 'the auto skip never blocks a manual Update');
   a.equal(applyRefusal({ manifest: null, current: '0.0.2' }), 'no verified update available');
@@ -254,6 +274,10 @@ t.test('applyRefusal — the Update guard says what is actually true', () => {
   a.match(applyRefusal({ manifest: m('0.0.5'), current: '0.0.4', imageOwner: 'forkco' }), /this install pulls ghcr\.io\/forkco/);
   a.equal(applyRefusal({ manifest: m('0.0.5'), current: '0.0.4', imageOwner: 'mdmesh-app' }), null);
   a.equal(applyRefusal({ manifest: { version: '0.0.4' }, current: '0.0.4' }), 'already running 0.0.4');
+  // ... and have images for this host's platform.
+  const amd64Only = { version: '0.0.5', components: { images: PIN, platforms: 'linux/amd64' } };
+  a.match(applyRefusal({ manifest: amd64Only, current: '0.0.4', platform: 'linux/arm64' }), /no images for this host \(linux\/arm64\)/);
+  a.equal(applyRefusal({ manifest: amd64Only, current: '0.0.4', platform: 'linux/amd64' }), null);
 });
 
 t.test('sha256Matches — the APK publish gate', () => {
@@ -558,7 +582,7 @@ async function fakeGitHub(dir, opts) {
   const fs = require('fs'), path = require('path'), http = require('http'), crypto = require('crypto');
   const kd = fs.mkdtempSync(path.join(dir, 'gh-'));
   // Pinned images under the default owner unless opts.images says otherwise (null: a manifest without digests).
-  const manifest = { version: opts.version, channel: 'stable', components: {} };
+  const manifest = { version: opts.version, channel: 'stable', components: { platforms: PLATFORMS } };
   const images = opts.images === undefined ? PIN : opts.images;
   if (images) manifest.components.images = images;
   if (opts.apk) manifest.components.apk = { file: 'mdmesh-agent.apk', versionCode: 999, sha256: crypto.createHash('sha256').update(opts.apk).digest('hex') };

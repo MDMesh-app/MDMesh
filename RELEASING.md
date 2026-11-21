@@ -161,7 +161,8 @@ supervisors before 0.5.0 read) and `components.apk`, and from 0.5.0 adds:
 - `components.images`: the server, web and supervisor images as `repo@sha256:…` (keys `server`, `web`,
   `supervisor`);
 - `components.platforms`: the platforms each of those images holds, comma-separated (`linux/amd64,linux/arm64`; from
-  0.6.0). The quick start stops on a host whose platform isn't listed; a manifest without it is `linux/amd64` only;
+  0.6.0). The quick start and a 0.6.0+ supervisor stop on a host whose platform isn't listed; a manifest without it
+  is `linux/amd64` only;
 - `files`: the SHA-256 of each file the quick start downloads from the tag, and of `quickstart.sh` itself (the
   release asset);
 - `commit`: the tagged commit.
@@ -172,7 +173,8 @@ supervisors before 0.5.0 read) and `components.apk`, and from 0.5.0 adds:
 Who reads what:
 
 - A 0.5.0+ **supervisor** runs exactly those digests, and refuses a manifest without them or with them under another
-  owner than its `IMAGE_OWNER`.
+  owner than its `IMAGE_OWNER`; a 0.6.0+ one also refuses a release without images for its platform
+  (`components.platforms`). Older supervisors ignore that field: docker pulls their host's image from each index.
 - The **quick start** does the same and checks each downloaded file against `files`. For a release before 0.5.0 it
   stops and names that release's own `quickstart.sh`.
 - **`./setup.sh --update`** (and `--update --native`) reads the signature, `version` and `commit`, and moves the

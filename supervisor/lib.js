@@ -60,15 +60,15 @@ function shapeStatus({ current, manifest, verified, checkedAt, error }) {
 /** Why an Update must not start, or null if it may. `manifest` is the last VERIFIED manifest (null if none), `current`
  *  the running version, `skipVersion` the auto-apply skip (it never blocks a manual Update; it only marks a running
  *  version whose update failed), `imageOwner` the install's IMAGE_OWNER: a newer release must also pin its images by
- *  digest under that owner (imagePins). The version guard matters beyond the banner: re-applying the running (or an older)
+ *  digest under that owner, for `platform` (default: this host's; imagePins). The version guard matters beyond the banner: re-applying the running (or an older)
  *  version would overwrite /backups/latest with a dump of the post-update database, leaving nothing to roll back to. */
-function applyRefusal({ manifest, current, skipVersion, imageOwner }) {
+function applyRefusal({ manifest, current, skipVersion, imageOwner, platform }) {
   if (!manifest) return 'no verified update available';
   const to = manifest.version;
   if (!to) return 'the verified manifest has no version';
   if (!parseSemver(to)) return `the verified release version "${to}" is not a release version (X.Y.Z), so it cannot be applied`;
   if (!parseSemver(current)) return `the running version "${current}" is not a release version (X.Y.Z), so it cannot be compared: update by hand`;
-  if (semverGt(to, current)) return imagePins(manifest, imageOwner).error || null;
+  if (semverGt(to, current)) return imagePins(manifest, imageOwner, platform).error || null;
   if (to === current || !semverGt(current, to)) {
     return current === skipVersion
       ? `already running ${current}, whose update failed: if it is not healthy, use Roll back (/recovery) to return to the previous version`
@@ -81,13 +81,21 @@ function applyRefusal({ manifest, current, skipVersion, imageOwner }) {
 const DIGEST_REF = /^([a-z0-9][a-z0-9._-]*(?:\/[a-z0-9][a-z0-9._-]*)+)@(sha256:[0-9a-f]{64})$/;
 const PINNED_IMAGES = ['server', 'web', 'supervisor'];
 
+/** The platform this supervisor runs on, as docker names it (linux/amd64, linux/arm64): docker pulled it from the same
+ *  release's multi-platform index as the server and web images, so it is the platform they are pulled for too. */
+function hostPlatform() {
+  return `linux/${{ x64: 'amd64' }[process.arch] || process.arch}`;
+}
+
 /** The images a verified manifest deploys, pinned by digest, for an install that pulls from ghcr.io/<imageOwner>
  *  (IMAGE_OWNER in .env; compose's default is mdmesh-app). The manifest's components.images holds, from 0.5.0 on,
  *  `ghcr.io/<owner>/mdmesh-<name>@sha256:…` for server, web and supervisor (release/build-manifest.sh). Returns
  *  { server, web, supervisor } (the three refs) or { error } saying why the release cannot be applied: a manifest
  *  from release tooling without digests, a malformed ref, or images published under another owner than the one this
- *  install pulls from (a fork's install following upstream releases, or the reverse). apply.sh checks the same again. */
-function imagePins(manifest, imageOwner) {
+ *  install pulls from (a fork's install following upstream releases, or the reverse), or no images for `platform` (this
+ *  host's: components.platforms, comma-separated; a manifest without it, from before Arm64 images, is linux/amd64 only).
+ *  apply.sh checks the refs again, and docker refuses to pull an index without the host's platform. */
+function imagePins(manifest, imageOwner, platform = hostPlatform()) {
   const v = (manifest && manifest.version) || '(unknown)';
   const im = manifest && manifest.components && manifest.components.images;
   if (!im || typeof im !== 'object' || Array.isArray(im)) {
@@ -107,6 +115,11 @@ function imagePins(manifest, imageOwner) {
         + 'to the owner this release names, then run docker compose up -d' };
     }
     pins[name] = im[name];
+  }
+  const platforms = manifest.components.platforms === undefined ? 'linux/amd64' : manifest.components.platforms;
+  if (typeof platforms !== 'string' || !platforms.split(',').includes(platform)) {
+    return { error: `the signed release ${v} has no images for this host (${platform}), only for ${String(platforms) || '(none)'}, `
+      + 'so it cannot be applied' };
   }
   return pins;
 }

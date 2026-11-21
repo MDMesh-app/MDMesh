@@ -10,8 +10,8 @@
 # it builds the web image (docker/web.Dockerfile), which nothing else builds before a release. When the installers change,
 # the edge entry also checks that quickstart.sh's inline BASE_URL check and answers functions are still install/lib's,
 # byte for byte, and that install/options.json (the installers' answers contract) matches the scripts. The arm64 job
-# builds the three release images on GitHub's Arm runner when docker/** or .dockerignore change, and on the kit's
-# fail-closed paths (lockfiles such as web/package-lock.json, .github/**); not on other source changes.
+# builds the three release images on GitHub's Arm runner when docker/**, .dockerignore or the server's JVM flags (and
+# their check) change, and on the kit's fail-closed paths (lockfiles such as web/package-lock.json, .github/**); not on other source changes.
 name: t0-fast
 
 on:
@@ -55,8 +55,9 @@ jobs:
             # web-entrypoint.sh, edge-peers.sh, CHANGELOG.md and .dockerignore are the web image build's inputs.
             edge: docker/Caddyfile, docker/web.Dockerfile, docker/web-entrypoint.sh, docker/edge-peers.sh, web/**, CHANGELOG.md, .dockerignore, docker-compose*.yml, docker/dev.env, scripts/edge-check.sh, supervisor/apply.sh
             # The release images' Dockerfiles and entrypoints: where an Arm64-only break comes from (a base image, an Alpine
-            # package), with npm binaries via the fail-closed lockfiles. Source changes alone don't trigger the arm64 job.
-            images: docker/**, .dockerignore
+            # package), with npm binaries via the fail-closed lockfiles, and the server's JVM flags and their check.
+            # Source changes alone don't trigger the arm64 job.
+            images: docker/**, .dockerignore, install/tomcat-setenv.sh, scripts/server-jvm-check.sh
             # The installer scripts, and the signed manifest they and the supervisor read. Only the edge entry's cheap
             # quickstart.sh checks run on these, not its image work. README.md and DEPLOY.md carry the install commands
             # release-manifest-check.sh checks.
@@ -265,8 +266,8 @@ jobs:
 
   # The release images on Arm64, built on GitHub's Arm runner as release.yml builds them: a base image, Alpine package
   # or npm binary without an arm64 build would otherwise first fail in a release. The supervisor also runs its unit
-  # tests and smoke there, and the server starts on the dev stack's postgres and serves the API (dev-seed.sh: first
-  # boot, migrations, seed, and the console's Set Password call). (The x86_64 builds are the build job's supervisor
+  # tests and smoke there, and the server starts on the dev stack's postgres, runs with -XX:-UseBASE64Intrinsics, and
+  # serves the API (dev-seed.sh: first boot, migrations, seed, and the console's Set Password call). (The x86_64 builds are the build job's supervisor
   # and edge entries, and T1's server.)
   arm64:
     name: arm64 ${{ matrix.image }}
@@ -292,6 +293,8 @@ jobs:
         run: |
           docker compose --env-file docker/dev.env up -d --build postgres server
           docker compose --env-file docker/dev.env exec -T server uname -m | grep -qx aarch64
+          # -XX:-UseBASE64Intrinsics in effect on Arm64 too (install/tomcat-setenv.sh), as release.yml checks it there.
+          scripts/server-jvm-check.sh --container "$(docker compose --env-file docker/dev.env ps -q server)"
           ADMIN_PW=$(openssl rand -hex 24)
           echo "::add-mask::$ADMIN_PW"
           DEV_ADMIN_PASSWORD=$ADMIN_PW scripts/dev-seed.sh

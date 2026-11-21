@@ -17,18 +17,26 @@ Heads-up
 - The edge sends HSTS for a request that came in over HTTP only when a trusted peer says `X-Forwarded-Proto: https`
   (Cloudflare Tunnel, or a proxy in `TRUSTED_PROXIES`). A proxy of your own in front of port 80 without
   `TRUSTED_PROXIES` no longer gets HSTS added: list it in `TRUSTED_PROXIES`, or use the new proxy mode.
+- The quick start refuses an install directory, or a file in it, that isn't yours (or root's) or that other users may
+  write. For a directory of yours it shows the `chmod` to run; anything else, install into a directory of your own.
+- Behind your own proxy, `./setup.sh --update` refuses a release before 0.6.0, also with `--allow-downgrade`: move
+  the install back to its earlier hosting mode first.
 
 New
 - Install behind the nginx, Apache, Caddy or Traefik you already run: the quick start's third choice (or `--proxy`),
   with ready configurations for each. Thanks @lared3294, @detobel36.
 - The quick start asks one plain question, how your phones will reach MDMesh; `--tunnel`, `--domain` and `--proxy` answer it.
 - Your own edge rules: Caddy imports `site.d/*.caddy` from the install directory, and updates never touch it.
+- A quick start that stopped part way (a failed pull, a slow first start) can be finished: run it again with
+  `MDMESH_DIR=<its directory>`, and it carries on with the same `.env`.
 
 Fixes
 - The quick start, or `./setup.sh` in a new clone, run in a second directory no longer takes over an install that
   already exists elsewhere on the machine (both use the Docker project `mdmesh`): it stops before changing anything,
   names that install's directory and says how to update it. Over the data volumes of an install whose containers are
   gone, it stops too, instead of starting with a database password that can't work.
+- The quick start and `./setup.sh` fail, showing the edge's last log lines, when the edge (Caddy) doesn't stay up;
+  before, they reported MDMesh up. `./setup.sh` still runs its database repairs first.
 - An update (or Roll back) counts as healthy only when the edge stays up too, not just the server: an edge the new
   release can't start, say over a rule in `site.d`, is rolled back instead of leaving the console unreachable.
 

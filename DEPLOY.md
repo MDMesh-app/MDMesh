@@ -148,14 +148,18 @@ one address, `127.0.0.1:8080` by default. It asks:
   `10.0.0.5:8080` (a private interface, not `0.0.0.0`, which also listens on a public one), and keep that port off the
   internet. A firewall rule must go in Docker's `DOCKER-USER` chain: Docker publishes ports past ufw, firewalld and
   your own `INPUT` rules. For example, with eth0 the public interface:
-  `iptables -I DOCKER-USER -i eth0 -p tcp -m conntrack --ctorigdstport 8080 ! -s <your proxy's IP> -j DROP`
+  `iptables -I DOCKER-USER -i eth0 -p tcp -m conntrack --ctorigdstport 8080 ! -s <your proxy's IP> -j DROP`, with
+  your `MDMESH_BIND` port in place of 8080, and the same with `ip6tables` for an IPv6 `MDMESH_BIND`
   ([Docker and iptables](https://docs.docker.com/engine/network/packet-filtering-firewalls/)).
 - **Your proxy's address, as MDMesh sees it** (`TRUSTED_PROXIES`, default `host`). MDMesh believes `X-Forwarded-For`
   (the client's address, for sign-in limits, the audit log and a device's public IP) and `X-Forwarded-Proto` from
   these addresses only. `host` means a proxy on this machine: Docker delivers its connections from the stack
   network's gateway, which `host` stands for. It is accepted only with a loopback `MDMESH_BIND` (`127.0.0.1` or
   `[::1]`): on any other address, other machines' connections can arrive from that same gateway (Docker Desktop,
-  rootless Docker, IPv6), so the installers and the edge refuse it there. For a proxy elsewhere, its IP address (or a
+  rootless Docker, IPv6), so the installers and the edge refuse it there. `host` trusts every program on this
+  machine, not only your proxy: anyone who can run commands here can reach the edge from that gateway and name any
+  client address (past the sign-in limits, and a `client_ip` rule of your own). Keep it for a machine where only your
+  proxy runs, or nobody else has a shell; otherwise list your proxy's own address. For a proxy elsewhere, its IP address (or a
   range, no wider than an IPv4 /8 or IPv6 /16; IPv4 addresses as IPv4, not `::ffff:…`), several separated by spaces.
   Anyone else's `X-Forwarded-For` and `X-Forwarded-Proto` are ignored.
 

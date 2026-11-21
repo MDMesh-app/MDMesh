@@ -801,15 +801,28 @@ mdm_site_dir() {
   # of this user's (or root's) that nobody else may write: its rules go into the edge, so it is never made private and
   # then trusted.
   if [ -e site.d ] || [ -L site.d ]; then
-    if [ -L site.d ] || [ ! -d site.d ] || [ -z "$(find site.d -prune \( -user "$EUID" -o -user 0 \) ! -perm -020 ! -perm -002 -print 2> /dev/null)" ]; then
-      warn "site.d is not connected to the edge: it must be a directory of yours that nobody else may write. If nobody else"
-      warn "could have changed it, run chmod go-w site.d, then run this again ($MDM_DOCS/DEPLOY.md#your-own-edge-rules)."
+    if [ -L site.d ] || [ ! -d site.d ]; then
+      warn "site.d is not connected to the edge: it is a link or not a directory. Make it a directory of your own"
+      warn "(mkdir -m 755 site.d, after moving that one away), then run this again ($MDM_DOCS/DEPLOY.md#your-own-edge-rules)."
+      return 0
+    fi
+    if [ -z "$(find site.d -prune \( -user "$EUID" -o -user 0 \) -print 2> /dev/null)" ]; then
+      warn "site.d is not connected to the edge: it belongs to another user. Make it a directory of your own, then run"
+      warn "this again ($MDM_DOCS/DEPLOY.md#your-own-edge-rules)."
+      return 0
+    fi
+    if [ -n "$(find site.d -prune \( -perm -020 -o -perm -002 \) -print 2> /dev/null)" ]; then
+      warn "site.d is not connected to the edge: other users may write it. If nobody else could have changed it, run"
+      warn "chmod go-w site.d, then run this again ($MDM_DOCS/DEPLOY.md#your-own-edge-rules)."
       return 0
     fi
   elif ! mkdir -m 755 site.d; then
     warn "Could not make site.d here: your own edge rules can't be added."; return 0
   fi
-  if [ ! -e site.d/README ]; then
+  # A site.d of root's on a run as another user: connected (nobody else may write it), its README left to root.
+  if [ ! -w site.d ]; then
+    warn "site.d belongs to root: add your own edge rules there as root."
+  elif [ ! -e site.d/README ]; then
     printf '%s\n' "Your own rules for MDMesh's edge (Caddy). Every *.caddy file here is imported into the edge's site," \
       "after MDMesh's own settings. Updates never change this directory. Make each file readable by everyone" \
       "(chmod 644), check it, then restart the edge (from the install directory):" \
@@ -959,6 +972,15 @@ DIR="${MDMESH_DIR:-mdmesh}"
 # through and the rest would run in the wrong directory.
 mkdir -p -- "$DIR"
 cd -P -- "$DIR"
+# qs_leave_alone: an install the quick start didn't start (or finished) is here: say so and stop, changing nothing.
+qs_leave_alone() {
+  err "An .env already exists in $(pwd): an install is here, so the quick start leaves it alone. Don't delete that .env"
+  err "while the install's volumes exist (its database keeps the password in it): update from the console, or edit"
+  err ".env and run 'docker compose up -d' there. To start over, first 'docker compose down -v' there (deletes ALL data)."
+  exit 1
+}
+# Nothing of an install the quick start won't resume is read: said first, whatever its permissions.
+if { [ -e .env ] || [ -L .env ]; } && [ ! -e .quickstart-unfinished ]; then qs_leave_alone; fi
 # Everything here is read, sourced or handed to docker as this user (often root): the directory and whatever the quick
 # start uses in it must belong to this user or root, and nobody else may write them. A directory someone else made (in
 # /tmp, say) is refused, so they can't plant a .env, a compose file or db.sh, or swap a verified file before it runs.
@@ -1213,10 +1235,7 @@ if [ -e .env ] || [ -L .env ]; then
     resume_install
     exit 0
   fi
-  err "An .env already exists in $(pwd): an install is here, so the quick start leaves it alone. Don't delete that .env"
-  err "while the install's volumes exist (its database keeps the password in it): update from the console, or edit"
-  err ".env and run 'docker compose up -d' there. To start over, first 'docker compose down -v' there (deletes ALL data)."
-  exit 1
+  qs_leave_alone
 fi
 
 # A new install: no other install's containers or volumes may exist (install/lib/stack.sh), or compose would take them

@@ -279,15 +279,28 @@ mdm_site_dir() {
   # of this user's (or root's) that nobody else may write: its rules go into the edge, so it is never made private and
   # then trusted.
   if [ -e site.d ] || [ -L site.d ]; then
-    if [ -L site.d ] || [ ! -d site.d ] || [ -z "$(find site.d -prune \( -user "$EUID" -o -user 0 \) ! -perm -020 ! -perm -002 -print 2> /dev/null)" ]; then
-      warn "site.d is not connected to the edge: it must be a directory of yours that nobody else may write. If nobody else"
-      warn "could have changed it, run chmod go-w site.d, then run this again ($MDM_DOCS/DEPLOY.md#your-own-edge-rules)."
+    if [ -L site.d ] || [ ! -d site.d ]; then
+      warn "site.d is not connected to the edge: it is a link or not a directory. Make it a directory of your own"
+      warn "(mkdir -m 755 site.d, after moving that one away), then run this again ($MDM_DOCS/DEPLOY.md#your-own-edge-rules)."
+      return 0
+    fi
+    if [ -z "$(find site.d -prune \( -user "$EUID" -o -user 0 \) -print 2> /dev/null)" ]; then
+      warn "site.d is not connected to the edge: it belongs to another user. Make it a directory of your own, then run"
+      warn "this again ($MDM_DOCS/DEPLOY.md#your-own-edge-rules)."
+      return 0
+    fi
+    if [ -n "$(find site.d -prune \( -perm -020 -o -perm -002 \) -print 2> /dev/null)" ]; then
+      warn "site.d is not connected to the edge: other users may write it. If nobody else could have changed it, run"
+      warn "chmod go-w site.d, then run this again ($MDM_DOCS/DEPLOY.md#your-own-edge-rules)."
       return 0
     fi
   elif ! mkdir -m 755 site.d; then
     warn "Could not make site.d here: your own edge rules can't be added."; return 0
   fi
-  if [ ! -e site.d/README ]; then
+  # A site.d of root's on a run as another user: connected (nobody else may write it), its README left to root.
+  if [ ! -w site.d ]; then
+    warn "site.d belongs to root: add your own edge rules there as root."
+  elif [ ! -e site.d/README ]; then
     printf '%s\n' "Your own rules for MDMesh's edge (Caddy). Every *.caddy file here is imported into the edge's site," \
       "after MDMesh's own settings. Updates never change this directory. Make each file readable by everyone" \
       "(chmod 644), check it, then restart the edge (from the install directory):" \

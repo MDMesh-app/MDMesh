@@ -163,7 +163,7 @@ fi
 if [ "${MDMESH_EXPOSURE:-}" != proxy ]; then
   _kept=''; _dropped=''
   set -f
-  for _t in ${TRUSTED_PROXIES:-}; do
+  for _t in $(printf '%s' "${TRUSTED_PROXIES:-}" | tr ',' ' '); do
     if [ "$_t" = host ]; then _dropped=1; else _kept="$_kept $_t"; fi
   done
   set +f

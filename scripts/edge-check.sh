@@ -82,13 +82,15 @@ for mode in "${MODES[@]}"; do
 done
 
 # Outside the proxy mode, `host` in TRUSTED_PROXIES is dropped with a warning; the other entries stay, on both listeners.
-out="$(docker run --rm --network none -e "TRUSTED_PROXIES=host 192.0.2.10" -e COMPOSE_PROFILES= -e SITE_ADDRESS=mdm.example.com \
-    -v "$EDGE_PEERS:/edge-peers.sh:ro" "$CADDY_IMAGE" sh -c '. /edge-peers.sh && echo "peers=$TRUSTED_PROXIES|$HTTP_TRUSTED_PEERS"' 2>&1)" || true
-if grep -qxF 'peers=192.0.2.10|192.0.2.10' <<<"$out" && grep -qF 'TRUSTED_PROXIES says host, which only the proxy mode' <<<"$out"; then
-  pass "outside the proxy mode, host in TRUSTED_PROXIES is dropped, saying so; 192.0.2.10 stays"
-else
-  fail "outside the proxy mode, host in TRUSTED_PROXIES: $out"
-fi
+for tp in "host 192.0.2.10" "host,192.0.2.10"; do
+  out="$(docker run --rm --network none -e "TRUSTED_PROXIES=$tp" -e COMPOSE_PROFILES= -e SITE_ADDRESS=mdm.example.com \
+      -v "$EDGE_PEERS:/edge-peers.sh:ro" "$CADDY_IMAGE" sh -c '. /edge-peers.sh && echo "peers=$TRUSTED_PROXIES|$HTTP_TRUSTED_PEERS"' 2>&1)" || true
+  if grep -qxF 'peers=192.0.2.10|192.0.2.10' <<<"$out" && grep -qF 'TRUSTED_PROXIES says host, which only the proxy mode' <<<"$out"; then
+    pass "outside the proxy mode, host in TRUSTED_PROXIES='$tp' is dropped, saying so; 192.0.2.10 stays"
+  else
+    fail "outside the proxy mode, host in TRUSTED_PROXIES='$tp': $out"
+  fi
+done
 
 # Your own rules: each site.d/*.caddy is imported into the site (its header is in the adapted config), and a broken one
 # is an error, not ignored. The directory is mounted read-only, as the compose files mount it.

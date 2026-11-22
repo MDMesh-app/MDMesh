@@ -238,6 +238,9 @@ export EDGE_SITE_D
 # running edge saw. Written whole, then renamed; not written, the wrapper falls back to the environment it gets.
 edge_env_save() {
   _tmp=/run/mdmesh-edge.env.$$
+  # An earlier start's file never stands in for this one's (/run is in the container's layer, kept across restarts):
+  # gone first, so a failed write leaves none, and the wrapper uses this start's environment (and refuses a reload).
+  rm -f /run/mdmesh-edge.env 2>/dev/null || true
   for _k in TRUSTED_PROXIES HTTP_TRUSTED_PEERS HTTP_CLIENT_IP_HEADER PROXY_TRUSTED_PEERS SITE_ADDRESS EDGE_TLS EDGE_ORIGIN_NAME EDGE_SITE_D; do
     _v=''; eval "_set=\${$_k+x}"
     [ -n "$_set" ] || continue
@@ -245,6 +248,6 @@ edge_env_save() {
     printf "%s='%s'\n" "$_k" "$(printf '%s' "$_v" | sed "s/'/'\\\\''/g")"
   done > "$_tmp" 2>/dev/null && chmod 644 "$_tmp" && mv -f "$_tmp" /run/mdmesh-edge.env && return 0
   rm -f "$_tmp" 2>/dev/null || true
-  echo "MDMesh edge: could not save its settings to /run/mdmesh-edge.env: restart the edge (docker compose restart caddy), never caddy reload it." >&2
+  echo "MDMesh edge: could not save its settings to /run/mdmesh-edge.env: it runs with them, but a caddy reload is refused until a restart (docker compose restart caddy) saves them." >&2
 }
 edge_env_save

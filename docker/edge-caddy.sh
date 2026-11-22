@@ -10,6 +10,11 @@ if [ -r /run/mdmesh-edge.env ]; then
   # shellcheck source=/dev/null  # written by docker/edge-peers.sh
   . /run/mdmesh-edge.env
   set +a
+elif [ "${1:-}" = reload ]; then
+  # Not saved this start (the edge's log says why): a reload would read the Caddyfile without them. The running edge
+  # got them from its start's environment; a restart saves them again.
+  echo "MDMesh edge: its settings were not saved at start (see docker compose logs caddy): restart it (docker compose restart caddy) instead of a reload." >&2
+  exit 1
 fi
 if [ "${MDMESH_RAW_SITE_D:-}" = 1 ]; then
   case "${1:-}" in validate|adapt) EDGE_SITE_D=/etc/caddy/site.d; export EDGE_SITE_D ;; esac

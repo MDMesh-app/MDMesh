@@ -130,7 +130,8 @@ if [ "$rc" -ne 0 ] && [ "$n" -eq 0 ]; then fail "site.d files: probe exited $rc"
 # reads that start's settings first, so an exec'd reload keeps them: here behind your own proxy with the HTTPS origin,
 # a reload in a bare environment keeps the proxy's address as trusted peer and the internal-CA site, and loads no
 # site.d file the start left out. MDMESH_RAW_SITE_D=1 lets validate and adapt (only) read the raw mount, to check a
-# new file; a reload with it still loads the checked copy. And with no saved settings at all, nothing raw is imported.
+# new file; a reload with it still loads the checked copy. And with no saved settings at all (a failed save), nothing raw
+# is imported and a reload is refused rather than run without them.
 # shellcheck disable=SC2016  # expanded by the container's shell
 RELOAD_PROBE='set -u; F=0
 t() { l=$1; shift; if "$@"; then echo "  ok   exec reload: $l"; else echo "  FAIL exec reload: $l"; F=$((F + 1)); fi; }
@@ -155,6 +156,8 @@ caddy stop > /dev/null 2>&1
 mv /run/mdmesh-edge.env /run/saved.env
 bare caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile > /tmp/nosave 2>&1
 t "no saved settings: still no raw rule" sh -c "! grep -qi x-open /tmp/nosave"
+bare caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile > /tmp/noreload 2>&1; rc=$?
+t "no saved settings: a reload is refused, saying to restart" sh -c "[ $rc != 0 ] && grep -q \"restart it\" /tmp/noreload"
 exit "$F"'
 out="$(docker run --rm --network none -e MDMESH_EXPOSURE=proxy -e EDGE_TRUSTED_PROXIES=192.0.2.10 -e BASE_URL=https://mdm.example.com \
     -e MDMESH_ORIGIN_TLS=1 -e SITE_ADDRESS=:8080 -e ACME_EMAIL= -e TRUSTED_PROXIES= -e EDGE_BIND=127.0.0.1:8080 \
@@ -183,6 +186,14 @@ if docker run --rm --network none -e SITE_ADDRESS=:80 -e ACME_EMAIL= -e EDGE_SIT
   fail "a broken site.d/*.caddy passes caddy validate"
 else
   pass "a broken site.d/*.caddy fails caddy validate"
+fi
+# A file can't define a snippet: each is pasted inside the site's route (DEPLOY.md says so; this keeps the docs honest).
+printf '(common) {\n\theader X-Common "1"\n}\n' > "$SITE_D/own.caddy"
+if docker run --rm --network none -e SITE_ADDRESS=:80 -e ACME_EMAIL= -e EDGE_SITE_D=/etc/caddy/site.d -v "$CADDYFILE:/etc/caddy/Caddyfile:ro" \
+    -v "$SITE_D:/etc/caddy/site.d:ro" "$CADDY_IMAGE" caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; then
+  fail "a snippet definition in site.d passes caddy validate (DEPLOY.md says it can't be done)"
+else
+  pass "a snippet definition in site.d fails caddy validate, as DEPLOY.md says"
 fi
 rm -f "$SITE_D/own.caddy"
 # DEPLOY.md's own example (the caddyfile block under "Your own edge rules"), run as written: from outside its office range
@@ -293,6 +304,47 @@ px_check "apache.conf: httpd -t" httpd:2.4-alpine sh -c 'c=/usr/local/apache2/co
   printf "Listen 443\nInclude /px/apache.conf\n" >> "$c" && httpd -t'
 px_check "Caddyfile: caddy validate" "$CADDY_IMAGE" caddy validate --config /px/Caddyfile --adapter caddyfile
 rm -rf -- "$PX_D"
+
+# --- 1d. The web image's own start: docker/web.Dockerfile's final stage (a stand-in page for the console, which needs
+# the web build), run as the image runs: the entrypoint as root, edge-peers.sh, then su-exec caddy through the wrapper.
+# Behind your own proxy with the HTTPS origin and a site.d holding a rule and an open file. Caddy runs as caddy, writes
+# its own state (the internal CA) and can't change its configuration; a reload through docker exec keeps the peers, the
+# origin and the checked rules. ---
+echo "The web image's start (docker/web.Dockerfile, without the console build):"
+IMG_D="$(mktemp -d)"; chmod 755 "$IMG_D"
+awk 'tolower($1) == "from" && $2 ~ /^caddy[:@]/ { s = 1 } s' "$ROOT/docker/web.Dockerfile" \
+  | sed 's#^COPY --from=web /web/dist /srv$#RUN mkdir -p /srv \&\& echo spa > /srv/index.html#' > "$IMG_D/Dockerfile"
+mkdir -p "$IMG_D/site.d"; chmod 755 "$IMG_D/site.d"
+printf 'header X-Good "1"\n' > "$IMG_D/site.d/good.caddy"; chmod 644 "$IMG_D/site.d/good.caddy"
+printf 'header X-Open "1"\n' > "$IMG_D/site.d/open.caddy"; chmod 666 "$IMG_D/site.d/open.caddy"
+IMG_TAG="mdmesh-edgecheck-web:$$"; IMG_CT="mdmesh-edgecheck-web-$$"
+if ! grep -q '^RUN mkdir -p /srv' "$IMG_D/Dockerfile"; then
+  fail "web image start: could not derive the final stage from docker/web.Dockerfile"
+elif ! docker build -q -f "$IMG_D/Dockerfile" -t "$IMG_TAG" "$ROOT" >/dev/null 2>"$IMG_D/build.log"; then
+  fail "web image start: the final stage did not build"; tail -5 "$IMG_D/build.log" | sed 's/^/         /'
+else
+  docker run -d --name "$IMG_CT" --network none -e MDMESH_EXPOSURE=proxy -e EDGE_TRUSTED_PROXIES=192.0.2.10 \
+    -e EDGE_BIND=127.0.0.1:8080 -e BASE_URL=https://mdm.example.com -e MDMESH_ORIGIN_TLS=1 -e SITE_ADDRESS=:8080 \
+    -e ACME_EMAIL= -e TRUSTED_PROXIES= -v "$IMG_D/site.d:/etc/caddy/site.d:ro" "$IMG_TAG" >/dev/null
+  ex() { docker exec "$IMG_CT" "$@"; }
+  cfg_has() { ex sh -c 'wget -qO- http://127.0.0.1:2019/config/' 2>/dev/null | grep -qi -- "$1"; }
+  for _ in $(seq 1 50); do cfg_has '"internal"' && break; sleep 0.2; done
+  chk() { local l=$1; shift; if "$@"; then pass "web image start: $l"; else fail "web image start: $l"; fi; }
+  chk "caddy runs as caddy" sh -c "docker exec '$IMG_CT' ps -o user,args | grep -q '^caddy .*caddy run'"
+  chk "  the proxy as trusted peer" cfg_has 192.0.2.10/32
+  chk "  the HTTPS origin" cfg_has '"internal"'
+  chk "  the checked rule, not the open one" sh -c "docker exec '$IMG_CT' wget -qO- http://127.0.0.1:2019/config/ | grep -qi x-good && ! docker exec '$IMG_CT' wget -qO- http://127.0.0.1:2019/config/ | grep -qi x-open"
+  chk "caddy wrote its own state (the internal CA, its own)" sh -c "[ \"\$(docker exec '$IMG_CT' stat -c %U /data/caddy/pki/authorities/local/root.crt 2>/dev/null)\" = caddy ]"
+  chk "the Caddyfile and scripts are root's, and caddy can't change them" sh -c "[ \"\$(docker exec '$IMG_CT' stat -c %U /etc/caddy/Caddyfile /etc/caddy /usr/local/bin/caddy | sort -u)\" = root ] && ! docker exec -u caddy '$IMG_CT' touch /etc/caddy/x 2>/dev/null"
+  chk "a reload through docker exec succeeds" ex caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+  sleep 1
+  chk "  and keeps the proxy as trusted peer" cfg_has 192.0.2.10/32
+  chk "  and the HTTPS origin" cfg_has '"internal"'
+  chk "  and loads no rule the start left out" sh -c "! docker exec '$IMG_CT' wget -qO- http://127.0.0.1:2019/config/ | grep -qi x-open"
+  docker rm -f "$IMG_CT" >/dev/null 2>&1 || true
+fi
+docker rmi "$IMG_TAG" >/dev/null 2>&1 || true
+rm -f "$IMG_D/site.d/good.caddy" "$IMG_D/site.d/open.caddy" "$IMG_D/Dockerfile" "$IMG_D/build.log"; rmdir "$IMG_D/site.d" "$IMG_D"
 
 # --- 2. Compose files, each combination setup.sh / quickstart.sh / DEPLOY.md / DEV.md use. ---
 # A fixed env file with the required (:?) variables, so a developer's own .env or shell cannot change the result.

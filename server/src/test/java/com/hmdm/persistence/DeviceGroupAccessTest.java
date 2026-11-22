@@ -14,6 +14,8 @@ import org.junit.Before;
 import org.junit.Test;
 
 import java.util.ArrayList;
+import java.util.List;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -179,6 +181,19 @@ public class DeviceGroupAccessTest {
         assertTrue(fake.calls.toString(), noDeviceWrites());
         assertEquals(1, dao.updateDevicesConfiguration(Fakes.list(VISIBLE), OWN_CONFIG).size());
         assertEquals(1, fake.callsTo("updateDevicesConfiguration").size());
+    }
+
+    @Test
+    public void aBulkConfigurationChangeAnswersOnlyTheDevicesTheStatementMoved() {
+        // Both devices locked and reachable, but the UPDATE ... RETURNING moved only VISIBLE: only it is notified
+        fake.answer("inaccessibleDevices", a -> new ArrayList<Integer>())
+                .answer("updateDevicesConfiguration", a -> Collections.singletonList(VISIBLE));
+
+        List<Device> moved = dao.updateDevicesConfiguration(Fakes.list(HIDDEN, VISIBLE), OWN_CONFIG);
+
+        assertEquals(1, moved.size());
+        assertEquals(Integer.valueOf(VISIBLE), moved.get(0).getId());
+        assertEquals(OWN_CONFIG, (int) moved.get(0).getConfigurationId()); // as it was before, for the wake decision
     }
 
     @Test

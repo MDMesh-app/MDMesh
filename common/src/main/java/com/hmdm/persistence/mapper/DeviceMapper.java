@@ -171,9 +171,10 @@ public interface DeviceMapper {
 
     /**
      * Moves the devices to the configuration, in one statement; only into a configuration of the device's own customer.
-     * @return the ids of the devices moved
+     * @return the ids of the devices moved. A select that writes: affectData marks the session dirty, so the
+     *         transaction commits it (else only the connection's reset on close would, swallowing any error).
      */
-    @Select({"UPDATE devices SET configurationId = #{configurationId} WHERE id = ANY(" + IDS + ") " +
+    @Select(affectData = true, value = {"UPDATE devices SET configurationId = #{configurationId} WHERE id = ANY(" + IDS + ") " +
             "AND EXISTS (SELECT 1 FROM configurations " +
             "            WHERE configurations.id = #{configurationId} AND configurations.customerId = devices.customerId) " +
             "RETURNING id"})

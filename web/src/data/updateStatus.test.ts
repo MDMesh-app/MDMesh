@@ -166,3 +166,20 @@ describe('upToDate / unverifiedRelease', () => {
     expect(upToDate(null)).toBe(false);
   });
 });
+
+describe('upToDate / unverifiedRelease: failed checks and older releases', () => {
+  it('a failed check is never "the latest release"', () => {
+    expect(upToDate(status({ updateAvailable: false, latest: null, error: 'github 500', missedSecurity: [] }))).toBe(false);
+    expect(upToDate(status({ updateAvailable: false, latest: '0.1.12', error: 'not polled yet', missedSecurity: [] }))).toBe(true);
+  });
+  it('only a newer unverified release counts as found', () => {
+    expect(unverifiedRelease(status({ current: '0.1.16', updateAvailable: false, verified: false }))).toBe(false);
+    expect(unverifiedRelease(status({ current: '0.1.12', updateAvailable: false, verified: false }))).toBe(true);
+    expect(unverifiedRelease(status({ current: 'latest', updateAvailable: false, verified: false }))).toBe(false);
+  });
+  it('names this server’s platform when the supervisor reports it', () => {
+    const b = status({ updateAvailable: false, blocked: 'r', blockedCode: 'platform', platform: 'linux/arm64' });
+    expect(blockedShort(b, [])).toBe('Its images don’t include this server’s platform (linux/arm64).');
+    expect(blockedText(b)).toMatch(/^Its images don’t include this server’s platform \(linux\/arm64\)\. /);
+  });
+});

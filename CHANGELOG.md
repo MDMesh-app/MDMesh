@@ -19,9 +19,10 @@ New
   one-click updates run on Arm64 hosts such as Oracle Ampere (#205, thanks @sgofferj). On any other architecture,
   or on Arm64 with an `MDMESH_VERSION` that has no Arm64 images, the quick start stops and says why before it pulls
   anything.
-- Updates: a newer release this server can't install (no images for its platform, or images under another owner) is
-  shown as such, with the reason and what to do, and with any security fixes it leaves missing. It is no longer
-  offered as an update that then fails, or retried automatically.
+- Updates: a newer release this server can't install (no images for its platform, images under another owner, or
+  images not pinned by digest) is shown as such, with the reason and what to do, and with any security fixes it
+  leaves missing. It is no longer offered as an update that then fails, or retried automatically, and its agent isn't
+  offered for rollout or enrollment: the running release's is.
 
 ## v0.5.1 — 2026-11-20
 

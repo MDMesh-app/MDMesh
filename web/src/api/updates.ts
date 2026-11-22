@@ -21,6 +21,8 @@ export interface UpdateStatus {
    *  the supervisor's words; `blockedCode` names the cause. Absent from a supervisor before 0.6.0. */
   blocked?: string | null;
   blockedCode?: 'platform' | 'owner' | 'digests' | null;
+  /** The platform this updater pulls images for (linux/amd64, linux/arm64). Absent from a supervisor before 0.6.0. */
+  platform?: string;
   verified: boolean;
   channel: string | null;
   checkedAt: number | null;

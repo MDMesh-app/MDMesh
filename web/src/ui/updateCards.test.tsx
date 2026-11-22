@@ -70,7 +70,10 @@ describe('a release this server can’t install (blocked)', () => {
     sidebar(BLOCKED);
     const card = (await screen.findByText('Its images are published under another owner.')).closest('.v2-updcard') as HTMLElement;
     expect(card.querySelector('.v2-updcard__title')?.textContent).toBe('0.1.15 can’t be installed');
-    expect(card.querySelector('.v2-updcard__dot.is-warn')).toBeNull();
+    // Neutral, not the green of a verified update nor amber.
+    const dot = card.querySelector('.v2-updcard__dot') as HTMLElement;
+    expect(dot.classList.contains('is-idle')).toBe(true);
+    expect(dot.classList.contains('is-warn') || dot.classList.contains('is-ok')).toBe(false);
     vi.unstubAllGlobals();
   });
   it('sidebar: says which security fixes are missing, in amber', async () => {
@@ -88,5 +91,21 @@ describe('a release this server can’t install (blocked)', () => {
     unmount();
     renderInConsole(<ServerCard status={{ ...BLOCKED, missedSecurity: ['0.1.13', '0.1.15'] }} />);
     expect((screen.getByText(SEC).closest('.v2-ov-srv__line') as HTMLElement).classList.contains('is-warn')).toBe(true);
+  });
+});
+
+describe('Overview Server card: no "Up to date" while a newer release can’t be trusted or the check failed', () => {
+  it('says a newer unverified release was found', () => {
+    const st: UpdateStatus = { ...STATUS, updateAvailable: false, verified: false, missedSecurity: [] };
+    stub(st);
+    renderInConsole(<ServerCard status={st} />);
+    expect(screen.getByText('0.1.15 was found, but its signature couldn’t be verified.')).toBeTruthy();
+    expect(screen.queryByText(/Up to date/)).toBeNull();
+  });
+  it('is up to date when the unverified release is older than the running one', () => {
+    const st: UpdateStatus = { ...STATUS, current: '0.1.16', updateAvailable: false, verified: false, missedSecurity: [] };
+    stub(st);
+    renderInConsole(<ServerCard status={st} />);
+    expect(screen.getByText(/Up to date/)).toBeTruthy();
   });
 });

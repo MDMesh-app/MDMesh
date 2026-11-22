@@ -73,7 +73,7 @@ function UpdateCard({ status, onNavigate }: { status: UpdateStatus | null; onNav
     return (
       <Link to={UPDATES_HREF} className="v2-updcard" onClick={onNavigate}>
         <span className="v2-updcard__title">
-          <span className={cx('v2-updcard__dot', offer.missed.length > 0 && 'is-warn')} aria-hidden="true" />
+          <span className={cx('v2-updcard__dot', offer.missed.length > 0 ? 'is-warn' : 'is-idle')} aria-hidden="true" />
           {offer.latest} can&rsquo;t be installed
         </span>
         <span className="v2-updcard__text">{blockedShort(status, offer.missed)}</span>

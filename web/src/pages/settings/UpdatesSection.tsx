@@ -412,7 +412,7 @@ export function UpdatesSection({
       ) : null}
 
       {/* A release is ready. */}
-      {s && s.updateAvailable && s.latest && !running ? (
+      {s && offer?.kind === 'ready' && !running ? (
         <div className="v2-settings-upd v2-settings-upd--ready">
           <div className="v2-settings-upd__titleline">
             <span className="v2-settings-upd__title">

@@ -1,6 +1,7 @@
 // Wording and rules for the supervisor's update status, shared by the Overview server card, the sidebar's update
 // card and Settings → Updates.
 import { isApplyTerminal, type UpdateStatus } from '../api/updates';
+import { compareVersions } from './releaseNotes';
 
 /** The live line for each apply phase (the v0.3 console's UpdateBanner wording). */
 export const APPLY_PHASE_LABEL: Readonly<Record<string, string>> = {
@@ -62,14 +63,23 @@ export function missedSecurity(s: UpdateStatus | null | undefined): string[] {
   return updateOffer(s)?.missed ?? [];
 }
 
-/** "MDMesh X is the latest release": nothing newer is on offer, blocked, or found unverified. */
+/** "MDMesh X is the latest release" / "Up to date": the last check worked, and found nothing newer on offer, blocked
+ *  or unverified. */
 export function upToDate(s: UpdateStatus | null | undefined): boolean {
-  return !!s && !updateOffer(s) && !unverifiedRelease(s);
+  return !!s && !lastCheckError(s) && !updateOffer(s) && !unverifiedRelease(s);
 }
 
-/** A release was found whose signature couldn't be verified (never offered or installed). */
+/** A newer release was found whose signature couldn't be verified (never offered or installed). */
 export function unverifiedRelease(s: UpdateStatus | null | undefined): boolean {
-  return !!s && !s.updateAvailable && !!s.latest && !s.verified && s.latest !== s.current;
+  return (
+    !!s &&
+    !s.updateAvailable &&
+    !s.verified &&
+    !!s.latest &&
+    RELEASE_VERSION.test(s.latest) &&
+    RELEASE_VERSION.test(s.current) &&
+    compareVersions(s.latest, s.current) > 0
+  );
 }
 
 /** A blocked release, in a few words for the sidebar and the Overview (its cause, unless security comes first). */
@@ -77,7 +87,7 @@ export function blockedShort(s: UpdateStatus, missed: readonly string[]): string
   if (missed.length > 0) return `This server is missing security fixes from ${joinVersions(missed)}, and can’t install them itself.`;
   switch (s.blockedCode) {
     case 'platform':
-      return 'Its images don’t include this server’s platform.';
+      return `Its images don’t include this server’s platform${s.platform ? ` (${s.platform})` : ''}.`;
     case 'owner':
       return 'Its images are published under another owner.';
     case 'digests':
@@ -91,7 +101,7 @@ export function blockedShort(s: UpdateStatus, missed: readonly string[]): string
 export function blockedText(s: UpdateStatus): string {
   switch (s.blockedCode) {
     case 'platform':
-      return `Its images don’t include this server’s platform. This server keeps running ${s.current}. To follow later releases, wait for one with images for this platform, or move to the native install (DEPLOY.md, Option C), which runs on x86_64 and Arm64.`;
+      return `Its images don’t include this server’s platform${s.platform ? ` (${s.platform})` : ''}. This server keeps running ${s.current}. To follow later releases, wait for one with images for this platform, or move to the native install (DEPLOY.md, Option C), which runs on x86_64 and Arm64.`;
     case 'owner':
       return 'It publishes its images under another owner than this server pulls from. Set GITHUB_REPO or IMAGE_OWNER in the server’s .env to match, then run docker compose up -d.';
     case 'digests':

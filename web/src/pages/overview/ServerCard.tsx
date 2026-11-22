@@ -1,7 +1,15 @@
 // The Overview's Server card: the running version, and an update on offer, running or failed.
 import type { ReactNode } from 'react';
 import { isApplyTerminal, type UpdateStatus } from '../../api/updates';
-import { applyPhaseLabel, blockedShort, lastCheckError, missedSecurityShort, updateOffer } from '../../data/updateStatus';
+import {
+  applyPhaseLabel,
+  blockedShort,
+  lastCheckError,
+  missedSecurityShort,
+  unverifiedRelease,
+  upToDate,
+  updateOffer,
+} from '../../data/updateStatus';
 import { UPDATES_HREF } from '../../routes';
 import { ButtonAnchor, ButtonLink, Card, CardHeader, cx, IconCheck, IconShield, RelativeTime, StatusDot } from '../../ui';
 
@@ -101,7 +109,11 @@ export function ServerCard({ status }: { status: UpdateStatus }) {
       {panel ??
         (lastCheckError(status) ? (
           <span className="v2-ov-srv__meta">The last update check failed.</span>
-        ) : (
+        ) : unverifiedRelease(status) ? (
+          <span className="v2-ov-srv__meta">
+            {status.latest} was found, but its signature couldn&rsquo;t be verified.
+          </span>
+        ) : upToDate(status) ? (
           <span className="v2-ov-srv__meta">
             Up to date{channel}
             {status.checkedAt ? (
@@ -111,7 +123,7 @@ export function ServerCard({ status }: { status: UpdateStatus }) {
               </>
             ) : null}
           </span>
-        ))}
+        ) : null)}
     </Card>
   );
 }

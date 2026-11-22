@@ -128,10 +128,11 @@
 
 		# Your own rules (DEPLOY.md, "Your own edge rules"): the *.caddy files of the install directory's site.d/,
 		# mounted read-only at /etc/caddy/site.d (MDMESH_SITE_DIR in .env), that docker/edge-peers.sh let through at
-		# start (only files nobody but their owner can change) into EDGE_SITE_D. Updates never touch them. None there:
+		# start (only files nobody but their owner can change) into EDGE_SITE_D, /run/mdmesh-site.d (also the default: a
+		# caddy command that missed those settings never reads the raw mount). Updates never touch them. None there:
 		# nothing is imported. A handle here answers before MDMesh's own below; any other directive (a header, a
 		# bare respond) applies to every request that gets this far.
-		import {$EDGE_SITE_D:/etc/caddy/site.d}/*.caddy
+		import {$EDGE_SITE_D:/run/mdmesh-site.d}/*.caddy
 
 		# Canonical agent-APK URL: /files/agent.apk works on BOTH deployment shapes (native serves a
 		# real file from Tomcat; here it's the supervisor's sha256-verified release mirror — the same

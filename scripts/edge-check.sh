@@ -125,12 +125,52 @@ printf '%s\n' "$out" | grep -E '^  (ok|FAIL) '
 n="$(grep -c '^  FAIL' <<<"$out" || true)"; FAILED=$((FAILED + n))
 if [ "$rc" -ne 0 ] && [ "$n" -eq 0 ]; then fail "site.d files: probe exited $rc"; printf '%s\n' "$out" | tail -5; fi
 
+# A caddy command run later through `docker compose exec` gets the container's configured environment, not the one
+# docker/edge-peers.sh computed at start. The edge's caddy (docker/edge-caddy.sh, mounted where the web image installs it)
+# reads that start's settings first, so an exec'd reload keeps them: here behind your own proxy with the HTTPS origin,
+# a reload in a bare environment keeps the proxy's address as trusted peer and the internal-CA site, and loads no
+# site.d file the start left out. MDMESH_RAW_SITE_D=1 lets validate and adapt (only) read the raw mount, to check a
+# new file; a reload with it still loads the checked copy. And with no saved settings at all, nothing raw is imported.
+# shellcheck disable=SC2016  # expanded by the container's shell
+RELOAD_PROBE='set -u; F=0
+t() { l=$1; shift; if "$@"; then echo "  ok   exec reload: $l"; else echo "  FAIL exec reload: $l"; F=$((F + 1)); fi; }
+mk() { printf "header X-%s \"1\"\n" "$1" > "/etc/caddy/site.d/$1.caddy"; chmod "$2" "/etc/caddy/site.d/$1.caddy"; }
+mkdir -p /etc/caddy/site.d && chmod 755 /etc/caddy/site.d; mk good 644; mk open 666
+. /edge-peers.sh 2> /tmp/log
+caddy start --config /etc/caddy/Caddyfile --adapter caddyfile > /tmp/start 2>&1 || { echo "  FAIL exec reload: edge did not start"; cat /tmp/start; exit 1; }
+bare() { env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin HOME=/root SITE_ADDRESS=:8080 TRUSTED_PROXIES= "$@"; }
+cfg() { rm -f /tmp/cfg; for _ in 1 2 3 4 5; do wget -qO /tmp/cfg http://127.0.0.1:2019/config/ 2> /dev/null && return 0; sleep 1; done; }
+has() { grep -qi -- "$1" /tmp/cfg; }
+bare caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile > /tmp/reload 2>&1; t "succeeds" [ $? = 0 ]
+cfg
+t "keeps the proxy as trusted peer" has "192.0.2.10/32"
+t "keeps the HTTPS origin (internal CA)" has "\"internal\""
+t "loads the checked rule" has x-good
+t "does not load a rule the start left out" sh -c "! grep -qi x-open /tmp/cfg"
+bare env MDMESH_RAW_SITE_D=1 caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile > /tmp/raw 2>&1
+t "MDMESH_RAW_SITE_D=1 adapt reads the raw mount (to check a new file)" grep -qi x-open /tmp/raw
+bare env MDMESH_RAW_SITE_D=1 caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile > /tmp/reload 2>&1; cfg
+t "MDMESH_RAW_SITE_D=1 reload still loads the checked copy only" sh -c "! grep -qi x-open /tmp/cfg"
+caddy stop > /dev/null 2>&1
+mv /run/mdmesh-edge.env /run/saved.env
+bare caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile > /tmp/nosave 2>&1
+t "no saved settings: still no raw rule" sh -c "! grep -qi x-open /tmp/nosave"
+exit "$F"'
+out="$(docker run --rm --network none -e MDMESH_EXPOSURE=proxy -e EDGE_TRUSTED_PROXIES=192.0.2.10 -e BASE_URL=https://mdm.example.com \
+    -e MDMESH_ORIGIN_TLS=1 -e SITE_ADDRESS=:8080 -e ACME_EMAIL= -e TRUSTED_PROXIES= -e EDGE_BIND=127.0.0.1:8080 \
+    -v "$CADDYFILE:/etc/caddy/Caddyfile:ro" -v "$EDGE_PEERS:/edge-peers.sh:ro" -v "$ROOT/docker/edge-caddy.sh:/usr/local/bin/caddy:ro" \
+    "$CADDY_IMAGE" sh -c "$RELOAD_PROBE" 2>&1)" && rc=0 || rc=$?
+printf '%s\n' "$out" | grep -E '^  (ok|FAIL) '
+n="$(grep -c '^  FAIL' <<<"$out" || true)"; FAILED=$((FAILED + n))
+if [ "$rc" -ne 0 ] && [ "$n" -eq 0 ]; then fail "exec reload: probe exited $rc"; printf '%s\n' "$out" | tail -5; fi
+
 # Your own rules: each site.d/*.caddy is imported into the site (its header is in the adapted config), and a broken one
-# is an error, not ignored. The directory is mounted read-only, as the compose files mount it.
+# is an error, not ignored. The directory is mounted read-only, as the compose files mount it, and imported as it is
+# (EDGE_SITE_D; the edge itself imports only the copy docker/edge-peers.sh checked, below).
 SITE_D="$(mktemp -d)"
 chmod 755 "$SITE_D"
 printf 'header X-Own-Rule "from site.d"\n' > "$SITE_D/own.caddy"; chmod 644 "$SITE_D/own.caddy"
-if out="$(docker run --rm --network none -e SITE_ADDRESS=:80 -e ACME_EMAIL= -v "$CADDYFILE:/etc/caddy/Caddyfile:ro" \
+if out="$(docker run --rm --network none -e SITE_ADDRESS=:80 -e ACME_EMAIL= -e EDGE_SITE_D=/etc/caddy/site.d -v "$CADDYFILE:/etc/caddy/Caddyfile:ro" \
     -v "$SITE_D:/etc/caddy/site.d:ro" "$CADDY_IMAGE" caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile 2>&1)" \
    && grep -qF 'X-Own-Rule' <<<"$out"; then
   pass "site.d/*.caddy is imported into the site"
@@ -138,7 +178,7 @@ else
   fail "site.d/*.caddy is not imported into the site"; printf '%s\n' "$out" | tail -3 | sed 's/^/         /'
 fi
 printf 'no_such_directive here\n' > "$SITE_D/own.caddy"
-if docker run --rm --network none -e SITE_ADDRESS=:80 -e ACME_EMAIL= -v "$CADDYFILE:/etc/caddy/Caddyfile:ro" \
+if docker run --rm --network none -e SITE_ADDRESS=:80 -e ACME_EMAIL= -e EDGE_SITE_D=/etc/caddy/site.d -v "$CADDYFILE:/etc/caddy/Caddyfile:ro" \
     -v "$SITE_D:/etc/caddy/site.d:ro" "$CADDY_IMAGE" caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; then
   fail "a broken site.d/*.caddy passes caddy validate"
 else
@@ -171,7 +211,7 @@ t 203.0.113.7 "/rest/x/a%2fb" 400 "an encoded / under your own handle is refused
 exit "$F"'
 if [ -s "$SITE_D/office.caddy" ]; then
   out="$(docker run --rm --network none --cap-add NET_ADMIN --add-host server:127.0.0.1 --add-host supervisor:127.0.0.1 \
-      -e SITE_ADDRESS=:80 -e ACME_EMAIL= -e HTTP_TRUSTED_PEERS=127.0.0.1/32 -v "$CADDYFILE:/etc/caddy/Caddyfile:ro" \
+      -e SITE_ADDRESS=:80 -e ACME_EMAIL= -e HTTP_TRUSTED_PEERS=127.0.0.1/32 -e EDGE_SITE_D=/etc/caddy/site.d -v "$CADDYFILE:/etc/caddy/Caddyfile:ro" \
       -v "$SITE_D:/etc/caddy/site.d:ro" "$CADDY_IMAGE" sh -c "$SITE_PROBE" 2>&1)" && rc=0 || rc=$?
   printf '%s\n' "$out"
   n="$(grep -c '^  FAIL' <<<"$out" || true)"; FAILED=$((FAILED + n))

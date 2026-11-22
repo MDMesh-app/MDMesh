@@ -45,7 +45,7 @@ import java.io.File
  * Run on a disposable, offline Device Owner emulator (Wi-Fi and mobile data disabled). Exercises the real PIN UI,
  * persisted kiosk state, Settings access and return button against Android lock task, without an MDM server.
  * Saves the return screen to the app's external files directory for visual review.
- * Manual only: CI compiles it (t0-fast) but does not run it. Assumptions skip unsupported test environments.
+ * Manual only: CI builds it (t0-fast) but does not run it. Assumptions skip unsupported test environments.
  */
 @RunWith(AndroidJUnit4::class)
 class OfflineKioskReturnTest {

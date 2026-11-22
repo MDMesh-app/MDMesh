@@ -16,7 +16,7 @@ class ReapplyStepsTest {
     private class Events : EventSink {
         val recorded = mutableListOf<Pair<String, String?>>()
         override fun record(type: String, detail: String?) { recorded += type to detail }
-        override fun drain(): List<TelemetryEventDto> = emptyList()
+        override fun drain(max: Int): List<TelemetryEventDto> = emptyList()
         override fun restore(events: List<TelemetryEventDto>) = Unit
     }
 

@@ -377,10 +377,15 @@ public class DeviceHistoryOnDeleteTest {
         location.setLat(1.0);
         location.setLon(2.0);
         location.setCapturedAt(1L);
+        com.hmdm.persistence.domain.DeviceEvent event = new com.hmdm.persistence.domain.DeviceEvent();
+        event.setDeviceNumber(number);
+        event.setType(AgentCommandDAO.KIOSK_RETURN);
+        event.setTs(0L);
         Runnable[] writes = {
                 () -> agent.insert(command),
                 () -> rollouts.insertIfNotInFlight(command),
                 () -> agent.insertEvent(number, "boot", 0L, null),
+                () -> agent.insertEvents(number, Collections.singletonList(event)),
                 () -> agent.recordKioskReturn(number, 0L, null),
                 () -> agent.upsertState(state),
                 () -> agent.recordLocation(location)};

@@ -104,8 +104,8 @@ export function agentAfterServerUpdate(s: UpdateStatus | null | undefined): stri
 }
 
 /**
- * An active rollout's agent is newer than the server, since the server was rolled back: the updater refuses to hand
- * that agent out (HTTP 409), so devices that haven't installed it yet can't. Null when that isn't so.
+ * An active rollout's agent is newer than the server (after a rollback, say): the updater refuses to hand that agent
+ * out (HTTP 409), so devices that haven't installed it yet can't. The server's version when so, else null.
  */
 export function rolloutAheadOfServer(targetVersion: string | null | undefined, s: UpdateStatus | null | undefined): string | null {
   if (!targetVersion || !s || !RELEASE_VERSION.test(targetVersion) || !RELEASE_VERSION.test(s.current)) return null;

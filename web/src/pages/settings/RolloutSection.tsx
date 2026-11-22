@@ -449,9 +449,9 @@ export function RolloutSection({
 
       {active && stalledOn ? (
         <Callout tone="alert" role="status" icon={<IconAlert />}>
-          This rollout is stalled: the server was rolled back to <span className="v2-num">{stalledOn}</span>, and agent{' '}
-          <span className="v2-num">{active.targetVersion}</span> is newer, so the updater won&rsquo;t give it to devices.
-          Cancel the rollout, or update the server to <span className="v2-num">{active.targetVersion}</span> again.
+          This rollout is stalled: agent <span className="v2-num">{active.targetVersion}</span> is newer than the server
+          (<span className="v2-num">{stalledOn}</span>), so the updater won&rsquo;t give it to devices. Cancel the rollout,
+          or update the server to <span className="v2-num">{active.targetVersion}</span>.
         </Callout>
       ) : null}
       {loadError ? (

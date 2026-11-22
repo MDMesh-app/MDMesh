@@ -114,12 +114,15 @@ describe('Agent rollout: a rollout newer than the server', () => {
     open((p) => (p === '/agent/v1/rollout/active' ? canary(3) : null), { ...STATUS, current: '0.4.9', apk: { ...STATUS.apk, version: '0.4.9', of: 'running' } });
     const note = await main().findByText(/This rollout is stalled/);
     expect(note.textContent).toBe(
-      'This rollout is stalled: the server was rolled back to 0.4.9, and agent 0.5.0 is newer, so the updater won’t give it to devices. Cancel the rollout, or update the server to 0.5.0 again.',
+      'This rollout is stalled: agent 0.5.0 is newer than the server (0.4.9), so the updater won’t give it to devices. Cancel the rollout, or update the server to 0.5.0.',
     );
   });
   it('is not marked on a server that runs the rollout’s release', async () => {
-    open((p) => (p === '/agent/v1/rollout/active' ? canary(3) : null));
+    const fetch = open((p) => (p === '/agent/v1/rollout/active' ? canary(3) : null));
     await main().findByText(/Updating the agent to/);
+    // Only once the updater's status has loaded (the stall needs it) does its absence mean anything.
+    await waitFor(() => expect(fetch.mock.calls.some(([u]) => String(u).startsWith('/update/status'))).toBe(true));
+    await act(async () => {});
     expect(main().queryByText(/This rollout is stalled/)).toBeNull();
   });
 });

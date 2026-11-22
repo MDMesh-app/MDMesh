@@ -679,8 +679,9 @@ export function EnrollPage() {
       {noAgent ? (
         <Callout tone="alert" icon={<IconAlert />} role="status">
           This server has no agent app to give new devices, so a device that scans a code can&rsquo;t install it. The
-          updater offers one once a release with an agent is found: see Settings &rarr; Updates and the updater&rsquo;s
-          log. Devices that already run the agent can still use a token.
+          updater hasn&rsquo;t verified the agent of the release this server runs: GitHub didn&rsquo;t answer (it tries
+          again every few minutes), or that release&rsquo;s signed manifest doesn&rsquo;t check out. See Settings &rarr;
+          Updates and the updater&rsquo;s log. Devices that already run the agent can still use a token.
         </Callout>
       ) : null}
       {/* Pre-flight problems, not failures: amber (nothing has gone wrong yet; the admin can still fix it here). */}

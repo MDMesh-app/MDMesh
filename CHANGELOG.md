@@ -16,8 +16,8 @@ Upgrading
 
 Heads-up
 - New devices and rollouts get the agent of the release the server runs, never a newer one: update the server first,
-  then roll out its agent from Settings → Agent rollout, which says so while a newer release waits. A server whose
-  own release has no agent (a development build, say) offers the latest release's.
+  then roll out its agent from Settings → Agent rollout, which says so while a newer release waits. Only a server whose
+  release isn't published (a development build, say) offers the latest release's agent.
 
 New
 - Arm64: the server, web and supervisor images are built for linux/amd64 and linux/arm64, so the quick start and
@@ -29,11 +29,13 @@ New
   leaves missing. It is no longer offered as an update that then fails, or retried automatically.
 
 Fixes
-- Enrollment keeps its agent through a restart with GitHub down: the updater keeps the running release's signed
-  manifest and agent, and checks both again before it serves them. When it has no agent to give new devices, the
-  Enroll page says so instead of showing a QR code that can't work.
-- A rollout started before a server update still downloads its own agent. After a rollback, a rollout of a newer
-  agent stops (the updater refuses it), and Settings → Agent rollout says so.
+- Enrollment keeps its agent through a restart with GitHub down: the updater keeps each release's signed manifest and
+  agent it has offered, and checks both again before it serves them. When it has no agent to give new devices (GitHub
+  didn't answer yet, or the release's manifest doesn't verify), the Enroll page says so instead of showing a QR code
+  that can't work, and a native install stops publishing an agent newer than its server.
+- A rollout started before a server update still downloads its own agent, also after the updater restarts. A rollout
+  of an agent newer than the server (after a rollback) stops: the updater refuses it, and Settings → Agent rollout
+  says so.
 
 ## v0.5.1 — 2026-11-20
 

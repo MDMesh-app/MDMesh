@@ -227,7 +227,7 @@ exited or credentials cleared while the older agent ran.
 - **The server first, then its agent.** New devices and rollouts get the agent of the release the server runs, never
   a newer one. Update the server, then roll out its agent from **Settings → Agent rollout**. After a rollback, a
   rollout of the newer agent stops: cancel it, or update the server again. A server whose release isn't published
-  (a development build) gets the latest release's agent.
+  (a development build), or has no agent in its manifest, gets the latest release's agent.
 
 ### v0.6.0 for forks
 

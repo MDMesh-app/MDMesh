@@ -12,7 +12,7 @@ Unreleased.
 Upgrading
 - Forks that publish their own releases: record your release certificate's checksum in
   `release/agent-signature-checksum` before you tag, and have Arm64 runners for the image builds
-  ([UPGRADING, v0.6.0 for forks](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v060-for-forks)).
+  ([UPGRADING.md](docs/UPGRADING.md#v060-for-forks)).
 - On its first start the server deletes the commands, state, events and locations of devices deleted before this
   release. No screen showed them ([UPGRADING.md](docs/UPGRADING.md#unreleased)).
 - Quick start: `HEALTH_TIMEOUT` in `.env` sets how many seconds an updated server gets to answer before the update is
@@ -22,7 +22,8 @@ Upgrading
 Heads-up
 - New devices and rollouts get the agent of the release the server runs, never a newer one: update the server first,
   then roll out its agent from Settings → Agent rollout, which says so while a newer release waits. Only a server whose
-  release isn't published (a development build, say) offers the latest release's agent.
+  release isn't published (a development build, say), or whose release has no agent in its manifest, offers the latest
+  release's agent.
 
 New
 - Arm64: the server, web and supervisor images are built for linux/amd64 and linux/arm64, so the quick start and

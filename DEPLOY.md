@@ -271,7 +271,7 @@ Sign in as **admin** with the temporary password the installer printed, then set
 One prebuilt agent APK works for every deployment. The server URL travels in the enrollment QR
 (`com.mdmesh.SERVER_URL`), not in the APK. The updater serves the agent of the release the server runs at
 `/files/agent.apk`, verified against that release's signed manifest (a server whose release isn't published, such as a
-development build, gets the latest release's); if none is served, the Enroll page says so on Docker installs (a native install can host one there by hand). Generate the QR on the console's **Enroll** page, with the console open at your
+development build, or has no agent in its manifest, gets the latest release's); if none is served, the Enroll page says so on Docker installs (a native install can host one there by hand). Generate the QR on the console's **Enroll** page, with the console open at your
 `BASE_URL`: the QR holds the address the console is open at (the page warns when that is localhost, `http://`, a local
 address or not `BASE_URL`, since devices keep it until a factory reset), the APK location and an enrollment token: single-use and valid for 24 hours by default, or, to set up a batch, for up to 100
 devices and 30 days (the API allows up to 1000 devices). **Stop all codes** on the same page ends every code that

@@ -21,8 +21,12 @@ New
   anything.
 - Updates: a newer release this server can't install (no images for its platform, images under another owner, or
   images not pinned by digest) is shown as such, with the reason and what to do, and with any security fixes it
-  leaves missing. It is no longer offered as an update that then fails, or retried automatically, and its agent isn't
-  offered for rollout or enrollment: the running release's is.
+  leaves missing. It is no longer offered as an update that then fails, or retried automatically. New devices and
+  rollouts get the running release's agent instead, when that release has one.
+
+Fixes
+- Enrollment keeps its agent when GitHub or its downloads fail for a while, and the Enroll page says so when the
+  server has no agent to give new devices, instead of showing a QR code that can't work.
 
 ## v0.5.1 — 2026-11-20
 

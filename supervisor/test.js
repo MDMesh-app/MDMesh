@@ -630,8 +630,11 @@ globalThis.fetch = (u, o) => {
  *  logical origins: the API (https://api.github.com), the web (https://github.com, browser_download_url) and the CDN
  *  the asset API redirects to (https://cdn.test). opts.privateRepo: browser URLs 404 and the asset API needs
  *  `Bearer <opts.token>` + octet-stream; opts.apk: a Buffer published as mdmesh-agent.apk; opts.failAfter: the releases
- *  list answers 500 once it has been served that many times. opts.older: { version, apk, versionCode } a second, older
- *  signed release listed after it (the running one, say). The CDN refuses any request carrying Authorization. */
+ *  list answers 500 once it has been served that many times. opts.older: { version, apk, versionCode, unlisted } a
+ *  second, older signed release listed after it (the running one, say), or only found by its tag (unlisted). Every
+ *  release is also served by tag (/releases/tags/<tag>). `control` changes answers while the test runs: failTags (the
+ *  by-tag lookup answers 500) and fail (a Set of <tag>/<name> assets whose downloads answer 500). The CDN refuses any
+ *  request carrying Authorization. */
 async function fakeGitHub(dir, opts) {
   const fs = require('fs'), path = require('path'), http = require('http'), crypto = require('crypto');
   const kd = fs.mkdtempSync(path.join(dir, 'gh-'));
@@ -652,6 +655,12 @@ async function fakeGitHub(dir, opts) {
   };
   const rels = [release(opts, 999), ...(opts.older ? [release(opts.older, opts.older.versionCode || 998)] : [])];
   const tag = rels[0].tag;
+  const listed = rels.filter((x, i) => i === 0 || !opts.older.unlisted);
+  const control = { failTags: false, fail: new Set() };
+  const relJson = (r) => ({ tag_name: r.tag, html_url: 'https://github.com/o/r/releases/tag/' + r.tag,
+    assets: Object.keys(r.bytes).map((name) => ({ name,
+      url: 'https://api.github.com/repos/o/r/releases/assets/' + encodeURIComponent(`${r.tag}/${name}`),
+      browser_download_url: `https://github.com/o/r/releases/download/${r.tag}/${name}` })) });
   // An asset's id in the API and CDN URLs: <tag>/<name>, so two releases' manifest.json stay apart.
   const byId = (id) => { const [t, ...n] = id.split('/'); const r = rels.find((x) => x.tag === t); return r && r.bytes[n.join('/')]; };
   const hits = { releases: 0, api: [], web: 0, cdn: [] };
@@ -659,7 +668,14 @@ async function fakeGitHub(dir, opts) {
   const server = http.createServer((req, res) => {
     const u = req.url;
     const assetsPrefix = '/api/repos/o/r/releases/assets/';
-    if (u.startsWith(assetsPrefix)) {
+    if (u.startsWith('/api/repos/o/r/releases/tags/')) {
+      const t = decodeURIComponent(u.slice('/api/repos/o/r/releases/tags/'.length));
+      const found = rels.find((x) => x.tag === t);
+      if (control.failTags) { res.statusCode = 500; res.end(); return; }
+      if (!found) { res.statusCode = 404; res.end(); return; }
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify(relJson(found)));
+    } else if (u.startsWith(assetsPrefix)) {
       const id = decodeURIComponent(u.slice(assetsPrefix.length));
       hits.api.push({ auth: req.headers.authorization || null, accept: req.headers.accept || null });
       if (opts.privateRepo && (req.headers.authorization !== 'Bearer ' + opts.token || req.headers.accept !== 'application/octet-stream')) {
@@ -671,27 +687,26 @@ async function fakeGitHub(dir, opts) {
       hits.releases++;
       if (opts.failAfter != null && hits.releases > opts.failAfter) { res.statusCode = 500; res.end(); return; }
       res.setHeader('content-type', 'application/json');
-      res.end(JSON.stringify(rels.map((r) => ({ tag_name: r.tag, html_url: 'https://github.com/o/r/releases/tag/' + r.tag,
-        assets: Object.keys(r.bytes).map((name) => ({ name,
-          url: 'https://api.github.com/repos/o/r/releases/assets/' + encodeURIComponent(`${r.tag}/${name}`),
-          browser_download_url: `https://github.com/o/r/releases/download/${r.tag}/${name}` })) }))));
+      res.end(JSON.stringify(listed.map(relJson)));
     } else if (u.startsWith('/web/o/r/releases/download/')) {
       hits.web++;
       const id = decodeURIComponent(u.slice('/web/o/r/releases/download/'.length));
       const name = id.split('/').pop();
+      if (control.fail.has(id)) { res.statusCode = 500; res.end(); return; }
       if (opts.privateRepo || !byId(id) || missing.has(name)) { res.statusCode = 404; res.end(); return; }
       res.end(byId(id));
     } else if (u.startsWith('/cdn/signed/')) {
       hits.cdn.push({ auth: req.headers.authorization || null });
       if (req.headers.authorization) { res.statusCode = 400; res.end('auth header forwarded'); return; }
       const id = decodeURIComponent(u.slice('/cdn/signed/'.length).replace(/\?.*$/, ''));
+      if (control.fail.has(id)) { res.statusCode = 500; res.end(); return; }
       if (byId(id) && !missing.has(id.split('/').pop())) res.end(byId(id)); else { res.statusCode = 404; res.end(); }
     } else { res.statusCode = 404; res.end(); }
   });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${server.address().port}`;
   return {
-    hits, tag, pub: path.join(kd, 'k.pub'), preload: writePreload(dir),
+    hits, tag, control, pub: path.join(kd, 'k.pub'), preload: writePreload(dir),
     env: { GITHUB_REPO: 'o/r', MANIFEST_PUBKEY: path.join(kd, 'k.pub'),
       FAKE_ORIGINS: JSON.stringify({ 'https://api.github.com': base + '/api', 'https://github.com': base + '/web', 'https://cdn.test': base + '/cdn' }) },
     close: async () => { server.closeAllConnections(); await new Promise((r) => server.close(r)); },
@@ -1577,9 +1592,10 @@ t.test('a release without digests, under another owner or without images for thi
         a.equal(st.latest, '0.0.2');
         a.match(st.blocked, want, 'the status says why');
         a.equal(st.blockedCode, code);
-        // Its agent is not offered (the running release isn't listed here, so no agent at all).
-        a.equal(st.apk, null, 'no agent from a release whose server this install will not run');
-        a.equal((await fetch(`http://127.0.0.1:${sup.port}/update/agent.apk`)).status, 404);
+        // The running release (0.0.1) has no release here, so enrollment keeps the latest's agent, never a 404.
+        a.equal(st.apk && st.apk.of, 'latest');
+        a.deepEqual(Buffer.from(await (await fetch(`http://127.0.0.1:${sup.port}/update/agent.apk`)).arrayBuffer()), opts.apk);
+        await waitFor(async () => /\[apk\] running release v0\.0\.1 has no agent to offer \(no such release\)/.test(sup.log()), 'the fallback log line');
         // The status is what auto-apply acts on: no apply started (not just no log line yet).
         a.equal(st.apply, null, 'auto-apply leaves it alone');
         await waitFor(async () => /\[update\] not offered: /.test(sup.log()), 'the not-offered log line');
@@ -1595,48 +1611,166 @@ t.test('a release without digests, under another owner or without images for thi
     }
   });
 
+/** A supervisor on this deployment against `gh` (a fakeGitHub), as Docker runs it; `env` adds to or overrides it. */
+async function supervisorOn(d, gh, authz, env = {}) {
+  const path = require('path');
+  return spawnSupervisor(d.dir, { ...d.env, ...gh.env, APPLY_SUPPORTED: '1', SERVER_BASE: authz.base,
+    APK_CACHE_DIR: path.join(d.dir, 'apk'), ...env }, /supervisor on/, ['--require', gh.preload]);
+}
+const envOf = (owner, current = '0.0.1') =>
+  `IMAGE_OWNER=${owner}\nSERVER_VERSION=${current}\nWEB_VERSION=${current}\nCURRENT_VERSION=${current}\n`;
+const NEW_AGENT = Buffer.from('agent 0.0.2'), RUNNING_AGENT = Buffer.from('agent 0.0.1');
+async function statusOf(sup, since = 0) {
+  return waitFor(async () => { const x = await (await fetch(`http://127.0.0.1:${sup.port}/update/status`)).json();
+    return x.checkedAt && x.checkedAt > since && x; }, 'a poll');
+}
+async function agentOf(sup) {
+  const r = await fetch(`http://127.0.0.1:${sup.port}/update/agent.apk`);
+  return r.status === 200 ? Buffer.from(await r.arrayBuffer()) : r.status;
+}
+/** Runs `body(d, gh, authz)` on a new deployment (.env `envText`) and fake GitHub (`ghOpts`), and cleans up. */
+async function withDeploy(envText, ghOpts, body) {
+  const fs = require('fs');
+  const d = makeDeploy(envText);
+  let gh = null, authz = null;
+  try {
+    gh = await fakeGitHub(d.dir, ghOpts);
+    authz = await fakeAuthz();
+    await body(d, gh, authz);
+  } finally {
+    if (gh) await gh.close(); if (authz) await authz.close();
+    fs.rmSync(d.dir, { recursive: true, force: true });
+  }
+}
+
 t.test('the agent offered follows what this install can install: the running release\'s while the latest is blocked, '
   + 'the latest\'s once it is installable, the running one\'s again (not the mirrored latest) once it is blocked again',
-  { skip: !HAS_MINISIGN && 'minisign not installed', timeout: 60000 }, async () => {
+  { skip: !HAS_MINISIGN && 'minisign not installed', timeout: 30000 }, async () => {
     const fs = require('fs'), path = require('path');
-    const envOf = (owner) => `IMAGE_OWNER=${owner}\nSERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n`;
-    const d = makeDeploy(envOf('forkco'));
-    const NEW = Buffer.from('agent 0.0.2'), RUNNING = Buffer.from('agent 0.0.1');
-    let gh = null, sup = null, authz = null;
-    try {
-      gh = await fakeGitHub(d.dir, { version: '0.0.2', apk: NEW, older: { version: '0.0.1', apk: RUNNING, versionCode: 1 } });
-      authz = await fakeAuthz();
-      sup = await spawnSupervisor(d.dir, { ...d.env, ...gh.env, APPLY_SUPPORTED: '1', SERVER_BASE: authz.base,
-        APK_CACHE_DIR: path.join(d.dir, 'apk') }, /supervisor on/, ['--require', gh.preload]);
-      const base = `http://127.0.0.1:${sup.port}`;
-      const agent = async () => { const r = await fetch(`${base}/update/agent.apk`); return r.status === 200 ? Buffer.from(await r.arrayBuffer()) : r.status; };
-      // /update/check polls again only 15 s after the last poll.
-      const check = async () => { await new Promise((res) => setTimeout(res, 15500));
-        return (await fetch(`${base}/update/check`, { method: 'POST', headers: ADMIN })).json(); };
+    await withDeploy(envOf('forkco'), { version: '0.0.2', apk: NEW_AGENT, older: { version: '0.0.1', apk: RUNNING_AGENT, versionCode: 1 } },
+      async (d, gh, authz) => {
+        // Each phase rewrites .env and restarts the supervisor (as docker compose up -d does), with the same APK cache.
+        const phase = async (owner, check) => {
+          fs.writeFileSync(path.join(d.project, '.env'), envOf(owner));
+          const sup = await supervisorOn(d, gh, authz);
+          try { await check(await statusOf(sup), sup); } finally { await stopChild(sup.child); }
+        };
+        await phase('forkco', async (st, sup) => {
+          a.equal(st.blockedCode, 'owner');
+          a.deepEqual(st.apk && [st.apk.version, st.apk.of], ['0.0.1', 'running'], 'the running release\'s agent');
+          a.deepEqual(await agentOf(sup), RUNNING_AGENT);
+          a.equal(sup.log().match(/\[update\] not offered: /g).length, 1);
+        });
+        await phase('mdmesh-app', async (st, sup) => {
+          a.equal(st.updateAvailable, true, 'offered now');
+          a.equal(st.blocked, null);
+          a.equal(st.blockedCode, null);
+          a.deepEqual(st.apk && [st.apk.version, st.apk.of], ['0.0.2', 'latest']);
+          a.deepEqual(await agentOf(sup), NEW_AGENT, 'the latest\'s agent, mirrored');
+          a.doesNotMatch(sup.log(), /not offered/);
+        });
+        a.ok(fs.readdirSync(path.join(d.dir, 'apk')).includes('agent-999.apk'), '0.0.2\'s agent is in the cache');
+        await phase('forkco', async (st, sup) => {
+          a.equal(st.blockedCode, 'owner');
+          a.equal(st.apk && st.apk.version, '0.0.1');
+          a.deepEqual(await agentOf(sup), RUNNING_AGENT, 'the mirrored 0.0.2 agent is not offered');
+        });
+      });
+  });
 
-      const st = await waitFor(async () => { const x = await (await fetch(`${base}/update/status`)).json(); return x.checkedAt && x; }, 'the startup poll');
-      a.equal(st.blockedCode, 'owner');
-      a.equal(st.apk && st.apk.version, '0.0.1', 'the running release\'s agent');
-      a.deepEqual(await agent(), RUNNING);
+t.test('a blocked install finds its running release by tag, beyond the listed releases',
+  { skip: !HAS_MINISIGN && 'minisign not installed', timeout: 20000 }, async () => {
+    await withDeploy(envOf('forkco'), { version: '0.0.2', apk: NEW_AGENT, older: { version: '0.0.1', apk: RUNNING_AGENT, versionCode: 1, unlisted: true } },
+      async (d, gh, authz) => {
+        const sup = await supervisorOn(d, gh, authz);
+        try {
+          const st = await statusOf(sup);
+          a.deepEqual(st.apk && [st.apk.version, st.apk.of], ['0.0.1', 'running']);
+          a.deepEqual(await agentOf(sup), RUNNING_AGENT);
+        } finally { await stopChild(sup.child); }
+      });
+  });
 
-      fs.writeFileSync(path.join(d.project, '.env'), envOf('mdmesh-app'));
-      const open = await check();
-      a.equal(open.updateAvailable, true, 'offered now');
-      a.equal(open.blocked, null);
-      a.equal(open.blockedCode, null);
-      a.equal(open.apk && open.apk.version, '0.0.2');
-      a.deepEqual(await agent(), NEW, 'the latest\'s agent, mirrored');
+t.test('a blocked install whose running version has no release agent (a -dev build) offers the latest\'s, logged once',
+  { skip: !HAS_MINISIGN && 'minisign not installed', timeout: 20000 }, async () => {
+    await withDeploy(envOf('forkco', '0.0.1-dev'), { version: '0.0.2', apk: NEW_AGENT, older: { version: '0.0.1', apk: RUNNING_AGENT, versionCode: 1 } },
+      async (d, gh, authz) => {
+        const sup = await supervisorOn(d, gh, authz, { POLL_INTERVAL_HOURS: '0.0003' });   // a poll about every second
+        try {
+          const st = await statusOf(sup);
+          a.equal(st.blockedCode, 'owner');
+          a.deepEqual(st.apk && [st.apk.version, st.apk.of], ['0.0.2', 'latest']);
+          a.deepEqual(await agentOf(sup), NEW_AGENT, 'not a 404');
+          await statusOf(sup, st.checkedAt);
+          a.equal(sup.log().match(/\[apk\] running release v0\.0\.1-dev has no agent to offer \(not a release version\)/g).length, 1);
+        } finally { await stopChild(sup.child); }
+      });
+  });
 
-      fs.writeFileSync(path.join(d.project, '.env'), envOf('forkco'));
-      const again = await check();
-      a.equal(again.blockedCode, 'owner');
-      a.equal(again.apk && again.apk.version, '0.0.1');
-      a.deepEqual(await agent(), RUNNING, 'the mirrored 0.0.2 agent is no longer offered');
-      a.equal(sup.log().match(/\[update\] not offered: /g).length, 2, 'once per blocked spell');
-    } finally {
-      await stopChild(sup && sup.child); if (gh) await gh.close(); if (authz) await authz.close();
-      fs.rmSync(d.dir, { recursive: true, force: true });
-    }
+t.test('with no agent anywhere (the latest release has none, the running release has none), none is offered: '
+  + 'apk is null, which the console\'s Enroll page warns about', { skip: !HAS_MINISIGN && 'minisign not installed', timeout: 20000 }, async () => {
+    await withDeploy(envOf('forkco'), { version: '0.0.2' }, async (d, gh, authz) => {
+      const sup = await supervisorOn(d, gh, authz);
+      try {
+        const st = await statusOf(sup);
+        a.equal(st.blockedCode, 'owner');
+        a.equal(st.apk, null);
+        a.equal(await agentOf(sup), 404);
+      } finally { await stopChild(sup.child); }
+    });
+  });
+
+t.test('a transient failure keeps the agent offered: the running release\'s lookup, its manifest, or the latest manifest',
+  { skip: !HAS_MINISIGN && 'minisign not installed', timeout: 30000 }, async () => {
+    // Installable, then blocked (IMAGE_OWNER is read on every poll) while the running release's by-tag lookup answers
+    // 500: the agent offered so far stays, until the lookup works; then the running release's (cached from then on).
+    await withDeploy(envOf('mdmesh-app'), { version: '0.0.2', apk: NEW_AGENT, older: { version: '0.0.1', apk: RUNNING_AGENT, versionCode: 1 } },
+      async (d, gh, authz) => {
+        const fs = require('fs'), path = require('path');
+        const sup = await supervisorOn(d, gh, authz, { POLL_INTERVAL_HOURS: '0.0003' });
+        try {
+          let st = await statusOf(sup);
+          a.deepEqual(st.apk && [st.apk.version, st.apk.of], ['0.0.2', 'latest']);
+          gh.control.failTags = true;
+          fs.writeFileSync(path.join(d.project, '.env'), envOf('forkco'));
+          st = await waitFor(async () => { const x = await statusOf(sup, st.checkedAt); return x.blockedCode && x; }, 'blocked');
+          a.deepEqual(st.apk && [st.apk.version, st.apk.of], ['0.0.2', 'latest'], 'kept: the lookup failed');
+          a.deepEqual(await agentOf(sup), NEW_AGENT, 'not a 404');
+          gh.control.failTags = false;
+          st = await waitFor(async () => { const x = await statusOf(sup, st.checkedAt); return x.apk && x.apk.of === 'running' && x; }, 'the running agent');
+          a.deepEqual(await agentOf(sup), RUNNING_AGENT);
+          gh.control.failTags = true;
+          st = await statusOf(sup, st.checkedAt);
+          a.equal(st.apk && st.apk.of, 'running', 'cached by version: not looked up again');
+        } finally { await stopChild(sup.child); }
+      });
+    await withDeploy(envOf('forkco'), { version: '0.0.2', apk: NEW_AGENT, older: { version: '0.0.1', apk: RUNNING_AGENT, versionCode: 1 } },
+      async (d, gh, authz) => {
+        gh.control.fail.add('v0.0.1/manifest.json');   // before the first poll: nothing offered so far
+        const sup = await supervisorOn(d, gh, authz, { POLL_INTERVAL_HOURS: '0.0003' });
+        try {
+          let st = await statusOf(sup);
+          a.deepEqual(st.apk && [st.apk.version, st.apk.of], ['0.0.2', 'latest'], 'nothing kept yet: the latest\'s, not a 404');
+          gh.control.fail.clear();
+          st = await waitFor(async () => { const x = await statusOf(sup, st.checkedAt); return x.apk && x.apk.of === 'running' && x; }, 'the running agent');
+          gh.control.fail.add('v0.0.1/manifest.json');
+          st = await statusOf(sup, st.checkedAt);
+          a.equal(st.apk && st.apk.of, 'running', 'cached by version: no new download needed');
+        } finally { await stopChild(sup.child); }
+      });
+    // Not blocked: the latest manifest fails to download on a later poll; its agent stays offered.
+    await withDeploy(envOf('mdmesh-app'), { version: '0.0.2', apk: NEW_AGENT }, async (d, gh, authz) => {
+      const sup = await supervisorOn(d, gh, authz, { POLL_INTERVAL_HOURS: '0.0003' });
+      try {
+        let st = await statusOf(sup);
+        a.equal(st.apk && st.apk.version, '0.0.2');
+        gh.control.fail.add('v0.0.2/manifest.json.minisig');
+        st = await waitFor(async () => { const x = await statusOf(sup, st.checkedAt); return x.error && x; }, 'a failed check');
+        a.match(st.error, /manifest not verified/);
+        a.deepEqual(st.apk && [st.apk.version, st.apk.of], ['0.0.2', 'latest'], 'kept');
+        a.deepEqual(await agentOf(sup), NEW_AGENT);
+      } finally { await stopChild(sup.child); }
+    });
   });
 
 t.test('restore_db: the lock bound is a fixed 60s; no environment value reaches the SQL (not even with a newline)', () => {

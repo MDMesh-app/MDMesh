@@ -49,8 +49,7 @@ function readImageOwner() {
 }
 // Last verified manifest from poll() — the source of the image refs an apply will deploy.
 let lastManifest = null;
-// The agent APK this install offers {version,versionCode,sha256,url,apiUrl} (offeredApk: the latest verified release's,
-// or the running release's while the latest is blocked); null if none.
+// The agent APK this install offers {version,versionCode,sha256,url,apiUrl,of} (offeredApk); null if none.
 let lastApk = null;
 // Release notes / link / date for the picked release {notes,url,publishedAt}; null when no release.
 let lastRelease = null;
@@ -134,15 +133,16 @@ function errText(e) {
  *  (minisign's text, fetch causes) and no configuration hints. */
 async function verifyManifest(mAsset, sAsset) {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), 'mf'));
-  const fail = (what, detail) => {
+  // transient: a download that failed this time (network, CDN, an HTTP error), not a bad or missing signature.
+  const fail = (what, detail, transient = false) => {
     console.log('[verify] manifest not verified:', what + (detail ? ': ' + detail : ''));
-    return { error: 'manifest not verified: ' + what + ' (details in the supervisor log)' };
+    return { error: 'manifest not verified: ' + what + ' (details in the supervisor log)', transient };
   };
   try {
     for (const [asset, f] of [[mAsset, 'manifest.json'], [sAsset, 'manifest.json.minisig']]) {
       let r;
-      try { r = await ghAsset(asset); } catch (e) { return fail(`${f}: download failed`, errText(e)); }
-      if (!r.ok) return fail(`${f}: HTTP ${r.status}`, r.status === 404 && !TOKEN ? 'a private repo needs GITHUB_TOKEN' : '');
+      try { r = await ghAsset(asset); } catch (e) { return fail(`${f}: download failed`, errText(e), true); }
+      if (!r.ok) return fail(`${f}: HTTP ${r.status}`, r.status === 404 && !TOKEN ? 'a private repo needs GITHUB_TOKEN' : '', true);
       fs.writeFileSync(path.join(d, f), Buffer.from(await r.arrayBuffer()));
     }
     const v = cp.spawnSync('minisign', ['-V', '-p', PUB, '-m', path.join(d, 'manifest.json')], { encoding: 'utf8' });
@@ -154,7 +154,7 @@ async function verifyManifest(mAsset, sAsset) {
     try { return { manifest: JSON.parse(fs.readFileSync(path.join(d, 'manifest.json'), 'utf8')) }; }
     catch (e) { return fail('manifest.json is not valid JSON', errText(e)); }
   } catch (e) {
-    return fail('download or check failed', errText(e)); // unreachable / unreadable → refuse, but say why in the log
+    return fail('download or check failed', errText(e), true); // unreachable / unreadable → refuse, but say why in the log
   } finally {
     fs.rmSync(d, { recursive: true, force: true });
   }
@@ -245,9 +245,6 @@ let lastBlockedLog = null;
 function setStatus(args) {
   maybeClearSkip();
   const blocked = blockedFor(args.manifest, args.verified, args.current);
-  // A release blocked since its APK was picked (IMAGE_OWNER changed, or `current`): stop offering its agent now; the
-  // next poll offers the running release's (offeredApk).
-  if (blocked && lastApk && args.manifest && lastApk.version === args.manifest.version) lastApk = null;
   const logged = blockedLogLine(lastBlockedLog, blocked);
   if (logged.line) console.log(logged.line);
   lastBlockedLog = logged.lastReason;
@@ -258,7 +255,9 @@ function setStatus(args) {
     autoSkipped: skipVersion,
     applySupported: APPLY_SUPPORTED,
     platform: hostPlatform(),   // the platform an update's images must include (blockedCode 'platform')
-    apk: lastApk ? { version: lastApk.version, versionCode: lastApk.versionCode, sha256: lastApk.sha256, available: apkReady() } : null,
+    // `of`: whose agent this is (offeredApk): 'latest' (the picked release), or 'running' while the latest is blocked.
+    apk: lastApk ? { version: lastApk.version, versionCode: lastApk.versionCode, sha256: lastApk.sha256, available: apkReady(),
+      of: lastApk.of } : null,
     release: lastRelease,
   };
   maybeAutoApply();
@@ -270,18 +269,49 @@ function blockedFor(manifest, verified = true, current = currentVersion) {
 }
 
 /** The agent APK this install offers for rollouts and enrollment (state.apk, /update/agent.apk, a native install's
- *  published copy): the picked release's, unless this install can't install that release (blocked): then the running
- *  release's, when it is among the listed releases and its own manifest verifies. Never the agent of a release whose
- *  server this install won't run. */
-async function offeredApk(releases, rel, manifest) {
-  if (!manifest) return null;
-  if (!blockedFor(manifest)) return apkAsset(rel, manifest);
-  const run = (releases || []).find((r) => !r.draft && (r.tag_name || '').replace(/^v/, '') === currentVersion);
-  const m = run && (run.assets || []).find((a) => a.name === 'manifest.json');
-  const sig = run && (run.assets || []).find((a) => a.name === 'manifest.json.minisig');
-  if (!m || !sig) return null;
-  const v = await verifyManifest(m, sig);
-  return v.manifest && v.manifest.version === currentVersion ? apkAsset(run, v.manifest) : null;
+ *  published copy; a QR code that can't download it fails on the device, so it is never dropped while one exists):
+ *  - the picked release's, when this install can install that release, or the release carries no agent;
+ *  - while that release is blocked (updateBlocked): the running release's (runningApk), so devices get the agent of
+ *    the server they talk to; when that lookup fails for now, the agent offered so far;
+ *  - when the running release has no agent (no such release in GITHUB_REPO, a -dev build, a release from before
+ *    components.apk): the picked release's after all, the version skew any install has before it updates;
+ *  - a picked release whose manifest didn't verify this time keeps the agent offered so far (verified then).
+ *  `of` says whose it is. */
+let lastNoRunningLog = null;
+async function offeredApk(rel, manifest) {
+  if (!manifest) return lastApk;
+  const latest = () => { const a = apkAsset(rel, manifest); return a && { ...a, of: 'latest' }; };
+  if (!blockedFor(manifest)) return latest();
+  const run = await runningApk();
+  if (run.apk) return run.apk;
+  if (run.transient) return lastApk || latest();
+  if (lastNoRunningLog !== currentVersion) {
+    console.log(`[apk] running release v${currentVersion} has no agent to offer (${run.why}); offering v${manifest.version}'s`);
+    lastNoRunningLog = currentVersion;
+  }
+  return latest();
+}
+
+/** The running release's agent, looked up by its tag and checked against its own signed manifest: { apk } (cached
+ *  per version: a release's assets don't change), { transient } when GitHub couldn't be asked or answer this time, or
+ *  { why } when there is none. */
+let runningApkCache = null;
+async function runningApk() {
+  const version = currentVersion;
+  if (runningApkCache && runningApkCache.version === version) return { apk: runningApkCache.apk };
+  if (!/^\d+\.\d+\.\d+$/.test(version)) return { why: 'not a release version' };
+  let run;
+  try { run = await ghJson(`https://api.github.com/repos/${REPO}/releases/tags/v${version}`); }
+  catch (e) { return /^github 404$/.test(String(e && e.message)) ? { why: 'no such release' } : { transient: true }; }
+  const asset = (n) => ((run && run.assets) || []).find((a) => a.name === n);
+  if (!asset('manifest.json') || !asset('manifest.json.minisig')) return { why: 'no signed manifest' };
+  const v = await verifyManifest(asset('manifest.json'), asset('manifest.json.minisig'));
+  if (!v.manifest) return v.transient ? { transient: true } : { why: 'its manifest did not verify' };
+  if (v.manifest.version !== version) return { why: 'its manifest names another version' };
+  const a = apkAsset(run, v.manifest);
+  if (!a) return { why: 'no agent in its manifest' };
+  runningApkCache = { version, apk: { ...a, of: 'running' } };
+  return { apk: runningApkCache.apk };
 }
 
 /** If unattended is on and a fresh verified update is available, apply it (once per version). */
@@ -300,8 +330,7 @@ async function poll() {
   lastPollAt = Date.now(); // stamp up-front so /update/check throttling also covers an in-flight poll
   if (!REPO) { lastManifest = null; lastRelease = null; setStatus({ current: currentVersion, manifest: null, verified: false, checkedAt: Date.now(), error: 'GITHUB_REPO not set' }); return; }
   try {
-    const releases = await ghJson(`https://api.github.com/repos/${REPO}/releases?per_page=10`);
-    const rel = pickRelease(releases, CHANNEL);
+    const rel = pickRelease(await ghJson(`https://api.github.com/repos/${REPO}/releases?per_page=10`), CHANNEL);
     if (!rel) { lastManifest = null; lastRelease = null; setStatus({ current: currentVersion, manifest: null, verified: false, checkedAt: Date.now(), error: 'no matching release' }); return; }
     lastRelease = { notes: rel.body || null, url: rel.html_url || null, publishedAt: rel.published_at || null };
     const m = rel.assets.find((a) => a.name === 'manifest.json');
@@ -309,7 +338,7 @@ async function poll() {
     const v = (m && s) ? await verifyManifest(m, s) : { error: 'release has no manifest.json.minisig' };
     const manifest = v.manifest || null;
     lastManifest = manifest; // only verified manifests are ever stored
-    lastApk = await offeredApk(releases, rel, manifest);
+    lastApk = await offeredApk(rel, manifest);
     setStatus({ current: currentVersion, manifest, verified: !!manifest, checkedAt: Date.now(), error: manifest ? null : v.error });
     if (lastApk) void ensureApk(); // warm the mirror cache (download+verify) so a rollout is instant
   } catch (e) {

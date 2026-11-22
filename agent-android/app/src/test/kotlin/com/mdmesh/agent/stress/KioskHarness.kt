@@ -250,12 +250,7 @@ abstract class KioskHarness {
     protected fun pinnedStarts(): Int =
         drainStarts().count { it.`package` == pinned || it.component?.packageName == pinned }
 
-    protected fun events(type: String): Int {
-        val log = EventLog(app)
-        val all = log.drain()
-        log.restore(all)
-        return all.count { it.type == type }
-    }
+    protected fun events(type: String): Int = EventLog(app).buffered().count { it.type == type }
 
     protected fun pinFailures(): Int =
         app.getSharedPreferences(ExitPinGate.PREFERENCE_NAME, 0).getInt("failures", 0)

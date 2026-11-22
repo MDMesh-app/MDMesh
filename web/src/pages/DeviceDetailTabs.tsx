@@ -360,6 +360,7 @@ export function EventIcon({ type }: { type: string }) {
     case 'wipeNotStarted':
     case 'storageRecovered':
     case 'configReapplyFailed':
+    case 'eventsDropped':
       return <IconAlert size={15} />;
     default:
       return <IconInfo size={15} />;

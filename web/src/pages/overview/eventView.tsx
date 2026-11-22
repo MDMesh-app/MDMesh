@@ -64,6 +64,7 @@ export function eventView(
     case 'wipeNotStarted':
     case 'storageRecovered':
     case 'configReapplyFailed':
+    case 'eventsDropped':
       return { icon: <IconAlert size={15} />, tone: 'warn', what, detail };
     default:
       return { icon: <IconInfo size={15} />, tone: 'idle', what, detail };

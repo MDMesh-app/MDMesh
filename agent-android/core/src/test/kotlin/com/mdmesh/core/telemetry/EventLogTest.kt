@@ -1,5 +1,6 @@
 package com.mdmesh.core.telemetry
 
+import com.mdmesh.proto.EventType
 import com.mdmesh.proto.TelemetryEventDto
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -28,12 +29,169 @@ class EventLogTest {
         assertEquals(list, EventLog.decode(EventLog.encode(list)))
     }
 
-    @Test fun capKeepsMostRecent() {
-        val list = (1..600).map { TelemetryEventDto("e", it.toLong()) }
-        val capped = EventLog.cap(list)
-        assertEquals(500, capped.size)
+    private fun events(range: IntRange) = range.map { TelemetryEventDto("e", it.toLong()) }
+
+    /** Successful check-ins until nothing is left. */
+    private fun sendAll(log: EventLog): List<TelemetryEventDto> =
+        generateSequence { log.drain().takeIf { it.isNotEmpty() }?.also { log.delivered() } }.flatten().toList()
+
+    @Test fun `a full buffer drops the oldest and says how many`() {
+        val capped = EventLog.cap(events(1..600))
+        assertEquals(EventLog.CAP, capped.size)
         assertEquals(600L, capped.last().ts) // newest kept
-        assertEquals(101L, capped.first().ts) // oldest 100 dropped
+        assertEquals(102L, capped[1].ts) // the oldest 101 make room for the marker
+        val marker = capped.first()
+        assertEquals(EventType.EVENTS_DROPPED, marker.type)
+        assertEquals(101, EventLog.droppedCount(marker))
+        assertEquals(101L, marker.ts) // when the newest dropped one happened
+    }
+
+    @Test fun `drops keep adding up in one marker`() {
+        val store = FakeStore()
+        val log = EventLog(store)
+        for (ts in 1..EventLog.CAP + 10) log.record("e$ts")
+
+        val sent = sendAll(log)
+        assertEquals(EventLog.CAP, sent.size)
+        assertEquals(1, sent.count { it.type == EventType.EVENTS_DROPPED })
+        assertEquals(11, EventLog.droppedCount(sent.first()))
+        assertEquals("e12", sent[1].type)
+        assertEquals("e${EventLog.CAP + 10}", sent.last().type)
+    }
+
+    @Test fun `the marker's text keeps its count readable`() {
+        val marker = EventLog.droppedMarker(3, 42)
+        assertEquals(
+            "3 older events dropped: the device keeps at most 500 while it couldn't deliver them",
+            marker.detail,
+        )
+        assertEquals(listOf(marker), EventLog.decode(EventLog.encode(listOf(marker))))
+        assertEquals(3, EventLog.droppedCount(EventLog.decode(EventLog.encode(listOf(marker))).single()))
+        assertEquals("1 older event dropped", EventLog.droppedMarker(1, 0).detail?.substringBefore(':'))
+    }
+
+    @Test fun `a marker whose detail gives no count counts as one`() {
+        for (detail in listOf(null, "", "many dropped", "-4 dropped", "0 dropped", "99999999999 dropped")) {
+            val marker = TelemetryEventDto(EventType.EVENTS_DROPPED, 1, detail)
+            assertEquals(detail.toString(), 1, EventLog.droppedCount(marker))
+        }
+    }
+
+    @Test fun `a record() while a batch is in flight overflows on its own, and a restore merges both markers`() {
+        val store = FakeStore().apply { values["events"] = EventLog.encode(events(1..600)) }
+        val log = EventLog(store)
+        val batch = log.drain(EventLog.CAP) // the oldest 101 already dropped behind a marker
+        assertEquals(EventLog.CAP, batch.size)
+        assertEquals(101, EventLog.droppedCount(batch.first()))
+
+        for (i in 1..600) log.record("w$i") // the check-in is slow: the waiting events overflow too
+        val waiting = log.buffered().drop(batch.size)
+        val second = waiting.first()
+        assertEquals(EventType.EVENTS_DROPPED, second.type)
+        assertEquals(101, EventLog.droppedCount(second))
+
+        log.restore(batch) // the check-in failed
+        val kept = log.buffered()
+        assertEquals(EventLog.CAP, kept.size)
+        assertEquals(1, kept.count { it.type == EventType.EVENTS_DROPPED })
+        // Both markers' counts plus the 499 events of the batch that no longer fit; dated like the newest dropped.
+        assertEquals(101 + 499 + 101, EventLog.droppedCount(kept.first()))
+        assertEquals(second.ts, kept.first().ts)
+        assertEquals("w102", kept[1].type)
+        assertEquals("w600", kept.last().type)
+    }
+
+    @Test fun `an unreadable buffer becomes a marker instead of vanishing`() {
+        val store = FakeStore().apply { values["events"] = "{not json" }
+        val log = EventLog(store)
+        log.record("boot")
+        val sent = log.drain()
+        assertEquals(listOf(EventType.EVENTS_DROPPED, "boot"), sent.map { it.type })
+        assertEquals(EventLog.UNREADABLE_DETAIL, sent.first().detail)
+        assertEquals(1, EventLog.droppedCount(sent.first()))
+    }
+
+    @Test fun `delivered keeps the marker for an in-flight batch it can't read, which was never sent`() {
+        // The batch on disk was damaged after it went out: what the server took can't be told apart, so the gap is
+        // reported rather than an unsent marker counted as delivered.
+        val store = FakeStore().apply { values["events_in_flight"] = "{not json" }
+        val log = EventLog(store)
+        log.delivered(accepted = 5)
+        val kept = log.buffered()
+        assertEquals(listOf(EventType.EVENTS_DROPPED), kept.map { it.type })
+        assertEquals(EventLog.UNREADABLE_DETAIL, kept.single().detail)
+    }
+
+    @Test fun `delivered drops what the server consumed and keeps the rest in front`() {
+        val store = FakeStore().apply { values["events"] = EventLog.encode(events(1..300)) }
+        val log = EventLog(store)
+        assertEquals(300, log.drain(EventLog.CAP).size)
+        log.record("new")
+        log.delivered(accepted = 120)
+        val rest = log.buffered()
+        assertEquals((121L..300L).toList(), rest.dropLast(1).map { it.ts })
+        assertEquals("new", rest.last().type)
+    }
+
+    @Test fun `a server that claims more than the batch takes the whole batch and nothing waiting`() {
+        val store = FakeStore().apply { values["events"] = EventLog.encode(events(1..150)) }
+        val log = EventLog(store)
+        log.drain() // 1..100
+        log.delivered(accepted = 1_000)
+        assertEquals((101L..150L).toList(), log.buffered().map { it.ts })
+    }
+
+    @Test fun `a negative count takes nothing, so the whole batch goes out again`() {
+        val store = FakeStore().apply { values["events"] = EventLog.encode(events(1..150)) }
+        val log = EventLog(store)
+        log.drain()
+        log.delivered(accepted = -5)
+        assertEquals((1L..150L).toList(), log.buffered().map { it.ts })
+    }
+
+    @Test fun `an older server's answer counts as the first 100 taken`() {
+        // A server rolled back below protocol 1.12 keeps the first 100 and drops the rest without saying so.
+        val store = FakeStore().apply { values["events"] = EventLog.encode(events(1..300)) }
+        val log = EventLog(store)
+        log.drain(EventLog.CAP)
+        log.delivered(accepted = null)
+        assertEquals((101L..300L).toList(), log.buffered().map { it.ts })
+    }
+
+    @Test fun `a backlog goes out in batches the server takes, oldest first, one check-in after another`() {
+        // Servers take at most 100 events per check-in and ignore the rest; a bigger batch marked delivered was lost.
+        val store = FakeStore().apply { values["events"] = EventLog.encode(events(1..250)) }
+        val log = EventLog(store)
+
+        val first = log.drain()
+        assertEquals((1L..100L).toList(), first.map { it.ts })
+        log.delivered()
+        assertEquals((101L..200L).toList(), log.drain().map { it.ts })
+        log.delivered()
+        assertEquals((201L..250L).toList(), log.drain().map { it.ts })
+        log.delivered()
+        assertTrue(log.drain().isEmpty())
+    }
+
+    @Test fun `a failed check-in puts its batch back in front of the rest of the backlog`() {
+        val store = FakeStore().apply { values["events"] = EventLog.encode(events(1..150)) }
+        val log = EventLog(store)
+        log.restore(log.drain())
+        assertEquals((1L..100L).toList(), log.drain().map { it.ts })
+        log.delivered()
+        assertEquals((101L..150L).toList(), EventLog(store).drain().map { it.ts })
+    }
+
+    @Test fun `what an older agent left in flight goes out in batches too`() {
+        // Agents before 0.5.2 drained up to 500 at once; one that died mid-check-in left them all in flight.
+        val store = FakeStore().apply {
+            values["events_in_flight"] = EventLog.encode(events(1..450))
+            values["events"] = EventLog.encode(events(451..500))
+        }
+        val log = EventLog(store)
+        assertEquals((1L..100L).toList(), log.drain().map { it.ts })
+        log.delivered()
+        assertEquals((101L..500L).toList(), sendAll(log).map { it.ts })
     }
 
     @Test fun decodeNullAndGarbageYieldEmpty() {

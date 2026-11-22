@@ -53,3 +53,11 @@ describe('a configuration revision for display', () => {
     expect(shortRevision('')).toBe('—');
   });
 });
+
+describe('an eventsDropped event', () => {
+  it('reads as a warning with its own wording', () => {
+    expect(eventTone('eventsDropped')).toBe('warn');
+    expect(EVENT_LABELS.eventsDropped).toBe('Events dropped');
+    expect(EVENT_VERBS.eventsDropped).toBe('dropped events it could not send');
+  });
+});

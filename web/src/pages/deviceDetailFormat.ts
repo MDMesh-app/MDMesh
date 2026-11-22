@@ -211,7 +211,7 @@ export function commandStatus(status: string): { kind: StatusKind; label?: strin
 
 /**
  * Device events the agent reports as something to look at (#220's storage recovery, a failed boot re-apply, a factory
- * reset that didn't start, #222).
+ * reset that didn't start, #222; a full agent buffer that dropped events).
  */
 export const WARN_EVENTS: ReadonlySet<string> = new Set([
   'lowBattery',
@@ -219,6 +219,7 @@ export const WARN_EVENTS: ReadonlySet<string> = new Set([
   'storageRecovered',
   'configReapplyFailed',
   'wipeNotStarted',
+  'eventsDropped',
 ]);
 
 export function eventTone(type: string): StatusTone {

@@ -76,6 +76,17 @@ public class AgentV1ContractTest {
         assertTrue(json, json.contains("\"installIntegrity\":\"required\""));
     }
 
+    /** How much of the request the server took (protocol 1.3 results, 1.12 events): the agent resends the rest. */
+    @Test
+    public void checkin_response_reports_what_it_accepted() throws Exception {
+        AgentCheckInResponse resp = new AgentCheckInResponse(Collections.emptyList());
+        resp.setResultsAccepted(2);
+        resp.setEventsAccepted(3);
+        String json = mapper.writeValueAsString(resp);
+        assertTrue(json, json.contains("\"resultsAccepted\":2"));
+        assertTrue(json, json.contains("\"eventsAccepted\":3"));
+    }
+
     @Test
     public void enroll_response_keeps_secret_fields() throws Exception {
         String json = mapper.writeValueAsString(new AgentEnrollResponse("dev-1", "Default", "s3cr3t"));

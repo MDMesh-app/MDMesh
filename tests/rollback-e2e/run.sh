@@ -9,8 +9,8 @@
 #           working 0.4.0, and (b) the update to 0.5.1, then Roll back (POST /update/rollback with the recovery token,
 #           as /recovery sends it) is back on a working 0.4.0.
 #   040     v0.4.0 quick start (its published images, its supervisor) updated to this branch (0.5.1) by v0.4.0's own
-#           apply.sh. v0.4.0's rollback.sh fails over the new schema (configurations_pr_key: a 0.5.0 table refers to
-#           configurations) and must change nothing; then the supervisor is updated as UPGRADING says and the rollback
+#           apply.sh. v0.4.0's rollback.sh fails over the new schema (it can't drop a constraint that newer tables
+#           depend on, such as configurations_pr_key or devices_number_unique) and must change nothing; then the supervisor is updated as UPGRADING says and the rollback
 #           finishes: the 0.4.0 console, sign-in, the devices and an enrollment code made before the update all work,
 #           what was written after the update is gone. Then the same database is updated again (no leftovers), and the
 #           docs' Docker restores (OPERATIONS "Backups and restore", UPGRADING "Restoring by hand") are run as written;
@@ -354,7 +354,11 @@ phase_040() {
   check "v0.4.0's rollback.sh fails (does not report OK)" bash -c "! grep -q '^OK ' '$WORK/040-rb-old.out'"
   stamp="$(dc "$d" exec -T supervisor cat /backups/latest | tr -d '\r')"
   dc "$d" exec -T supervisor cat "/backups/$stamp.restore.log" > "$WORK/040-rb-old.log" 2>>"$LOG"
-  check "root cause: $(grep -m1 ERROR "$WORK/040-rb-old.log" | cut -c1-150)" grep -q 'cannot drop constraint configurations_pr_key' "$WORK/040-rb-old.log"
+  # Which constraint it trips over first depends on the newer schema (configurations_pr_key until #235's links to
+  # devices(number) made it devices_number_unique); what matters is why: the old restore can't drop an object that the
+  # newer schema's tables depend on.
+  check "root cause: $(grep -m1 ERROR "$WORK/040-rb-old.log" | cut -c1-150)" \
+    grep -Eq 'cannot drop constraint [a-z_]+ on table public\.[a-z_]+ because other objects depend on it' "$WORK/040-rb-old.log"
   f2="$(fingerprint "$d")"
   check "the failed old restore left the database exactly as it was ($f1)" test "$f1" = "$f2"
   check "the server is left stopped" server_stopped "$d"

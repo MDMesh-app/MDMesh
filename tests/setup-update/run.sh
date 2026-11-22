@@ -284,15 +284,55 @@ upd capped ok
   || { fail "--update does not stop after the 5 newest tags"; show; }
 ok
 # From a detached release checkout with an install: forward to the newest, no git pull involved. The release's setup.sh
-# is told it runs an update, and from which release (MDMESH_UPDATING, MDMESH_UPDATE_FROM: the native installer then asks
-# nothing); a fresh clone's is not. (Seen in the environment of the docker stub, which that setup.sh runs.)
+# is told it runs an update (MDMESH_UPDATING: the native installer then asks nothing), but not from which release: that
+# is the install's own record, which the clone's tag can't tell (it may have moved before the run); a fresh clone's is
+# not told it is an update. (Seen in the environment of the docker stub, which that setup.sh runs.)
 clone detached v9.0.0; : > "$WORK/detached/.env"
 upd detached ok
 head_is detached "$c910" || { fail "--update from v9.0.0 (detached) did not move to v9.1.0"; show; }
 ok
-{ grep -qx 'MDMESH_UPDATING=1' "$WORK/env.log" && grep -qx 'MDMESH_UPDATE_FROM=9.0.0' "$WORK/env.log"; } \
-  || { fail "--update over an install does not tell the release's setup.sh it updates from 9.0.0"; show; }
+{ grep -qx 'MDMESH_UPDATING=1' "$WORK/env.log" && ! grep -q '^MDMESH_UPDATE_FROM=' "$WORK/env.log"; } \
+  || { fail "--update over an install does not tell the release's setup.sh it updates, or still names a release from the clone"; show; }
 ok
+# The release a native update says it leaves is the install's record (install/lib/envfile.sh mdm_installed_version, read
+# from a stand-in for /etc/mdmesh), never the clone's tag: the clone is on v9.1.0 now (as after an update stopped at the
+# installer's question, or a git pull), the install still on 9.0.0, so the title reads 9.0.0 → 9.1.0, not 9.1.0 → 9.1.0.
+# shellcheck disable=SC2016  # the installer's code, word for word
+if ! { grep -qF 'native update, %s → %s' "$REPO/install/install-native.sh" \
+       && grep -qF '"${INSTALLED_VERSION:-?}" "${CLONE_VERSION:-?}"' "$REPO/install/install-native.sh" \
+       && grep -qF 'INSTALLED_VERSION=$(mdm_installed_version "$SUP_ENV_DIR")' "$REPO/install/install-native.sh"; }; then
+  fail "install-native.sh no longer titles an update with the install's record (mdm_installed_version) → the clone's tag"
+fi
+! grep -rqF MDMESH_UPDATE_FROM "$REPO/setup.sh" "$REPO/install" || fail "MDMESH_UPDATE_FROM (the clone's tag) is still passed or read"
+ok
+# installed DIR: what mdm_installed_version prints for the stand-in DIR ("?" for nothing, as the title shows it).
+installed() { local v; v=$(bash -c '. "$1"; mdm_installed_version "$2"' _ "$REPO/install/lib/envfile.sh" "$1"); printf '%s' "${v:-?}"; }
+E="$WORK/etc-mdmesh"; mkdir -p "$E"
+printf 'SUPERVISOR_PORT=9000\nCURRENT_VERSION=9.0.0\nAPPLY_SUPPORTED=0\n' > "$E/supervisor.env"
+title="$(installed "$E") → $(cd "$WORK/detached" && bash -c '. "$1"; mdm_repo_version .' _ "$REPO/install/lib/version.sh")"
+[ "$title" = "9.0.0 → 9.1.0" ] || fail "a native update over 9.0.0 from a clone on v9.1.0 is titled '$title', not '9.0.0 → 9.1.0'"
+ok
+# expect_installed WANT WHAT: mdm_installed_version of $E is WANT.
+expect_installed() { local got; got=$(installed "$E"); [ "$got" = "$1" ] || fail "mdm_installed_version: $2 gives '$got', want '$1'"; ok; }
+# The record a completed run writes wins over supervisor.env (written before a run ends), even when it is empty.
+printf '9.0.1\n' > "$E/installed-version"; expect_installed 9.0.1 "installed-version beside an older CURRENT_VERSION"
+: > "$E/installed-version"; expect_installed '?' "an empty installed-version (installed from an untagged clone)"
+printf '9.0.1' > "$E/installed-version"; expect_installed 9.0.1 "installed-version without a newline"
+printf '9.0.1\r\n' > "$E/installed-version"; expect_installed 9.0.1 "installed-version with a CRLF"
+printf 'v9.0.1\n' > "$E/installed-version"; expect_installed '?' "installed-version that is not release-shaped"
+rm -f -- "$E/installed-version"; mkdir "$E/installed-version"; expect_installed '?' "installed-version that is a directory"
+rmdir -- "$E/installed-version"; ln -s "$E/supervisor.env" "$E/installed-version"
+expect_installed '?' "installed-version that is a symbolic link"
+rm -f -- "$E/installed-version"
+# Without the record (installs from before it): CURRENT_VERSION, read as systemd reads the file.
+for c in "CURRENT_VERSION=9.0.0:9.0.0" "  CURRENT_VERSION = \"9.0.0-rc.1\" :9.0.0-rc.1" "CURRENT_VERSION='9.0.0'\r:9.0.0" \
+         "CURRENT_VERSION=0.0.0:?" "CURRENT_VERSION=:?" "#CURRENT_VERSION=9.0.0:?" "CURRENT_VERSION=9.0.0 junk:?" \
+         "CURRENT_VERSION=9.0.0\nCURRENT_VERSION=9.0.2:9.0.2" "X=\"open\nCURRENT_VERSION=9.0.0\nclose\":?" \
+         "X=a\\\\\nCURRENT_VERSION=9.0.0:?"; do
+  # shellcheck disable=SC2059  # the case's \n, \r and \\ are printf escapes
+  printf "${c%:*}\n" > "$E/supervisor.env"; expect_installed "${c##*:}" "supervisor.env '${c%:*}'"
+done
+rm -f -- "$E/supervisor.env"; expect_installed '?' "no record at all (a fresh host, or supervisor.env from before v0.3.2)"
 clone fresh2
 upd fresh2 ok
 { head_is fresh2 "$c910" && grep -q '^PATH=' "$WORK/env.log" && ! grep -q '^MDMESH_UPDAT' "$WORK/env.log"; } \

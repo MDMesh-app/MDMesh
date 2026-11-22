@@ -6,6 +6,8 @@
 #            upgrade checks in after it with its original secret; hash.secret / jwt.secretkey and the data unchanged)
 #   killed   the same upgrade SIGKILLed at each kill point, then re-run: it must converge
 #   update   the change installed, then `sudo ./setup.sh --update --native` over it without -y: it must ask nothing
+#   update-resumed  the same after an update that stopped halfway (clone already moved, "no" at the question): it must
+#            say the install is unchanged, then name the installed release as the one it updates from
 # Every install is followed by the same check step: units active, initialized.txt OK, /rest/public/name 200, and that
 # version's scripts/agent-v1-e2e.sh with FAIL=0.
 #
@@ -34,7 +36,7 @@ on:
       scenario:
         description: Scenario to run (all = the whole matrix)
         type: choice
-        options: [all, fresh, upgrade, killed, update]
+        options: [all, fresh, upgrade, killed, update, update-resumed]
         default: all
       from-ref:
         description: Release to upgrade from (empty = the latest GitHub release).
@@ -73,7 +75,7 @@ jobs:
           import json, os
           d, s = os.environ["IN_DISTRO"], os.environ["IN_SCENARIO"]
           distros = ["debian-12", "debian-13", "ubuntu-24.04"] if d == "all" else [d]
-          scenarios = ["fresh", "upgrade", "killed", "update"] if s == "all" else [s]
+          scenarios = ["fresh", "upgrade", "killed", "update", "update-resumed"] if s == "all" else [s]
           print("matrix=" + json.dumps({"include": [{"distro": x, "scenario": y} for x in distros for y in scenarios]}))
           EOF
           echo "upgrading from $from"

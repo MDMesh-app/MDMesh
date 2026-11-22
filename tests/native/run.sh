@@ -16,6 +16,10 @@
 #                      it, without -y (stdin closed: a question stops it): it must ask nothing, say it is an update and
 #                      keep the port, the base URL, the data and the updater settings. The release it finds is the code
 #                      under test as v99.0.0, from a local origin, signed with a throwaway key (guest.sh update-release)
+#             update-resumed  the same update after one that stopped halfway: the clone already on v99.0.0 (as an older
+#                      setup.sh's --update leaves it) and "no" answered to the installer's question, which must leave
+#                      the install as it was and say so. The update then names the release the install runs, not the
+#                      clone's ("A → 99.0.0", never "99.0.0 → 99.0.0")
 #
 # Environment (all optional):
 #   T2_FROM_REF   the release to upgrade from (default v0.3.1). CI passes the latest GitHub release.
@@ -41,7 +45,7 @@ REPO=$(cd -P -- "$HERE/../.." && pwd)
 usage() { sed -n '/^# Usage:/,/^# Needs:/p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 DISTRO=${1:-}; SCENARIO=${2:-}
 if [ -z "$DISTRO" ] || [ -z "$SCENARIO" ]; then usage; fi
-case "$SCENARIO" in fresh|upgrade|killed|update) ;; *) usage ;; esac
+case "$SCENARIO" in fresh|upgrade|killed|update|update-resumed) ;; *) usage ;; esac
 
 T2_FROM_REF=${T2_FROM_REF:-v0.3.1}
 T2_TO_REF=${T2_TO_REF:-HEAD}
@@ -179,9 +183,10 @@ case "$SCENARIO" in
     result - "$verdict" "before: e2e $before_e2e; after: e2e ${E2E_RESULT}; $(minutes "$T0") min"
     ;;
 
-  update)
+  update|update-resumed)
     # The clone ends one commit past the code under test (the rig's release key), on its release; --update moves it to
-    # v99.0.0, a separate commit holding the code under test, as a squash merge of it would be.
+    # v99.0.0, a separate commit holding the code under test, as a squash merge of it would be. (update-resumed: an
+    # earlier update moved it there already and stopped at the installer's question.)
     start_container "$NAME" "$IMAGE"
     prepare_checkout "$TO_SHA"
     install_with_settings install "$TO_SHA"
@@ -191,7 +196,19 @@ case "$SCENARIO" in
       || die "could not make the v99.0.0 release: $(tail -n 1 "$OUT/update-release.out")"
     while IFS= read -r l; do log "$l"; done < "$OUT/update-release.out"
     rel_sha=$(sed -n 's/^release //p' "$OUT/update-release.out")
+    # The release the install runs: what the installer records (installed-version), the code under test's release.
     from=$(git -C "$REPO" describe --tags --abbrev=0 --match 'v[0-9]*' "$TO_SHA" 2>/dev/null | sed 's/^v//' || true)
+    check "the install records the release it runs" "$(docker exec "$CTR" cat /etc/mdmesh/installed-version)" "$from"
+    if [ "$SCENARIO" = update-resumed ]; then
+      [ -n "$from" ] || die "update-resumed needs the code under test on a release tag (fetch the tags: git fetch --tags origin)"
+      guest move-clone 99.0.0 | while IFS= read -r l; do log "$l"; done
+      rc=0; guest decline /t2/out/decline.out > "$OUT/decline.result" 2>&1 || rc=$?
+      docker cp "$CTR:/t2/out/decline.out" "$OUT/decline.out" > /dev/null 2>&1 || true
+      check "answering no stops the install" "$rc" 1
+      check "answering no says the install is unchanged and the clone moved" \
+        "$(grep -cF "The install is unchanged: this host still runs v${from}. This clone is now on v99.0.0" "$OUT/decline.out" || true)" 1
+      check "answering no leaves the record" "$(docker exec "$CTR" cat /etc/mdmesh/installed-version)" "$from"
+    fi
     rc=0; run_update update || rc=$?
     check "the update exits 0" "$rc" 0
     check "the update asks nothing" \
@@ -199,6 +216,7 @@ case "$SCENARIO" in
     check "the update says it is one, from ${from:-?} to 99.0.0" \
       "$(grep -cF "MDMesh · native update, ${from:-?} → 99.0.0" "$OUT/update.out" || true)" 1
     check "the update ends as one" "$(grep -cF '✓ MDMesh updated (native)' "$OUT/update.out" || true)" 1
+    check "the update records 99.0.0" "$(docker exec "$CTR" cat /etc/mdmesh/installed-version)" 99.0.0
     check "the clone is on v99.0.0" "$(docker exec -u t2user "$CTR" git -C /home/t2user/MDMesh rev-parse HEAD)" "$rel_sha"
     check "v99.0.0 holds the code under test" \
       "$(docker exec -u t2user "$CTR" git -C /home/t2user/MDMesh rev-parse 'HEAD^{tree}')" "$(git -C "$REPO" rev-parse "$TO_SHA^{tree}")"

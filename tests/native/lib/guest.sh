@@ -13,6 +13,9 @@
 #                                  a throwaway release key committed into the checkout, a curl stub for the manifest)
 #   update <out> <repo>            the documented update, as t2user: `sudo ./setup.sh --update --native`, without -y and
 #                                  with stdin closed, GITHUB_REPO=<repo>; output to <out>
+#   move-clone <version>           as t2user: the checkout detached at origin's v<version>, as an update that stopped
+#                                  after moving it leaves it (an older setup.sh's --update, then "no" at its question)
+#   decline <out>                  as t2user: `sudo ./setup.sh --native`, answering "no" to its question; output to <out>
 #   kill-points                    list the kill points, one per line
 #   admin-temp-password <out>      the temporary admin password a fresh install printed in <out>
 #   secrets                        a short fingerprint (sha256) of hash.secret / jwt.secretkey in ROOT.xml
@@ -232,6 +235,22 @@ cmd_update() {
   return "$rc"
 }
 
+cmd_move_clone() {
+  as_user git -C "$CHECKOUT" fetch -q --no-tags origin "refs/tags/v$1:refs/tags/v$1"
+  as_user git -C "$CHECKOUT" -c advice.detachedHead=false checkout -q --detach "v$1"
+  as_user git -C "$CHECKOUT" log -1 --format='checked out %h %s'
+}
+
+# cmd_decline OUT: what a 0.5.0 setup.sh's --update ends in once it has moved the clone (it hands over without
+# MDMESH_UPDATING, so the installer asks), answered "no". Output to OUT.
+cmd_decline() {
+  local out=$1 rc=0
+  : > "$out"
+  printf 'no\n' | setsid runuser -l t2user -c "cd MDMesh && exec sudo ./setup.sh --native" > "$out" 2>&1 || rc=$?
+  echo "T2 decline rc=$rc"
+  return "$rc"
+}
+
 cmd_admin_temp_password() {
   sed -n 's/.*admin \/ \([0-9a-f]\{16,\}\).*/\1/p' "$1" | head -n 1
 }
@@ -350,7 +369,7 @@ cmd_collect() {
 
 cmd=${1:?usage: guest.sh <subcommand> ...}; shift
 case "$cmd" in
-  clone|checkout|install|update-release|update|admin-temp-password|secrets|settings|set-token|set-proxy|counts|deployed|port|base64-flag|initialized|units|state|collect) "cmd_${cmd//-/_}" "$@" ;;
+  clone|checkout|install|update-release|update|move-clone|decline|admin-temp-password|secrets|settings|set-token|set-proxy|counts|deployed|port|base64-flag|initialized|units|state|collect) "cmd_${cmd//-/_}" "$@" ;;
   kill-points) cmd_kill_points ;;
   *) echo "unknown subcommand: $cmd" >&2; exit 2 ;;
 esac

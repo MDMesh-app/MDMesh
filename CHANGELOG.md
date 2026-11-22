@@ -9,6 +9,11 @@ Unreleased.
 
 ## Unreleased
 
+Fixes
+- Native: an update names the installed release it updates from, not the release the clone is already on (it read
+  "0.5.1 → 0.5.1" on a host still running 0.5.0). Answering "no" to the installer's question after an update has moved
+  the clone now says the install is unchanged and which release the clone is on, instead of "no changes made".
+
 ## v0.5.1 — 2026-11-20
 
 Upgrading

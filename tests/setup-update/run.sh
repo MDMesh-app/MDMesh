@@ -367,5 +367,10 @@ upd domain059 old -- --allow-downgrade
 { head_is domain059 "$c900" && grep -q 'Checked out v0.5.9' "$WORK/out"; } || { fail "--update --allow-downgrade to v0.5.9 in domain mode is refused"; show; }
 ok
 
-if [ "$FAILS" != 0 ]; then echo "setup --update: $FAILS failure(s)" >&2; exit 1; fi
-echo "setup --update: all $CHECKS checks passed"
+# Which tree ran, and a floor on how many checks did (a few depend on the host), so a section that silently ran
+# nothing can't pass.
+TREE=$(git -c safe.directory='*' -C "$REPO" rev-parse --short HEAD 2>&1) || TREE='?'
+TREE="$REPO at $TREE"
+if [ "$FAILS" != 0 ]; then echo "setup --update: $FAILS failure(s) ($TREE)" >&2; exit 1; fi
+if [ "$CHECKS" -lt 44 ]; then echo "setup --update: only $CHECKS checks ran, expected at least 44 ($TREE)" >&2; exit 1; fi
+echo "setup --update: all $CHECKS checks passed ($TREE)"

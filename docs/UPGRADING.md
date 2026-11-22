@@ -283,9 +283,9 @@ exited or credentials cleared while the older agent ran.
 - **Going back to 0.5.1 without a restore** (`--allow-downgrade`) works: 0.5.1 starts on the new database unchanged.
   It keeps the links, so in 0.5.1 too, deleting a device deletes its history and renaming one carries it. A check-in
   or command that races a delete gets a server error in 0.5.1 (this release answers it as for an unknown device).
-- **Existing installs need nothing.** Cloudflare Tunnel and own-domain installs, quick start or from source, keep
-  their mode, `.env` and compose files through the update. Answers files and `MDMESH_MODE=1` or `2` mean what they
-  meant before; `3` (or `proxy`) is the new mode. Native is unchanged.
+- **Existing installs keep their hosting mode.** Cloudflare Tunnel and own-domain installs, quick start or from
+  source, keep their mode, `.env` and compose files through the update. Answers files and `MDMESH_MODE=1` or `2` mean
+  what they meant before; `3` (or `proxy`) is the new mode. Native is unchanged.
 - **New: behind your own proxy** (Docker). For a machine where nginx, Apache, Caddy or Traefik already does HTTPS
   ([DEPLOY](../DEPLOY.md#3-behind-your-own-proxy)). To move an existing install to it, update to 0.6.0 first, then
   [change the hosting mode](#changing-the-hosting-mode).

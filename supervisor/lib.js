@@ -231,7 +231,7 @@ function assetRequest(asset, token) {
  *  is dropped as soon as a redirect changes origin, and never re-added. (Node's fetch strips it too on a cross-origin
  *  redirect, but that is an implementation detail; this makes the rule explicit and testable.) `fetchImpl` is
  *  injected so tests can script the responses. Returns the final Response; the caller checks `ok`. */
-async function fetchAsset(asset, token, fetchImpl = globalThis.fetch, maxRedirects = 5) {
+async function fetchAsset(asset, token, fetchImpl = globalThis.fetch, maxRedirects = 5, signal = undefined) {
   const req = assetRequest(asset, token);
   if (!req.url) throw new Error('asset has no download URL');
   const httpsOnly = (u) => {
@@ -242,7 +242,7 @@ async function fetchAsset(asset, token, fetchImpl = globalThis.fetch, maxRedirec
   let cur = httpsOnly(req.url);
   let headers = req.headers;
   for (let hop = 0; hop <= maxRedirects; hop++) {
-    const r = await fetchImpl(cur.href, { headers, redirect: 'manual' });
+    const r = await fetchImpl(cur.href, { headers, redirect: 'manual', ...(signal ? { signal } : {}) });
     const loc = r.status >= 300 && r.status < 400 && r.headers.get('location');
     if (!loc) return r;
     try { await (r.body && r.body.cancel()); } catch { /* already consumed or closed */ } // free the connection

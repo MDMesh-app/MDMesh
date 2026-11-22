@@ -92,6 +92,35 @@ start_container() {
   docker exec "$CTR" mkdir -p /t2/out
   docker cp "$HERE/lib/guest.sh" "$CTR:/t2/guest.sh" > /dev/null
   log "container $CTR up ($IP; $(docker exec "$CTR" sh -c '. /etc/os-release; echo "$PRETTY_NAME"'))"
+  m2_seed
+}
+
+# --- Maven repository seed (T2_M2_REPO) ------------------------------------------------------------------------------
+# GitHub's runners share IPs that Maven Central rate-limits (HTTP 429), for longer than Maven's own back-off (both of
+# its transports already retry a 429) waits. With T2_M2_REPO=<host dir>, the run's first container gets that
+# directory's contents as root's local Maven repository before any install (the installers run mvn as root, through
+# sudo), and a passing run copies the guest's repository back into it for the next run (CI keeps it with
+# actions/cache). Copied with `docker cp`, never mounted; the killed scenario's kill-point containers inherit it from
+# the snapshot. Records of failed lookups (*.lastUpdated, resolver-status.properties) are dropped on the way out, or
+# Maven would not retry those lookups in the next run.
+M2_GUEST=/root/.m2/repository
+M2_SEEDED=""; M2_SAVED=""
+m2_seed() {
+  [ -n "${T2_M2_REPO:-}" ] && [ -z "$M2_SEEDED" ] || return 0
+  M2_SEEDED=1
+  mkdir -p "$T2_M2_REPO"
+  docker exec "$CTR" mkdir -p "$M2_GUEST"
+  docker cp -q "$T2_M2_REPO/." "$CTR:$M2_GUEST/" >> "$OUT/t2.log" 2>&1 || die "could not seed the Maven repository from $T2_M2_REPO"
+  log "Maven repository seeded from $T2_M2_REPO ($(du -sh "$T2_M2_REPO" | cut -f1))"
+}
+# m2_save: once per run, from the current container, after an install whose Maven build passed.
+m2_save() {
+  [ -n "${T2_M2_REPO:-}" ] && [ -z "$M2_SAVED" ] && [ -n "$CTR" ] || return 0
+  M2_SAVED=1
+  docker cp -q "$CTR:$M2_GUEST/." "$T2_M2_REPO/" >> "$OUT/t2.log" 2>&1 \
+    || log "WARN could not copy the Maven repository out of $CTR (see $OUT/t2.log)"
+  find "$T2_M2_REPO" -type f \( -name '*.lastUpdated' -o -name resolver-status.properties \) -delete
+  log "Maven repository saved to $T2_M2_REPO ($(du -sh "$T2_M2_REPO" | cut -f1))"
 }
 
 remove_container() {

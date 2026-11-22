@@ -102,9 +102,24 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
+      # The guest's Maven repository, seeded into the first container and saved from a passing run (T2_M2_REPO in
+      # tests/native/run.sh): Maven Central rate-limits the runners' shared IPs (HTTP 429) for longer than Maven's own
+      # back-off waits. Per distro (their Maven versions differ) and scenario (upgrade and killed also build the
+      # release); a change to a pom or a new release starts from the closest earlier repository.
+      - name: Maven repository for the guest
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/t2-m2
+          key: t2-m2-${{ matrix.distro }}-${{ matrix.scenario }}-${{ needs.plan.outputs.from-ref }}-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            t2-m2-${{ matrix.distro }}-${{ matrix.scenario }}-${{ needs.plan.outputs.from-ref }}-
+            t2-m2-${{ matrix.distro }}-${{ matrix.scenario }}-
+            t2-m2-${{ matrix.distro }}-
+
       - name: Run the rig
         env:
           T2_OUT: ${{ runner.temp }}/t2-out
+          T2_M2_REPO: ${{ runner.temp }}/t2-m2
         run: tests/native/run.sh "$DISTRO" "$SCENARIO"
 
       - name: Summary

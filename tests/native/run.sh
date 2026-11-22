@@ -23,6 +23,9 @@
 #   T2_KILL_POINTS  comma-separated kill points for `killed` (default: all; `bash tests/native/lib/guest.sh kill-points`)
 #   T2_OUT        where logs and results go (default ${TMPDIR:-/tmp}/mdmesh-t2); each run writes <T2_OUT>/<container name>/
 #   T2_CACHE=1    share Maven/npm download caches between runs (named Docker volumes mdmesh-t2-cache-m2/-npm)
+#   T2_M2_REPO    a host directory holding a Maven repository: copied (not mounted) into the first container as root's
+#                 ~/.m2/repository before any install, and the guest's repository copied back into it when the run
+#                 passes (CI keeps it with actions/cache, so the guest's Maven does not depend on Maven Central)
 #   T2_STRICT=1   build an upgrade's image without the workarounds its from-ref installer needs
 #                 (see tests/native/Dockerfile, layer 3)
 #   T2_HTTP_PORT  the port given to the installer (default 9090); T2_BASE_URL its public URL (default http://mdm.t2.test:<port>)
@@ -31,8 +34,8 @@
 #   T2_STEP_TIMEOUT  seconds one installer run may take (default 3600)
 #
 # Needs: docker (cgroup v2 host), git, curl, python3, md5sum. Every container and image it creates is named
-# mdmesh-t2-<distro>-<scenario>-<random>[...] and removed on exit, whatever happens; nothing else is touched, and no
-# host path is mounted into a container.
+# mdmesh-t2-<distro>-<scenario>-<random>[...] and removed on exit, whatever happens; nothing else is touched (but
+# T2_M2_REPO, when set), and no host path is mounted into a container.
 set -euo pipefail
 unset CDPATH
 HERE=$(cd -P -- "$(dirname -- "$0")" && pwd)
@@ -261,12 +264,14 @@ case "$SCENARIO" in
       COLLECTED=$CTR
       result "$point" "$verdict" "$note; $(minutes "$t0") min"
       log "kill point $point: $verdict ($(minutes "$t0") min)"
+      [ "$verdict" != CONVERGED ] || m2_save
       remove_container "$CTR"; CTR=""
     done
     LOG_TAG="$DISTRO/$SCENARIO"
     ;;
 esac
 
+[ "$SCENARIO" = killed ] || [ "$CHECK_FAILS" -ne 0 ] || m2_save
 log "results ($(minutes "$T0") min):"
 { column -t -s $'\t' "$OUT/results.tsv" 2>/dev/null || cat "$OUT/results.tsv"; } | while IFS= read -r l; do log "  $l"; done
 if [ "$SCENARIO" = killed ]; then

@@ -1,6 +1,7 @@
 // Everything the Overview shows, loaded with the classic Dashboard's requests (device list, sync summary, capped
-// per-device configStatus probes, events of the 12 most recently seen devices) plus the active agent rollout, the
-// app library (package → name for "installed an app") and the shell's shared supervisor status.
+// per-device configStatus probes, events of the 12 most recently seen devices, and the command history of those with
+// a command result in the feed) plus the active agent rollout, the app library (package → name for "installed an
+// app") and the shell's shared supervisor status.
 //
 // Refreshes run only while the tab is visible. Every 60 s: the device list, the sync summary and the rollout (three
 // requests), plus a configStatus probe for a device that has just become suspect. Every 5 min, on Retry, or when a
@@ -9,6 +10,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { listApplications } from '../../api/applications';
 import { ApiError } from '../../api/client';
+import { listCommandHistory, type CommandHistoryItem } from '../../api/commands';
 import { getConfigStatus, getSyncSummary, summarizeStatus, type ConfigSyncSummary } from '../../api/configSync';
 import { searchDevices, type ConfigurationLookup, type DeviceView } from '../../api/devices';
 import { getEvents, type DeviceEvent } from '../../api/events';
@@ -32,6 +34,8 @@ export interface ActivityItem {
   key: string;
   device: DeviceView;
   ev: DeviceEvent;
+  /** The device's command history, when the feed has a command result of it (see eventDetail). */
+  commands?: CommandHistoryItem[];
 }
 
 export interface OverviewData {
@@ -88,6 +92,11 @@ export function useOverviewData(): OverviewData {
 
   // Each refresh gets a generation; results of an older one (or after unmount) are dropped.
   const gen = useRef(0);
+  /**
+   * The activity feed's own generation, bumped when a full refresh sets a new feed (and on unmount): a command
+   * history applies while the feed it was fetched for is the one shown, whatever light refresh ran meanwhile.
+   */
+  const feedGen = useRef(0);
   const lastRun = useRef(0);
   const lastDeep = useRef(0);
   /** Device ids of the last good list, sorted and joined: a change (enrolled, deleted) forces a full refresh. */
@@ -138,24 +147,46 @@ export function useOverviewData(): OverviewData {
       probeFailed.current = new Set();
     }
 
-    // Activity: the most recently seen devices' events, merged (full refresh only: 12 requests).
+    // Activity: the most recently seen devices' events, merged (full refresh only: 12 requests, then one command
+    // history per device with a command result in the feed).
     if (list.length === 0) {
       setActivity([]);
       if (deep) lastDeep.current = now;
     } else if (deep) {
       const top = [...list].sort((a, b) => (b.lastUpdate ?? 0) - (a.lastUpdate ?? 0)).slice(0, ACTIVITY_DEVICES);
-      void Promise.allSettled(top.map((d) => getEvents(d.number).then((evs) => ({ d, evs })))).then((results) => {
-        if (!live()) return;
-        const items: ActivityItem[] = [];
-        for (const r of results) {
-          if (r.status !== 'fulfilled') continue;
-          const { d, evs } = r.value;
-          for (const ev of evs ?? []) items.push({ key: `${d.id}-${ev.id}`, device: d, ev });
-        }
-        items.sort((a, b) => b.ev.ts - a.ev.ts);
-        setActivity(items.slice(0, ACTIVITY_KEEP));
-        lastDeep.current = now; // a full refresh superseded before this point leaves the next one full too
-      });
+      void Promise.allSettled(top.map((d) => getEvents(d.number).then((evs) => ({ d, evs }))))
+        .then((results) => {
+          if (!live()) return;
+          const items: ActivityItem[] = [];
+          for (const r of results) {
+            if (r.status !== 'fulfilled') continue;
+            const { d, evs } = r.value;
+            for (const ev of evs ?? []) items.push({ key: `${d.id}-${ev.id}`, device: d, ev });
+          }
+          items.sort((a, b) => b.ev.ts - a.ev.ts);
+          const kept = items.slice(0, ACTIVITY_KEEP);
+          const fg = ++feedGen.current;
+          // Each device keeps the history the feed had for it until its fresh one comes, so rows that named their
+          // command don't fall back to "Command #id" on every full refresh.
+          setActivity((cur) => {
+            const had = new Map<number, CommandHistoryItem[]>();
+            for (const a of cur ?? []) if (a.commands) had.set(a.device.id, a.commands);
+            return kept.map((a) => (had.has(a.device.id) ? { ...a, commands: had.get(a.device.id) } : a));
+          });
+          lastDeep.current = now; // a full refresh superseded before this point leaves the next one full too
+          // Then a command result names its command, from its device's history: fetched only for the devices whose
+          // kept events include one, each applied as it comes (a slow or failed one leaves its rows as they were).
+          const withResults = [...new Set(kept.filter((a) => a.ev.type === 'commandResult').map((a) => a.device))];
+          for (const d of withResults) {
+            listCommandHistory(d.number)
+              .then((commands: CommandHistoryItem[]) => {
+                if (feedGen.current !== fg || !Array.isArray(commands)) return;
+                setActivity((cur) => cur && cur.map((a) => (a.device.id === d.id ? { ...a, commands } : a)));
+              })
+              .catch(() => {});
+          }
+        })
+        .catch(() => {});
     }
 
     // Configuration problems: online devices in a configuration the summary doesn't call clean are probed (capped),
@@ -207,6 +238,7 @@ export function useOverviewData(): OverviewData {
       clearInterval(t);
       document.removeEventListener('visibilitychange', onVisible);
       gen.current++; // drop in-flight results
+      feedGen.current++;
     };
   }, [refresh]);
 

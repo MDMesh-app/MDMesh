@@ -46,6 +46,10 @@
   --accent: #2f5597; /* 7.3:1 on white, 6.5:1 on --surface-2 */
   --focus: var(--accent);
 
+  /* ---- location map: drawn on the light map tiles in both themes, so the dark theme keeps these ---- */
+  --map-trail: #1a3a7a; /* the path and its markers: 3:1 on every tile fill, dimmed too (mapContrast.test.ts) */
+  --map-halo: #ffffff; /* the casing under the path and the markers' rings */
+
   /* ---- status: dot / ink / soft / line ---- */
   --online: #189c5f;
   --ok-ink: #096139;

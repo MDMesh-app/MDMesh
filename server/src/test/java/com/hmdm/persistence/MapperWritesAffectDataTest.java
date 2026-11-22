@@ -36,13 +36,14 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
- * A MyBatis select that writes (UPDATE/INSERT/DELETE ... RETURNING, a writing CTE, TRUNCATE, CALL) must say
- * {@code affectData = true}: else MyBatis doesn't mark the session dirty, the transaction's commit is skipped, and the
+ * A MyBatis select that writes (UPDATE/INSERT/DELETE ... RETURNING, a writing CTE, TRUNCATE, CALL, or DDL such as
+ * CREATE TEMP TABLE) must say {@code affectData = true}: else MyBatis doesn't mark the session dirty, the transaction's commit is skipped, and the
  * write is committed only by the connection reset on close, whose errors are swallowed. Every mapper of every module
  * (plugins included), annotated or XML.
  *
- * <p>Not detected, so set affectData by hand: a select that calls a function which writes, or that runs DDL (CREATE
- * TEMP TABLE). XML includes are followed within the same file, one level deep; cross-file and nested ones are not.</p>
+ * <p>Not detected, so set affectData by hand: a select that calls a function which writes. XML includes are followed
+ * within the same file, one level deep; cross-file and nested ones are not. E'' strings, dollar quotes and quoted
+ * identifiers aren't parsed.</p>
  */
 public class MapperWritesAffectDataTest {
 
@@ -50,8 +51,8 @@ public class MapperWritesAffectDataTest {
     private static final Pattern LITERALS_AND_COMMENTS = Pattern.compile("'(?:[^']|'')*'|--[^\\n]*|(?s:/\\*.*?\\*/)");
     private static final Pattern ROW_LOCKS_AND_FK_ACTIONS = Pattern.compile(
             "\\bFOR\\s+(NO\\s+KEY\\s+)?UPDATE\\b|\\bON\\s+(UPDATE|DELETE)\\b", Pattern.CASE_INSENSITIVE);
-    private static final Pattern WRITES = Pattern.compile("\\b(UPDATE|INSERT|DELETE|RETURNING|TRUNCATE|CALL)\\b",
-            Pattern.CASE_INSENSITIVE);
+    private static final Pattern WRITES = Pattern.compile(
+            "\\b(UPDATE|INSERT|DELETE|RETURNING|TRUNCATE|CALL|CREATE|DROP|ALTER)\\b", Pattern.CASE_INSENSITIVE);
 
     /** Skipped whole: builds, dependencies, VCS and tool state, and the Android agent (no MyBatis there). */
     private static final Set<String> SKIPPED = new HashSet<>(Arrays.asList(
@@ -74,6 +75,7 @@ public class MapperWritesAffectDataTest {
         assertTrue(writes("INSERT INTO t (a) VALUES (1) RETURNING id"));
         assertTrue(writes("TRUNCATE t; SELECT 1"));
         assertTrue(writes("CALL tidy(); SELECT 1"));
+        assertTrue(writes("CREATE TEMP TABLE t ON COMMIT DROP AS SELECT 1; SELECT * FROM t"));
         // The quote in the comment doesn't open a literal that would hide the UPDATE after it
         assertTrue(writes("SELECT 1 -- it's a note\n; UPDATE t SET a = 'x'"));
         assertTrue(writes("SELECT 1 /* it's */ ; UPDATE t SET a = 'x'"));

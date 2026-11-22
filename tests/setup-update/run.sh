@@ -362,6 +362,7 @@ for c in "CURRENT_VERSION=9.0.0:9.0.0" "  CURRENT_VERSION = \"9.0.0-rc.1\" :9.0.
   # shellcheck disable=SC2059  # the case's \n, \r and \\ are printf escapes
   printf "${c%:*}\n" > "$E/supervisor.env"; expect_installed "${c##*:}" "supervisor.env '${c%:*}'"
 done
+printf 'X=1\nCURRENT_VERSION=9.0.3' > "$E/supervisor.env"; expect_installed 9.0.3 "supervisor.env whose last line has no newline"
 rm -f -- "$E/supervisor.env"; expect_installed '?' "no record at all (a fresh host, or supervisor.env from before v0.3.2)"
 clone fresh2
 upd fresh2 ok

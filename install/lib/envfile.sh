@@ -11,7 +11,7 @@
 # either.) Prints nothing when KEY is not set. The file is parsed, never sourced.
 mdm_envfile_param() {
   local line k v="" raw q="" cont=0
-  while IFS= read -r line; do
+  while IFS= read -r line || [ -n "$line" ]; do   # also a last line without a newline, as systemd reads it
     line=${line%$'\r'}
     if [ -n "$q" ]; then case "$line" in *"$q"*) q="" ;; esac; continue; fi       # inside an open quote
     if [ "$cont" = 1 ]; then case "$line" in *\\) ;; *) cont=0 ;; esac; continue; fi   # after a trailing \

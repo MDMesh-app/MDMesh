@@ -239,6 +239,10 @@ case "$SCENARIO" in
     # The release the install reports: what the upgrade's installer reads as the one it updates from (supervisor.env's
     # CURRENT_VERSION; empty before v0.3.2, whose file it can't read). A killed upgrade must keep it as that.
     from_ver=$(docker exec "$CTR" sed -n 's/^CURRENT_VERSION=//p' /etc/mdmesh/supervisor.env) || from_ver=''
+    to_ver=$(git -C "$REPO" describe --tags --abbrev=0 --match 'v[0-9]*' "$TO_SHA" 2>&1 | sed 's/^v//') || to_ver=''
+    if [ -n "$from_ver" ] && [ "$from_ver" = "$to_ver" ]; then
+      log "  note: $T2_FROM_REF and the code under test are both $from_ver: the host-line check can't tell the releases apart"
+    fi
     docker exec "$CTR" systemctl stop mdmesh-supervisor mdmesh-server postgresql
     IMAGES+=("$SNAPSHOT")
     docker commit "$CTR" "$SNAPSHOT" > /dev/null
@@ -261,10 +265,12 @@ case "$SCENARIO" in
       else
         guest state > "$OUT/kill-$point.state" 2>&1 || true
         note="killed at: $(sed -n 's/.*last installer line: *//p' "$OUT/kill-$point.result" | head -n 1)"
-        # The installer records the release it started from before its first change, so wherever it was killed (even
-        # after rewriting supervisor.env) the record, if there is one yet, still names it.
+        # The installer records the release it started from right after its confirmation, before its first change and
+        # so before every kill point (the first, db-role, is well after it); the final write comes after the last. So
+        # at every point the record must be there and name it, even after the run rewrote supervisor.env. Without the
+        # early write it is absent here at every point, and this fails.
         rec=$(docker exec "$CTR" sh -c 'if [ -e /etc/mdmesh/installed-version ]; then cat /etc/mdmesh/installed-version; else echo absent; fi') || rec=error
-        [ "$rec" = absent ] || check "the killed upgrade still records the release it started from" "$rec" "$from_ver"
+        check "the killed upgrade still records the release it started from" "$rec" "$from_ver"
         rc=0; OMIT_PORT=1 OMIT_BASE_URL=1 run_install "rerun-$point" || rc=$?   # the re-run must find the port and URL itself
         if [ "$rc" -ne 0 ]; then
           note="$note; re-run FAILED (rc=$rc): $(grep -v '^[[:space:]]*$' "$OUT/rerun-$point.out" | grep -m1 '✗' | sed 's/^ *//')"
@@ -274,7 +280,8 @@ case "$SCENARIO" in
           verdict="NOT-CONVERGED"
           CHECK_FAILS=$((CHECK_FAILS + 1))
         fi
-        # ... and the re-run (with -y: not an update) says the host still runs it.
+        # ... and the re-run (with -y: not an update) says the host still runs it. (This one tells a regression apart
+        # only when the release and the code under test have different versions; the record check above always does.)
         if [ -n "$from_ver" ]; then
           check "the re-run after the kill says the host runs v$from_ver" \
             "$(grep -cF "This host runs v${from_ver};" "$OUT/rerun-$point.out" || true)" 1

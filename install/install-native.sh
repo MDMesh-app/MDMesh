@@ -102,12 +102,13 @@ command -v apt-get >/dev/null || { echo "This script targets Debian/Ubuntu."; ex
 # tucked into a logfile that is auto-expanded only when something fails. Run with -v to stream it inline.
 # Colour/spinner auto-disable when stdout isn't a TTY or NO_COLOR is set, so piped runs stay clean.
 # ------------------------------------------------------------------------------------------------------
-# The log can capture echoed SQL, including the DB password (see the Database step), so it is owner-only and never a
-# link: LOGFILE (default /var/log/mdmesh-install.log) when its directory is writable and it is a regular file or absent;
-# otherwise a fresh private file from mktemp in /tmp (created exclusively, mode 600, so a link planted there is never
-# followed). It is emptied only once the run is confirmed (below the question): answered no, it keeps the previous run's
-# log, which may hold the failure being looked into. Nothing writes to it before then, and the error handler shows
-# its lines only from then on (_log_started).
+# The log can capture echoed SQL, including the DB password (see the Database step), so it is owner-only: LOGFILE
+# (default /var/log/mdmesh-install.log) when, as the run starts, its directory is writable and it is a regular file
+# (not a link) or absent; otherwise a fresh private file from mktemp in /tmp (created exclusively, mode 600, so a link
+# planted at a fixed /tmp name can't redirect it). That check is made once, before the question; each step reopens the
+# log by its path. It is emptied only once the run is confirmed (below the question): answered no, it keeps the
+# previous run's log, which may hold the failure being looked into. Nothing writes to it before then, and the error
+# handler shows its lines only from then on (_log_started).
 LOGFILE="${LOGFILE:-/var/log/mdmesh-install.log}"; _log_tmp=0; _log_started=0
 if [ -L "$LOGFILE" ] || { [ -e "$LOGFILE" ] && [ ! -f "$LOGFILE" ]; } || [ ! -d "${LOGFILE%/*}" ] || [ ! -w "${LOGFILE%/*}" ]; then
   LOGFILE=$(mktemp /tmp/mdmesh-install.XXXXXX) || { echo "Could not create a log file (${LOGFILE} is not usable, nor is /tmp)." >&2; exit 1; }
@@ -185,7 +186,10 @@ run() {
 SUP_ENV_DIR=/etc/mdmesh
 # The release this host runs (mdm_installed_version: the install's record, read before anything changes; never the
 # clone's tag, which an update stopped halfway or a git pull has already moved) and the one this clone holds.
-INSTALLED_VERSION=$(mdm_installed_version "$SUP_ENV_DIR")
+# Only over an install (HAS_INSTALL, the same signal as UPDATING and the early record write below): a record left by an
+# older uninstaller on a host with no install must not make a fresh install say "this host runs vX".
+INSTALLED_VERSION=''
+if [ "$HAS_INSTALL" = 1 ]; then INSTALLED_VERSION=$(mdm_installed_version "$SUP_ENV_DIR"); fi
 CLONE_VERSION=$(mdm_repo_version "$REPO")
 # (mdm_native_title, mdm_native_host_line, mdm_native_declined: install/lib/version.sh.)
 printf '\n  %s%s%s\n' "$c_bold" "$(mdm_native_title "$UPDATING" "$INSTALLED_VERSION" "$CLONE_VERSION")" "$c_reset"
@@ -210,8 +214,9 @@ WARN
 if [ "$ASSUME_YES" != "1" ]; then
   mdm_ask assume-yes
   printf '  Type "yes" to proceed: '
-  # End of input (stdin closed, an empty pipe) is a no as well, not an error; it ends the prompt's line.
-  read -r _confirm || { _confirm=''; echo; }   # answer: assume-yes
+  # End of input (stdin closed, an empty pipe) is a no as well, not an error. An answer that isn't typed at a terminal
+  # (end of input, a pipe) isn't echoed, so the prompt's line is ended here.
+  if read -r _confirm; then [ -t 0 ] || echo; else _confirm=''; echo; fi   # answer: assume-yes
   if [ "$_confirm" != "yes" ]; then
     mdm_native_declined "$INSTALLED_VERSION" "$CLONE_VERSION" | sed 's/^/  /'
     if [ "$_log_tmp" = 1 ]; then rm -f -- "$LOGFILE"; fi   # the empty one made above
@@ -220,7 +225,12 @@ if [ "$ASSUME_YES" != "1" ]; then
 fi
 # Confirmed: from here on the run changes the host. A fresh log, owner-only even if it pre-existed with looser modes
 # (umask only covers new files).
-{ : > "$LOGFILE" && chmod 600 "$LOGFILE"; } || { echo "Could not write the log file $LOGFILE." >&2; exit 1; }
+# If it can't be emptied (an append-only or immutable file, say), the run carries on with a private file instead.
+if ! { : > "$LOGFILE" && chmod 600 "$LOGFILE"; }; then
+  _log_old=$LOGFILE
+  LOGFILE=$(mktemp /tmp/mdmesh-install.XXXXXX) || { echo "Could not write the log file $_log_old, nor create one in /tmp." >&2; exit 1; }
+  echo "  Could not write the log file $_log_old: this run logs to $LOGFILE."
+fi
 _log_started=1
 
 rand() { mdm_rand; }

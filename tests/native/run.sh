@@ -236,10 +236,14 @@ case "$SCENARIO" in
     install_with_settings "install-$T2_FROM_REF" "$FROM_SHA"
     [ "$CHECK_FAILS" -eq 0 ] || die "the $T2_FROM_REF install failed its checks; not upgrading it"
     continuity_before
-    # The release the install reports: what the upgrade's installer reads as the one it updates from (supervisor.env's
-    # CURRENT_VERSION; empty before v0.3.2, whose file it can't read). A killed upgrade must keep it as that.
-    from_ver=$(docker exec "$CTR" sed -n 's/^CURRENT_VERSION=//p' /etc/mdmesh/supervisor.env) || from_ver=''
-    to_ver=$(git -C "$REPO" describe --tags --abbrev=0 --match 'v[0-9]*' "$TO_SHA" 2>&1 | sed 's/^v//') || to_ver=''
+    # The release the install reports: what the upgrade's installer reads as the one it updates from, read with the
+    # installer's own reader (install/lib/envfile.sh) from a copy of /etc/mdmesh/supervisor.env (a release has no
+    # installed-version record yet). Empty before v0.3.2, which kept that file elsewhere. A killed upgrade must keep it.
+    mkdir -p "$WORK/from-etc"
+    docker cp "$CTR:/etc/mdmesh/supervisor.env" "$WORK/from-etc/supervisor.env" 2>> "$WORK/rig-stderr.log" || true
+    # shellcheck disable=SC2016  # the inner shell's positionals
+    from_ver=$(bash -c '. "$1"; mdm_installed_version "$2"' _ "$REPO/install/lib/envfile.sh" "$WORK/from-etc")
+    to_ver=$(git -C "$REPO" describe --tags --abbrev=0 --match 'v[0-9]*' "$TO_SHA" 2>> "$WORK/rig-stderr.log" | sed 's/^v//') || to_ver=''
     if [ -n "$from_ver" ] && [ "$from_ver" = "$to_ver" ]; then
       log "  note: $T2_FROM_REF and the code under test are both $from_ver: the host-line check can't tell the releases apart"
     fi
@@ -268,7 +272,9 @@ case "$SCENARIO" in
         # The installer records the release it started from right after its confirmation, before its first change and
         # so before every kill point (the first, db-role, is well after it); the final write comes after the last. So
         # at every point the record must be there and name it, even after the run rewrote supervisor.env. Without the
-        # early write it is absent here at every point, and this fails.
+        # early write it is absent here at every point, and this fails. That covers the early write only when
+        # T2_FROM_REF is a release without the record (v0.5.1 or older; CI pins one killed job to v0.5.1): from a
+        # release that writes it, the record is already there before the run starts.
         rec=$(docker exec "$CTR" sh -c 'if [ -e /etc/mdmesh/installed-version ]; then cat /etc/mdmesh/installed-version; else echo absent; fi') || rec=error
         check "the killed upgrade still records the release it started from" "$rec" "$from_ver"
         rc=0; OMIT_PORT=1 OMIT_BASE_URL=1 run_install "rerun-$point" || rc=$?   # the re-run must find the port and URL itself

@@ -79,8 +79,16 @@ jobs:
           scenarios = ["fresh", "upgrade", "killed", "update", "update-resumed"] if s == "all" else [s]
           # update-resumed adds only distro-independent steps to update (git, the installer's question and its text): one
           # distro covers it, unless a run names its distro.
-          print("matrix=" + json.dumps({"include": [{"distro": x, "scenario": y} for x in distros for y in scenarios
-                                                    if y != "update-resumed" or d != "all" or x == "debian-12"]}))
+          jobs = [{"distro": x, "scenario": y} for x in distros for y in scenarios
+                  if y != "update-resumed" or d != "all" or x == "debian-12"]
+          # One killed job keeps upgrading from v0.5.1, the last release without the installed-version record: only
+          # from such a release does it check the installer's early record write (tests/native/run.sh, killed).
+          # A run that names a from-ref or a distro uses what it names.
+          if not os.environ["IN_FROM"] and d == "all":
+              for j in jobs:
+                  if j["scenario"] == "killed" and j["distro"] == "debian-12":
+                      j["from-ref"] = "v0.5.1"
+          print("matrix=" + json.dumps({"include": jobs}))
           EOF
           echo "upgrading from $from"
 
@@ -97,7 +105,7 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     env:
-      T2_FROM_REF: ${{ needs.plan.outputs.from-ref }}
+      T2_FROM_REF: ${{ matrix.from-ref || needs.plan.outputs.from-ref }}
       DISTRO: ${{ matrix.distro }}
       SCENARIO: ${{ matrix.scenario }}
     steps:

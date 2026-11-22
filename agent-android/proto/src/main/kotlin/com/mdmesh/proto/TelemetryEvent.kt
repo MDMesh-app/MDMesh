@@ -30,4 +30,7 @@ object EventType {
 
     /** An accepted factory reset did not reboot the device in time; the agent resumed and restores its policies. */
     const val WIPE_NOT_STARTED = "wipeNotStarted"
+
+    /** The buffer was full, so older events were dropped; the detail starts with how many. */
+    const val EVENTS_DROPPED = "eventsDropped"
 }

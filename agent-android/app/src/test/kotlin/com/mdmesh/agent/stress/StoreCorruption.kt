@@ -99,7 +99,7 @@ internal class StoreCorruption(private val app: Context) {
 
     private object NoEvents : EventSink {
         override fun record(type: String, detail: String?) = Unit
-        override fun drain(): List<TelemetryEventDto> = emptyList()
+        override fun drain(max: Int): List<TelemetryEventDto> = emptyList()
         override fun restore(events: List<TelemetryEventDto>) = Unit
     }
 

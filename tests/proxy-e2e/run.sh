@@ -56,6 +56,10 @@ check() { local label=$1; shift; if "$@"; then pass "$label"; else fail "$label"
 cleanup() {
   local rc=$?
   echo; echo "== cleanup"
+  # A failure: the stack's own logs (the edge's says why a site.d rule was left out, say) go with the work directory.
+  if [ "$FAILED" != 0 ] || [ "$rc" != 0 ]; then
+    docker exec -i -w "$D" "$DIND" docker compose logs --no-color > "$WORK/compose.log" 2>&1 || true
+  fi
   {
     docker rm -f -v "$CLIENT" "$WSCLIENT" "$DIND" "$REG"
     docker network rm "$NET"

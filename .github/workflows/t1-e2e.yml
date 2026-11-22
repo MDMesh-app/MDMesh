@@ -157,19 +157,26 @@ jobs:
           df -h / /var/lib/docker || df -h /
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
           df -h /
+      # build TAG CONTEXT: the three images, quietly; one that fails is built once more with its output shown, so the
+      # cause is in the log (a download that failed once, say Maven Central's, goes through then; a real error shows).
       - name: Build this checkout's images
         run: |
-          for n in server web supervisor; do
-            docker build -q -f "docker/$n.Dockerfile" -t "ghcr.io/local/mdmesh-$n:$E2E_NEW_TAG" .
-          done
+          build() {
+            for n in server web supervisor; do
+              docker build -q -f "$2/docker/$n.Dockerfile" -t "ghcr.io/local/mdmesh-$n:$1" "$2" \
+                || { echo "::warning::the $n image failed to build; once more, with its output"
+                     docker build --progress=plain -f "$2/docker/$n.Dockerfile" -t "ghcr.io/local/mdmesh-$n:$1" "$2"; }
+            done
+          }
+          declare -f build > "$RUNNER_TEMP/build.sh"
+          build "$E2E_NEW_TAG" .
       - name: Build origin/main's images (rollback-e2e's older release)
         if: matrix.suite == 'rollback-e2e'
         run: |
           git fetch -q --tags origin main
           git worktree add -q "$RUNNER_TEMP/main" origin/main
-          for n in server web supervisor; do
-            docker build -q -f "$RUNNER_TEMP/main/docker/$n.Dockerfile" -t "ghcr.io/local/mdmesh-$n:$E2E_OLD_TAG" "$RUNNER_TEMP/main"
-          done
+          . "$RUNNER_TEMP/build.sh"
+          build "$E2E_OLD_TAG" "$RUNNER_TEMP/main"
           docker builder prune -f >/dev/null   # the two builds' cache (Maven, npm); the images stay
           df -h /
       - name: Pull the images the suite loads into its docker:dind
@@ -182,10 +189,23 @@ jobs:
           fi
           for i in $imgs; do docker pull -q "$i"; done
           df -h /
+      # The work directory (docker.log, each step's output; proxy-e2e adds the stack's own logs on a failure) is kept
+      # (E2E_KEEP=1) and uploaded when the suite fails, so a failure can be read without another long run.
       - name: Run tests/${{ matrix.suite }}
         env:
           E2E_DATA_DIR: ${{ runner.temp }}/e2e-data
-        run: tests/${{ matrix.suite }}/run.sh
+          E2E_KEEP: "1"
+          TMPDIR: ${{ runner.temp }}/e2e-work
+        run: |
+          mkdir -p "$TMPDIR"
+          tests/${{ matrix.suite }}/run.sh
+      - if: failure() || cancelled()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: ${{ matrix.suite }}-work
+          path: ${{ runner.temp }}/e2e-work/
+          retention-days: 7
+          if-no-files-found: warn
       - name: Remove this run's images
         # By tag only (never by id: an identical build can share its id with another tag).
         if: always()

@@ -35,7 +35,9 @@ WORK=$(mktemp -d)
 cleanup() { rm -r -- "$WORK" 2>/dev/null || true; }
 trap cleanup EXIT
 mkdir -p "$WORK/src/install" "$WORK/qs" "$WORK/out"
-cp -- "$REPO/setup.sh" "$WORK/src/"
+# cp_setup DIR: setup.sh and what it sources from outside install/ (supervisor/mode-guard.sh, the updater's version rule)
+cp_setup() { cp -- "$REPO/setup.sh" "$1/"; mkdir -p "$1/supervisor"; cp -- "$REPO/supervisor/mode-guard.sh" "$1/supervisor/"; }
+cp_setup "$WORK/src"
 cp -R -- "$REPO/install/lib" "$WORK/src/install/"
 cp -- "$REPO/install/install-native.sh" "$WORK/src/install/"
 # Stubs, first on PATH, for every command that could install or start something: called at all, they record it (their
@@ -381,7 +383,7 @@ ok
 
 # A setup.sh re-run reads .env with a parser, never by sourcing it: traced (bash -x), the run shows no .env secret.
 mkdir -p "$WORK/src2/install"
-cp -- "$REPO/setup.sh" "$WORK/src2/"; cp -R -- "$REPO/install/lib" "$WORK/src2/install/"
+cp_setup "$WORK/src2"; cp -R -- "$REPO/install/lib" "$WORK/src2/install/"
 dbpw=c0ffee0dbpassword0c0ffee; hs=c0ffee0hashsecret0c0ffee; tt=c0ffee0tunneltoken0c0ffee
 printf '%s\n' "DB_PASSWORD=$dbpw" "HASH_SECRET=\"$hs\"" "TUNNEL_TOKEN=$tt # set by hand" BASE_URL=https://mdm.example.com \
   COMPOSE_PROFILES=cloudflare IMAGE_OWNER=local > "$WORK/src2/.env"
@@ -468,7 +470,7 @@ ok
 for c in "1|mdm.example.com|bad SECRET tok|eyJhIjoiYWJjIn0=|^TUNNEL_TOKEN=eyJhIjoiYWJjIn0=$|is not a Cloudflare Tunnel token" \
          "2|mdm.example.com|ops @SECRET|ops@example.com|^ACME_EMAIL=ops@example.com$|is not an email address"; do
   IFS='|' read -r m h bad good want why <<< "$c"
-  mkdir -p "$WORK/src3/install"; cp -- "$REPO/setup.sh" "$WORK/src3/"; cp -R -- "$REPO/install/lib" "$WORK/src3/install/"
+  mkdir -p "$WORK/src3/install"; cp_setup "$WORK/src3"; cp -R -- "$REPO/install/lib" "$WORK/src3/install/"
   [ ! -e "$WORK/src3/.env" ] || mv -- "$WORK/src3/.env" "$WORK/src3/.env.prev"
   : > "$WORK/chmod.log"
   # umask 022, a common default: the new .env must be owner-only from the start anyway.
@@ -517,7 +519,7 @@ ok
 
 # A re-run whose .env this user can't read says what to do, instead of a bare "Permission denied": its own .env (mode
 # 000) → chmod 600 .env; another user's (here a link to /proc/1/environ: root's, mode 400) → run as them.
-mkdir -p "$WORK/src4/install"; cp -- "$REPO/setup.sh" "$WORK/src4/"; cp -R -- "$REPO/install/lib" "$WORK/src4/install/"
+mkdir -p "$WORK/src4/install"; cp_setup "$WORK/src4"; cp -R -- "$REPO/install/lib" "$WORK/src4/install/"
 printf 'BASE_URL=https://mdm.example.com\n' > "$WORK/src4/.env"; chmod 000 "$WORK/src4/.env"
 (cd "$WORK/src4" && env -i PATH="$WORK/stubs:$PATH" HOME="$WORK" STUB_LOG="$WORK/children.log" STUB_DOCKER_OK=1 \
   bash ./setup.sh < /dev/null > "$WORK/out/o" 2> "$WORK/out/e") || true
@@ -651,7 +653,7 @@ setup_run() {  # setup_run DIR [NAME=VALUE...]: ./setup.sh in DIR (a copy), stdi
 }
 up_args() { sed -n 's#^\S*/docker compose \(.*\) up -d --build$#\1#p' "$WORK/docker.log" | head -1; }
 SETUP_ARGS=()
-mkdir -p "$WORK/src6/install"; cp -- "$REPO/setup.sh" "$WORK/src6/"; cp -R -- "$REPO/install/lib" "$WORK/src6/install/"
+mkdir -p "$WORK/src6/install"; cp_setup "$WORK/src6"; cp -R -- "$REPO/install/lib" "$WORK/src6/install/"
 SETUP_ARGS=(--proxy)
 setup_run "$WORK/src6" MDMESH_NONINTERACTIVE=1 MDMESH_HOST=mdm.example.com MDMESH_TRUSTED_PROXIES='192.0.2.10, host'
 for l in 'COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml' 'COMPOSE_PROFILES=' 'SITE_ADDRESS=:8080' \
@@ -673,7 +675,7 @@ ok
 # gain MDMESH_SITE_DIR, and keep their other .env values (SITE_ADDRESS, TRUSTED_PROXIES as the operator set them).
 for c in 'cloudflare|:80|--profile cloudflare' '|mdm.example.com, www.example.com|-f docker-compose.yml -f docker-compose.domain.yml'; do
   IFS='|' read -r prof site want <<< "$c"
-  rm -rf -- "$WORK/src7"; mkdir -p "$WORK/src7/install"; cp -- "$REPO/setup.sh" "$WORK/src7/"; cp -R -- "$REPO/install/lib" "$WORK/src7/install/"
+  rm -rf -- "$WORK/src7"; mkdir -p "$WORK/src7/install"; cp_setup "$WORK/src7"; cp -R -- "$REPO/install/lib" "$WORK/src7/install/"
   printf '%s\n' DB_PASSWORD=x HASH_SECRET=y BASE_URL=https://mdm.example.com "SITE_ADDRESS=\"$site\"" \
     'TRUSTED_PROXIES="203.0.113.0/24"' "COMPOSE_PROFILES=$prof" IMAGE_OWNER=local > "$WORK/src7/.env"
   setup_run "$WORK/src7"
@@ -687,7 +689,7 @@ done
 # A site.d that already exists and others may write is not connected to the edge (never made private and then trusted),
 # and left out of .env so a later run tries again; once it is private, it is.
 rm -rf -- "$WORK/src7"; mkdir -p "$WORK/src7/install" "$WORK/src7/site.d"; chmod 775 "$WORK/src7/site.d"
-cp -- "$REPO/setup.sh" "$WORK/src7/"; cp -R -- "$REPO/install/lib" "$WORK/src7/install/"
+cp_setup "$WORK/src7"; cp -R -- "$REPO/install/lib" "$WORK/src7/install/"
 printf '%s\n' DB_PASSWORD=x HASH_SECRET=y BASE_URL=https://mdm.example.com SITE_ADDRESS=mdm.example.com \
   COMPOSE_FILE=docker-compose.yml:docker-compose.domain.yml COMPOSE_PROFILES= IMAGE_OWNER=local > "$WORK/src7/.env"
 setup_run "$WORK/src7"
@@ -726,7 +728,7 @@ printf '%s\n' '#!/bin/sh' 'echo "docker $*" >> "$STUB_LOG"' 'case "$*" in' \
   'esac' 'exit 0' > "$WORK/stubs-full/docker"
 chmod +x "$WORK/stubs-full/docker"
 for e in restarting running; do
-  rm -rf -- "$WORK/src10"; mkdir -p "$WORK/src10/install"; cp -- "$REPO/setup.sh" "$WORK/src10/"; cp -R -- "$REPO/install/lib" "$REPO/install/sql" "$WORK/src10/install/"
+  rm -rf -- "$WORK/src10"; mkdir -p "$WORK/src10/install"; cp_setup "$WORK/src10"; cp -R -- "$REPO/install/lib" "$REPO/install/sql" "$WORK/src10/install/"
   printf '%s\n' DB_PASSWORD=x HASH_SECRET=y BASE_URL=https://mdm.example.com SITE_ADDRESS=mdm.example.com \
     COMPOSE_FILE=docker-compose.yml:docker-compose.domain.yml COMPOSE_PROFILES= IMAGE_OWNER=local > "$WORK/src10/.env"
   : > "$WORK/full.log"; RC=0
@@ -745,7 +747,7 @@ done
 
 # A site.d that is a link is not connected either, saying what it is (no chmod hint).
 rm -rf -- "$WORK/src7"; mkdir -p "$WORK/src7/install" "$WORK/elsewhere"; ln -s "$WORK/elsewhere" "$WORK/src7/site.d"
-cp -- "$REPO/setup.sh" "$WORK/src7/"; cp -R -- "$REPO/install/lib" "$WORK/src7/install/"
+cp_setup "$WORK/src7"; cp -R -- "$REPO/install/lib" "$WORK/src7/install/"
 printf '%s\n' DB_PASSWORD=x HASH_SECRET=y BASE_URL=https://mdm.example.com SITE_ADDRESS=mdm.example.com \
   COMPOSE_FILE=docker-compose.yml:docker-compose.domain.yml COMPOSE_PROFILES= IMAGE_OWNER=local > "$WORK/src7/.env"
 setup_run "$WORK/src7"
@@ -754,7 +756,7 @@ setup_run "$WORK/src7"
 ok
 
 # Moved out of the proxy mode with TRUSTED_PROXIES="host" left in .env: a re-run says to clear it, and goes on.
-rm -rf -- "$WORK/src7"; mkdir -p "$WORK/src7/install"; cp -- "$REPO/setup.sh" "$WORK/src7/"; cp -R -- "$REPO/install/lib" "$WORK/src7/install/"
+rm -rf -- "$WORK/src7"; mkdir -p "$WORK/src7/install"; cp_setup "$WORK/src7"; cp -R -- "$REPO/install/lib" "$WORK/src7/install/"
 printf '%s\n' DB_PASSWORD=x HASH_SECRET=y BASE_URL=https://mdm.example.com SITE_ADDRESS=mdm.example.com 'TRUSTED_PROXIES="host"' \
   COMPOSE_FILE=docker-compose.yml:docker-compose.domain.yml COMPOSE_PROFILES= IMAGE_OWNER=local > "$WORK/src7/.env"
 setup_run "$WORK/src7"
@@ -802,7 +804,7 @@ ok
 mkdir -p "$WORK/stubs-busy8080" "$WORK/src8/install"
 printf '#!/bin/sh\necho "%s"\necho "LISTEN 0 511 127.0.0.1:8080 0.0.0.0:*"\n' "$SS_HEAD" > "$WORK/stubs-busy8080/ss"
 chmod +x "$WORK/stubs-busy8080/ss"
-cp -- "$REPO/setup.sh" "$WORK/src8/"; cp -R -- "$REPO/install/lib" "$WORK/src8/install/"
+cp_setup "$WORK/src8"; cp -R -- "$REPO/install/lib" "$WORK/src8/install/"
 (cd "$WORK/src8" && printf '%s\n' 3 mdm.example.com '' 10.0.0.5:8080 '' 192.0.2.10 | env -i PATH="$WORK/stubs-busy8080:$WORK/stubs:$PATH" \
   HOME="$WORK" STUB_LOG="$WORK/docker.log" STUB_DOCKER_OK=1 STUB_DOCKER_INFO='Ubuntu ["name=seccomp","name=rootless"]' \
   bash ./setup.sh > "$WORK/out/o" 2> "$WORK/out/e") || true
@@ -922,7 +924,7 @@ done
 # A finished install's directory (no marker) is left alone, saying so first, also when a 0002 umask left it open.
 qs_dir; rm -f -- "$WORK/qs7/mdmesh/.quickstart-unfinished"; qs_env > "$WORK/qs7/mdmesh/.env"; chmod 600 "$WORK/qs7/mdmesh/.env"
 chmod 775 "$WORK/qs7/mdmesh"; qs_run
-{ grep -qF "Don't delete that .env" "$WORK/out/e" && ! grep -qF 'chmod go-w' "$WORK/out/e"; } \
+{ grep -qF "Don't delete that .env" "$WORK/out/e" && ! grep -qF 'chmod go-w' "$WORK/out/e" && ! grep -q '/docker compose ' "$WORK/docker.log"; } \
   || { fail "quickstart.sh over a finished install in an open directory does not say it leaves it alone, first"; show; }
 ok
 # A directory another user owns (one found on this system, not world-writable), and /tmp itself: refused.
@@ -1001,7 +1003,7 @@ for e in up restarting flapping gone; do
 done
 # setup.sh: a new .env (a fresh clone) beside another install or over its volumes; a re-run beside its own stack goes on,
 # beside another directory's it is refused.
-rm -rf -- "$WORK/src9"; mkdir -p "$WORK/src9/install"; cp -- "$REPO/setup.sh" "$WORK/src9/"; cp -R -- "$REPO/install/lib" "$WORK/src9/install/"
+rm -rf -- "$WORK/src9"; mkdir -p "$WORK/src9/install"; cp_setup "$WORK/src9"; cp -R -- "$REPO/install/lib" "$WORK/src9/install/"
 setup_run "$WORK/src9" MDMESH_NONINTERACTIVE=1 MDMESH_MODE=domain MDMESH_HOST=mdm.example.com STUB_DOCKER_PS=/opt/mdmesh
 stack_refused "setup.sh in a fresh clone beside an install in /opt/mdmesh" 'An MDMesh install already exists in /opt/mdmesh'
 [ ! -e "$WORK/src9/.env" ] || { fail "setup.sh wrote a .env before refusing"; show; }

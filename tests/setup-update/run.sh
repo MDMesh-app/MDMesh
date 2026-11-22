@@ -66,6 +66,7 @@ minisign -G -W -p "$WORK/k.pub" -s "$WORK/k.key" >/dev/null
 minisign -G -W -p "$WORK/x.pub" -s "$WORK/x.key" >/dev/null
 O="$WORK/origin"
 mkdir -p "$O/release"
+mkdir -p "$O/supervisor"; cp -- "$REPO/supervisor/mode-guard.sh" "$O/supervisor/"
 cp -R -- "$REPO/setup.sh" "$REPO/quickstart.sh" "$REPO/install" "$REPO/docker-compose.release.yml" \
   "$REPO/docker-compose.domain.yml" "$O/"
 cp -- "$WORK/k.pub" "$O/release/minisign.pub"
@@ -349,10 +350,17 @@ for a in '' --allow-downgrade dry; do
     dry) upd "proxy$a" old MDMESH_DRY_RUN=1 -- ;;
     *) upd "proxy$a" old -- $a ;;
   esac
-  { [ "$RC" != 0 ] && grep -qF 'This install runs behind your own proxy, which v0.5.9 can' "$WORK/out" && head_is "proxy$a" "$cmain"; } \
-    || { fail "--update ${a:-} to v0.5.9 behind your own proxy is not refused"; show; }
+  { [ "$RC" != 0 ] && grep -qF "runs behind your own proxy (docker-compose.proxy.yml), which came in 0.6.0, so it can't go to 0.5.9" "$WORK/out" \
+    && head_is "proxy$a" "$cmain"; } || { fail "--update ${a:-} to v0.5.9 behind your own proxy is not refused"; show; }
   ok
 done
+# Moved out of the proxy mode with TRUSTED_PROXIES="host" left: the same rule as the updater's, --allow-downgrade too.
+clone host059 '' "$WORK/origin4"
+printf '%s\n' 'COMPOSE_FILE=docker-compose.yml:docker-compose.domain.yml' 'TRUSTED_PROXIES="host"' 'CURRENT_VERSION=0.6.0' > "$WORK/host059/.env"
+upd host059 old -- --allow-downgrade
+{ [ "$RC" != 0 ] && grep -qF 'TRUSTED_PROXIES in .env still says host' "$WORK/out" && head_is host059 "$cmain"; } \
+  || { fail "--update --allow-downgrade to v0.5.9 with TRUSTED_PROXIES=host is not refused"; show; }
+ok
 clone domain059 '' "$WORK/origin4"
 printf '%s\n' 'COMPOSE_FILE=docker-compose.yml:docker-compose.domain.yml' 'CURRENT_VERSION=0.6.0' > "$WORK/domain059/.env"
 upd domain059 old -- --allow-downgrade

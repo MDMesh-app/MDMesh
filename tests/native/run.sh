@@ -25,9 +25,10 @@
 #   T2_CACHE=1    share Maven/npm download caches between runs (named Docker volumes mdmesh-t2-cache-m2/-npm)
 #   T2_M2_REPO    a dedicated host directory holding a Maven repository (the rig rewrites it: never a real ~/.m2):
 #                 copied (not mounted) into the first container as root's ~/.m2/repository before any install, and
-#                 replaced by the guest's repository after a converged install (CI keeps it with actions/cache, so the
-#                 guest's Maven does not depend on Maven Central). Best-effort both ways (tests/native/lib/host.sh)
-#   T2_M2_SEED=0  with T2_M2_REPO: do not seed (a cold install), but still save
+#                 replaced by the guest's repository after a converged install, which also writes <dir>.t2-saved
+#                 (CI keeps the directory with actions/cache, so a warm guest rarely needs Maven Central).
+#                 Best-effort both ways (tests/native/lib/host.sh)
+#   T2_M2_SAVE=0  with T2_M2_REPO: seed, but never save (CI: the directory came from an exact cache hit)
 #   T2_STRICT=1   build an upgrade's image without the workarounds its from-ref installer needs
 #                 (see tests/native/Dockerfile, layer 3)
 #   T2_HTTP_PORT  the port given to the installer (default 9090); T2_BASE_URL its public URL (default http://mdm.t2.test:<port>)
@@ -266,14 +267,14 @@ case "$SCENARIO" in
       COLLECTED=$CTR
       result "$point" "$verdict" "$note; $(minutes "$t0") min"
       log "kill point $point: $verdict ($(minutes "$t0") min)"
-      if [ "$verdict" = CONVERGED ]; then m2_save || log "WARN the Maven repository was not saved; $T2_M2_REPO is left as it was"; fi
+      if [ "$verdict" = CONVERGED ]; then m2_save_or_warn; fi
       remove_container "$CTR"; CTR=""
     done
     LOG_TAG="$DISTRO/$SCENARIO"
     ;;
 esac
 
-if [ "$SCENARIO" != killed ] && [ "$CHECK_FAILS" -eq 0 ]; then m2_save || log "WARN the Maven repository was not saved; $T2_M2_REPO is left as it was"; fi
+if [ "$SCENARIO" != killed ] && [ "$CHECK_FAILS" -eq 0 ]; then m2_save_or_warn; fi
 log "results ($(minutes "$T0") min):"
 { column -t -s $'\t' "$OUT/results.tsv" 2>/dev/null || cat "$OUT/results.tsv"; } | while IFS= read -r l; do log "  $l"; done
 if [ "$SCENARIO" = killed ]; then

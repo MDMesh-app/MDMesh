@@ -100,58 +100,77 @@ start_container() {
 # its transports already retry a 429) waits. With T2_M2_REPO=<host dir>, the run's first container gets that
 # directory's contents as root's local Maven repository before any install (the installers run mvn as root, through
 # sudo), and after a converged install (the end of a passing fresh/upgrade/update run, or the killed scenario's first
-# converged kill point) the guest's repository replaces the directory's contents for the next run (CI keeps it with
-# actions/cache). Copied with `docker cp`, never mounted; the kill-point containers inherit it from the snapshot.
-# Both are best-effort: a seed that fails leaves the guest to download everything, and a save that fails leaves the
-# directory as it was. T2_M2_SEED=0 skips the seed but still saves (CI's nightly run: one cold install a day).
+# converged kill point) the guest's repository replaces the directory's contents, and the marker <dir>.t2-saved is
+# written, for the next run (CI keeps the directory with actions/cache, so a warm guest rarely needs Maven Central).
+# Copied with `docker cp`, never mounted; the kill-point containers inherit it from the snapshot. Both directions are
+# best-effort: a seed that fails leaves the guest to download everything, and a save that fails leaves the directory
+# as it was, without the marker. T2_M2_SAVE=0 seeds but never saves (CI: the directory came from an exact cache hit).
 M2_GUEST=/root/.m2/repository
 M2_SEEDED=""; M2_SAVED=""
 m2_seed() {
   [ -n "${T2_M2_REPO:-}" ] && [ -z "$M2_SEEDED" ] || return 0
   M2_SEEDED=1
-  if [ "${T2_M2_SEED:-1}" = 0 ]; then
-    log "Maven repository not seeded (T2_M2_SEED=0): the guest downloads everything"
-    return 0
-  fi
-  if mkdir -p "$T2_M2_REPO" && docker exec "$CTR" mkdir -p "$M2_GUEST" \
-     && docker cp -q "$T2_M2_REPO/." "$CTR:$M2_GUEST/" >> "$OUT/t2.log" 2>&1; then
-    log "Maven repository seeded from $T2_M2_REPO ($(du -sh "$T2_M2_REPO" | cut -f1))"
+  local dir=${T2_M2_REPO%/}
+  # A local save interrupted between its two renames left the repository only as the old sibling: take it back.
+  if [ ! -e "$dir" ] && [ -d "$dir.t2-old" ]; then mv "$dir.t2-old" "$dir" || true; fi
+  if mkdir -p "$dir" && docker exec "$CTR" mkdir -p "$M2_GUEST" \
+     && docker cp "$dir/." "$CTR:$M2_GUEST/" >> "$OUT/t2.log" 2>&1; then
+    log "Maven repository seeded from $dir ($(du -sh "$dir" | cut -f1))"
     return 0
   fi
   # Never build on a half-copied repository: clear it, and let Maven download what it needs.
   docker exec "$CTR" rm -rf "$M2_GUEST" >> "$OUT/t2.log" 2>&1 \
-    || die "could not seed the Maven repository from $T2_M2_REPO, nor clear the partial copy in $CTR"
-  log "WARN could not seed the Maven repository from $T2_M2_REPO (see $OUT/t2.log): the guest downloads everything"
+    || die "could not seed the Maven repository from $dir, nor clear the partial copy in $CTR"
+  log "WARN could not seed the Maven repository from $dir (see $OUT/t2.log): the guest downloads everything"
 }
 
+# m2_rm DIR...: remove the rig's own scratch copies, which may hold directories docker cp made read-only.
+m2_rm() {
+  chmod -R u+rwX "$@" >> "$OUT/t2.log" 2>&1 || true
+  rm -rf "$@"
+}
+
+# m2_save_or_warn: what the scenarios call; a save that fails is a WARN, never a failed run.
+m2_save_or_warn() { m2_save || log "WARN the Maven repository was not saved; $T2_M2_REPO is left as it was"; }
+
 # m2_save: once per run, from the current container, after a converged install. The guest's repository is copied into
-# a fresh sibling directory, made writable for this user (docker cp keeps the guest's modes; the cleanup, the next
-# save and actions/cache's restore all write in it), cleaned of what is no cache (records of failed lookups, which Maven would not retry, and
-# downloads a kill cut short), and only then swapped in. Returns non-zero, with $T2_M2_REPO untouched, on any failure;
-# callers treat that as a WARN, never as a failed run.
+# a fresh sibling directory and made writable for this user (docker cp keeps the guest's modes, and the cleanup, the
+# next save and actions/cache's restore all write in it). Then it is cleaned of what is no cache (records of failed
+# lookups, which Maven would not retry, and the temp files of downloads a kill cut short: *.part and *.part.lock from
+# Maven 3.8's resolver, <file>.<number>.tmp from Maven 3.9's), checked to hold jars, and only then swapped in.
+# Returns non-zero, with $T2_M2_REPO and no marker, on any failure; callers treat that as a WARN, never a failed run.
 m2_save() {
   [ -n "${T2_M2_REPO:-}" ] && [ -z "$M2_SAVED" ] && [ -n "$CTR" ] || return 0
   M2_SAVED=1
   local dir=${T2_M2_REPO%/} new old
   new="$dir.t2-new"; old="$dir.t2-old"   # siblings, on the same filesystem: the swap is two renames
-  rm -rf "$new" "$old" || return 1
+  rm -f "$dir.t2-saved"
+  if [ "${T2_M2_SAVE:-1}" = 0 ]; then log "Maven repository not saved (T2_M2_SAVE=0)"; return 0; fi
+  if ! m2_rm "$new" "$old"; then log "WARN could not remove $new or $old"; return 1; fi
   if ! { mkdir -p "$new" \
-         && docker cp -q "$CTR:$M2_GUEST/." "$new/" >> "$OUT/t2.log" 2>&1 \
+         && docker cp "$CTR:$M2_GUEST/." "$new/" >> "$OUT/t2.log" 2>&1 \
          && chmod -R u+rwX "$new" >> "$OUT/t2.log" 2>&1 \
          && find "$new" -type f \( -name '*.lastUpdated' -o -name resolver-status.properties \
-                                   -o -name '*.part' -o -name '*.part.lock' \) -delete >> "$OUT/t2.log" 2>&1; }; then
-    rm -rf "$new" || true
+              -o -name '*.part' -o -name '*.part.lock' -o -regextype posix-extended -regex '.*\.[0-9]+\.tmp' \) \
+              -delete >> "$OUT/t2.log" 2>&1; }; then
+    m2_rm "$new" || true
     log "WARN could not copy the Maven repository out of $CTR and clean it (see $OUT/t2.log)"
     return 1
   fi
-  if [ -e "$dir" ] && ! mv "$dir" "$old"; then rm -rf "$new" || true; return 1; fi
-  if ! mv "$new" "$dir"; then
-    [ ! -e "$old" ] || mv "$old" "$dir" || true
-    rm -rf "$new" || true
+  if [ -z "$(find "$new" -type f -name '*.jar' -print -quit)" ]; then
+    m2_rm "$new" || true
+    log "WARN the Maven repository in $CTR holds no jars: did the build use another one?"
     return 1
   fi
-  rm -rf "$old" || true
-  log "Maven repository saved to $T2_M2_REPO ($(du -sh "$T2_M2_REPO" | cut -f1))"
+  if [ -e "$dir" ] && ! mv "$dir" "$old"; then m2_rm "$new" || true; return 1; fi
+  if ! mv "$new" "$dir"; then
+    [ ! -e "$old" ] || mv "$old" "$dir" || true
+    m2_rm "$new" || true
+    return 1
+  fi
+  m2_rm "$old" || true
+  touch "$dir.t2-saved" || return 1
+  log "Maven repository saved to $dir ($(du -sh "$dir" | cut -f1))"
 }
 
 remove_container() {

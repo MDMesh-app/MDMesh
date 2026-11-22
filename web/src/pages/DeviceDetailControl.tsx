@@ -363,6 +363,9 @@ function PanelShell({
    Remote actions (Message / Kiosk & apps / Device / Power use / Destructive)
    =============================================================================================================== */
 
+/** The Remote actions card's id: the header menu's "All actions" scrolls to it and focuses it. */
+export const REMOTE_ACTIONS_ID = 'v2-device-remote-actions';
+
 type ActionRunner = (t: CommandTemplateExt) => void;
 
 interface Tile {
@@ -500,7 +503,7 @@ export function RemoteActions({
   const send = (key: string) => onAction(TEMPLATE[key]);
 
   return (
-    <Card aria-labelledby={titleId} className="v2-device-actions">
+    <Card id={REMOTE_ACTIONS_ID} tabIndex={-1} aria-labelledby={titleId} className="v2-device-actions">
       <CardHeader title="Remote actions" titleId={titleId} className="v2-device-actions__h" />
       <ActionRow
         title="Message"

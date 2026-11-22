@@ -16,6 +16,10 @@ Upgrading
   rolled back (default 180, at least 30). Raise it before an update whose database work may take longer; to have it
   count for this update, get this release's supervisor first ([UPGRADING.md](docs/UPGRADING.md#unreleased)).
 
+New
+- Console extensions: a menu item (`MenuItem`, as in a list's row actions) can set `movesFocus: true` when its
+  `onSelect` moves focus itself, so the menu leaves focus there rather than returning it to its trigger.
+
 Fixes
 - Agent rollout: a device already on a newer agent counts as updated and is no longer sent the older APK, which it
   refused, so the rollout never finished. Versions now compare as numbers (0.10.0 is newer than 0.9.0).
@@ -29,6 +33,15 @@ Fixes
   some deleted and still answered OK.
 - Bulk configuration and group changes apply to every selected device or to none, and a configuration change must
   name one. Taking devices out of a group the user may not use is refused, as putting them in one already was.
+- Console: the location map's path is easy to see on any map, in both themes: a dark line on a white casing, arrows
+  for the direction, a ring at the oldest fix and a dot at the latest, and a key under the map.
+- Console: activity says which command ran and how it went ("Lock: done", not "Command 1234:done"), labels kiosk exit
+  and return, and the Overview no longer shows the device's description as if it were the event's detail.
+- Console: an action shows in one place: a configuration card's "…" holds only Delete, and the device page's "…"
+  holds Ring and Reboot and then All actions, which opens Remote actions on the Control tab. A lone Delete or Remove
+  from library stays in its "…" rather than becoming a button next to the row.
+- Console: after you delete a configuration, an app from the library, a user or a role, keyboard focus moves to the
+  next card or row instead of to the top of the page. Any dialog whose opener is gone when it closes does the same.
 - Events: a device that was offline for a while no longer loses all but 100 of the events it kept. The server update
   alone fixes it for devices on older agents. When an agent's buffer of 500 fills, the device's events say how many
   older ones it dropped.

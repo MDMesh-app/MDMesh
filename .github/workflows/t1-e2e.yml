@@ -154,7 +154,7 @@ jobs:
         # rollback-e2e builds six images, pulls five more, and copies them all into docker:dind and its registry: more
         # than a hosted runner has free. These toolchains are unused here.
         run: |
-          df -h / /var/lib/docker
+          df -h / /var/lib/docker || df -h /
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
           df -h /
       - name: Build this checkout's images

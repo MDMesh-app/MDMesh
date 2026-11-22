@@ -86,6 +86,11 @@ seed, generates secrets, pulls and starts the stack, seeds the database, and pri
 admin password. To skip the first question, add the mode after the command (`--tunnel`, `--domain` or `--proxy`,
 as in `bash <(curl …/quickstart.sh) --proxy`), or `export MDMESH_MODE=proxy` before the checked block.
 
+The install directory, and everything the quick start uses in it, must be yours (or root's), not links, and writable
+by nobody else: a directory another user made, or one others may write (`/tmp`, say), is refused before anything in
+it is read. A directory of yours left open (by a `0002` umask) is refused too, with the `chmod go-w` to run if nobody
+else could have changed it.
+
 If the quick start stops after it wrote `.env` (an image pull, a port in use), fix the cause and run it again with
 `MDMESH_DIR` set to that directory, as it says: it finishes the install with the same `.env`. Don't delete that
 `.env` while the install's volumes exist: the database keeps the password in it.
@@ -160,7 +165,7 @@ one address, `127.0.0.1:8080` by default. It asks:
   machine, not only your proxy: anyone who can run commands here can reach the edge from that gateway and name any
   client address (past the sign-in limits, and a `client_ip` rule of your own). Keep it for a machine where only your
   proxy runs, or nobody else has a shell; otherwise list your proxy's own address. For a proxy elsewhere, its IP address (or a
-  range, no wider than an IPv4 /8 or IPv6 /16; IPv4 addresses as IPv4, not `::ffff:…`), several separated by spaces.
+  range, no wider than an IPv4 /8 or IPv6 /16; IPv4 addresses as IPv4, not `::ffff:…`), several separated by spaces or commas.
   Anyone else's `X-Forwarded-For` and `X-Forwarded-Proto` are ignored.
 
 `.env` then holds `COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml`, `MDMESH_BIND`, `TRUSTED_PROXIES` and
@@ -237,7 +242,15 @@ matches answers. So wrap a rule that answers requests in `handle`, as here. A di
 every request that gets that far: a bare `respond` would answer all of them. `scripts/edge-check.sh` runs this
 example.
 
-Make the file readable by everyone (`chmod 644`), check it, then restart the edge:
+What anyone else could change is never loaded, since your rules reach every visitor:
+
+- `site.d` must be a real directory (not a link), yours or root's, that nobody else may write. Otherwise the
+  installers leave it unconnected, saying why, and connect it on a later run once it is.
+- Each `*.caddy` file in it must be a regular file (not a link), owned by `site.d`'s owner or root, and writable by its
+  owner only: `chmod 644`. The edge checks every file when it starts and leaves out any other, saying why in
+  `docker compose logs caddy`; it starts without it (and without all of them if `site.d` itself is open to others).
+
+Check a new file, then restart the edge (a restart, not `caddy reload`: the check runs at start):
 
 ```bash
 docker compose exec caddy caddy validate --config /etc/caddy/Caddyfile && docker compose restart caddy

@@ -56,9 +56,11 @@ check() { local label=$1; shift; if "$@"; then pass "$label"; else fail "$label"
 cleanup() {
   local rc=$?
   echo; echo "== cleanup"
-  docker rm -f -v "$CLIENT" "$WSCLIENT" "$DIND" "$REG" >>"$LOG" 2>&1
-  docker network rm "$NET" >>"$LOG" 2>&1
-  find "$DATA" -mindepth 1 -delete >>"$LOG" 2>&1; rmdir "$DATA" >>"$LOG" 2>&1
+  {
+    docker rm -f -v "$CLIENT" "$WSCLIENT" "$DIND" "$REG"
+    docker network rm "$NET"
+    find "$DATA" -mindepth 1 -delete; rmdir "$DATA"
+  } >>"$LOG" 2>&1
   local left
   left="$(docker ps -a --format '{{.Names}}' | grep "^$P-" | tr '\n' ' ')"
   [ -z "$left" ] && echo "  no $P containers left" || echo "  LEFT: containers $left"

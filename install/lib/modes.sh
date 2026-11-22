@@ -297,13 +297,16 @@ mdm_site_dir() {
   elif ! mkdir -m 755 site.d; then
     warn "Could not make site.d here: your own edge rules can't be added."; return 0
   fi
-  # A site.d of root's on a run as another user: connected (nobody else may write it), its README left to root.
+  # A site.d this run can't write (root's, on a run as another user; or made read-only): connected (nobody else may
+  # write it), its README left out.
   if [ ! -w site.d ]; then
-    warn "site.d belongs to root: add your own edge rules there as root."
+    if [ -O site.d ]; then warn "site.d isn't writable (its mode): its README is left out."
+    else warn "site.d belongs to root: add your own edge rules there as root."; fi
   elif [ ! -e site.d/README ]; then
     printf '%s\n' "Your own rules for MDMesh's edge (Caddy). Every *.caddy file here is imported into the edge's site," \
-      "after MDMesh's own settings. Updates never change this directory. Make each file readable by everyone" \
-      "(chmod 644), check it, then restart the edge (from the install directory):" \
+      "after MDMesh's own settings. Updates never change this directory. Each file must be yours (or root's), not a" \
+      "link, and writable by you only (chmod 644), or the edge leaves it out, saying so in its log. Check it, then" \
+      "restart the edge (from the install directory):" \
       "  docker compose exec caddy caddy validate --config /etc/caddy/Caddyfile && docker compose restart caddy" \
       "Your files run after MDMesh's path checks and before its own routes, the first matching handle answering:" \
       "wrap a rule that answers requests (respond, redir) in handle { }; a bare one answers every request." \

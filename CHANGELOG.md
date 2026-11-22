@@ -19,8 +19,11 @@ Heads-up
   `TRUSTED_PROXIES` no longer gets HSTS added: list it in `TRUSTED_PROXIES`, or use the new proxy mode.
 - The quick start refuses an install directory, or a file in it, that isn't yours (or root's) or that other users may
   write. For a directory of yours it shows the `chmod` to run; anything else, install into a directory of your own.
-- Behind your own proxy, `./setup.sh --update` refuses a release before 0.6.0, also with `--allow-downgrade`: move
-  the install back to its earlier hosting mode first.
+- The updater (Settings → Updates, and Roll back) and `./setup.sh --update` (also with `--allow-downgrade`) refuse
+  a release before 0.6.0 while the install runs behind your own proxy, or while `TRUSTED_PROXIES` still says `host`:
+  move the install back to its earlier hosting mode, or set `TRUSTED_PROXIES=`, first.
+- Your own edge rules load only from files nobody but their owner can change (yours or root's, `chmod 644`, not a
+  link); the edge leaves any other out at start, saying why in its log.
 
 New
 - Install behind the nginx, Apache, Caddy or Traefik you already run: the quick start's third choice (or `--proxy`),

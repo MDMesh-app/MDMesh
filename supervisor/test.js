@@ -630,58 +630,68 @@ globalThis.fetch = (u, o) => {
  *  logical origins: the API (https://api.github.com), the web (https://github.com, browser_download_url) and the CDN
  *  the asset API redirects to (https://cdn.test). opts.privateRepo: browser URLs 404 and the asset API needs
  *  `Bearer <opts.token>` + octet-stream; opts.apk: a Buffer published as mdmesh-agent.apk; opts.failAfter: the releases
- *  list answers 500 once it has been served that many times. The CDN refuses any request carrying Authorization. */
+ *  list answers 500 once it has been served that many times. opts.older: { version, apk, versionCode } a second, older
+ *  signed release listed after it (the running one, say). The CDN refuses any request carrying Authorization. */
 async function fakeGitHub(dir, opts) {
   const fs = require('fs'), path = require('path'), http = require('http'), crypto = require('crypto');
   const kd = fs.mkdtempSync(path.join(dir, 'gh-'));
-  // Pinned images under the default owner unless opts.images says otherwise (null: a manifest without digests).
-  const manifest = { version: opts.version, channel: 'stable', components: { platforms: opts.platforms || PLATFORMS } };
-  const images = opts.images === undefined ? PIN : opts.images;
-  if (images) manifest.components.images = images;
-  if (opts.apk) manifest.components.apk = { file: 'mdmesh-agent.apk', versionCode: 999, sha256: crypto.createHash('sha256').update(opts.apk).digest('hex') };
-  fs.writeFileSync(path.join(kd, 'manifest.json'), JSON.stringify(manifest));
   cp.execFileSync('minisign', ['-G', '-W', '-p', path.join(kd, 'k.pub'), '-s', path.join(kd, 'k.key')], { stdio: 'ignore' });
-  cp.execFileSync('minisign', ['-S', '-s', path.join(kd, 'k.key'), '-m', path.join(kd, 'manifest.json')], { stdio: 'ignore' });
-  const bytes = { 'manifest.json': fs.readFileSync(path.join(kd, 'manifest.json')),
-    'manifest.json.minisig': fs.readFileSync(path.join(kd, 'manifest.json.minisig')) };
-  if (opts.apk) bytes['mdmesh-agent.apk'] = opts.apk;
+  // One signed release: its tag and its assets' bytes. Pinned images under the default owner unless o.images says
+  // otherwise (null: a manifest without digests).
+  const release = (o, versionCode) => {
+    const manifest = { version: o.version, channel: 'stable', components: { platforms: o.platforms || PLATFORMS } };
+    const images = o.images === undefined ? PIN : o.images;
+    if (images) manifest.components.images = images;
+    if (o.apk) manifest.components.apk = { file: 'mdmesh-agent.apk', versionCode, sha256: crypto.createHash('sha256').update(o.apk).digest('hex') };
+    const f = path.join(kd, `manifest-${o.version}.json`);
+    fs.writeFileSync(f, JSON.stringify(manifest));
+    cp.execFileSync('minisign', ['-S', '-s', path.join(kd, 'k.key'), '-m', f], { stdio: 'ignore' });
+    const bytes = { 'manifest.json': fs.readFileSync(f), 'manifest.json.minisig': fs.readFileSync(f + '.minisig') };
+    if (o.apk) bytes['mdmesh-agent.apk'] = o.apk;
+    return { tag: 'v' + o.version, bytes };
+  };
+  const rels = [release(opts, 999), ...(opts.older ? [release(opts.older, opts.older.versionCode || 998)] : [])];
+  const tag = rels[0].tag;
+  // An asset's id in the API and CDN URLs: <tag>/<name>, so two releases' manifest.json stay apart.
+  const byId = (id) => { const [t, ...n] = id.split('/'); const r = rels.find((x) => x.tag === t); return r && r.bytes[n.join('/')]; };
   const hits = { releases: 0, api: [], web: 0, cdn: [] };
   const missing = new Set(opts.missing || []); // listed in the release, but 404 wherever it is downloaded
-  const tag = 'v' + opts.version;
   const server = http.createServer((req, res) => {
     const u = req.url;
     const assetsPrefix = '/api/repos/o/r/releases/assets/';
     if (u.startsWith(assetsPrefix)) {
-      const name = decodeURIComponent(u.slice(assetsPrefix.length));
+      const id = decodeURIComponent(u.slice(assetsPrefix.length));
       hits.api.push({ auth: req.headers.authorization || null, accept: req.headers.accept || null });
       if (opts.privateRepo && (req.headers.authorization !== 'Bearer ' + opts.token || req.headers.accept !== 'application/octet-stream')) {
         res.statusCode = 404; res.end(); return;
       }
-      res.writeHead(302, { location: `https://cdn.test/signed/${encodeURIComponent(name)}?X-Amz-Signature=abc` });
+      res.writeHead(302, { location: `https://cdn.test/signed/${encodeURIComponent(id)}?X-Amz-Signature=abc` });
       res.end('redirect body');
     } else if (u.startsWith('/api/repos/o/r/releases')) {
       hits.releases++;
       if (opts.failAfter != null && hits.releases > opts.failAfter) { res.statusCode = 500; res.end(); return; }
       res.setHeader('content-type', 'application/json');
-      res.end(JSON.stringify([{ tag_name: tag, html_url: 'https://github.com/o/r/releases/tag/' + tag, assets: Object.keys(bytes)
-        .map((name) => ({ name, url: 'https://api.github.com/repos/o/r/releases/assets/' + encodeURIComponent(name),
-          browser_download_url: `https://github.com/o/r/releases/download/${tag}/${name}` })) }]));
-    } else if (u.startsWith(`/web/o/r/releases/download/${tag}/`)) {
+      res.end(JSON.stringify(rels.map((r) => ({ tag_name: r.tag, html_url: 'https://github.com/o/r/releases/tag/' + r.tag,
+        assets: Object.keys(r.bytes).map((name) => ({ name,
+          url: 'https://api.github.com/repos/o/r/releases/assets/' + encodeURIComponent(`${r.tag}/${name}`),
+          browser_download_url: `https://github.com/o/r/releases/download/${r.tag}/${name}` })) }))));
+    } else if (u.startsWith('/web/o/r/releases/download/')) {
       hits.web++;
-      const name = decodeURIComponent(u.split('/').pop());
-      if (opts.privateRepo || !bytes[name] || missing.has(name)) { res.statusCode = 404; res.end(); return; }
-      res.end(bytes[name]);
+      const id = decodeURIComponent(u.slice('/web/o/r/releases/download/'.length));
+      const name = id.split('/').pop();
+      if (opts.privateRepo || !byId(id) || missing.has(name)) { res.statusCode = 404; res.end(); return; }
+      res.end(byId(id));
     } else if (u.startsWith('/cdn/signed/')) {
       hits.cdn.push({ auth: req.headers.authorization || null });
       if (req.headers.authorization) { res.statusCode = 400; res.end('auth header forwarded'); return; }
-      const name = decodeURIComponent(u.slice('/cdn/signed/'.length).replace(/\?.*$/, ''));
-      if (bytes[name] && !missing.has(name)) res.end(bytes[name]); else { res.statusCode = 404; res.end(); }
+      const id = decodeURIComponent(u.slice('/cdn/signed/'.length).replace(/\?.*$/, ''));
+      if (byId(id) && !missing.has(id.split('/').pop())) res.end(byId(id)); else { res.statusCode = 404; res.end(); }
     } else { res.statusCode = 404; res.end(); }
   });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${server.address().port}`;
   return {
-    hits, pub: path.join(kd, 'k.pub'), preload: writePreload(dir),
+    hits, tag, pub: path.join(kd, 'k.pub'), preload: writePreload(dir),
     env: { GITHUB_REPO: 'o/r', MANIFEST_PUBKEY: path.join(kd, 'k.pub'),
       FAKE_ORIGINS: JSON.stringify({ 'https://api.github.com': base + '/api', 'https://github.com': base + '/web', 'https://cdn.test': base + '/cdn' }) },
     close: async () => { server.closeAllConnections(); await new Promise((r) => server.close(r)); },
@@ -1551,9 +1561,9 @@ t.test('a release without digests, under another owner or without images for thi
   { skip: !HAS_MINISIGN && 'minisign not installed', timeout: 40000 }, async () => {
     const fs = require('fs');
     for (const [opts, envText, want, code] of [
-      [{ version: '0.0.2', images: null }, '', /names its images by tag only/, 'digests'],
-      [{ version: '0.0.2' }, 'IMAGE_OWNER=forkco\n', /this install pulls ghcr\.io\/forkco\/mdmesh-server \(IMAGE_OWNER=forkco in \.env\)/, 'owner'],
-      [{ version: '0.0.2', platforms: 'linux/s390x' }, '', /has no images for this host \(linux\/[a-z0-9]+\), only for linux\/s390x/, 'platform'],
+      [{ version: '0.0.2', images: null, apk: Buffer.from('agent 0.0.2') }, '', /names its images by tag only/, 'digests'],
+      [{ version: '0.0.2', apk: Buffer.from('agent 0.0.2') }, 'IMAGE_OWNER=forkco\n', /this install pulls ghcr\.io\/forkco\/mdmesh-server \(IMAGE_OWNER=forkco in \.env\)/, 'owner'],
+      [{ version: '0.0.2', platforms: 'linux/s390x', apk: Buffer.from('agent 0.0.2') }, '', /has no images for this host \(linux\/[a-z0-9]+\), only for linux\/s390x/, 'platform'],
     ]) {
       const d = makeDeploy(envText + 'SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n');
       let gh = null, sup = null, authz = null;
@@ -1567,6 +1577,9 @@ t.test('a release without digests, under another owner or without images for thi
         a.equal(st.latest, '0.0.2');
         a.match(st.blocked, want, 'the status says why');
         a.equal(st.blockedCode, code);
+        // Its agent is not offered (the running release isn't listed here, so no agent at all).
+        a.equal(st.apk, null, 'no agent from a release whose server this install will not run');
+        a.equal((await fetch(`http://127.0.0.1:${sup.port}/update/agent.apk`)).status, 404);
         // The status is what auto-apply acts on: no apply started (not just no log line yet).
         a.equal(st.apply, null, 'auto-apply leaves it alone');
         await waitFor(async () => /\[update\] not offered: /.test(sup.log()), 'the not-offered log line');
@@ -1582,25 +1595,44 @@ t.test('a release without digests, under another owner or without images for thi
     }
   });
 
-t.test('a blocked release becomes installable once IMAGE_OWNER matches: the next check offers it; logged once',
-  { skip: !HAS_MINISIGN && 'minisign not installed', timeout: 40000 }, async () => {
+t.test('the agent offered follows what this install can install: the running release\'s while the latest is blocked, '
+  + 'the latest\'s once it is installable, the running one\'s again (not the mirrored latest) once it is blocked again',
+  { skip: !HAS_MINISIGN && 'minisign not installed', timeout: 60000 }, async () => {
     const fs = require('fs'), path = require('path');
-    const d = makeDeploy('IMAGE_OWNER=forkco\nSERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n');
+    const envOf = (owner) => `IMAGE_OWNER=${owner}\nSERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n`;
+    const d = makeDeploy(envOf('forkco'));
+    const NEW = Buffer.from('agent 0.0.2'), RUNNING = Buffer.from('agent 0.0.1');
     let gh = null, sup = null, authz = null;
     try {
-      gh = await fakeGitHub(d.dir, { version: '0.0.2' });
+      gh = await fakeGitHub(d.dir, { version: '0.0.2', apk: NEW, older: { version: '0.0.1', apk: RUNNING, versionCode: 1 } });
       authz = await fakeAuthz();
-      sup = await spawnSupervisor(d.dir, { ...d.env, ...gh.env, APPLY_SUPPORTED: '1', SERVER_BASE: authz.base }, /supervisor on/, ['--require', gh.preload]);
+      sup = await spawnSupervisor(d.dir, { ...d.env, ...gh.env, APPLY_SUPPORTED: '1', SERVER_BASE: authz.base,
+        APK_CACHE_DIR: path.join(d.dir, 'apk') }, /supervisor on/, ['--require', gh.preload]);
       const base = `http://127.0.0.1:${sup.port}`;
+      const agent = async () => { const r = await fetch(`${base}/update/agent.apk`); return r.status === 200 ? Buffer.from(await r.arrayBuffer()) : r.status; };
+      // /update/check polls again only 15 s after the last poll.
+      const check = async () => { await new Promise((res) => setTimeout(res, 15500));
+        return (await fetch(`${base}/update/check`, { method: 'POST', headers: ADMIN })).json(); };
+
       const st = await waitFor(async () => { const x = await (await fetch(`${base}/update/status`)).json(); return x.checkedAt && x; }, 'the startup poll');
       a.equal(st.blockedCode, 'owner');
-      fs.writeFileSync(path.join(d.project, '.env'), 'IMAGE_OWNER=mdmesh-app\nSERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n');
-      await new Promise((res) => setTimeout(res, 15500));   // /update/check polls again only after 15 s
-      const after = await (await fetch(`${base}/update/check`, { method: 'POST', headers: ADMIN })).json();
-      a.equal(after.updateAvailable, true, 'offered now');
-      a.equal(after.blocked, null);
-      a.equal(after.blockedCode, null);
-      a.equal(sup.log().match(/\[update\] not offered: /g).length, 1);
+      a.equal(st.apk && st.apk.version, '0.0.1', 'the running release\'s agent');
+      a.deepEqual(await agent(), RUNNING);
+
+      fs.writeFileSync(path.join(d.project, '.env'), envOf('mdmesh-app'));
+      const open = await check();
+      a.equal(open.updateAvailable, true, 'offered now');
+      a.equal(open.blocked, null);
+      a.equal(open.blockedCode, null);
+      a.equal(open.apk && open.apk.version, '0.0.2');
+      a.deepEqual(await agent(), NEW, 'the latest\'s agent, mirrored');
+
+      fs.writeFileSync(path.join(d.project, '.env'), envOf('forkco'));
+      const again = await check();
+      a.equal(again.blockedCode, 'owner');
+      a.equal(again.apk && again.apk.version, '0.0.1');
+      a.deepEqual(await agent(), RUNNING, 'the mirrored 0.0.2 agent is no longer offered');
+      a.equal(sup.log().match(/\[update\] not offered: /g).length, 2, 'once per blocked spell');
     } finally {
       await stopChild(sup && sup.child); if (gh) await gh.close(); if (authz) await authz.close();
       fs.rmSync(d.dir, { recursive: true, force: true });

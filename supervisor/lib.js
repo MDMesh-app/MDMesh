@@ -321,7 +321,7 @@ function legacyDeploymentAdmin(body) {
 }
 
 module.exports = {
-  parseSemver, semverGt, pickRelease, shapeStatus, updateBlocked, blockedLogLine, missedSecurity,
+  parseSemver, semverGt, pickRelease, shapeStatus, updateBlocked, blockedLogLine, hostPlatform, missedSecurity,
   imageTags, imagePins, nextPhase, isTerminal, APPLY_PHASES, APPLY_TERMINAL,
   apkAsset, sha256Matches, recoveryPage, isPublishTemp, assetRequest, fetchAsset, envValue, applyLine, applyRefusal,
   deploymentAdminVerdict, legacyDeploymentAdmin,

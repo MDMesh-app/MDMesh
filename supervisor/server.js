@@ -7,7 +7,7 @@ const os = require('os');
 const cp = require('child_process');
 const path = require('path');
 const crypto = require('crypto');
-const { pickRelease, shapeStatus, updateBlocked, blockedLogLine, imageTags, imagePins, isTerminal, apkAsset, sha256Matches, recoveryPage, isPublishTemp, fetchAsset,
+const { pickRelease, shapeStatus, updateBlocked, blockedLogLine, hostPlatform, imageTags, imagePins, isTerminal, apkAsset, sha256Matches, recoveryPage, isPublishTemp, fetchAsset,
   envValue, applyLine, applyRefusal, deploymentAdminVerdict, legacyDeploymentAdmin } = require('./lib');
 
 const PORT = +(process.env.SUPERVISOR_PORT || 9000);
@@ -49,7 +49,8 @@ function readImageOwner() {
 }
 // Last verified manifest from poll() — the source of the image refs an apply will deploy.
 let lastManifest = null;
-// Downloadable APK for the latest verified release {version,versionCode,sha256,url,apiUrl}; null if none.
+// The agent APK this install offers {version,versionCode,sha256,url,apiUrl} (offeredApk: the latest verified release's,
+// or the running release's while the latest is blocked); null if none.
 let lastApk = null;
 // Release notes / link / date for the picked release {notes,url,publishedAt}; null when no release.
 let lastRelease = null;
@@ -106,7 +107,7 @@ function blockAuto(v) {
   console.log('[auto] will not auto-apply', v, 'again (apply failed or rolled back); Update still applies it by hand');
 }
 
-let state = { current: currentVersion, latest: null, updateAvailable: false, blocked: null, blockedCode: null, verified: false, checkedAt: null, error: 'not polled yet', missedSecurity: [], apply: null, auto: autoUpdate, autoSkipped: skipVersion, applySupported: APPLY_SUPPORTED };
+let state = { current: currentVersion, latest: null, updateAvailable: false, blocked: null, blockedCode: null, platform: hostPlatform(), verified: false, checkedAt: null, error: 'not polled yet', missedSecurity: [], apply: null, auto: autoUpdate, autoSkipped: skipVersion, applySupported: APPLY_SUPPORTED };
 
 async function ghJson(url) {
   const headers = { 'User-Agent': 'mdmesh-updater', Accept: 'application/vnd.github+json' };
@@ -243,8 +244,10 @@ function removeStalePublishTemps() {
 let lastBlockedLog = null;
 function setStatus(args) {
   maybeClearSkip();
-  const blocked = updateBlocked({ manifest: args.manifest, verified: args.verified, current: args.current,
-    imageOwner: readImageOwner(), applySupported: APPLY_SUPPORTED });
+  const blocked = blockedFor(args.manifest, args.verified, args.current);
+  // A release blocked since its APK was picked (IMAGE_OWNER changed, or `current`): stop offering its agent now; the
+  // next poll offers the running release's (offeredApk).
+  if (blocked && lastApk && args.manifest && lastApk.version === args.manifest.version) lastApk = null;
   const logged = blockedLogLine(lastBlockedLog, blocked);
   if (logged.line) console.log(logged.line);
   lastBlockedLog = logged.lastReason;
@@ -254,10 +257,31 @@ function setStatus(args) {
     auto: autoUpdate,
     autoSkipped: skipVersion,
     applySupported: APPLY_SUPPORTED,
+    platform: hostPlatform(),   // the platform an update's images must include (blockedCode 'platform')
     apk: lastApk ? { version: lastApk.version, versionCode: lastApk.versionCode, sha256: lastApk.sha256, available: apkReady() } : null,
     release: lastRelease,
   };
   maybeAutoApply();
+}
+
+/** Why this install can't install the release in a verified `manifest` (updateBlocked), or null. */
+function blockedFor(manifest, verified = true, current = currentVersion) {
+  return updateBlocked({ manifest, verified, current, imageOwner: readImageOwner(), applySupported: APPLY_SUPPORTED });
+}
+
+/** The agent APK this install offers for rollouts and enrollment (state.apk, /update/agent.apk, a native install's
+ *  published copy): the picked release's, unless this install can't install that release (blocked): then the running
+ *  release's, when it is among the listed releases and its own manifest verifies. Never the agent of a release whose
+ *  server this install won't run. */
+async function offeredApk(releases, rel, manifest) {
+  if (!manifest) return null;
+  if (!blockedFor(manifest)) return apkAsset(rel, manifest);
+  const run = (releases || []).find((r) => !r.draft && (r.tag_name || '').replace(/^v/, '') === currentVersion);
+  const m = run && (run.assets || []).find((a) => a.name === 'manifest.json');
+  const sig = run && (run.assets || []).find((a) => a.name === 'manifest.json.minisig');
+  if (!m || !sig) return null;
+  const v = await verifyManifest(m, sig);
+  return v.manifest && v.manifest.version === currentVersion ? apkAsset(run, v.manifest) : null;
 }
 
 /** If unattended is on and a fresh verified update is available, apply it (once per version). */
@@ -276,7 +300,8 @@ async function poll() {
   lastPollAt = Date.now(); // stamp up-front so /update/check throttling also covers an in-flight poll
   if (!REPO) { lastManifest = null; lastRelease = null; setStatus({ current: currentVersion, manifest: null, verified: false, checkedAt: Date.now(), error: 'GITHUB_REPO not set' }); return; }
   try {
-    const rel = pickRelease(await ghJson(`https://api.github.com/repos/${REPO}/releases?per_page=10`), CHANNEL);
+    const releases = await ghJson(`https://api.github.com/repos/${REPO}/releases?per_page=10`);
+    const rel = pickRelease(releases, CHANNEL);
     if (!rel) { lastManifest = null; lastRelease = null; setStatus({ current: currentVersion, manifest: null, verified: false, checkedAt: Date.now(), error: 'no matching release' }); return; }
     lastRelease = { notes: rel.body || null, url: rel.html_url || null, publishedAt: rel.published_at || null };
     const m = rel.assets.find((a) => a.name === 'manifest.json');
@@ -284,7 +309,7 @@ async function poll() {
     const v = (m && s) ? await verifyManifest(m, s) : { error: 'release has no manifest.json.minisig' };
     const manifest = v.manifest || null;
     lastManifest = manifest; // only verified manifests are ever stored
-    lastApk = manifest ? apkAsset(rel, manifest) : null;
+    lastApk = await offeredApk(releases, rel, manifest);
     setStatus({ current: currentVersion, manifest, verified: !!manifest, checkedAt: Date.now(), error: manifest ? null : v.error });
     if (lastApk) void ensureApk(); // warm the mirror cache (download+verify) so a rollout is instant
   } catch (e) {

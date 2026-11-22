@@ -122,8 +122,8 @@ server) means all of them were taken.
 
 `events` are the agent's buffered lifecycle events, oldest first. `eventsAccepted` (protocol 1.12) is how many of
 them, counted from the first, the server consumed; the agent drops those and sends the rest on its next check-in. The
-server stores at most 500 per check-in, in one transaction. It skips an event whose `type` isn't 1 to 64 of `A-Z a-z 0-9 . _ -`, or whose
-data the database refuses (SQL state class 22 or 23), and counts it as consumed. Any other database error (a lost
+server stores at most 500 per check-in, in one transaction. It skips an event whose `type` isn't 1 to 64 of
+`A-Z a-z 0-9 . _ -`, or whose data the database refuses (SQL state class 22 or 23), and counts it as consumed. Any other database error (a lost
 connection, a failover) stops the events, uncounted from the first one not stored, so the agent sends that event and
 the ones after it again.
 That needs an agent that reads `eventsAccepted`, so agents send `protocolVersion` on every check-in from 1.12 on (they

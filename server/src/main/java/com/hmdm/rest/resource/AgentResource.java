@@ -638,19 +638,32 @@ public class AgentResource {
             logger.warn("Device {} sent {} events without a valid type, skipped (the first: {})", deviceNumber,
                     invalid, firstInvalid == null ? "no type" : "\"" + loggable(firstInvalid, 40) + "\"");
         }
+        if (batch.isEmpty()) {
+            return consumable;
+        }
         try {
             commandDAO.insertEvents(deviceNumber, batch);
-            for (DeviceEvent row : batch) {
-                kioskLockoutAlert.onEvent(device, row.getType(), row.getDetail());
-            }
-            return consumable;
         } catch (PersistenceException ex) {
             if (!isDataError(ex)) {
                 return eventsStopped(deviceNumber, ex, batch.get(0).getType(), positions.get(0), countsAccepted);
             }
             logger.info("Device {} events refused as a batch (SQL state {}): storing them one by one", deviceNumber,
                     sqlState(ex).orElse(null));
+            return ingestOneByOne(device, batch, positions, consumable, countsAccepted);
         }
+        for (DeviceEvent row : batch) {
+            kioskLockoutAlert.onEvent(device, row.getType(), row.getDetail());
+        }
+        return consumable;
+    }
+
+    /**
+     * {@link #ingestEvents}'s fallback once the database refused the batch's data: each row on its own, outside any
+     * transaction, skipping the refused ones. Returns what {@link #ingestEvents} returns.
+     */
+    private int ingestOneByOne(Device device, List<DeviceEvent> batch, List<Integer> positions, int consumable,
+                               boolean countsAccepted) {
+        String deviceNumber = device.getNumber();
         for (int k = 0; k < batch.size(); k++) {
             DeviceEvent row = batch.get(k);
             try {

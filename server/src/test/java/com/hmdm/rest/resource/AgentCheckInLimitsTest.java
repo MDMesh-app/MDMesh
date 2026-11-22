@@ -31,21 +31,12 @@ import org.apache.ibatis.exceptions.PersistenceException;
 import org.junit.Before;
 import org.junit.Test;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Modifier;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -452,51 +443,6 @@ public class AgentCheckInLimitsTest {
         s.setAgentVersion(agentVersion);
         s.setPowerMode(powerMode);
         return s;
-    }
-
-    /** The device-sent state strings AgentResource has a storage rule for (storable, validRevision). */
-    private static final Set<String> STATE_STRINGS_WITH_A_RULE = new HashSet<>(
-            Arrays.asList("androidRelease", "agentVersion", "powerMode", "appliedConfigRevision"));
-
-    /** The column's length in the Liquibase changelog, the smallest where the name is declared more than once. */
-    private static int columnLength(String column) throws Exception {
-        Path changelog = Paths.get("src", "main", "resources", "liquibase", "db.changelog.xml");
-        if (!Files.exists(changelog)) changelog = Paths.get("server").resolve(changelog);
-        String xml = new String(Files.readAllBytes(changelog), StandardCharsets.UTF_8);
-        Matcher m = Pattern.compile("(?i)(?<![a-z])" + column + "\\s+VARCHAR\\((\\d+)\\)").matcher(xml);
-        int length = Integer.MAX_VALUE;
-        while (m.find()) length = Math.min(length, Integer.parseInt(m.group(1)));
-        assertTrue(column + " has no VARCHAR column in the changelog", length != Integer.MAX_VALUE);
-        return length;
-    }
-
-    /** Checks in with only {@code field} of the state set to {@code value}; returns what was stored for it. */
-    private Object storedState(Field field, String value) throws Exception {
-        AgentDeviceState s = new AgentDeviceState();
-        field.setAccessible(true);
-        field.set(s, value);
-        AgentCheckInRequest req = new AgentCheckInRequest();
-        req.setState(s);
-        assertEquals(field.getName(), Response.ResponseStatus.OK, checkin(req).getStatus());
-        Field stored = DeviceState.class.getDeclaredField(field.getName());
-        stored.setAccessible(true);
-        return stored.get(commands.state);
-    }
-
-    @Test
-    public void everyStateStringIsBoundedBeforeItIsStored() throws Exception {
-        // A new state field must get a rule here and in AgentResource: an unbounded one wedges the device's check-ins.
-        for (Field f : AgentDeviceState.class.getDeclaredFields()) {
-            if (f.getType() != String.class || Modifier.isStatic(f.getModifiers())) continue;
-            assertTrue("AgentDeviceState." + f.getName() + " has no storage rule",
-                    STATE_STRINGS_WITH_A_RULE.contains(f.getName()));
-            int max = columnLength(f.getName());
-            // 'a' is a hex digit, so a full-length value is a well-formed revision too.
-            String longest = new String(new char[max]).replace('\0', 'a');
-            assertEquals(f.getName() + " fits its column", longest, storedState(f, longest));
-            assertNull(f.getName() + " one too long", storedState(f, longest + "a"));
-            assertNull(f.getName() + " with a NUL", storedState(f, "a\0a"));
-        }
     }
 
     @Test

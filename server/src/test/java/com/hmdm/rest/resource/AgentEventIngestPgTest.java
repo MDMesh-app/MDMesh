@@ -16,6 +16,7 @@ import com.hmdm.persistence.mapper.DeviceStateMapper;
 import com.hmdm.rest.json.Response;
 import com.hmdm.rest.json.agent.AgentCheckInRequest;
 import com.hmdm.rest.json.agent.AgentCheckInResponse;
+import com.hmdm.rest.json.agent.AgentDeviceState;
 import com.hmdm.rest.json.agent.AgentTelemetryEvent;
 import com.hmdm.rest.resource.support.AppReconciler;
 import com.hmdm.rest.resource.support.ConfigAppInstaller;
@@ -24,34 +25,48 @@ import com.hmdm.rest.resource.support.KioskLockoutAlert;
 import com.hmdm.util.CryptoUtil;
 import org.apache.ibatis.exceptions.PersistenceException;
 import org.apache.ibatis.transaction.jdbc.JdbcTransactionFactory;
-import org.junit.After;
+import liquibase.Liquibase;
+import liquibase.database.Database;
+import liquibase.database.DatabaseFactory;
+import liquibase.database.jvm.JdbcConnection;
+import liquibase.resource.ClassLoaderResourceAccessor;
+import org.junit.AfterClass;
 import org.junit.Assume;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 import org.mybatis.guice.MyBatisModule;
 import org.mybatis.guice.datasource.builtin.PooledDataSourceProvider;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Properties;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 /**
- * A check-in's events against a real PostgreSQL, through mybatis-guice as the server builds it, so the batch's
- * transaction, its rollback and the row-by-row fallback are PostgreSQL's own. The test table refuses a detail of
- * {@code refuse-me} (a CHECK constraint, SQL state 23514) and fails a detail of {@code blip} as a deadlock would
- * (40P01, not the data's fault). Skipped without MDMESH_TEST_PG_URL; fails without it when MDMESH_TEST_PG_REQUIRED is
- * set (CI).
+ * A check-in's events and state against a real PostgreSQL, on the schema the Liquibase changelog makes, through
+ * mybatis-guice as the server builds it: the batch's transaction, its rollback, the row-by-row fallback and the column
+ * lengths are PostgreSQL's own. Two hooks are added: device_event refuses a detail of {@code refuse-me} (a CHECK
+ * constraint, SQL state 23514) and fails a detail of {@code blip} as a deadlock would (40P01, not the data's fault).
+ * Skipped without MDMESH_TEST_PG_URL; fails without it when MDMESH_TEST_PG_REQUIRED is set (CI).
  */
 public class AgentEventIngestPgTest {
 
@@ -75,36 +90,36 @@ public class AgentEventIngestPgTest {
         @Override public List<AgentCommand> listPending(String n) { return Collections.emptyList(); }
     }
 
-    private String schema;
-    private AgentResource resource;
+    private static String schema;
+    private static AgentResource resource;
 
-    @Before
-    public void setUp() throws Exception {
+    @BeforeClass
+    public static void setUpClass() throws Exception {
         boolean configured = URL != null && !URL.isEmpty();
         if (!configured && "true".equals(System.getenv("MDMESH_TEST_PG_REQUIRED"))) {
             fail("MDMESH_TEST_PG_REQUIRED is set but MDMESH_TEST_PG_URL is not: CI must run this test, not skip it");
         }
         Assume.assumeTrue("set MDMESH_TEST_PG_URL to run against PostgreSQL", configured);
         schema = "events_it_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
-        sql("CREATE SCHEMA " + schema,
-                // device_event and device_state as the changelog makes them, plus the two failure hooks.
-                "CREATE TABLE " + schema + ".device_event (id BIGSERIAL PRIMARY KEY, "
-                        + "deviceNumber VARCHAR(255) NOT NULL, type VARCHAR(64) NOT NULL, ts BIGINT NOT NULL, detail TEXT, "
-                        + "CHECK (detail IS DISTINCT FROM 'refuse-me'))",
+        sql("CREATE SCHEMA " + schema);
+        String url = URL + (URL.contains("?") ? "&" : "?") + "currentSchema=" + schema;
+        try (Connection c = DriverManager.getConnection(url, user(), password())) {
+            Database db = DatabaseFactory.getInstance().findCorrectDatabaseImplementation(new JdbcConnection(c));
+            new Liquibase("liquibase/db.changelog.xml", new ClassLoaderResourceAccessor(), db).update("common,private");
+        }
+        sql("ALTER TABLE " + schema + ".device_event ADD CONSTRAINT refuse_me "
+                        + "CHECK (detail IS DISTINCT FROM 'refuse-me')",
                 "CREATE FUNCTION " + schema + ".blip() RETURNS trigger AS $$ BEGIN "
                         + "IF NEW.detail = 'blip' THEN RAISE EXCEPTION 'blip' USING ERRCODE = '40P01'; END IF; "
                         + "RETURN NEW; END $$ LANGUAGE plpgsql",
                 "CREATE TRIGGER blip BEFORE INSERT ON " + schema + ".device_event FOR EACH ROW EXECUTE PROCEDURE "
-                        + schema + ".blip()",
-                "CREATE TABLE " + schema + ".device_state (deviceNumber VARCHAR(255) PRIMARY KEY, "
-                        + "updatedAt BIGINT NOT NULL, kioskGeneration BIGINT NOT NULL DEFAULT 0, "
-                        + "kioskReturnGeneration BIGINT)");
+                        + schema + ".blip()");
 
         Properties props = new Properties();
         props.setProperty("JDBC.driver", "org.postgresql.Driver");
-        props.setProperty("JDBC.url", URL + (URL.contains("?") ? "&" : "?") + "currentSchema=" + schema);
-        props.setProperty("JDBC.username", USER == null ? "postgres" : USER);
-        props.setProperty("JDBC.password", PASSWORD == null ? "" : PASSWORD);
+        props.setProperty("JDBC.url", url);
+        props.setProperty("JDBC.username", user());
+        props.setProperty("JDBC.password", password());
         Injector injector = Guice.createInjector(new MyBatisModule() {
             @Override
             protected void initialize() {
@@ -126,16 +141,29 @@ public class AgentEventIngestPgTest {
                 new KioskLockoutAlert(null, null, null), null);
     }
 
-    @After
-    public void tearDown() throws Exception {
-        if (schema != null && URL != null && !URL.isEmpty()) sql("DROP SCHEMA " + schema + " CASCADE");
+    @Before
+    public void emptyTables() throws Exception {
+        sql("TRUNCATE " + schema + ".device_event, " + schema + ".device_state");
     }
 
-    private Connection connect() throws Exception {
-        return DriverManager.getConnection(URL, USER == null ? "postgres" : USER, PASSWORD == null ? "" : PASSWORD);
+    @AfterClass
+    public static void tearDownClass() throws Exception {
+        if (schema != null) sql("DROP SCHEMA " + schema + " CASCADE");
     }
 
-    private void sql(String... statements) throws Exception {
+    private static String user() {
+        return USER == null ? "postgres" : USER;
+    }
+
+    private static String password() {
+        return PASSWORD == null ? "" : PASSWORD;
+    }
+
+    private static Connection connect() throws Exception {
+        return DriverManager.getConnection(URL, user(), password());
+    }
+
+    private static void sql(String... statements) throws Exception {
         try (Connection c = connect(); Statement s = c.createStatement()) {
             for (String st : statements) s.execute(st);
         }
@@ -221,6 +249,80 @@ public class AgentEventIngestPgTest {
             fail("an agent before 1.12 drops its whole batch on success: the check-in must fail");
         } catch (PersistenceException expected) {
             assertEquals(Collections.emptyList(), stored());
+        }
+    }
+
+    @Test
+    public void theBatchIsOneTransaction() throws Exception {
+        // The kiosk-return evidence is refused after the batch's rows went in: they must go with it, or the fallback
+        // stores them a second time.
+        sql("ALTER TABLE " + schema + ".device_state ADD CONSTRAINT no_kiosk_return "
+                + "CHECK (kioskReturnGeneration IS NULL)");
+        try {
+            Response r = checkin("1.12", event("boot", null), event("kioskReturn", "x"), event("lowBattery", "12%"));
+            assertEquals(3, eventsAccepted(r));
+            // The kioskReturn and its evidence are refused together (recordKioskReturn's own transaction).
+            assertEquals(Arrays.asList("boot", "lowBattery"), stored());
+        } finally {
+            sql("ALTER TABLE " + schema + ".device_state DROP CONSTRAINT no_kiosk_return");
+        }
+    }
+
+    /** The device-sent state strings AgentResource has a storage rule for (storable, validRevision). */
+    private static final Set<String> STATE_STRINGS_WITH_A_RULE = new HashSet<>(
+            Arrays.asList("androidRelease", "agentVersion", "powerMode", "appliedConfigRevision"));
+
+    /** The device_state column's length, as the changelog left it. */
+    private static int columnLength(String column) throws Exception {
+        try (Connection c = connect(); PreparedStatement s = c.prepareStatement("SELECT character_maximum_length "
+                + "FROM information_schema.columns WHERE table_schema = ? AND table_name = 'device_state' "
+                + "AND column_name = ?")) {
+            s.setString(1, schema);
+            s.setString(2, column.toLowerCase(Locale.ROOT));
+            try (ResultSet r = s.executeQuery()) {
+                assertTrue("device_state has no column " + column, r.next());
+                int length = r.getInt(1);
+                assertFalse(column + " is not a VARCHAR(n)", r.wasNull());
+                return length;
+            }
+        }
+    }
+
+    /**
+     * Checks in with only {@code field} of the state set to {@code value}; returns what device_state holds. From an
+     * empty table: the upsert keeps an earlier revision when a check-in reports none it can store.
+     */
+    private static String storedState(Field field, String value) throws Exception {
+        sql("TRUNCATE " + schema + ".device_state");
+        AgentDeviceState state = new AgentDeviceState();
+        field.setAccessible(true);
+        field.set(state, value);
+        AgentCheckInRequest req = new AgentCheckInRequest();
+        req.setDeviceId(AgentCheckInLimitsTest.DEVICE);
+        req.setState(state);
+        Response r = resource.checkin("Bearer " + AgentCheckInLimitsTest.SECRET, null, req);
+        assertEquals(field.getName(), Response.ResponseStatus.OK, r.getStatus());
+        try (Connection c = connect(); Statement s = c.createStatement(); ResultSet rs = s.executeQuery(
+                "SELECT " + field.getName() + " FROM " + schema + ".device_state")) {
+            assertTrue(rs.next());
+            return rs.getString(1);
+        }
+    }
+
+    @Test
+    public void everyStateStringFitsItsColumnOrIsIgnored() throws Exception {
+        // A value the column can't hold would fail every check-in from the device. A new state field must get a rule
+        // here and in AgentResource.
+        for (Field f : AgentDeviceState.class.getDeclaredFields()) {
+            if (f.getType() != String.class || Modifier.isStatic(f.getModifiers())) continue;
+            assertTrue("AgentDeviceState." + f.getName() + " has no storage rule",
+                    STATE_STRINGS_WITH_A_RULE.contains(f.getName()));
+            int max = columnLength(f.getName());
+            // 'a' is a hex digit, so a full-length value is a well-formed revision too.
+            String longest = new String(new char[max]).replace('\0', 'a');
+            assertEquals(f.getName() + " fits its column", longest, storedState(f, longest));
+            assertNull(f.getName() + " one too long", storedState(f, longest + "a"));
+            assertNull(f.getName() + " with a NUL", storedState(f, "a\0a"));
         }
     }
 }

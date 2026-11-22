@@ -489,10 +489,12 @@ export function UpdatesSection({
               ) : null}
             </div>
           )}
-          {s.apk?.available ? (
+          {/* The updater offers an agent only for the release the server runs (s.apk is that one), so the new
+              release's agent comes after the update. */}
+          {offer?.kind === 'ready' ? (
             <p className="v2-settings-upd__help">
-              The release carries agent <span className="v2-num">{s.apk.version}</span>.{' '}
-              <a href={rolloutHref}>Roll it out to devices</a> after the server update.
+              The release carries agent <span className="v2-num">{offer.latest}</span>. Once the server runs it,{' '}
+              <a href={rolloutHref}>roll it out to devices</a>.
             </p>
           ) : null}
         </div>
@@ -500,7 +502,8 @@ export function UpdatesSection({
 
       {/* A newer release this updater can't install: why, and what to do, instead of an update or "the latest". */}
       {s && offer?.kind === 'blocked' && !running ? (
-        <Callout tone="warn" icon={<IconAlert />}>
+        // Quiet, as in the sidebar and on the Overview, unless it leaves security fixes missing (the notice above).
+        <Callout tone={offer.missed.length > 0 ? 'warn' : 'info'} icon={<IconAlert />}>
           MDMesh <span className="v2-num">{offer.latest}</span> can&rsquo;t be installed on this server. {blockedText(s)}
         </Callout>
       ) : null}

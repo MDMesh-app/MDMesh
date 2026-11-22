@@ -109,6 +109,18 @@ describe('Settings → Updates: a release this updater cannot install', () => {
     expect(screen.queryByText(/is ready/)).toBeNull();
   });
 
+  it('is quiet (info) unless it leaves security fixes missing (warn), as in the sidebar and on the Overview', async () => {
+    render({ updateAvailable: false, blocked: REASON, blockedCode: 'platform', missedSecurity: [] });
+    const quiet = (await screen.findByText(/can’t be installed on this server/)).closest('.v2-callout') as HTMLElement;
+    expect(quiet.classList.contains('v2-callout--info')).toBe(true);
+  });
+
+  it('is amber when it leaves security fixes missing', async () => {
+    render({ updateAvailable: false, blocked: REASON, blockedCode: 'owner', missedSecurity: ['0.3.8'], current: '0.3.6' });
+    const loud = (await screen.findByText(/can’t be installed on this server/)).closest('.v2-callout') as HTMLElement;
+    expect(loud.classList.contains('v2-callout--warn')).toBe(true);
+  });
+
   it('keeps the missing-security notice, saying the release can’t be installed here', async () => {
     render({ updateAvailable: false, blocked: REASON, blockedCode: 'owner', missedSecurity: ['0.3.8'], current: '0.3.6' });
     const notice = await screen.findByRole('region', { name: 'Missing security fixes' });
@@ -133,5 +145,17 @@ describe('Settings → Updates: an unverified newer release', () => {
     renderInConsole(<UpdatesSection id="updates" sup={sup} rolloutHref="#agent-rollout" />, { path: '/settings' });
     await screen.findByText(/its signature couldn’t be verified/);
     expect(screen.queryByText(/is the latest release/)).toBeNull();
+  });
+});
+
+describe('Settings → Updates: the new release’s agent', () => {
+  it('names the new release’s agent, not the one the updater offers now (the running release’s)', async () => {
+    stubApi();
+    // The updater offers 0.3.7's agent (the server runs 0.3.7); 0.3.8 is ready.
+    const status = { ...STATUS, apk: { version: '0.3.7', versionCode: 307, sha256: 'a', available: true, of: 'running' } } as UpdateStatus;
+    const sup = { status, loaded: true, reachable: true, refresh: async () => {}, setStatus: () => {}, patch: () => {} };
+    renderInConsole(<UpdatesSection id="updates" sup={sup} rolloutHref="#agent-rollout" />, { path: '/settings' });
+    const line = await screen.findByText(/The release carries agent/);
+    expect(line.textContent).toBe('The release carries agent 0.3.8. Once the server runs it, roll it out to devices.');
   });
 });

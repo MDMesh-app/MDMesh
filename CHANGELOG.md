@@ -36,10 +36,10 @@ New
   `onSelect` moves focus itself, so the menu leaves focus there rather than returning it to its trigger.
 
 Fixes
-- Enrollment keeps its agent through a restart with GitHub down: the updater keeps each release's signed manifest and
-  agent it has offered, and checks both again before it serves them. When it has no agent to give new devices (GitHub
-  didn't answer yet, or the release's manifest doesn't verify), the Enroll page says so instead of showing a QR code
-  that can't work, and a native install stops publishing an agent newer than its server.
+- Enrollment keeps its agent through a restart with GitHub down: the updater keeps the signed manifest and agent of
+  each release it has run, and checks both again before it serves them. When it has no agent to give new devices
+  (GitHub didn't answer yet, or the release's manifest doesn't verify), the Enroll page says so on Docker installs
+  instead of showing a QR code that can't work, and a native install stops publishing an agent newer than its server.
 - A rollout started before a server update still downloads its own agent, also after the updater restarts. A rollout
   of an agent newer than the server (after a rollback) stops: the updater refuses it, and Settings → Agent rollout
   says so.

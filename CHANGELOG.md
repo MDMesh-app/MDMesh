@@ -29,11 +29,11 @@ New
   leaves missing. It is no longer offered as an update that then fails, or retried automatically.
 
 Fixes
-- While the updater runs, enrollment keeps its agent when GitHub, a download or a newer release's signature fails, and
-  the Enroll page says so when the server has no agent to give new devices, instead of showing a QR code that can't
-  work.
-- A rollout started before the server was updated or rolled back still downloads its own agent, and the updater checks
-  a cached agent against its signed checksum before it serves it.
+- Enrollment keeps its agent through a restart with GitHub down: the updater keeps the running release's signed
+  manifest and agent, and checks both again before it serves them. When it has no agent to give new devices, the
+  Enroll page says so instead of showing a QR code that can't work.
+- A rollout started before a server update still downloads its own agent. After a rollback, a rollout of a newer
+  agent stops (the updater refuses it), and Settings → Agent rollout says so.
 
 ## v0.5.1 — 2026-11-20
 

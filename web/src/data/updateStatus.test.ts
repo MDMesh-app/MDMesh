@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { UpdateStatus } from '../api/updates';
 import {
   agentAfterServerUpdate,
+  rolloutAheadOfServer,
   agentUnavailable,
   blockedShort,
   blockedText,
@@ -211,5 +212,16 @@ describe('agentAfterServerUpdate (Rollout: update the server first)', () => {
     expect(agentAfterServerUpdate(status({ current: '0.1.16', latest: '0.1.15' }))).toBeNull();
     expect(agentAfterServerUpdate(status({ current: '0.6.0-dev', latest: '0.1.15', apk: apk('0.1.15') }))).toBeNull();
     expect(agentAfterServerUpdate(status({ current: '0.1.12', latest: null }))).toBeNull();
+  });
+});
+
+describe('rolloutAheadOfServer', () => {
+  it('names the server version when the rollout’s agent is newer than it', () => {
+    expect(rolloutAheadOfServer('0.1.15', status({ current: '0.1.12' }))).toBe('0.1.12');
+    expect(rolloutAheadOfServer('0.1.12', status({ current: '0.1.12' }))).toBeNull();
+    expect(rolloutAheadOfServer('0.1.11', status({ current: '0.1.12' }))).toBeNull();
+    expect(rolloutAheadOfServer('0.1.15', status({ current: '0.6.0-dev' }))).toBeNull();
+    expect(rolloutAheadOfServer(null, status())).toBeNull();
+    expect(rolloutAheadOfServer('0.1.15', null)).toBeNull();
   });
 });

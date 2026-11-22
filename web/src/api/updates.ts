@@ -44,8 +44,8 @@ export interface UpdateStatus {
     versionCode: number;
     sha256: string;
     available: boolean;
-    /** Whose agent: the latest release's (the server runs it, or its own release is unknown), or the running
-     *  release's while the server runs an older one (0.6.0+). An agent is never offered ahead of the server. */
+    /** Whose agent: the running release's, or the latest release's when the running version is unknown (a
+     *  development build). An agent is never offered ahead of a server whose release is known (0.6.0+). */
     of?: 'latest' | 'running';
   } | null;
   /** The security releases the offered update skips over (newer than `current`, older than `latest`; `latest` too

@@ -10,7 +10,7 @@ import {
   type RolloutTargetSummary,
 } from '../../api/rollout';
 import type { UpdateStatus } from '../../api/updates';
-import { agentAfterServerUpdate, serverFirstText } from '../../data/updateStatus';
+import { agentAfterServerUpdate, rolloutAheadOfServer, serverFirstText } from '../../data/updateStatus';
 import {
   Button,
   Callout,
@@ -294,6 +294,7 @@ export function RolloutSection({
   const active = rolloutActive(rollout) ? rollout : null;
   const apk = status?.apk ?? null;
   const nextAgent = agentAfterServerUpdate(status);
+  const stalledOn = active ? rolloutAheadOfServer(active.targetVersion, status) : null;
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<Confirm>(null);
@@ -446,6 +447,13 @@ export function RolloutSection({
         <CardHeader title="Agent rollout" titleId={titleId} />
       )}
 
+      {active && stalledOn ? (
+        <Callout tone="alert" role="status" icon={<IconAlert />}>
+          This rollout is stalled: the server was rolled back to <span className="v2-num">{stalledOn}</span>, and agent{' '}
+          <span className="v2-num">{active.targetVersion}</span> is newer, so the updater won&rsquo;t give it to devices.
+          Cancel the rollout, or update the server to <span className="v2-num">{active.targetVersion}</span> again.
+        </Callout>
+      ) : null}
       {loadError ? (
         <Callout tone="warn" icon={<IconAlert />}>
           Couldn’t refresh the rollout: {rolloutError({ message: loadError })}

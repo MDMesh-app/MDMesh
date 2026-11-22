@@ -103,6 +103,15 @@ export function agentAfterServerUpdate(s: UpdateStatus | null | undefined): stri
   return s.latest;
 }
 
+/**
+ * An active rollout's agent is newer than the server, since the server was rolled back: the updater refuses to hand
+ * that agent out (HTTP 409), so devices that haven't installed it yet can't. Null when that isn't so.
+ */
+export function rolloutAheadOfServer(targetVersion: string | null | undefined, s: UpdateStatus | null | undefined): string | null {
+  if (!targetVersion || !s || !RELEASE_VERSION.test(targetVersion) || !RELEASE_VERSION.test(s.current)) return null;
+  return compareVersions(targetVersion, s.current) > 0 ? s.current : null;
+}
+
 /** The plain rule, for Rollout: the newer release's agent comes after its server. */
 export const serverFirstText = (version: string): string =>
   `Agent ${version} comes with server ${version}: update the server first, then roll it out here.`;

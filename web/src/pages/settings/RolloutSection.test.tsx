@@ -107,3 +107,19 @@ describe('Agent rollout: the server first', () => {
     expect(main().queryByText(/update the server first/)).toBeNull();
   });
 });
+
+describe('Agent rollout: a rollout newer than the server', () => {
+  it('is marked stalled after the server was rolled back (the updater refuses its agent)', async () => {
+    // A rollout of agent 0.5.0 started on a 0.5.0 server, which was then rolled back to 0.4.9.
+    open((p) => (p === '/agent/v1/rollout/active' ? canary(3) : null), { ...STATUS, current: '0.4.9', apk: { ...STATUS.apk, version: '0.4.9', of: 'running' } });
+    const note = await main().findByText(/This rollout is stalled/);
+    expect(note.textContent).toBe(
+      'This rollout is stalled: the server was rolled back to 0.4.9, and agent 0.5.0 is newer, so the updater won’t give it to devices. Cancel the rollout, or update the server to 0.5.0 again.',
+    );
+  });
+  it('is not marked on a server that runs the rollout’s release', async () => {
+    open((p) => (p === '/agent/v1/rollout/active' ? canary(3) : null));
+    await main().findByText(/Updating the agent to/);
+    expect(main().queryByText(/This rollout is stalled/)).toBeNull();
+  });
+});

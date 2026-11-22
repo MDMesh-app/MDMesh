@@ -48,9 +48,16 @@ public class DeviceResourceGroupsTest {
                 d.setGroups(new ArrayList<>(Collections.singletonList(new LookupItem(USABLE, "usable"))));
                 return d;
             }
-            @Override public boolean areAccessibleToUser(Collection<Integer> ids) { return true; }
-            @Override public boolean areGroupsUsableByUser(Collection<Integer> groupIds) {
-                return !groupIds.contains(OTHER_CUSTOMERS);
+            // As DeviceDAO's: refused as a whole when a group named is not usable (DeviceGroupsPgTest checks the DAO)
+            @Override public void updateDevicesGroups(Collection<Integer> ids, List<LookupItem> groups, boolean add) {
+                for (LookupItem g : groups) {
+                    if (g.getId() == OTHER_CUSTOMERS) {
+                        throw SecurityException.onCustomerDataAccessViolation(g.getId(), "group");
+                    }
+                }
+                for (Integer id : ids) {
+                    calls.add((add ? "add " : "remove ") + id);
+                }
             }
             @Override public void updateDevice(Device device) {
                 for (LookupItem g : device.getGroups()) {
@@ -111,6 +118,19 @@ public class DeviceResourceGroupsTest {
         Response r = resource().updateDeviceGroupBulk(request);
 
         assertEquals(Response.ResponseStatus.OK, r.getStatus());
-        assertEquals(Arrays.asList("update 1", "update 2"), calls);
+        assertEquals(Arrays.asList("add 1", "add 2"), calls);
+    }
+
+    @Test
+    public void aBulkRemovalFromAGroupTheUserMayNotUseIsPermissionDenied() {
+        DeviceGroupBulkRequest request = new DeviceGroupBulkRequest();
+        request.setIds(Arrays.asList(1, 2));
+        request.setAction("unset");
+        request.setGroups(Collections.singletonList(new LookupItem(OTHER_CUSTOMERS, null)));
+
+        Response r = resource().updateDeviceGroupBulk(request);
+
+        assertEquals(Response.PERMISSION_DENIED().getMessage(), r.getMessage());
+        assertTrue(calls.toString(), calls.isEmpty());
     }
 }

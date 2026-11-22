@@ -94,7 +94,8 @@
             UPDATE SET skipVersionCheck = EXCLUDED.skipVersionCheck
     </insert>
 
-    <select id="getConfigurationApplications" resultType="Application">
+    <!-- affectData: it creates a temp table (DDL), so the session must commit it -->
+    <select id="getConfigurationApplications" resultType="Application" affectData="true">
         CREATE TEMP TABLE ${tempTable} ON COMMIT DROP AS SELECT * FROM configurationApplications WHERE configurationApplications.configurationId = #{id};
         SELECT applications.id, applications.name, applications.pkg, applications.runAfterInstall, applications.runAtBoot,
                applications.type, applications.iconText, applications.iconId,

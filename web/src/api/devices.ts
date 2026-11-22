@@ -81,9 +81,36 @@ export async function bulkSetConfiguration(
   await apiClient.put('/private/devices', { ids, configurationId });
 }
 
-/** Delete devices in bulk — POST /private/devices/deleteBulk {ids}. */
+/** Bulk delete deleted some devices, not all (DeviceResource.BULK_DELETE_PARTIAL); data says which. */
+export const BULK_DELETE_PARTIAL = 'error.device.delete.partial';
+
+/** Delete devices in bulk — POST /private/devices/deleteBulk {ids}. Refused for all when the user can't reach one;
+ *  otherwise each is deleted on its own, and an ApiError {@link BULK_DELETE_PARTIAL} lists any not deleted. */
 export async function deleteDevicesBulk(ids: number[]): Promise<void> {
   await apiClient.post('/private/devices/deleteBulk', { ids });
+}
+
+/** When a bulk delete left some devices: the ids deleted and the ids not deleted, else null. */
+export function bulkDeletePartial(e: unknown): { deleted: number[]; notDeleted: number[] } | null {
+  if (!(e instanceof ApiError) || e.message !== BULK_DELETE_PARTIAL) return null;
+  const data = (e.data ?? {}) as { deleted?: unknown; notDeleted?: unknown };
+  const ids = (v: unknown) => (Array.isArray(v) ? v.filter((id): id is number => typeof id === 'number') : []);
+  return { deleted: ids(data.deleted), notDeleted: ids(data.notDeleted) };
+}
+
+const bulkMessages: Record<string, string> = {
+  'error.permission.denied': 'You can’t change one or more of these devices, so nothing was changed.',
+  'error.device.configuration.required': 'Choose a configuration to move the devices to.',
+  [BULK_DELETE_PARTIAL]: 'Some devices weren’t deleted. Try again.',
+};
+/** What a refused bulk device change says, by the server's error key; other messages as they are. A change to a
+ *  configuration can also be refused for the configuration, so its refusal says so. */
+export function bulkErrorText(e: unknown, change: 'devices' | 'configuration' = 'devices'): string {
+  const message = e instanceof Error ? e.message : '';
+  if (change === 'configuration' && message === 'error.permission.denied') {
+    return 'You can’t change one or more of these devices, or use this configuration, so nothing was changed.';
+  }
+  return bulkMessages[message] ?? message;
 }
 
 /** Rename a device's friendly description — POST /private/devices/{id}/description

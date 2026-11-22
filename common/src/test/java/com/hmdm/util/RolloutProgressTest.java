@@ -71,6 +71,67 @@ public class RolloutProgressTest {
     }
 
     @Test
+    public void aDeviceOnANewerAgentIsUpdatedAndNeverOutstanding() {
+        // Queuing it the target would be a downgrade the agent refuses, and the rollout would never complete.
+        assertEquals(RolloutProgress.Status.UPDATED,
+                RolloutProgress.classify("1.2.0", row("a", "1.3.0", CAPS_OK), false));
+        assertEquals(RolloutProgress.Status.UPDATED,
+                RolloutProgress.classify("1.2.0", row("a", "1.2.1", CAPS_OK), true));
+        assertEquals(RolloutProgress.Status.UPDATED,
+                RolloutProgress.classify("0.9.0", row("a", "0.10.0", CAPS_OK), false)); // numeric, not text
+        assertEquals(RolloutProgress.Status.UPDATED,
+                RolloutProgress.classify("1.2.0", row("a", "2.0.0", CAPS_NONE), false));
+        assertEquals(RolloutProgress.Status.OUTSTANDING,
+                RolloutProgress.classify("0.10.0", row("a", "0.9.0", CAPS_OK), false));
+        assertEquals(RolloutProgress.Status.OUTSTANDING,
+                RolloutProgress.classify("1.2.0", row("a", "1.1.9", CAPS_OK), false));
+    }
+
+    @Test
+    public void comparesVersionsTheWayReleasesAreNumbered() {
+        assertTrue(RolloutProgress.atOrAbove("1.2.0", "1.2.0"));
+        assertTrue(RolloutProgress.atOrAbove("1.2", "1.2.0"));          // a missing part is 0
+        assertTrue(RolloutProgress.atOrAbove("v1.2.0", "1.2.0"));
+        assertTrue(RolloutProgress.atOrAbove(" 1.2.0 ", "1.2.0"));
+        assertTrue(RolloutProgress.atOrAbove("1.2.0+42", "1.2.0"));     // build metadata doesn't count
+        assertTrue(RolloutProgress.atOrAbove("1.3.0-dev", "1.2.0"));
+        assertFalse(RolloutProgress.atOrAbove("1.2.0-rc1", "1.2.0"));   // a pre-release is below its release
+        assertTrue(RolloutProgress.atOrAbove("1.2.0-rc1", "1.2.0-rc1"));
+        assertFalse(RolloutProgress.atOrAbove("1.1.99", "1.2.0"));
+    }
+
+    @Test
+    public void anUnreadableOrMissingVersionIsNeverAtOrAboveTheTarget() {
+        // Unknown means "not shown to be current": the device stays in the rollout, as before, rather than being
+        // counted done on a guess.
+        assertFalse(RolloutProgress.atOrAbove(null, "1.2.0"));
+        assertFalse(RolloutProgress.atOrAbove("", "1.2.0"));
+        assertFalse(RolloutProgress.atOrAbove("   ", "1.2.0"));
+        assertFalse(RolloutProgress.atOrAbove("unknown", "1.2.0"));
+        assertFalse(RolloutProgress.atOrAbove("1..2", "1.2.0"));
+        assertFalse(RolloutProgress.atOrAbove("99999999999999999999.0", "1.2.0")); // no overflow into "newer"
+        assertFalse(RolloutProgress.atOrAbove("1.2.0", null));
+        assertFalse(RolloutProgress.atOrAbove("1.2.0", ""));
+        // A target that isn't a version still matches itself exactly, and nothing else.
+        assertTrue(RolloutProgress.atOrAbove("nightly", "nightly"));
+        assertFalse(RolloutProgress.atOrAbove("9.9.9", "nightly"));
+        assertEquals(RolloutProgress.Status.OUTSTANDING,
+                RolloutProgress.classify("1.2.0", row("a", "garbage", CAPS_OK), false));
+        assertEquals(RolloutProgress.Status.OUTSTANDING,
+                RolloutProgress.classify("1.2.0", row("a", null, CAPS_OK), false));
+    }
+
+    @Test
+    public void aCohortOnNewerAgentsIsComplete() {
+        RolloutProgress.Counts c = RolloutProgress.counts("1.2.0", Arrays.asList(
+                row("a", "1.2.0", CAPS_OK),
+                row("b", "1.3.0", CAPS_OK)), new HashSet<>(Collections.singletonList("b")));
+        assertEquals(2, c.getUpdated());
+        assertEquals(0, c.getPending());
+        assertTrue(RolloutProgress.isComplete(c));
+    }
+
+    @Test
     public void countsAddUp() {
         List<RolloutDeviceRow> rows = Arrays.asList(
                 row("a", "1.2.0", CAPS_OK),   // updated

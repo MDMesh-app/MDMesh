@@ -96,7 +96,8 @@ public class AgentCommandKioskGenerationTest {
                     return defaultValue(m.getReturnType());
                 });
         AgentDeviceMapper devices = (AgentDeviceMapper) Proxy.newProxyInstance(
-                AgentDeviceMapper.class.getClassLoader(), new Class[]{AgentDeviceMapper.class}, (p, m, a) -> defaultValue(m.getReturnType()));
+                AgentDeviceMapper.class.getClassLoader(), new Class[]{AgentDeviceMapper.class}, (p, m, a) ->
+                        "lockDeviceKeyShare".equals(m.getName()) ? Integer.valueOf(1) : defaultValue(m.getReturnType()));
         return new AgentCommandDAO(commands, devices, states, events);
     }
 

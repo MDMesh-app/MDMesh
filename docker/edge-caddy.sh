@@ -19,4 +19,10 @@ fi
 if [ "${MDMESH_RAW_SITE_D:-}" = 1 ]; then
   case "${1:-}" in validate|adapt) EDGE_SITE_D=/etc/caddy/site.d; export EDGE_SITE_D ;; esac
 fi
+# validate and adapt provision what the Caddyfile names (the internal CA under /data, for the HTTPS origin): run as root
+# (docker compose exec's default) they would leave root-owned keys the running edge (caddy) can't read. Run as caddy.
+su_exec=$(command -v su-exec || true)
+if [ "$(id -u)" = 0 ] && [ -n "$su_exec" ] && grep -q '^caddy:' /etc/passwd; then
+  case "${1:-}" in validate|adapt) exec "$su_exec" caddy /usr/bin/caddy "$@" ;; esac
+fi
 exec /usr/bin/caddy "$@"

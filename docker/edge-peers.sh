@@ -235,7 +235,8 @@ export EDGE_SITE_D
 # container's configured environment, not this one, so a `caddy reload` (or validate, or adapt) there would read the
 # Caddyfile with the raw settings (trusted peers back to loopback, the HTTPS origin gone, site.d unchecked). The edge's
 # caddy (docker/edge-caddy.sh, /usr/local/bin/caddy) reads this root-owned file first, so every command sees what the
-# running edge saw. Written whole, then renamed; not written, the wrapper falls back to the environment it gets.
+# running edge saw. Written whole, then renamed. Not written, the wrapper falls back to the environment it gets (this
+# start's, for the edge itself) and refuses a reload.
 edge_env_save() {
   _tmp=/run/mdmesh-edge.env.$$
   # An earlier start's file never stands in for this one's (/run is in the container's layer, kept across restarts):

@@ -312,39 +312,59 @@ rm -rf -- "$PX_D"
 # origin and the checked rules. ---
 echo "The web image's start (docker/web.Dockerfile, without the console build):"
 IMG_D="$(mktemp -d)"; chmod 755 "$IMG_D"
+IMG_TAG="mdmesh-edgecheck-web:$$"; IMG_CT="mdmesh-edgecheck-web-$$"
+# cleanup_img: this block's container, image and directory; also from the exit traps below, so an abort or Ctrl-C
+# leaves nothing behind. Docker's own output goes to the block's log, which goes with the directory.
+cleanup_img() {
+  [ -n "${IMG_D:-}" ] && [ -d "$IMG_D" ] || return 0
+  docker rm -f "$IMG_CT" >> "$IMG_D/docker.log" 2>&1 || true
+  docker rmi "$IMG_TAG" >> "$IMG_D/docker.log" 2>&1 || true
+  rm -f "$IMG_D/site.d/good.caddy" "$IMG_D/site.d/open.caddy" "$IMG_D/Dockerfile" "$IMG_D/build.log" "$IMG_D/docker.log"
+  rmdir "$IMG_D/site.d" "$IMG_D" 2>&1 | sed 's/^/         /' || true
+  IMG_D=''
+}
+trap cleanup_img EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 awk 'tolower($1) == "from" && $2 ~ /^caddy[:@]/ { s = 1 } s' "$ROOT/docker/web.Dockerfile" \
   | sed 's#^COPY --from=web /web/dist /srv$#RUN mkdir -p /srv \&\& echo spa > /srv/index.html#' > "$IMG_D/Dockerfile"
 mkdir -p "$IMG_D/site.d"; chmod 755 "$IMG_D/site.d"
 printf 'header X-Good "1"\n' > "$IMG_D/site.d/good.caddy"; chmod 644 "$IMG_D/site.d/good.caddy"
 printf 'header X-Open "1"\n' > "$IMG_D/site.d/open.caddy"; chmod 666 "$IMG_D/site.d/open.caddy"
-IMG_TAG="mdmesh-edgecheck-web:$$"; IMG_CT="mdmesh-edgecheck-web-$$"
 if ! grep -q '^RUN mkdir -p /srv' "$IMG_D/Dockerfile"; then
   fail "web image start: could not derive the final stage from docker/web.Dockerfile"
-elif ! docker build -q -f "$IMG_D/Dockerfile" -t "$IMG_TAG" "$ROOT" >/dev/null 2>"$IMG_D/build.log"; then
+elif ! docker build -q -f "$IMG_D/Dockerfile" -t "$IMG_TAG" "$ROOT" > "$IMG_D/build.log" 2>&1; then
   fail "web image start: the final stage did not build"; tail -5 "$IMG_D/build.log" | sed 's/^/         /'
-else
-  docker run -d --name "$IMG_CT" --network none -e MDMESH_EXPOSURE=proxy -e EDGE_TRUSTED_PROXIES=192.0.2.10 \
+elif ! docker run -d --name "$IMG_CT" --network none -e MDMESH_EXPOSURE=proxy -e EDGE_TRUSTED_PROXIES=192.0.2.10 \
     -e EDGE_BIND=127.0.0.1:8080 -e BASE_URL=https://mdm.example.com -e MDMESH_ORIGIN_TLS=1 -e SITE_ADDRESS=:8080 \
-    -e ACME_EMAIL= -e TRUSTED_PROXIES= -v "$IMG_D/site.d:/etc/caddy/site.d:ro" "$IMG_TAG" >/dev/null
+    -e ACME_EMAIL= -e TRUSTED_PROXIES= -v "$IMG_D/site.d:/etc/caddy/site.d:ro" "$IMG_TAG" >> "$IMG_D/docker.log" 2>&1; then
+  fail "web image start: the container did not start"; tail -5 "$IMG_D/docker.log" | sed 's/^/         /'
+else
   ex() { docker exec "$IMG_CT" "$@"; }
-  cfg_has() { ex sh -c 'wget -qO- http://127.0.0.1:2019/config/' 2>/dev/null | grep -qi -- "$1"; }
+  cfg() { ex wget -qO- http://127.0.0.1:2019/config/ 2>&1; }
+  cfg_has() { cfg | grep -qi -- "$1"; }
+  cfg_lacks() { ! cfg | grep -qi -- "$1"; }
+  # caddy can't write its configuration: the write fails for want of permission, not for any other reason.
+  denied() { local out; out=$(docker exec -u caddy "$IMG_CT" touch /etc/caddy/x 2>&1) && return 1; grep -q 'Permission denied' <<< "$out"; }
+  owner() { ex stat -c %U "$@" 2>&1 | sort -u; }
   for _ in $(seq 1 50); do cfg_has '"internal"' && break; sleep 0.2; done
   chk() { local l=$1; shift; if "$@"; then pass "web image start: $l"; else fail "web image start: $l"; fi; }
   chk "caddy runs as caddy" sh -c "docker exec '$IMG_CT' ps -o user,args | grep -q '^caddy .*caddy run'"
   chk "  the proxy as trusted peer" cfg_has 192.0.2.10/32
   chk "  the HTTPS origin" cfg_has '"internal"'
-  chk "  the checked rule, not the open one" sh -c "docker exec '$IMG_CT' wget -qO- http://127.0.0.1:2019/config/ | grep -qi x-good && ! docker exec '$IMG_CT' wget -qO- http://127.0.0.1:2019/config/ | grep -qi x-open"
-  chk "caddy wrote its own state (the internal CA, its own)" sh -c "[ \"\$(docker exec '$IMG_CT' stat -c %U /data/caddy/pki/authorities/local/root.crt 2>/dev/null)\" = caddy ]"
-  chk "the Caddyfile and scripts are root's, and caddy can't change them" sh -c "[ \"\$(docker exec '$IMG_CT' stat -c %U /etc/caddy/Caddyfile /etc/caddy /usr/local/bin/caddy | sort -u)\" = root ] && ! docker exec -u caddy '$IMG_CT' touch /etc/caddy/x 2>/dev/null"
+  chk "  the checked rule" cfg_has x-good
+  chk "  not the open one" cfg_lacks x-open
+  chk "caddy wrote its own state (the internal CA, its own)" test "$(owner /data/caddy/pki/authorities/local/root.crt)" = caddy
+  chk "the Caddyfile and scripts are root's" test "$(owner /etc/caddy/Caddyfile /etc/caddy /usr/local/bin/caddy)" = root
+  chk "caddy can't change its configuration (permission denied)" denied
+  chk "a validate through docker exec (as root) runs as caddy: what it provisions is caddy's" sh -c \
+    "docker exec -e XDG_DATA_HOME=/tmp/vd '$IMG_CT' caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile > '$IMG_D/validate.log' 2>&1; rm -f '$IMG_D/validate.log'; [ \"\$(docker exec '$IMG_CT' stat -c %U /tmp/vd/caddy/pki/authorities/local/root.key 2>&1)\" = caddy ]"
   chk "a reload through docker exec succeeds" ex caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
-  sleep 1
   chk "  and keeps the proxy as trusted peer" cfg_has 192.0.2.10/32
   chk "  and the HTTPS origin" cfg_has '"internal"'
-  chk "  and loads no rule the start left out" sh -c "! docker exec '$IMG_CT' wget -qO- http://127.0.0.1:2019/config/ | grep -qi x-open"
-  docker rm -f "$IMG_CT" >/dev/null 2>&1 || true
+  chk "  and loads no rule the start left out" cfg_lacks x-open
 fi
-docker rmi "$IMG_TAG" >/dev/null 2>&1 || true
-rm -f "$IMG_D/site.d/good.caddy" "$IMG_D/site.d/open.caddy" "$IMG_D/Dockerfile" "$IMG_D/build.log"; rmdir "$IMG_D/site.d" "$IMG_D"
+cleanup_img
 
 # --- 2. Compose files, each combination setup.sh / quickstart.sh / DEPLOY.md / DEV.md use. ---
 # A fixed env file with the required (:?) variables, so a developer's own .env or shell cannot change the result.
@@ -352,7 +372,7 @@ ENVF="$(mktemp)"
 ENVF_CF="$(mktemp)"   # the same, plus the COMPOSE_PROFILES line setup.sh / quickstart.sh write for tunnel mode
 ENVF_PX="$(mktemp)"   # the same, plus the lines they write behind your own proxy (install/lib/modes.sh, mdm_mode_env)
 ENVF_NOTP="$(mktemp)"   # that, without TRUSTED_PROXIES
-trap 'rm -f "$ENVF" "$ENVF_CF" "$ENVF_PX" "$ENVF_NOTP"' EXIT
+trap 'cleanup_img; rm -f "$ENVF" "$ENVF_CF" "$ENVF_PX" "$ENVF_NOTP"' EXIT
 printf 'DB_PASSWORD=x\nBASE_URL=https://mdm.example.com\nHASH_SECRET=x\n' > "$ENVF"
 { cat "$ENVF"; echo COMPOSE_PROFILES=cloudflare; } > "$ENVF_CF"
 { cat "$ENVF"; echo MDMESH_BIND=127.0.0.1:8080; echo 'TRUSTED_PROXIES="host"'; echo MDMESH_ORIGIN_TLS=0
@@ -753,7 +773,7 @@ STUB_NET="mdmesh-edgecheck-$$"
 STUB_CT="mdmesh-edgecheck-stub-$$"
 STUB_FILE="$(mktemp)"
 cleanup_stub() { docker rm -f "$STUB_CT" >/dev/null 2>&1 || true; docker network rm "$STUB_NET" >/dev/null 2>&1 || true; rm -f "$STUB_FILE"; }
-trap 'cleanup_stub; rm -f "$ENVF" "$ENVF_CF" "$ENVF_PX" "$ENVF_NOTP"' EXIT
+trap 'cleanup_img; cleanup_stub; rm -f "$ENVF" "$ENVF_CF" "$ENVF_PX" "$ENVF_NOTP"' EXIT
 cat > "$STUB_FILE" <<'STUB'
 {
 	admin off

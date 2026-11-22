@@ -9,8 +9,9 @@
 #                                  HTTP_PORT out; T2_GITHUB_REPO / T2_GITHUB_TOKEN, when set, add GITHUB_REPO= /
 #                                  GITHUB_TOKEN=), output to <out>. With a kill point,
 #                                  SIGKILLs the installer's process group when the point is reached (see KILL POINTS).
-#   update-release <sha> <version> a signed release v<version> of <sha> that `./setup.sh --update` finds (a local origin,
-#                                  a throwaway release key committed into the checkout, a curl stub for the manifest)
+#   update-release <sha> <version> [rig-key]  a signed release v<version> of <sha> that `./setup.sh --update` finds (a
+#                                  local origin, a throwaway release key committed into the checkout, a curl stub for
+#                                  the manifest); with rig-key the release itself carries that key too
 #   update <out> <repo>            the documented update, as t2user: `sudo ./setup.sh --update --native`, without -y and
 #                                  with stdin closed, GITHUB_REPO=<repo>; output to <out>
 #   move-clone <version>           as t2user, with sudo: the checkout detached at origin's v<version>, as an update that stopped
@@ -194,15 +195,27 @@ cmd_install() {
 # checks with; the release keeps the real one, which its agent APK download needs), so the checkout is SHA plus a commit,
 # on SHA's release; and a curl in /t2/stub that answers the release's manifest downloads from /t2/rel, passing every
 # other call to the real one. Prints the release commit last ("release <commit>").
+# With rig-key, the release's own release/minisign.pub is the rig's key, as a real release carries the key that signs
+# it: a checkout ON the release (update-resumed moves the clone there before --update) can then verify it. Its agent APK
+# download, which needs the real key, is then not verified.
 cmd_update_release() {
-  local sha=$1 ver=$2 rel
+  local sha=$1 ver=$2 keyed=${3:-} rel tree
   command -v minisign > /dev/null || { echo "no minisign in the guest (the install puts it in)" >&2; return 1; }
   mkdir -p /t2/rel /t2/stub
   git clone -q --bare /t2/repo.bundle /t2/origin.git
-  rel=$(git -C /t2/origin.git -c user.name=t2 -c user.email=t2@t2.test \
-          commit-tree "$sha^{tree}" -p "$sha^" -m "v$ver (t2: the code under test, squash-merged)")
-  git -C /t2/origin.git tag "v$ver" "$rel"
   minisign -G -W -p /t2/rig.pub -s /t2/rig.key > /dev/null
+  tree=$(git -C /t2/origin.git rev-parse "$sha^{tree}")
+  if [ "$keyed" = rig-key ]; then
+    # SHA's tree with release/minisign.pub replaced (a scratch index, so the bare repository's own is untouched).
+    tree=$(export GIT_INDEX_FILE=/t2/rel/index
+           git -C /t2/origin.git read-tree "$tree" \
+             && git -C /t2/origin.git update-index --cacheinfo "100644,$(git -C /t2/origin.git hash-object -w /t2/rig.pub),release/minisign.pub" \
+             && git -C /t2/origin.git write-tree) || return 1
+    rm -f /t2/rel/index
+  fi
+  rel=$(git -C /t2/origin.git -c user.name=t2 -c user.email=t2@t2.test \
+          commit-tree "$tree" -p "$sha^" -m "v$ver (t2: the code under test, squash-merged)")
+  git -C /t2/origin.git tag "v$ver" "$rel"
   printf '{\n  "version": "%s",\n  "channel": "stable",\n  "commit": "%s"\n}\n' "$ver" "$rel" > /t2/rel/manifest.json
   minisign -S -s /t2/rig.key -m /t2/rel/manifest.json > /dev/null
   as_user git -C "$CHECKOUT" remote set-url origin /t2/origin.git

@@ -19,7 +19,8 @@
 #             update-resumed  the same update after one that stopped halfway: the clone already on v99.0.0 (as an older
 #                      setup.sh's --update leaves it) and "no" answered to the installer's question, which must leave
 #                      the install as it was and say so. The update then names the release the install runs, not the
-#                      clone's ("A → 99.0.0", never "99.0.0 → 99.0.0")
+#                      clone's ("A → 99.0.0", never "99.0.0 → 99.0.0"). Its v99.0.0 carries the rig's release key
+#                      (a clone on it verifies the release with its own key), so its agent APK is not verified
 #
 # Environment (all optional):
 #   T2_FROM_REF   the release to upgrade from (default v0.3.1). CI passes the latest GitHub release.
@@ -146,7 +147,9 @@ settings_kept() {
   check "GITHUB_REPO_FROM=setting after $label" "$(sed -n 's/^GITHUB_REPO_FROM=//p' "$OUT/$label.settings")" setting
   check "supervisor.env in /etc/mdmesh, root-only, after $label" "$(sed -n 's/^supervisor.env=//p' "$OUT/$label.settings")" "root:root 600"
   check "installed-version in /etc/mdmesh, root-only, after $label" "$(sed -n 's/^installed-version=//p' "$OUT/$label.settings")" "root:root 600"
-  if grep -q 'release agent APK fetched' "$OUT/$label.out"; then
+  if [ "${rel_key:-}" = rig-key ] && [ "$label" = update ]; then
+    log "  SKIP $label fetched and verified the release APK: the release carries the rig's key, not the one GitHub's APK is signed with"
+  elif grep -q 'release agent APK fetched' "$OUT/$label.out"; then
     check "$label fetched and verified the release APK" yes yes
   elif grep -q 'rate limit' "$OUT/$label.out"; then
     log "  WARN SKIP $label fetched and verified the release APK: GitHub's rate limit stopped the lookup ($(grep -m1 'rate limit' "$OUT/$label.out" | sed 's/^ *//'))"
@@ -193,7 +196,9 @@ case "$SCENARIO" in
     install_with_settings install "$TO_SHA"
     [ "$CHECK_FAILS" -eq 0 ] || die "the install failed its checks; not updating it"
     continuity_before
-    guest update-release "$TO_SHA" 99.0.0 > "$OUT/update-release.out" 2>&1 \
+    # update-resumed: the clone is put ON the release, so the release must carry the key it is signed with (the rig's).
+    rel_key=''; [ "$SCENARIO" != update-resumed ] || rel_key=rig-key
+    guest update-release "$TO_SHA" 99.0.0 ${rel_key:+"$rel_key"} > "$OUT/update-release.out" 2>&1 \
       || die "could not make the v99.0.0 release: $(tail -n 1 "$OUT/update-release.out")"
     while IFS= read -r l; do log "$l"; done < "$OUT/update-release.out"
     rel_sha=$(sed -n 's/^release //p' "$OUT/update-release.out")
@@ -219,8 +224,10 @@ case "$SCENARIO" in
     check "the update ends as one" "$(grep -cF '✓ MDMesh updated (native)' "$OUT/update.out" || true)" 1
     check "the update records 99.0.0" "$(docker exec "$CTR" cat /etc/mdmesh/installed-version)" 99.0.0
     check "the clone is on v99.0.0" "$(docker exec -u t2user "$CTR" git -C /home/t2user/MDMesh rev-parse HEAD)" "$rel_sha"
+    # (With the rig's key, the release differs from the code under test in release/minisign.pub alone.)
     check "v99.0.0 holds the code under test" \
-      "$(docker exec -u t2user "$CTR" git -C /home/t2user/MDMesh rev-parse 'HEAD^{tree}')" "$(git -C "$REPO" rev-parse "$TO_SHA^{tree}")"
+      "$(docker exec -u t2user "$CTR" git -C /home/t2user/MDMesh diff --name-only "$TO_SHA" HEAD | paste -sd,)" \
+      "${rel_key:+release/minisign.pub}"
     settings_kept update
     continuity_after update
     check_install update "$TO_SHA"

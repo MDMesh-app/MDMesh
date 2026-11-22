@@ -820,7 +820,8 @@ mdm_site_dir() {
     printf '%s\n' "Your own rules for MDMesh's edge (Caddy). Every *.caddy file here is imported into the edge's site," \
       "after MDMesh's own settings. Updates never change this directory. Each file must be yours (or root's), not a" \
       "link, and writable by you only (chmod 644), or the edge leaves it out, saying so in its log. Check it (the" \
-      "check fails if a restart would leave a file out), then restart the edge (from the install directory):" \
+      "check fails if a restart would leave a file out, or finds no *.caddy file: site.d not mounted), then restart" \
+      "the edge (from the install directory):" \
       "  docker compose exec -e MDMESH_RAW_SITE_D=1 caddy caddy validate --config /etc/caddy/Caddyfile && docker compose restart caddy" \
       "Each file stands alone (no snippet definitions, no import of another file): it is pasted into MDMesh's site." \
       "Your files run after MDMesh's path checks and before its own routes, the first matching handle answering:" \

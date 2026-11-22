@@ -266,7 +266,7 @@ docker compose exec -e MDMESH_RAW_SITE_D=1 caddy caddy validate --config /etc/ca
 
 `MDMESH_RAW_SITE_D=1` checks `site.d` as it is now, through the same per-file check as a start: it validates exactly
 the files a restart would load, and fails, saying why, if a restart would leave any file out, couldn't read `site.d`,
-or finds no `*.caddy` file at all (most likely `site.d` isn't mounted: see `MDMESH_SITE_DIR` above), so the restart
+or finds no `*.caddy` file at all (most likely `site.d` isn't mounted: see `MDMESH_SITE_DIR` below), so the restart
 after `&&` never runs without a rule you expect. The start itself still starts without such a file.
 
 A rule that doesn't parse stops the edge, and with it the console and `/recovery`, until it is fixed. An update whose

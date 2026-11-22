@@ -1024,8 +1024,8 @@ if [ -e "$WORK/stubs.called" ]; then fail "a dry run ran a command that changes 
 
 # Which tree ran, and a floor on how many checks did (a few depend on the host), so a section that silently ran
 # nothing can't pass.
-TREE=$(git -c safe.directory='*' -C "$REPO" rev-parse --short HEAD 2>&1) || TREE='?'
+TREE=$(git -c safe.directory='*' -C "$REPO" describe --always --dirty 2>&1) || TREE='?'
 TREE="$REPO at $TREE"
 if [ "$FAILS" != 0 ]; then echo "installer answers: $FAILS failure(s) ($TREE)" >&2; exit 1; fi
-if [ "$CHECKS" -lt 590 ]; then echo "installer answers: only $CHECKS checks ran, expected at least 590 ($TREE)" >&2; exit 1; fi
+if [ "$CHECKS" -lt 597 ]; then echo "installer answers: only $CHECKS checks ran, expected at least 597 ($TREE)" >&2; exit 1; fi
 echo "installer answers: all $CHECKS checks passed ($TREE)"

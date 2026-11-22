@@ -49,7 +49,7 @@ case "${MDMESH_RAW_SITE_D:-}:${1:-}" in
     elif [ -z "$(ls -A -- "$scratch/site.d")" ]; then
       # Nothing to check is not a rule checked: most likely site.d isn't mounted (a quick start from before 0.6.0
       # keeps its old compose file; an install whose site.d the installer left unconnected mounts an empty volume).
-      echo "MDMesh edge: site.d has no *.caddy file here: is it mounted? See MDMESH_SITE_DIR in .env and the installer's message about site.d; a quick start from before 0.6.0: docs/UPGRADING.md, Unreleased." >&2
+      echo "MDMesh edge: site.d has no *.caddy file here: is it mounted? See MDMESH_SITE_DIR in .env and the installer's message about site.d (DEPLOY.md, Your own edge rules; a quick start set up before 0.6.0 needs the mount added by hand)." >&2
       [ "$rc" != 0 ] || rc=1
     fi
     exit "$rc" ;;

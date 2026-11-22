@@ -369,8 +369,8 @@ ok
 
 # Which tree ran, and a floor on how many checks did (a few depend on the host), so a section that silently ran
 # nothing can't pass.
-TREE=$(git -c safe.directory='*' -C "$REPO" rev-parse --short HEAD 2>&1) || TREE='?'
+TREE=$(git -c safe.directory='*' -C "$REPO" describe --always --dirty 2>&1) || TREE='?'
 TREE="$REPO at $TREE"
 if [ "$FAILS" != 0 ]; then echo "setup --update: $FAILS failure(s) ($TREE)" >&2; exit 1; fi
-if [ "$CHECKS" -lt 44 ]; then echo "setup --update: only $CHECKS checks ran, expected at least 44 ($TREE)" >&2; exit 1; fi
+if [ "$CHECKS" -lt 46 ]; then echo "setup --update: only $CHECKS checks ran, expected at least 46 ($TREE)" >&2; exit 1; fi
 echo "setup --update: all $CHECKS checks passed ($TREE)"

@@ -691,7 +691,8 @@ async function fakeGitHub(dir, opts) {
   const listed = rels.filter((x, i) => i === 0 || !opts.older.unlisted);
   // control: down (every request answers 500), tagStatus (the by-tag lookup answers it), tagDelayMs (and only after
   // that long), fail (a Set of <tag>/<name> assets whose downloads answer 500).
-  const control = { down: false, tagStatus: null, tagDelayMs: 0, fail: new Set() };
+  // hide: a Set of tags that aren't published yet (not listed, 404 by tag).
+  const control = { down: false, tagStatus: null, tagDelayMs: 0, fail: new Set(), hide: new Set() };
   const relJson = (r) => ({ tag_name: r.tag, html_url: 'https://github.com/o/r/releases/tag/' + r.tag,
     assets: Object.keys(r.bytes).map((name) => ({ name,
       url: 'https://api.github.com/repos/o/r/releases/assets/' + encodeURIComponent(`${r.tag}/${name}`),
@@ -708,7 +709,7 @@ async function fakeGitHub(dir, opts) {
     if (u.startsWith('/api/repos/o/r/releases/tags/')) {
       const t = decodeURIComponent(u.slice('/api/repos/o/r/releases/tags/'.length));
       hits.tags++;
-      const found = rels.find((x) => x.tag === t);
+      const found = rels.find((x) => x.tag === t && !control.hide.has(x.tag));
       if (control.tagDelayMs) await new Promise((res2) => setTimeout(res2, control.tagDelayMs));
       if (control.tagStatus) { res.statusCode = control.tagStatus; res.end(); return; }
       if (!found) { res.statusCode = 404; res.end(); return; }
@@ -726,7 +727,7 @@ async function fakeGitHub(dir, opts) {
       hits.releases++;
       if (opts.failAfter != null && hits.releases > opts.failAfter) { res.statusCode = 500; res.end(); return; }
       res.setHeader('content-type', 'application/json');
-      res.end(JSON.stringify(listed.map(relJson)));
+      res.end(JSON.stringify(listed.filter((x) => !control.hide.has(x.tag)).map(relJson)));
     } else if (u.startsWith('/web/o/r/releases/download/')) {
       hits.web++;
       const id = decodeURIComponent(u.slice('/web/o/r/releases/download/'.length));
@@ -1872,14 +1873,148 @@ t.test('a slow lookup for the version that was running can\'t replace the offer 
       const sup = await supervisorOn(d, gh, authz);
       const status = async () => (await fetch(`http://127.0.0.1:${sup.port}/update/status`)).json();
       try {
-        await waitFor(async () => (await status()).verified, 'the release verified');
+        // The first poll has verified 0.0.2 and is now waiting on 0.0.1's lookup: update while it does.
+        await waitFor(async () => gh.hits.tags >= 1, 'the old lookup started');
         a.equal((await fetch(`http://127.0.0.1:${sup.port}/update/apply`, { method: 'POST', headers: ADMIN })).status, 202);
         await waitFor(async () => { const x = await status(); return x.apply && x.apply.phase === 'done' && x.apk && x.apk.version === '0.0.2'; }, 'the new offer', 20000);
-        await waitFor(async () => gh.hits.tags >= 1, 'the old lookup');
         await new Promise((res) => setTimeout(res, 3500));   // the old lookup has answered by now
         const after = await status();
         a.deepEqual(after.apk && [after.apk.version, after.apk.of], ['0.0.2', 'running'], 'not replaced by 0.0.1\'s');
         a.deepEqual(await agentOf(sup), NEW_AGENT);
+      } finally { await stopChild(sup.child); }
+    });
+  });
+
+t.test('nothing in the offer path can stop the supervisor: with no temp directory it logs, offers nothing and keeps '
+  + 'serving', { skip: !HAS_MINISIGN && 'minisign not installed', timeout: 20000 }, async () => {
+    const path = require('path');
+    await withDeploy(envOf('mdmesh-app'), GH({ unlisted: true }), async (d, gh, authz) => {
+      const sup = await supervisorOn(d, gh, authz, { ...FAST, TMPDIR: path.join(d.dir, 'no-such-dir') });
+      try {
+        let st = await statusOf(sup);
+        st = await statusOf(sup, st.checkedAt);   // a second poll: still up
+        a.equal(st.apk, null);
+        a.match(st.error, /manifest not verified: download or check failed/);
+        a.equal((await fetch(`http://127.0.0.1:${sup.port}/healthz`)).status, 200);
+        a.equal(sup.child.exitCode, null, 'still running');
+      } finally { await stopChild(sup.child); }
+    });
+  });
+
+t.test('a running release that was not published yet (404) is asked again each poll: once published, its agent is '
+  + 'offered, not the newer latest', { skip: !HAS_MINISIGN && 'minisign not installed', timeout: 20000 }, async () => {
+    await withDeploy(envOf('mdmesh-app'), GH(), async (d, gh, authz) => {
+      gh.control.hide.add('v0.0.1');
+      const sup = await supervisorOn(d, gh, authz, FAST);
+      try {
+        let st = await statusOf(sup);
+        a.deepEqual(st.apk && [st.apk.version, st.apk.of], ['0.0.2', 'latest'], 'unknown while unpublished');
+        gh.control.hide.clear();
+        st = await waitFor(async () => { const x = await statusOf(sup, st.checkedAt); return x.apk && x.apk.version === '0.0.1' && x; }, 'the published release');
+        a.equal(st.apk.of, 'running');
+        a.deepEqual(await agentOf(sup), RUNNING_AGENT);
+      } finally { await stopChild(sup.child); }
+    });
+  });
+
+t.test('?v= finds an agent kept on disk after a restart (a rollout started before an update); still 409 when newer than '
+  + 'the server', { skip: !HAS_MINISIGN && 'minisign not installed', timeout: 30000 }, async () => {
+    const fs = require('fs'), path = require('path');
+    await withDeploy(envOf('mdmesh-app'), GH(), async (d, gh, authz) => {
+      const run = async (current, check) => {
+        fs.writeFileSync(path.join(d.project, '.env'), envOf('mdmesh-app', current));
+        const sup = await supervisorOn(d, gh, authz);
+        try { await check(sup); } finally { await stopChild(sup.child); }
+      };
+      const mirrored = async (sup) => { await waitFor(async () => (await statusOf(sup)).apk.available, 'the agent mirrored'); };
+      await run('0.0.1', mirrored);   // 0.0.1 runs: its agent is resolved, kept and mirrored
+      await run('0.0.2', mirrored);   // updated to 0.0.2: the same for 0.0.2
+      gh.control.down = true;         // restarts with GitHub down from here on
+      await run('0.0.2', async (sup) => {
+        await statusOf(sup);
+        const r = await fetch(`http://127.0.0.1:${sup.port}/update/agent.apk?v=1`);
+        a.equal(r.status, 200);
+        a.deepEqual(Buffer.from(await r.arrayBuffer()), RUNNING_AGENT, 'offline, from the kept manifest and cache');
+      });
+      await run('0.0.1', async (sup) => {   // rolled back: the kept 0.0.2 is newer than the server
+        await statusOf(sup);
+        a.equal((await fetch(`http://127.0.0.1:${sup.port}/update/agent.apk?v=999`)).status, 409);
+      });
+    });
+  });
+
+t.test('a kept manifest is checked: another version\'s under this name is removed; minisign failing to run removes '
+  + 'nothing', { skip: !HAS_MINISIGN && 'minisign not installed', timeout: 30000 }, async () => {
+    const fs = require('fs'), path = require('path');
+    await withDeploy(envOf('mdmesh-app', '0.0.2'), GH(), async (d, gh, authz) => {
+      const run = async (env, check) => { const sup = await supervisorOn(d, gh, authz, env); try { await check(sup); } finally { await stopChild(sup.child); } };
+      await run({}, async (sup) => { await waitFor(async () => (await statusOf(sup)).apk, 'the offer'); });
+      const kept = (v, ext) => path.join(d.dir, 'apk', `v${v}.${ext}`);
+      a.ok(fs.existsSync(kept('0.0.2', 'manifest.json')));
+      // minisign can't start (not on PATH): the kept manifest can't be checked, so nothing is offered, and it stays.
+      gh.control.down = true;
+      await run({ PATH: path.join(d.dir, 'empty-path') }, async (sup) => {
+        const st = await statusOf(sup);
+        a.equal(st.apk, null);
+        await waitFor(async () => /the kept manifest of 0\.0\.2 can't be checked now/.test(sup.log()), 'the log line');
+      });
+      a.ok(fs.existsSync(kept('0.0.2', 'manifest.json')), 'not removed');
+      await run({}, async (sup) => { a.equal((await statusOf(sup)).apk.version, '0.0.2', 'checked and used once minisign runs'); });
+      // 0.0.2's signed manifest kept under 0.0.1's name: signed, but for another version — refused and removed.
+      for (const ext of ['manifest.json', 'manifest.json.minisig', 'urls.json']) fs.copyFileSync(kept('0.0.2', ext), kept('0.0.1', ext));
+      fs.writeFileSync(path.join(d.project, '.env'), envOf('mdmesh-app', '0.0.1'));
+      await run({}, async (sup) => {
+        const st = await statusOf(sup);
+        a.equal(st.apk, null, 'not 0.0.2\'s agent, and GitHub is down');
+        a.match(sup.log(), /the kept manifest of 0\.0\.1 is not usable \(manifest of another version\)/);
+      });
+      a.ok(!fs.existsSync(kept('0.0.1', 'manifest.json')));
+    });
+  });
+
+t.test('after a rollback to a version not yet known, the old (newer) agent is dropped at once, and the running release '
+  + 'is looked up once though two lookups start', { skip: !HAS_MINISIGN && 'minisign not installed', timeout: 40000 }, async () => {
+    const fs = require('fs'), path = require('path');
+    await withDeploy(envOf('mdmesh-app', '0.0.2'), GH({ unlisted: true }), async (d, gh, authz) => {
+      fs.writeFileSync(path.join(d.backups, 'latest'), '20260927-120000\n');
+      fs.writeFileSync(path.join(d.backups, '20260927-120000.env'), 'SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n');
+      fs.writeFileSync(path.join(d.backups, '20260927-120000.sql'), 'SELECT 1;\n-- PostgreSQL database dump complete\n');
+      fs.writeFileSync(path.join(d.dir, 'recovery.token'), 'tok123');
+      const sup = await supervisorOn(d, gh, authz);
+      const status = async () => (await fetch(`http://127.0.0.1:${sup.port}/update/status`)).json();
+      try {
+        a.deepEqual((await statusOf(sup)).apk.version, '0.0.2');
+        a.equal(gh.hits.tags, 0);
+        gh.control.tagDelayMs = 2000;
+        const rb = await fetch(`http://127.0.0.1:${sup.port}/update/rollback`, { method: 'POST',
+          headers: { 'X-MDMesh-Console': '1', 'X-Recovery-Token': 'tok123' } });
+        a.equal(rb.status, 202, await rb.text());
+        const back = await waitFor(async () => { const x = await status(); return x.apply && x.apply.phase === 'rolled_back' && x; }, 'the rollback', 20000);
+        a.equal(back.current, '0.0.1');
+        a.equal(back.apk, null, 'not 0.0.2\'s agent while 0.0.1\'s is looked up');
+        a.equal((await fetch(`http://127.0.0.1:${sup.port}/update/agent.apk`)).status, 404);
+        const ok = await waitFor(async () => { const x = await status(); return x.apk && x; }, 'the running agent', 20000);
+        a.deepEqual([ok.apk.version, ok.apk.of], ['0.0.1', 'running']);
+        a.equal(gh.hits.tags, 1, 'the re-offer and the follow-up poll shared one lookup');
+      } finally { await stopChild(sup.child); }
+    });
+  });
+
+t.test('native: a published agent newer than the server is removed when nothing replaces it',
+  { skip: !HAS_MINISIGN && 'minisign not installed', timeout: 20000 }, async () => {
+    const fs = require('fs'), path = require('path');
+    await withDeploy('', GH({ unlisted: true }), async (d, gh, authz) => {
+      const pub = path.join(d.dir, 'files', 'agent.apk');
+      fs.mkdirSync(path.dirname(pub), { recursive: true });
+      fs.writeFileSync(pub, NEW_AGENT);   // the installer published 0.0.2's agent; the server runs 0.0.1
+      gh.control.tagStatus = 403;         // 0.0.1's agent can't be looked up yet
+      const sup = await supervisorOn(d, gh, authz, { APPLY_SUPPORTED: '0', CURRENT_VERSION: '0.0.1', PUBLISH_APK_TO: pub });
+      try {
+        const st = await statusOf(sup);
+        a.equal(st.apk, null);
+        a.equal(st.apkServed, false);
+        a.ok(!fs.existsSync(pub), 'removed');
+        a.match(sup.log(), /removed the published agent 0\.0\.2: it is newer than this server \(0\.0\.1\)/);
       } finally { await stopChild(sup.child); }
     });
   });

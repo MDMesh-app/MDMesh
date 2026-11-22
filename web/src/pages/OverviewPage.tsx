@@ -673,7 +673,7 @@ function RecentActivity({
     body = (
       <ActivityList aria-label="Recent activity">
         {rows.map((a) => {
-          const v = eventView(a.ev, a.device, appNames);
+          const v = eventView(a.ev, appNames, a.commands);
           return (
             <ActivityRow
               key={a.key}

@@ -35,8 +35,19 @@ New
 - Your own edge rules: Caddy imports `site.d/*.caddy` from the install directory, and updates never touch it.
 - A quick start that stopped part way (a failed pull, a slow first start) can be finished: run it again with
   `MDMESH_DIR=<its directory>`, and it carries on with the same `.env`.
+- Console extensions: a menu item (`MenuItem`, as in a list's row actions) can set `movesFocus: true` when its
+  `onSelect` moves focus itself, so the menu leaves focus there rather than returning it to its trigger.
 
 Fixes
+- Console: the location map's path is easy to see on any map, in both themes: a dark line on a white casing, arrows
+  for the direction, a ring at the oldest fix and a dot at the latest, and a key under the map.
+- Console: activity says which command ran and how it went ("Lock: done", not "Command 1234:done"), labels kiosk exit
+  and return, and the Overview no longer shows the device's description as if it were the event's detail.
+- Console: an action shows in one place: a configuration card's "…" holds only Delete, and the device page's "…"
+  holds Ring and Reboot and then All actions, which opens Remote actions on the Control tab. A lone Delete or Remove
+  from library stays in its "…" rather than becoming a button next to the row.
+- Console: after you delete a configuration, an app from the library, a user or a role, keyboard focus moves to the
+  next card or row instead of to the top of the page. Any dialog whose opener is gone when it closes does the same.
 - The quick start, or `./setup.sh` in a new clone, run in a second directory no longer takes over an install that
   already exists elsewhere on the machine (both use the Docker project `mdmesh`): it stops before changing anything,
   names that install's directory and says how to update it. Over the data volumes of an install whose containers are

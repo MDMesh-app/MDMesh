@@ -34,6 +34,8 @@ import {
   useToast,
   type MenuItem,
 } from '../../ui';
+import { loneButtonItem } from '../../ui/loneAction';
+import { useRefocusAfterRemove } from '../../ui/useRefocusAfterRemove';
 import { UserEditor } from '../users/UserEditor';
 import { RoleEditor } from '../users/RoleEditor';
 import './UsersSection.css';
@@ -59,13 +61,13 @@ function Clip({ text, sub }: { text: string; sub?: boolean }) {
   );
 }
 
-/** Row actions, shown on row hover or focus: a "…" menu, or its one action as a visible button. */
+/** Row actions, shown on row hover or focus: a "…" menu, or its one safe action as a visible button (loneButtonItem). */
 function RowActions({ name, items }: { name: string; items: MenuItem[] }) {
   if (items.length === 0) return null;
-  const [only] = items;
+  const only = loneButtonItem(items);
   return (
     <div className="v2-rowactions">
-      {items.length === 1 ? (
+      {only ? (
         <Button size="sm" variant="ghost" aria-label={`${only.textValue} ${name}`} onClick={only.onSelect}>
           {only.label}
         </Button>
@@ -100,6 +102,8 @@ export function UsersSection({
   const shownUser = useStickyValue(editingUser);
   const shownRole = useStickyValue(editingRole);
   const [deleting, setDeleting] = useState<Deleting | null>(null);
+  // After a delete, focus goes to the next row rather than falling to the page with the deleted row's "…".
+  const deleteFocus = useRefocusAfterRemove();
   const shownDelete = useStickyValue(deleting);
   const [deleteError, setDeleteError] = useState('');
   // Deleting an account takes the caller's own current password; kept for this dialog only
@@ -107,9 +111,9 @@ export function UsersSection({
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
+    // A reload after a save or delete keeps the table up until the new one is in (rows keep their place and focus).
     setLoading(true);
     setError('');
-    setData(null);
     (async () => {
       if (!capabilities.users) return { capabilities, users: [], assignable: [], roles: [], permissions: [] };
       const [users, assignable, roles, permissions] = await Promise.all([
@@ -137,12 +141,14 @@ export function UsersSection({
       });
     return () => controller.abort();
   }, [revision, user, capabilities]);
-  // The shell remounts pages across account changes. A permission refresh also closes open administration forms.
+  // The shell remounts pages across account changes. A permission refresh also closes open administration forms and
+  // drops the lists loaded for the old permissions until the new ones are in.
   useEffect(() => {
     setEditingUser(null);
     setEditingRole(null);
     setDeleting(null);
     setDeletePassword('');
+    setData(null);
   }, [user]);
   const editUser = (target: ManagedUser | 'new') => {
     setSession((n) => n + 1);
@@ -167,6 +173,14 @@ export function UsersSection({
     try {
       if (deleting.kind === 'user') await deleteUser(deleting.id, deletePassword);
       else await deleteRole(deleting.id);
+      // Gone from the list now, not when the reload lands: a failed reload can't leave it listed, nor a second
+      // Delete reach it.
+      const { kind, id } = deleting;
+      setData((d) => {
+        if (!d) return d;
+        if (kind === 'user') return { ...d, users: d.users.filter((u) => u.id !== id) };
+        return { ...d, roles: d.roles.filter((r) => r.id !== id), assignable: d.assignable.filter((r) => r.id !== id) };
+      });
       if (deleting.kind === 'user') saved('User deleted', `${deleting.name} can no longer sign in.`);
       else saved('Role deleted', `${deleting.name} is no longer available.`);
     } catch (e) {
@@ -175,14 +189,16 @@ export function UsersSection({
       setBusy(false);
     }
   };
-  const closeDelete = () => {
-    setDeleting(null);
-    setDeletePassword('');
-  };
   const askDelete = (kind: 'user' | 'role', id: number, name: string) => {
+    deleteFocus.remember();
     setDeleteError('');
     setDeletePassword('');
     setDeleting({ kind, id, name });
+  };
+  const cancelDelete = () => {
+    deleteFocus.forget();
+    setDeleting(null);
+    setDeletePassword('');
   };
   if (!capabilities.users) return null;
   const needle = q.trim().toLowerCase();
@@ -312,7 +328,7 @@ export function UsersSection({
         title="Users & roles"
         subtitle="Console accounts, what they may do, and which devices they reach."
         actions={
-          data && !loading ? (
+          data ? (
             <Button variant="primary" size="sm" onClick={() => (rolesTab ? editRole('new') : editUser('new'))}>
               {rolesTab ? 'New role' : 'New user'}
             </Button>
@@ -324,7 +340,7 @@ export function UsersSection({
           <ErrorState thing="users and roles" detail={error} onRetry={() => setRevision((r) => r + 1)} />
         </div>
       ) : null}
-      {loading ? (
+      {loading && !data ? (
         <SkeletonRows count={3} label="Loading users and roles" />
       ) : data ? (
         <>
@@ -399,11 +415,11 @@ export function UsersSection({
         title={`Delete ${shownDelete?.name ?? ''}?`}
         dismissOnBackdrop={false}
         onClose={() => {
-          if (!busy) closeDelete();
+          if (!busy) cancelDelete();
         }}
         footer={
           <>
-            <Button size="lg" disabled={busy} onClick={closeDelete}>
+            <Button size="lg" disabled={busy} onClick={cancelDelete}>
               Cancel
             </Button>
             <Button

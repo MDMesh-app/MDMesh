@@ -107,6 +107,14 @@ public class AgentEventIngestPgTest {
             Database db = DatabaseFactory.getInstance().findCorrectDatabaseImplementation(new JdbcConnection(c));
             new Liquibase("liquibase/db.changelog.xml", new ClassLoaderResourceAccessor(), db).update("common,private");
         }
+        // The device the check-ins come from: its history rows reference devices(number).
+        sql("INSERT INTO " + schema + ".customers (name, filesDir, prefix) VALUES ('events-it', 'events-it', "
+                        + "'events-it')",
+                "INSERT INTO " + schema + ".configurations (name, customerId) SELECT 'events-it', id FROM " + schema
+                        + ".customers WHERE name = 'events-it'",
+                "INSERT INTO " + schema + ".devices (number, customerId, configurationId, lastUpdate) SELECT '"
+                        + AgentCheckInLimitsTest.DEVICE + "', customerId, id, 0 FROM " + schema
+                        + ".configurations WHERE name = 'events-it'");
         sql("ALTER TABLE " + schema + ".device_event ADD CONSTRAINT refuse_me "
                         + "CHECK (detail IS DISTINCT FROM 'refuse-me')",
                 "CREATE FUNCTION " + schema + ".blip() RETURNS trigger AS $$ BEGIN "

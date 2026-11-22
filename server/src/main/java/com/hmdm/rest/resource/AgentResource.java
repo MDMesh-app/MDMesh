@@ -25,6 +25,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hmdm.persistence.AgentCommandDAO;
 import com.hmdm.persistence.AgentEnrollmentDAO;
+import com.hmdm.persistence.DeviceGoneException;
 import com.hmdm.persistence.AgentEnrollmentTokenDAO;
 import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.AgentCommand;
@@ -385,6 +386,21 @@ public class AgentResource {
         if (!authenticate(authorization, deviceNumber)) {
             return Response.ERROR("error.agent.unauthorized");
         }
+
+        try {
+            return checkinAuthenticated(device, httpRequest, request);
+        } catch (DeviceGoneException e) {
+            // Deleted while this check-in ran: answered as a device that is unknown now (its history foreign keys
+            // refused the write, so nothing of it is left behind).
+            logger.warn("Agent check-in: device {} was deleted during its check-in", deviceNumber);
+            return Response.ERROR("error.agent.unauthorized");
+        }
+    }
+
+    /** {@link #checkin} once the device is authenticated. */
+    private Response checkinAuthenticated(Device device, javax.servlet.http.HttpServletRequest httpRequest,
+                                          AgentCheckInRequest request) {
+        String deviceNumber = device.getNumber();
 
         // Before any result is recorded: a config.apply delivered before this moment and still open afterwards is
         // one the agent is not running (ConfigReconciler).
@@ -903,6 +919,8 @@ public class AgentResource {
             }
             row.setCapturedAt(loc.hasNonNull("capturedAt") ? loc.get("capturedAt").asLong() : System.currentTimeMillis());
             commandDAO.recordLocation(row);
+        } catch (DeviceGoneException e) {
+            throw e;
         } catch (Exception e) {
             logger.warn("Failed to record location for {}: {}", deviceNumber, e.getMessage());
         }

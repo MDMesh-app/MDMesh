@@ -206,6 +206,30 @@ exited or credentials cleared while the older agent ran.
 
 ## Version notes
 
+### Unreleased
+
+- **The database update deletes the history of deleted devices.** Before, deleting a device left its commands, state,
+  events and locations behind, and a device added later with the same number showed them. On its first start the
+  server deletes those rows (no screen showed them), then links each history table to its device, so deleting a device
+  deletes its history from then on. Devices that still exist keep everything. To keep the old rows, back up the
+  database first.
+- **The first start reads each history table twice** (once to delete the old rows, once to check the links).
+  Measured on a 6-core test server with 5 million events and 1 million locations (1.3 GB, 9% of it from deleted
+  devices): 2.4 seconds, on top of the usual start. Expect longer on slow disks. The server answers once it is done,
+  and agents retry their check-ins meanwhile.
+- **Quick start rolls an update back when the new server isn't healthy within 180 seconds.** With a very large
+  history (tens of GB) or very slow storage, this first start could take longer, and the update would be rolled back
+  each time. Take a backup first. To give it longer, add `HEALTH_TIMEOUT=900` (seconds, at least 30) to `.env` in
+  the install directory. The 0.5.x supervisor doesn't read it, so get this release's supervisor first: set
+  `SUPERVISOR_VERSION=latest` in `.env`, then, when no update or rollback is running, run
+  `docker compose pull supervisor && docker compose up -d supervisor`, then apply the update from **Settings →
+  Updates**. That update pins `SUPERVISOR_VERSION` to the release's supervisor by digest again. With automatic
+  updates on (`AUTO_UPDATE=1`), do this as soon as you can: until then the old supervisor may apply the release
+  itself, with its 180-second limit.
+- **Going back to 0.5.1 without a restore** (`--allow-downgrade`) works: 0.5.1 starts on the new database unchanged.
+  It keeps the links, so in 0.5.1 too, deleting a device deletes its history and renaming one carries it. A check-in
+  or command that races a delete gets a server error in 0.5.1 (this release answers it as for an unknown device).
+
 ### v0.5.1
 
 - **Account changes take your own password.** Scripts and API clients that create or delete users or customers,

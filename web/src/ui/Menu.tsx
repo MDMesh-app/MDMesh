@@ -15,6 +15,8 @@ export interface MenuItem {
   /** Destructive action (Delete, Factory reset): alert ink. */
   danger?: boolean;
   disabled?: boolean;
+  /** The item moves focus itself (to the part of the page it shows), so the menu doesn't return it to the trigger. */
+  movesFocus?: boolean;
 }
 
 export type MenuEntry = MenuItem | 'separator';
@@ -44,6 +46,7 @@ export interface MenuProps {
  * item; keyboard opening focuses the first (ArrowUp: the last). Portalled, so a card's `overflow: hidden` never clips
  * it; it flips above the trigger near the bottom of the window. Opens and closes with the shared pop motion.
  * Every item has the same anatomy: an optional 16px icon column, the label.
+ * What goes in a menu and what stays a button (one place per surface): the Gallery's Menu section.
  */
 export function Menu({
   items,
@@ -60,6 +63,8 @@ export function Menu({
   const withIcons = items.some((it) => it !== 'separator' && !!it.icon);
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  /** The chosen item moves focus itself (MenuItem.movesFocus): closing leaves focus where it put it. */
+  const keepFocus = useRef(false);
   // Radix opens on pointerdown and on Enter, Space or ArrowDown (and prevents the click those keys would make). A
   // click with no pointer behind it (detail 0: a screen reader's activation, or a script) toggles it, as a button
   // would; a mouse click's own pointerdown already did.
@@ -92,6 +97,10 @@ export function Menu({
             collisionPadding={8}
             aria-label={label}
             loop
+            onCloseAutoFocus={(e) => {
+              if (keepFocus.current) e.preventDefault();
+              keepFocus.current = false;
+            }}
           >
             {items.map((it, i) =>
               it === 'separator' ? (
@@ -104,8 +113,9 @@ export function Menu({
                   className={cx('v2-menu__item', it.danger && 'is-danger')}
                   onSelect={() => {
                     // Focus goes back to the trigger first: a dialog the item opens then returns focus there when it
-                    // closes (the item itself is gone by then).
-                    triggerRef.current?.focus();
+                    // closes (the item itself is gone by then). An item that moves focus itself keeps it there.
+                    keepFocus.current = !!it.movesFocus;
+                    if (!it.movesFocus) triggerRef.current?.focus();
                     it.onSelect();
                   }}
                 >

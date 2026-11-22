@@ -39,13 +39,11 @@ import {
   Skeleton,
   SkeletonFacts,
   Tooltip,
-  IconAlert,
-  IconDownload,
+  IconControl,
   IconLock,
   IconPencil,
   IconPower,
   IconRing,
-  IconScreenMessage,
   IconSync,
   ButtonLink,
   EmptyState,
@@ -61,7 +59,14 @@ import {
   useToast,
   type KeyValueItem,
 } from '../ui';
-import { ActionDialog, ConfigPanel, RemoteActions, TEMPLATE, type KioskReturnOffer } from './DeviceDetailControl';
+import {
+  ActionDialog,
+  ConfigPanel,
+  REMOTE_ACTIONS_ID,
+  RemoteActions,
+  TEMPLATE,
+  type KioskReturnOffer,
+} from './DeviceDetailControl';
 import { DeviceKioskBackground } from './configurations/KioskBackground';
 import { ActivityTab, LocationTab, TelemetryTab } from './DeviceDetailTabs';
 import { AppsTab, useAppScan } from './DeviceDetailApps';
@@ -282,6 +287,35 @@ export function DeviceDetailPage() {
   const [library, setLibrary] = useState<Application[] | null>(null);
 
   const deviceTabs = useDeviceTabs();
+  // "All actions" in the header menu: the Control tab, scrolled to Remote actions, which takes focus. Once the tab is
+  // open (now, or after the tab change lands), and only for that request. Focus never drops to the page: without the
+  // card it goes to the Control tab, and without the tab (a role that can't see it) back to the menu's trigger.
+  const quickActionsRef = useRef<HTMLDivElement>(null);
+  const allActionsAsked = useRef(false);
+  const [allActionsAsk, setAllActionsAsk] = useState(0);
+  const menuTrigger = () => quickActionsRef.current?.querySelector<HTMLElement>('[aria-haspopup="menu"]');
+  const showAllActions = () => {
+    if (!deviceTabs.tabs.some((e) => e.contribution.id === 'control')) {
+      menuTrigger()?.focus();
+      return;
+    }
+    allActionsAsked.current = true;
+    deviceTabs.select('control');
+    setAllActionsAsk((n) => n + 1);
+  };
+  useEffect(() => {
+    if (!allActionsAsked.current || deviceTabs.active !== 'control') return;
+    allActionsAsked.current = false;
+    const card = document.getElementById(REMOTE_ACTIONS_ID);
+    if (card) {
+      const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      card.scrollIntoView?.({ block: 'start', behavior: reduce ? 'auto' : 'smooth' });
+      card.focus({ preventScroll: true });
+      return;
+    }
+    const tab = document.querySelector<HTMLElement>('.v2-device-main [role="tab"][aria-selected="true"]');
+    (tab ?? menuTrigger())?.focus();
+  }, [allActionsAsk, deviceTabs.active]);
   const [busy, setBusy] = useState(false);
   const [dialog, setDialog] = useState<CommandTemplateExt | null>(null);
   const [kioskOpen, setKioskOpen] = useState(false);
@@ -1132,7 +1166,7 @@ export function DeviceDetailPage() {
             </span>
           </div>
           {canEdit ? (
-            <div role="toolbar" aria-label="Quick actions" className="v2-device-id__actions">
+            <div ref={quickActionsRef} role="toolbar" aria-label="Quick actions" className="v2-device-id__actions">
               <Button
                 variant="primary"
                 icon={<IconSync />}
@@ -1147,27 +1181,40 @@ export function DeviceDetailPage() {
                   Lock
                 </Button>
               </Tooltip>
+              {/* A shortcut to the Control tab, not a copy of it: the most used actions, then the way to the rest. */}
               <Menu
                 label="More actions"
                 iconSize="md"
-                disabled={busy || wiped}
+                disabled={wiped}
                 items={[
-                  { key: 'ring', label: 'Ring', icon: <IconRing />, onSelect: () => runAction(TEMPLATE.ring) },
-                  { key: 'alert', label: 'Send alert', icon: <IconAlert />, onSelect: () => runAction(TEMPLATE.alert) },
+                  // While a command is sending, only the commands wait: All actions is navigation.
                   {
-                    key: 'lsm',
-                    label: 'Lock-screen message',
-                    icon: <IconScreenMessage />,
-                    onSelect: () => runAction(TEMPLATE['lockscreen-message']),
+                    key: 'ring',
+                    label: 'Ring',
+                    icon: <IconRing />,
+                    disabled: busy,
+                    onSelect: () => runAction(TEMPLATE.ring),
+                  },
+                  {
+                    key: 'reboot',
+                    label: 'Reboot',
+                    icon: <IconPower />,
+                    disabled: busy,
+                    onSelect: () => runAction(TEMPLATE.reboot),
                   },
                   'separator',
                   {
-                    key: 'apps',
-                    label: 'Install configuration apps',
-                    icon: <IconDownload size={16} />,
-                    onSelect: () => void installConfigApps(),
+                    key: 'all',
+                    label: (
+                      <>
+                        All actions <span aria-hidden="true">→</span>
+                      </>
+                    ),
+                    textValue: 'All actions',
+                    icon: <IconControl />,
+                    movesFocus: true,
+                    onSelect: showAllActions,
                   },
-                  { key: 'reboot', label: 'Reboot', icon: <IconPower />, onSelect: () => runAction(TEMPLATE.reboot) },
                 ]}
               />
             </div>

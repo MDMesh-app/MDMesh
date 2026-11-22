@@ -21,6 +21,7 @@
 
 package com.hmdm.rest.resource;
 
+import com.hmdm.persistence.DeviceGoneException;
 import com.hmdm.persistence.AgentCommandDAO;
 import com.hmdm.persistence.AgentEnrollmentTokenDAO;
 import com.hmdm.persistence.DeviceDAO;
@@ -257,7 +258,12 @@ public class AgentAdminResource {
         if (refused != null) {
             return refused;
         }
-        int queued = configAppInstaller.enqueueConfigApps(device);
+        int queued;
+        try {
+            queued = configAppInstaller.enqueueConfigApps(device);
+        } catch (DeviceGoneException e) {
+            return deviceGone(deviceId, "sync configuration apps");
+        }
         logger.info("Sync apps for device {}: {} app.install queued", deviceId, queued);
         return Response.OK(java.util.Collections.singletonMap("queued", queued));
     }
@@ -308,7 +314,12 @@ public class AgentAdminResource {
             return Response.ERROR("error.agent.command.noConfiguration");
         }
 
-        AgentCommand command = enqueue(device, body.getType(), devicePayload, body.getRequiresCapability());
+        AgentCommand command;
+        try {
+            command = enqueue(device, body.getType(), devicePayload, body.getRequiresCapability());
+        } catch (DeviceGoneException e) {
+            return deviceGone(deviceId, "queue command");
+        }
         logger.info("Agent command {} queued for device {}", command.getId(), deviceId);
         // Payload-free view (same shape as the history): never echo a payload back to the console.
         return Response.OK(CommandHistoryView.from(command));
@@ -369,7 +380,14 @@ public class AgentAdminResource {
     private static final class NoConfigurationException extends Exception {
     }
 
-    /** Queue {@code payload} for {@code device}, already checked by {@link #queueRefusal}, and wake it to pull it. */
+    /** The answer when the device was deleted while the request ran: the one an unknown device gets. */
+    private static Response deviceGone(String deviceId, String action) {
+        logger.warn("Agent admin {}: device {} was deleted meanwhile", action, deviceId);
+        return Response.ERROR("error.agent.device.unknown");
+    }
+
+    /** Queue {@code payload} for {@code device}, already checked by {@link #queueRefusal}, and wake it to pull it.
+     *  @throws DeviceGoneException the device was deleted meanwhile */
     private AgentCommand enqueue(Device device, String type, String payload, String requiresCapability) {
         AgentCommand command = new AgentCommand();
         command.setDeviceNumber(device.getNumber());
@@ -440,7 +458,13 @@ public class AgentAdminResource {
                 skipped.add(id); // asks for its configuration's kiosk PIN, and it has no configuration
                 continue;
             }
-            enqueue(device, type, devicePayload, req.getCommand().getRequiresCapability());
+            try {
+                enqueue(device, type, devicePayload, req.getCommand().getRequiresCapability());
+            } catch (DeviceGoneException e) {
+                logger.warn("Bulk command {}: device {} was deleted meanwhile, skipped", type, id);
+                skipped.add(id);
+                continue;
+            }
             queued++;
         }
 
@@ -694,7 +718,12 @@ public class AgentAdminResource {
         if (refused != null) {
             return refused;
         }
-        ConfigReconciler.Retry result = configReconciler.retryNow(device, System.currentTimeMillis());
+        ConfigReconciler.Retry result;
+        try {
+            result = configReconciler.retryNow(device, System.currentTimeMillis());
+        } catch (DeviceGoneException e) {
+            return deviceGone(deviceId, "retry configuration apply");
+        }
         boolean connected = wakeHub.isOnline(deviceId);
         if (result == ConfigReconciler.Retry.QUEUED || result == ConfigReconciler.Retry.ALREADY_QUEUED) {
             wakeHub.wake(deviceId, "commands");

@@ -47,8 +47,9 @@ public class RolloutDAO {
         mapper.insertRollout(rollout);
     }
 
+    /** @throws DeviceGoneException the device was deleted meanwhile (after the statement's EXISTS check) */
     public void insertCanary(int rolloutId, String deviceNumber) {
-        mapper.insertCanary(rolloutId, deviceNumber);
+        DeviceGoneException.guard(deviceNumber, () -> mapper.insertCanary(rolloutId, deviceNumber));
     }
 
     public AgentRollout findActiveByCustomer(int customerId) {
@@ -90,9 +91,10 @@ public class RolloutDAO {
         return mapper.isCanary(rolloutId, deviceNumber);
     }
 
-    /** Queues {@code cmd} unless the same command is already in flight for the device. @return true when queued. */
+    /** Queues {@code cmd} unless the same command is already in flight for the device. @return true when queued.
+     *  @throws DeviceGoneException the device was deleted meanwhile */
     public boolean insertIfNotInFlight(AgentCommand cmd) {
-        return mapper.insertIfNotInFlight(cmd) > 0;
+        return DeviceGoneException.guard(cmd.getDeviceNumber(), () -> mapper.insertIfNotInFlight(cmd)) > 0;
     }
 
     /** The device's app.install commands created at or after {@code since}, newest first. */

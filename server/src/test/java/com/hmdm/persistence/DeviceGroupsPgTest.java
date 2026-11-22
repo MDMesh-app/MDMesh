@@ -39,6 +39,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -257,6 +259,130 @@ public class DeviceGroupsPgTest {
         SecurityContext.init(limited);
         assertTrue(dao.areGroupsUsableByUser(Arrays.asList(open, open)));
         assertFalse(dao.areGroupsUsableByUser(Collections.singletonList(closed)));
+    }
+
+    @Test
+    public void aBulkRegroupIntoAnotherCustomersGroupChangesNoDevice() throws Exception {
+        int a = device(open);
+        int b = device();
+        SecurityContext.init(admin);
+
+        refused(() -> dao.updateDevicesGroups(Arrays.asList(a, b), lookups(closed, foreign), true));
+
+        assertEquals(Collections.singletonList(open), groupsOf(a));
+        assertEquals(Collections.emptyList(), groupsOf(b));
+    }
+
+    @Test
+    public void aBulkRegroupIntoAGroupTheUserMayNotUseChangesNoDevice() throws Exception {
+        int a = device(open);
+        int b = device(open);
+        SecurityContext.init(limited);
+
+        refused(() -> dao.updateDevicesGroups(Arrays.asList(a, b), lookups(closed), true));
+
+        assertEquals(Collections.singletonList(open), groupsOf(a));
+        assertEquals(Collections.singletonList(open), groupsOf(b));
+    }
+
+    @Test
+    public void aBulkRemovalFromAGroupTheUserMayNotUseChangesNoDevice() throws Exception {
+        int a = device(open, closed);
+        int b = device(open, closed);
+        SecurityContext.init(limited);
+
+        refused(() -> dao.updateDevicesGroups(Arrays.asList(a, b), lookups(open, closed), false));
+
+        assertEquals(Arrays.asList(open, closed), groupsOf(a));
+        assertEquals(Arrays.asList(open, closed), groupsOf(b));
+    }
+
+    @Test
+    public void aBulkRegroupWithAGroupThatDoesNotExistChangesNoDevice() throws Exception {
+        int a = device(open);
+        SecurityContext.init(admin);
+
+        refused(() -> dao.updateDevicesGroups(Collections.singletonList(a), lookups(closed, 2_000_000_000), true));
+
+        assertEquals(Collections.singletonList(open), groupsOf(a));
+    }
+
+    @Test
+    public void aBulkRegroupWithinTheUsersOwnGroupsChangesEveryDevice() throws Exception {
+        int a = device(open);
+        int b = device();
+        SecurityContext.init(admin);
+
+        dao.updateDevicesGroups(Arrays.asList(a, b), lookups(open, closed, closed), true);
+        assertEquals(Arrays.asList(open, closed), groupsOf(a));
+        assertEquals(Arrays.asList(open, closed), groupsOf(b));
+
+        dao.updateDevicesGroups(Arrays.asList(a, b), lookups(closed), false);
+        assertEquals(Collections.singletonList(open), groupsOf(a));
+        assertEquals(Collections.singletonList(open), groupsOf(b));
+    }
+
+    @Test
+    public void anAccessRowToAnotherCustomersGroupGrantsNothing() throws Exception {
+        // Only groups of the user's own customer count, whatever userDeviceGroupsAccess says
+        User granted = user(false);
+        sql("INSERT INTO " + schema + ".userDeviceGroupsAccess (userId, groupId) VALUES (" + granted.getId() + ", "
+                + open + "), (" + granted.getId() + ", " + foreign + ")");
+        int device = device(open);
+        SecurityContext.init(granted);
+
+        assertFalse(dao.areGroupsUsableByUser(Collections.singletonList(foreign)));
+        refused(() -> dao.updateDevicesGroups(Collections.singletonList(device), lookups(foreign), true));
+        Device change = edit(device, open, foreign);
+        refused(() -> dao.updateDevice(change));
+
+        assertEquals(Collections.singletonList(open), groupsOf(device));
+    }
+
+    @Test
+    public void anEditChecksTheGroupsAsTheyAreOnceItHoldsTheDevice() throws Exception {
+        // Another transaction holds the device and takes it out of `closed`. An edit sent meanwhile, keeping `closed`
+        // (which the limited user may keep but not add), must wait and check against the groups that transaction
+        // leaves: read before the lock, `closed` would look already there and be put back.
+        int device = device(open, closed);
+        Device change = edit(device, open, closed);
+        String url = URL + (URL.contains("?") ? "&" : "?") + "currentSchema=" + schema;
+        try (Connection other = DriverManager.getConnection(url, user(), password()); Statement s = other.createStatement()) {
+            other.setAutoCommit(false);
+            long holder;
+            try (ResultSet r = s.executeQuery("SELECT pg_backend_pid()")) {
+                r.next();
+                holder = r.getLong(1);
+            }
+            s.execute("SELECT id FROM devices WHERE id = " + device + " FOR UPDATE");
+            s.execute("DELETE FROM deviceGroups WHERE deviceId = " + device + " AND groupId = " + closed);
+
+            CompletableFuture<Throwable> edit = CompletableFuture.supplyAsync(() -> {
+                SecurityContext.init(limited);
+                try {
+                    dao.updateDevice(change);
+                    return null;
+                } catch (Throwable t) {
+                    return t;
+                } finally {
+                    SecurityContext.release();
+                }
+            });
+            long deadline = System.currentTimeMillis() + 10_000;
+            // Only the edit can be waiting on this transaction: it holds nothing anyone else wants
+            while (scalar("SELECT count(*) FROM pg_stat_activity WHERE " + holder
+                    + " = ANY(pg_blocking_pids(pid))") == 0) {
+                assertFalse("the edit never waited for the device's lock", edit.isDone());
+                assertTrue("the edit never waited for the device's lock", System.currentTimeMillis() < deadline);
+                Thread.sleep(20);
+            }
+            other.commit();
+
+            Throwable outcome = edit.get(10, TimeUnit.SECONDS);
+            assertTrue("expected the edit to be refused, got " + outcome, outcome instanceof SecurityException);
+        }
+        assertEquals(Collections.singletonList(open), groupsOf(device));
+        assertEquals("unchanged", descriptionOf(device));
     }
 
     // ---------------------------------------------------------------------------------------------------- helpers

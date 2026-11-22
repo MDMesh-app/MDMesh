@@ -20,7 +20,7 @@ import {
   type Configuration,
   type ConfigurationSummary,
 } from '../api/configurations';
-import { bulkSetConfiguration, deleteDevicesBulk } from '../api/devices';
+import { bulkDeletePartial, bulkErrorText, bulkSetConfiguration, deleteDevicesBulk } from '../api/devices';
 import { EXIT_PIN_RULE, exitPinValid } from '../data/configurationRules';
 import {
   buildKioskPayload,
@@ -674,7 +674,7 @@ export function ChangeConfigurationModal({
       onClose();
       await onDone();
     } catch (e) {
-      toast.push('err', 'Change failed', errText(e));
+      toast.push('err', 'Change failed', bulkErrorText(e, 'configuration') || 'The server didn’t accept the change.');
     } finally {
       setBusy(false);
     }
@@ -739,7 +739,8 @@ export function DeleteDevicesModal({
   ids: number[];
   label?: string;
   onClose: () => void;
-  onDone: () => void | Promise<void>;
+  /** After a delete: `remaining` are the ids that weren't deleted (kept selected), none when all went. */
+  onDone: (remaining?: number[]) => void | Promise<void>;
 }) {
   const toast = useToast();
   const [busy, setBusy] = useState(false);
@@ -753,7 +754,23 @@ export function DeleteDevicesModal({
       onClose();
       await onDone();
     } catch (e) {
-      toast.push('err', 'Delete failed', errText(e));
+      const partial = bulkDeletePartial(e);
+      if (partial && partial.deleted.length > 0 && partial.notDeleted.length > 0) {
+        // Some went: close, refresh the list, and keep the rest selected to try again.
+        const left = partial.notDeleted.length;
+        toast.push(
+          'err',
+          `${plural(left)} not deleted`,
+          `${plural(partial.deleted.length)} deleted. ${left === 1 ? 'The other is' : `The other ${left} are`} still ` +
+            'selected: delete again to retry.',
+        );
+        onClose();
+        await onDone(partial.notDeleted);
+      } else {
+        // Nothing went: a plain failure. The dialog stays, and Delete retries (a device already gone counts).
+        toast.push('err', n === 1 ? 'Device not deleted' : 'Devices not deleted',
+          partial ? 'Try again.' : bulkErrorText(e) || 'The server didn’t accept the delete. Try again.');
+      }
     } finally {
       setBusy(false);
     }
@@ -768,8 +785,8 @@ export function DeleteDevicesModal({
       title={n === 1 ? 'Delete device?' : `Delete ${plural(n)}?`}
       description={
         n === 1
-          ? 'Removes it from MDMesh. It comes back if it checks in again.'
-          : 'Removes them from MDMesh. They come back if they check in again.'
+          ? 'Removes it from MDMesh with its commands, events and locations. To manage it again, enroll it again.'
+          : 'Removes them from MDMesh with their commands, events and locations. To manage them again, enroll them again.'
       }
       footer={
         <>

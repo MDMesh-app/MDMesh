@@ -3,6 +3,7 @@ import * as D from '@radix-ui/react-dialog';
 import { IconButton } from './Button';
 import { IconClose } from './icons';
 import { cx } from './cx';
+import { FOCUSABLE, focusPlace, placeOf, type FocusPlace } from './focusPlace';
 import './Modal.css';
 
 export interface ModalProps {
@@ -25,9 +26,6 @@ export interface ModalProps {
   role?: 'dialog' | 'alertdialog';
   className?: string;
 }
-
-const FOCUSABLE =
-  'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /**
  * Whether the body is a Tab stop of its own: while it scrolls and nothing in it is (a release's notes without a link),
@@ -90,13 +88,13 @@ export function Modal({
   // The body as state, not only a ref: the portal mounts it after this component, and the scroll stop watches it.
   const [body, setBody] = useState<HTMLDivElement | null>(null);
   const bodyRef = useRef<HTMLDivElement | null>(null);
-  const returnTo = useRef<HTMLElement | null>(null);
+  const returnTo = useRef<FocusPlace | null>(null);
   // The opener, taken as `open` turns true, before the content mounts: a field in the body with `autoFocus` takes
   // focus before Radix's onOpenAutoFocus runs, so focus then is already inside the dialog.
   const wasOpen = useRef(false);
   useInsertionEffect(() => {
     if (open && !wasOpen.current) {
-      returnTo.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      returnTo.current = document.activeElement instanceof HTMLElement ? placeOf(document.activeElement) : null;
     }
     wasOpen.current = open;
   }, [open]);
@@ -131,7 +129,7 @@ export function Modal({
             // Fallback for an opener not seen as `open` turned true; never an element inside this dialog.
             const active = document.activeElement;
             if (!returnTo.current && active instanceof HTMLElement && !(e.currentTarget as Node).contains(active)) {
-              returnTo.current = active;
+              returnTo.current = placeOf(active);
             }
             // The first control that is drawn (one in a collapsed or hidden part has no boxes), else the first not
             // inside a `hidden` part (where nothing has boxes yet).
@@ -144,10 +142,10 @@ export function Modal({
             target?.focus();
           }}
           onCloseAutoFocus={(e) => {
-            // Back to the element that opened the dialog (there is no Radix trigger to return to).
+            // Back to the element that opened the dialog (there is no Radix trigger to return to), or, when what
+            // the dialog did removed it with its list item (a Delete), to the item's neighbour (ui/focusPlace).
             e.preventDefault();
-            const back = returnTo.current;
-            if (back && document.contains(back)) back.focus();
+            if (returnTo.current) focusPlace(returnTo.current);
           }}
           onPointerDownOutside={(e) => {
             if (alert || !dismissOnBackdrop) e.preventDefault();

@@ -59,9 +59,10 @@ public class AgentCommandDAO {
         this.eventMapper = eventMapper;
     }
 
+    /** @throws DeviceGoneException the device was deleted meanwhile (as for every history write here) */
     @Transactional
     public void insert(AgentCommand command) {
-        mapper.insert(command);
+        DeviceGoneException.guard(command.getDeviceNumber(), () -> mapper.insert(command));
     }
 
     public List<AgentCommand> listPending(String deviceNumber) {
@@ -92,12 +93,22 @@ public class AgentCommandDAO {
      * Atomically claim a command for delivery and advance kiosk ordering only once the command is handed to the
      * device. A queued command has not changed device state yet: a buffered on-device kioskReturn sent in the same
      * check-in must remain evidence for the prior generation.
+     *
+     * <p>A command that moves the kiosk generation locks its device's row first (FOR KEY SHARE, as the state row's
+     * foreign key check would), then the command's row: a device delete takes them in the same order (the device, then
+     * its commands by cascade), so the two can't deadlock. A delete in progress is waited for.</p>
+     *
+     * @throws DeviceGoneException the device was deleted meanwhile
      */
     @Transactional
     public boolean claimForDelivery(AgentCommand command, Long deliveredAt) {
+        if (changesKiosk(command.getType()) && deviceMapper.lockDeviceKeyShare(command.getDeviceNumber()) == null) {
+            throw new DeviceGoneException(command.getDeviceNumber(), null);
+        }
         boolean claimed = claimForDelivery(command.getId(), deliveredAt);
         if (claimed && changesKiosk(command.getType())) {
-            stateMapper.advanceKioskGeneration(command.getDeviceNumber(), deliveredAt);
+            DeviceGoneException.guard(command.getDeviceNumber(),
+                    () -> stateMapper.advanceKioskGeneration(command.getDeviceNumber(), deliveredAt));
         }
         return claimed;
     }
@@ -127,7 +138,7 @@ public class AgentCommandDAO {
 
     /** Upsert the latest device-state snapshot. */
     public void upsertState(DeviceState state) {
-        stateMapper.upsert(state);
+        DeviceGoneException.guard(state.getDeviceNumber(), () -> stateMapper.upsert(state));
     }
 
     /** Current device-state snapshot, or null if none reported yet. */
@@ -157,7 +168,7 @@ public class AgentCommandDAO {
         e.setType(type);
         e.setTs(ts);
         e.setDetail(detail);
-        eventMapper.insert(e);
+        DeviceGoneException.guard(deviceNumber, () -> eventMapper.insert(e));
     }
 
     /**
@@ -165,15 +176,18 @@ public class AgentCommandDAO {
      * them, its kiosk-return evidence ({@link #recordKioskReturn}'s second statement, which only depends on the
      * current kiosk generation, so once covers any number of them). One transaction, so one commit for the batch, not
      * one per event. On any error nothing is stored.
+     *
+     * @throws DeviceGoneException the device was deleted meanwhile
      */
     @Transactional
     public void insertEvents(String deviceNumber, List<DeviceEvent> events) {
         if (events.isEmpty()) {
             return;
         }
-        eventMapper.insertAll(deviceNumber, events);
+        DeviceGoneException.guard(deviceNumber, () -> eventMapper.insertAll(deviceNumber, events));
         if (events.stream().anyMatch(e -> KIOSK_RETURN.equals(e.getType()))) {
-            stateMapper.recordKioskReturn(deviceNumber, System.currentTimeMillis());
+            DeviceGoneException.guard(deviceNumber,
+                    () -> stateMapper.recordKioskReturn(deviceNumber, System.currentTimeMillis()));
         }
     }
 
@@ -181,7 +195,8 @@ public class AgentCommandDAO {
     @Transactional
     public void recordKioskReturn(String deviceNumber, Long deviceTs, String detail) {
         insertEvent(deviceNumber, KIOSK_RETURN, deviceTs, detail);
-        stateMapper.recordKioskReturn(deviceNumber, System.currentTimeMillis());
+        DeviceGoneException.guard(deviceNumber,
+                () -> stateMapper.recordKioskReturn(deviceNumber, System.currentTimeMillis()));
     }
 
     private static boolean changesKiosk(String type) {
@@ -255,7 +270,7 @@ public class AgentCommandDAO {
      */
     public void recordLocation(com.hmdm.persistence.domain.DeviceLocation location) {
         location.setRecordedAt(System.currentTimeMillis());
-        deviceMapper.insertLocation(location);
+        DeviceGoneException.guard(location.getDeviceNumber(), () -> deviceMapper.insertLocation(location));
     }
 
     public java.util.List<com.hmdm.persistence.domain.DeviceLocation> listLocations(

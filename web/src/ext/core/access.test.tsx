@@ -4,7 +4,7 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest';
 import type { AuthUser } from '../../api/auth';
 import { AppRoutes } from '../../App';
-import { ROLES, renderInConsole, stubApi } from '../../test/console';
+import { ROLES, renderInConsole, settled, stubApi } from '../../test/console';
 
 const NOW = Date.now();
 const DEVICE = { id: 7, number: 'WH-1', description: 'Front desk', configurationId: 3, lastUpdate: NOW };
@@ -288,9 +288,16 @@ describe.each([
     await main().findByRole('link', { name: 'Warehouse' });
     // "New configuration" when there are templates to choose from (its chooser), else it creates directly.
     has(main().queryAllByRole('button', { name: /^New configuration(…)?$/ }), add);
-    fireEvent.click(main().getByRole('button', { name: 'More for Warehouse' }));
-    const items = within(await screen.findByRole('menu')).getAllByRole('menuitem').map((m) => m.textContent);
-    expect(items).toEqual(copy ? ['Edit', 'Duplicate', 'Delete'] : ['Edit']);
+    // Edit and Duplicate are the card's buttons; its "…" holds only Delete, and is gone without copy_config.
+    const card = within(main().getByRole('article', { name: 'Warehouse' }));
+    has(card.queryAllByRole('button', { name: 'Duplicate' }), copy);
+    has(card.queryAllByRole('button', { name: 'More for Warehouse' }), copy);
+    if (copy) {
+      fireEvent.click(card.getByRole('button', { name: 'More for Warehouse' }));
+      const items = within(await screen.findByRole('menu')).getAllByRole('menuitem').map((m) => m.textContent);
+      expect(items).toEqual(['Delete']);
+    }
+    await settled();
   });
 
   it('the editor: Duplicate and Delete', async () => {

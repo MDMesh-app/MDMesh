@@ -697,8 +697,11 @@ async function keyboardWalk(browser, base) {
     // A menu item that opens a dialog: closing the dialog (Escape, or its Cancel) returns focus to the menu's trigger.
     ['/devices', 'button', 'More actions for KIOSK-FRONT', DIALOG, {}, { item: 'Change configuration' }],
     ['/configurations', 'button', 'More for Default', DIALOG, {}, { item: 'Delete', close: 'Cancel' }],
-    // A dialog whose field takes focus as it mounts (autoFocus): focus still goes back to the menu's trigger.
-    ['/configurations', 'button', 'More for Default', DIALOG, {}, { item: 'Duplicate' }],
+    // A dialog whose field takes focus as it mounts (autoFocus): focus still goes back to its trigger. (No menu opens
+    // one any more: Duplicate is the configuration card's own button.)
+    ['/configurations', 'button', /^Duplicate$/, DIALOG],
+    // A menu item that moves focus itself: "All actions" leaves it on the Control tab's Remote actions card.
+    ['/devices/WH-SCAN-07', 'button', 'More actions', '#v2-device-remote-actions', {}, { item: 'All actions', focusTo: true }],
   ];
   const escapes = [];
   for (const [route, role, label, open = POPUP, extra, via] of dialogs) {
@@ -716,6 +719,16 @@ async function keyboardWalk(browser, base) {
       }
       const opened = await page.evaluate((sel) => !!document.querySelector(sel), open);
       const focusInside = await page.evaluate((sel) => !!document.activeElement?.closest(sel), open);
+      if (via?.focusTo) {
+        // Nothing to close: focus must stay on `open` (the menu gone, not handed back to its trigger).
+        const closed = await page.evaluate(() => !document.querySelector('[role=menu]'));
+        const stayed = await page.evaluate((sel) => document.activeElement === document.querySelector(sel), open);
+        result = { route, label: `${label} → ${via.item}`, opened, focusInside, closed, returned: stayed };
+        escapes.push(result);
+        console.log('esc', JSON.stringify(result));
+        await context.close();
+        continue;
+      }
       if (via?.close) {
         await page.locator(open).getByRole('button', { name: via.close }).focus();
         await page.keyboard.press('Enter');

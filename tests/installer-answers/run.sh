@@ -700,16 +700,18 @@ grep -qxF "MDMESH_SITE_DIR=$WORK/src7/site.d" "$WORK/src7/.env" || { fail "setup
 ok
 
 # install/lib/modes.sh: the proxy overlay is found in COMPOSE_FILE as the installers write it and as a hand edit might
-# (./ or a path); a release before 0.6.0 can't run the proxy mode (setup.sh --update and the quick start refuse it).
-RC=0; out=$(env -i bash -c '. "$1"; r=""
+# (./ or a path). supervisor/mode-guard.sh (the updater's rule, which setup.sh --update and the quick start use too): a
+# release before 0.6.0 can't run the proxy mode.
+RC=0; out=$(env -i bash -c '. "$1"; . "$2"; r=""
   for l in docker-compose.yml:docker-compose.proxy.yml docker-compose.yml:./docker-compose.proxy.yml /srv/m/docker-compose.proxy.yml; do
     mdm_compose_has_proxy "$l" || r="$r has:$l"; done
   for l in docker-compose.yml:docker-compose.domain.yml docker-compose.proxy.yml.bak "" docker-compose.yml:my-docker-compose.proxy.yml.d; do
     ! mdm_compose_has_proxy "$l" || r="$r not:$l"; done
-  for v in 0.5.9 v0.5.1 0.0.1; do [ -n "$(mdm_proxy_version_problem "$v")" ] || r="$r old:$v"; done
-  for v in 0.6.0 v0.6.1 1.0.0 9.1.0 latest ""; do [ -z "$(mdm_proxy_version_problem "$v")" ] || r="$r new:$v"; done
-  echo "r=$r"' _ "$REPO/install/lib/modes.sh" 2>&1) || RC=$?
-[ "$out" = "r=" ] || fail "modes.sh: mdm_compose_has_proxy or mdm_proxy_version_problem got these wrong: $out"
+  export ENV_FILE=/nonexistent COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml
+  for v in 0.5.9 0.5.1@sha256:aa 0.0.1; do [ -n "$(mode_problem "$v")" ] || r="$r old:$v"; done
+  for v in 0.6.0 0.6.1 1.0.0 9.1.0 latest ""; do [ -z "$(mode_problem "$v")" ] || r="$r new:$v"; done
+  echo "r=$r"' _ "$REPO/install/lib/modes.sh" "$REPO/supervisor/mode-guard.sh" 2>&1) || RC=$?
+[ "$out" = "r=" ] || fail "mdm_compose_has_proxy or mode_problem got these wrong: $out"
 ok
 
 # A setup.sh re-run to the end, with a docker stub that answers like a running stack (server booted, database seeded):

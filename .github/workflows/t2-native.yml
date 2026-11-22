@@ -19,6 +19,7 @@ on:
     paths:
       - install/**
       - setup.sh
+      - supervisor/mode-guard.sh
       - quickstart.sh
       - tests/native/**
       - .github/workflows/t2-native.yml

@@ -44,6 +44,7 @@ echo "== $(. /etc/os-release && echo "$PRETTY_NAME"), $(apt-get --version | head
 C=/work/clone
 mkdir -p "$C"
 cp -R /src/setup.sh /src/quickstart.sh /src/install /src/release "$C/"
+mkdir -p "$C/supervisor"; cp /src/supervisor/mode-guard.sh "$C/supervisor/"   # setup.sh sources it (--update's version rule)
 G=(git -c user.name=t -c user.email=t@example.com -c init.defaultBranch=main)
 git init -q --bare /work/origin.git
 ( cd "$C" && "${G[@]}" init -q && "${G[@]}" add -A && "${G[@]}" commit -qm r && git remote add origin /work/origin.git )

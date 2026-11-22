@@ -1,6 +1,8 @@
 # shellcheck shell=bash
-# Sourced by apply.sh and rollback.sh: the one rule for the versions an install's hosting mode allows.
-#
+# The one rule for the versions an install's hosting mode allows. Sourced by apply.sh and rollback.sh (the updater) and
+# by setup.sh (--update); quickstart.sh keeps a verbatim copy of the functions between the markers below, which CI
+# checks (it runs without a clone).
+# >>> mode-guard.sh functions (quickstart.sh keeps a verbatim copy) >>>
 # mode_problem VERSION: prints why this install can't run VERSION (nothing when it can). A version that isn't X.Y.Z
 # (latest) is let through: there is nothing to compare. Before 0.6.0 (the web image's edge doesn't know these):
 #   - behind your own proxy (COMPOSE_FILE, in the supervisor's environment or .env, lists docker-compose.proxy.yml): the
@@ -26,3 +28,4 @@ mode_problem() {
 }
 # _mode_env KEY: KEY's value in .env, without quotes.
 _mode_env() { grep -E "^$1=" "${ENV_FILE:-/project/.env}" 2>/dev/null | head -1 | cut -d= -f2- | tr -d "\"'\r"; }
+# <<< mode-guard.sh functions <<<

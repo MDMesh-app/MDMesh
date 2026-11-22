@@ -210,13 +210,6 @@ mdm_compose_has_proxy() {
   return 1
 }
 
-# mdm_proxy_version_problem VERSION: prints why an install behind your own proxy can't run release VERSION (X.Y.Z, a
-# leading v allowed): the mode came in 0.6.0, and an older release's edge and setup.sh don't know it. Nothing when it can.
-mdm_proxy_version_problem() {
-  if [[ "${1#v}" =~ ^0\.([0-9]+)\. ]] && [ "$((10#${BASH_REMATCH[1]}))" -lt 6 ]; then
-    echo "behind your own proxy came in 0.6.0, and ${1#v}'s edge doesn't know it"
-  fi
-}
 
 # mdm_mode_settings NUMBER [rerun]: the mode's settings, from HOST (and, behind your proxy, PROXY_BIND and ORIGIN_TLS):
 # COMPOSE_ARGS (its compose files and profile, for a command line), EXTRA_NOTE (what to do next) and ENTRY (where
@@ -307,7 +300,7 @@ mdm_site_dir() {
       "after MDMesh's own settings. Updates never change this directory. Each file must be yours (or root's), not a" \
       "link, and writable by you only (chmod 644), or the edge leaves it out, saying so in its log. Check it, then" \
       "restart the edge (from the install directory):" \
-      "  docker compose exec caddy caddy validate --config /etc/caddy/Caddyfile && docker compose restart caddy" \
+      "  docker compose exec -e MDMESH_RAW_SITE_D=1 caddy caddy validate --config /etc/caddy/Caddyfile && docker compose restart caddy" \
       "Your files run after MDMesh's path checks and before its own routes, the first matching handle answering:" \
       "wrap a rule that answers requests (respond, redir) in handle { }; a bare one answers every request." \
       "How, with an example: $MDM_DOCS/DEPLOY.md#your-own-edge-rules" > site.d/README

@@ -21,6 +21,9 @@ export interface UpdateStatus {
    *  the supervisor's words; `blockedCode` names the cause. Absent from a supervisor before 0.6.0. */
   blocked?: string | null;
   blockedCode?: 'platform' | 'owner' | 'digests' | null;
+  /** This updater serves /files/agent.apk (Docker installs); false where a published copy is served (native).
+   *  Absent from a supervisor before 0.6.0. */
+  apkServed?: boolean;
   /** The platform this updater pulls images for (linux/amd64, linux/arm64). Absent from a supervisor before 0.6.0. */
   platform?: string;
   verified: boolean;
@@ -41,7 +44,8 @@ export interface UpdateStatus {
     versionCode: number;
     sha256: string;
     available: boolean;
-    /** Whose agent: the latest release's, or the running release's while the latest can't be installed here (0.6.0+). */
+    /** Whose agent: the latest release's (the server runs it, or its own release is unknown), or the running
+     *  release's while the server runs an older one (0.6.0+). An agent is never offered ahead of the server. */
     of?: 'latest' | 'running';
   } | null;
   /** The security releases the offered update skips over (newer than `current`, older than `latest`; `latest` too

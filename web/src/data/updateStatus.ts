@@ -83,13 +83,29 @@ export function unverifiedRelease(s: UpdateStatus | null | undefined): boolean {
 }
 
 /**
- * The updater has checked and has no agent APK to offer. On Docker installs it serves /files/agent.apk, which the
- * enrollment QR code points at, so a device that scans the code can't install the agent. (A native install keeps its
- * last published copy, and a console without a reachable updater can't tell.)
+ * The updater has checked and has no agent APK to offer, and it is the one serving /files/agent.apk, which the
+ * enrollment QR code points at: a device that scans the code can't install the agent. (A native install serves its
+ * last published copy; a supervisor before 0.6.0 doesn't say, and serves it on the installs that update themselves.
+ * A console without a reachable updater can't tell.)
  */
 export function agentUnavailable(s: UpdateStatus | null | undefined): boolean {
-  return !!s && !!s.checkedAt && s.applySupported !== false && !s.apk;
+  if (!s || !s.checkedAt || s.apk) return false;
+  return s.apkServed ?? s.applySupported !== false;
 }
+
+/**
+ * Settings → Agent rollout: the agent of a newer release, which comes with that release's server and isn't offered
+ * until the server runs it (the updater never offers an agent ahead of the server). Null when there's none.
+ */
+export function agentAfterServerUpdate(s: UpdateStatus | null | undefined): string | null {
+  if (!s?.latest || !RELEASE_VERSION.test(s.latest) || !RELEASE_VERSION.test(s.current)) return null;
+  if (compareVersions(s.latest, s.current) <= 0 || s.apk?.version === s.latest) return null;
+  return s.latest;
+}
+
+/** The plain rule, for Rollout: the newer release's agent comes after its server. */
+export const serverFirstText = (version: string): string =>
+  `Agent ${version} comes with server ${version}: update the server first, then roll it out here.`;
 
 /** A blocked release, in a few words for the sidebar and the Overview (its cause, unless security comes first). */
 export function blockedShort(s: UpdateStatus, missed: readonly string[]): string {

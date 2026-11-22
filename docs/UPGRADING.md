@@ -201,6 +201,11 @@ exited or credentials cleared while the older agent ran.
 
 ## Version notes
 
+### v0.6.0
+
+- **The server first, then its agent.** New devices and rollouts get the agent of the release the server runs, never
+  a newer one. Update the server, then roll out its agent from **Settings → Agent rollout**.
+
 ### v0.6.0 for forks
 
 For forks that publish their own releases with `.github/workflows/release.yml` (RELEASING.md). Neither of these

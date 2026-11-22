@@ -14,6 +14,11 @@ Upgrading
   `release/agent-signature-checksum` before you tag, and have Arm64 runners for the image builds
   ([UPGRADING, v0.6.0 for forks](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v060-for-forks)).
 
+Heads-up
+- New devices and rollouts get the agent of the release the server runs, never a newer one: update the server first,
+  then roll out its agent from Settings → Agent rollout, which says so while a newer release waits. A server whose
+  own release has no agent (a development build, say) offers the latest release's.
+
 New
 - Arm64: the server, web and supervisor images are built for linux/amd64 and linux/arm64, so the quick start and
   one-click updates run on Arm64 hosts such as Oracle Ampere (#205, thanks @sgofferj). On any other architecture,
@@ -21,12 +26,14 @@ New
   anything.
 - Updates: a newer release this server can't install (no images for its platform, images under another owner, or
   images not pinned by digest) is shown as such, with the reason and what to do, and with any security fixes it
-  leaves missing. It is no longer offered as an update that then fails, or retried automatically. New devices and
-  rollouts get the running release's agent instead, when that release has one.
+  leaves missing. It is no longer offered as an update that then fails, or retried automatically.
 
 Fixes
-- Enrollment keeps its agent when GitHub or its downloads fail for a while, and the Enroll page says so when the
-  server has no agent to give new devices, instead of showing a QR code that can't work.
+- While the updater runs, enrollment keeps its agent when GitHub, a download or a newer release's signature fails, and
+  the Enroll page says so when the server has no agent to give new devices, instead of showing a QR code that can't
+  work.
+- A rollout started before the server was updated or rolled back still downloads its own agent, and the updater checks
+  a cached agent against its signed checksum before it serves it.
 
 ## v0.5.1 — 2026-11-20
 

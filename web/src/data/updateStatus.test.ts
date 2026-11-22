@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { UpdateStatus } from '../api/updates';
 import {
+  agentAfterServerUpdate,
   agentUnavailable,
   blockedShort,
   blockedText,
@@ -190,8 +191,25 @@ describe('agentUnavailable (Enroll warns instead of showing a QR code)', () => {
     expect(agentUnavailable(status({ apk: null }))).toBe(false);   // checkedAt 0: not checked yet
     expect(agentUnavailable(status({ apk: null, checkedAt: 1 }))).toBe(true);
     expect(agentUnavailable(status({ apk: null, checkedAt: 1, applySupported: false }))).toBe(false);
+    // The updater says whether it serves /files/agent.apk (0.6.0+): a source build doesn't update itself but serves it.
+    expect(agentUnavailable(status({ apk: null, checkedAt: 1, applySupported: false, apkServed: true }))).toBe(true);
+    expect(agentUnavailable(status({ apk: null, checkedAt: 1, applySupported: true, apkServed: false }))).toBe(false);
     const apk = { version: '0.1.12', versionCode: 1, sha256: 'a', available: false, of: 'running' as const };
     expect(agentUnavailable(status({ apk, checkedAt: 1 }))).toBe(false);
     expect(agentUnavailable(null)).toBe(false);
+  });
+});
+
+describe('agentAfterServerUpdate (Rollout: update the server first)', () => {
+  const apk = (version: string) => ({ version, versionCode: 1, sha256: 'a', available: true });
+  it('names the newer release while the offered agent is the running release’s', () => {
+    expect(agentAfterServerUpdate(status({ current: '0.1.12', latest: '0.1.15', apk: apk('0.1.12') }))).toBe('0.1.15');
+    expect(agentAfterServerUpdate(status({ current: '0.1.12', latest: '0.1.15', apk: null }))).toBe('0.1.15');
+  });
+  it('is null on the latest release, when the latest agent is offered anyway, or with versions it can’t compare', () => {
+    expect(agentAfterServerUpdate(status({ current: '0.1.15', latest: '0.1.15', apk: apk('0.1.15') }))).toBeNull();
+    expect(agentAfterServerUpdate(status({ current: '0.1.16', latest: '0.1.15' }))).toBeNull();
+    expect(agentAfterServerUpdate(status({ current: '0.6.0-dev', latest: '0.1.15', apk: apk('0.1.15') }))).toBeNull();
+    expect(agentAfterServerUpdate(status({ current: '0.1.12', latest: null }))).toBeNull();
   });
 });

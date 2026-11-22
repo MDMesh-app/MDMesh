@@ -20,6 +20,7 @@ import com.mdmesh.core.config.ConfigApplier
 import com.mdmesh.core.kiosk.AndroidKioskHomeSwitch
 import com.mdmesh.core.kiosk.KioskApplier
 import com.mdmesh.core.store.AgentDataStores
+import com.mdmesh.core.store.KioskStateStore
 import com.mdmesh.core.store.SharedPrefsConfigStateStore
 import com.mdmesh.core.store.configuredKiosk
 import com.mdmesh.core.telemetry.EventLog
@@ -44,15 +45,14 @@ import java.io.File
  * Run on a disposable, offline Device Owner emulator (Wi-Fi and mobile data disabled). Exercises the real PIN UI,
  * persisted kiosk state, Settings access and return button against Android lock task, without an MDM server.
  * Saves the return screen to the app's external files directory for visual review.
- * Manual only: CI neither compiles nor runs it (`./gradlew :app:assembleDebugAndroidTest` builds it), so a change to
- * the classes it uses can break it unnoticed until someone runs it. Assumptions skip unsupported test environments.
+ * Manual only: CI builds it (t0-fast) but does not run it. Assumptions skip unsupported test environments.
  */
 @RunWith(AndroidJUnit4::class)
 class OfflineKioskReturnTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context get() = instrumentation.targetContext
     private val ui get() = instrumentation.uiAutomation
-    private lateinit var store: DataStoreKioskStateStore
+    private lateinit var store: KioskStateStore
     private lateinit var applier: KioskApplier
     private lateinit var config: SharedPrefsConfigStateStore
     private lateinit var configApplier: ConfigApplier
@@ -129,15 +129,12 @@ class OfflineKioskReturnTest {
         click("Return to kiosk")
         awaitCondition { locked() && store.load() == payload && node("Exit kiosk") != null }
         assertEquals(payload, config.configuredKiosk())
-        // Use the persistent event buffer's drain/restore API without discarding earlier test events.
-        val eventLog = EventLog(context)
-        val events = eventLog.drain()
-        try {
-            assertEquals(1, events.count {
+        // Read the persistent event buffer without taking a batch away from the check-in. Recorded after the screen
+        // changed, so wait for it too.
+        awaitCondition {
+            EventLog(context).buffered().count {
                 it.type == "kioskReturn" && it.detail == "returned on-device" && it.ts >= returnStartedAt
-            })
-        } finally {
-            eventLog.restore(events)
+            } == 1
         }
     }
 

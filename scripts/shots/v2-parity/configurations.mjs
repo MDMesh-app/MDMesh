@@ -94,7 +94,7 @@ const puts = (log, suffix) => log.filter((l) => l.method === 'PUT' && l.path.end
 /** The list's cards (one per configuration, on the page grid). */
 const cfgRows = (page) => page.locator('.v2-configs-card');
 const cfgRow = (page, text) => cfgRows(page).filter({ hasText: text });
-/** A row's "…" menu (Radix DropdownMenu): Edit / View, Duplicate, Delete. */
+/** A card's "…" menu (Radix DropdownMenu): Delete only (Edit / View and Duplicate are its footer buttons). */
 async function rowMenu(page, name, item) {
   await page.getByRole('button', { name: `More for ${name}` }).click();
   await page.getByRole('menuitem', { name: item }).click();
@@ -154,13 +154,8 @@ await test('list: built-in rows (seed id + name) are view-only', async (page) =>
   await card.getByRole('link', { name: 'View' }).waitFor();
   assert.equal(await card.getByRole('link', { name: 'Edit' }).count(), 0);
   await card.getByRole('button', { name: 'Duplicate to edit' }).waitFor();
-  // The "…" menu: View, Duplicate to edit, no Delete.
-  await card.getByRole('button', { name: /More for/ }).click();
-  await page.getByRole('menuitem', { name: 'View' }).waitFor();
-  assert.equal(await page.getByRole('menuitem', { name: 'Edit', exact: true }).count(), 0);
-  await page.getByRole('menuitem', { name: /^Duplicate to edit/ }).waitFor();
-  assert.equal(await page.getByRole('menuitem', { name: /Delete/ }).count(), 0);
-  await page.keyboard.press('Escape');
+  // No "…" menu: it would hold only Delete, which a built-in doesn't have.
+  assert.equal(await card.getByRole('button', { name: /More for/ }).count(), 0);
 }, seedRoutes);
 
 await test('list: unassigned devices link', async (page) => {
@@ -174,7 +169,7 @@ await test('list: unassigned devices link', async (page) => {
 
 await test('list: duplicate → copy → opens the copy', async (page, log) => {
   await go(page, '/configurations');
-  await rowMenu(page, 'Field Ops', /^Duplicate/);
+  await cfgRow(page, 'Field Ops').getByRole('button', { name: /^Duplicate/ }).click();
   const dlg = page.getByRole('dialog', { name: 'Duplicate configuration' });
   assert.equal(await dlg.getByRole('textbox', { name: 'New name' }).inputValue(), 'Field Ops copy');
   await dlg.getByRole('textbox', { name: 'New name' }).fill('Field Ops');

@@ -758,6 +758,7 @@ export interface MenuItem {
     onSelect: () => void;
     danger?: boolean;
     disabled?: boolean;
+    movesFocus?: boolean;
 }
 export type MenuEntry = MenuItem | 'separator';
 export interface MenuProps {

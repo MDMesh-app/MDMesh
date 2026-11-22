@@ -25,12 +25,14 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hmdm.persistence.AgentCommandDAO;
 import com.hmdm.persistence.AgentEnrollmentDAO;
+import com.hmdm.persistence.DeviceGoneException;
 import com.hmdm.persistence.AgentEnrollmentTokenDAO;
 import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.AgentCommand;
 import com.hmdm.persistence.domain.AgentEnrollmentToken;
 import com.hmdm.persistence.domain.Configuration;
 import com.hmdm.persistence.domain.Device;
+import com.hmdm.persistence.domain.DeviceEvent;
 import com.hmdm.persistence.domain.DeviceState;
 import com.hmdm.rest.json.agent.AgentDeviceState;
 import com.hmdm.rest.json.Response;
@@ -41,13 +43,16 @@ import com.hmdm.rest.json.agent.AgentCommandResult;
 import com.hmdm.rest.json.agent.AgentEnrollRequest;
 import com.hmdm.rest.json.agent.AgentEnrollResponse;
 import com.hmdm.rest.json.agent.AgentProtocol;
+import com.hmdm.rest.json.agent.AgentTelemetryEvent;
 import com.hmdm.util.AgentCapabilityTokens;
 import com.hmdm.util.CryptoUtil;
+import com.hmdm.util.WindowLimiter;
 import com.hmdm.util.DesiredConfigBuilder;
 import com.hmdm.util.InstallIntegrity;
 import com.hmdm.util.RolloutProgress;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
+import org.apache.ibatis.exceptions.PersistenceException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -65,6 +70,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 /**
  * <p>Public-facing resource for the from-scratch Android agent v1 protocol. Mirrors
@@ -94,10 +100,21 @@ public class AgentResource {
 
     // Ingestion caps: an authenticated device is still untrusted input. These bound what a single
     // check-in (potentially every 5s in foreground mode) can write into the database.
-    private static final int MAX_EVENTS_PER_CHECKIN = 100;
+    // Past this count the server stops and reports how many events it took (eventsAccepted, protocol 1.12), so the
+    // agent resends the rest. Older agents ignore that and count their whole batch delivered: they send up to 500,
+    // their whole buffer, so this cap takes all of it.
+    static final int MAX_EVENTS_PER_CHECKIN = 500;
     private static final int MAX_EVENT_DETAIL_CHARS = 4000;
+    /** device_event.type is VARCHAR(64); the agent's types are short names. */
+    private static final Pattern EVENT_TYPE = Pattern.compile("^[A-Za-z0-9._-]{1,64}$");
+    /** devices.hardwareid is VARCHAR(128). */
+    private static final int MAX_HARDWARE_ID_CHARS = 128;
+    /** device_state's androidRelease, agentVersion and powerMode columns. */
+    private static final int MAX_ANDROID_RELEASE_CHARS = 32;
+    private static final int MAX_AGENT_VERSION_CHARS = 64;
+    private static final int MAX_POWER_MODE_CHARS = 16;
     private static final int MAX_TELEMETRY_CHARS = 256 * 1024;
-    // Each result is one UPDATE. Current agents send at most 100 per check-in; the rest of a backlog follows on the
+    // Each result is one UPDATE. Current agents send at most 1000 per check-in; the rest of a backlog follows on the
     // next ones. Past this count the server stops and reports how many it took (resultsAccepted), so the agent
     // resends the remainder rather than losing it. Older agents that send everything at once never get near it.
     static final int MAX_RESULTS_PER_CHECKIN = 1000;
@@ -202,8 +219,8 @@ public class AgentResource {
             return Response.ERROR("error.agent.token.used");
         }
 
-        String hardwareId = request.getHardwareId() == null || request.getHardwareId().trim().isEmpty()
-                ? null : request.getHardwareId().trim();
+        String hardwareId = storable("Enroll with token " + token.getId(), "hardware id", request.getHardwareId(),
+                MAX_HARDWARE_ID_CHARS);
         // Enrolls of one code wait on its lock one after another, each holding a pooled connection: past a few, turn
         // the rest away now (retryable) instead of letting one code's burst take the pool.
         if (!enrollsPerCode.tryEnter(token.getId())) {
@@ -370,6 +387,21 @@ public class AgentResource {
             return Response.ERROR("error.agent.unauthorized");
         }
 
+        try {
+            return checkinAuthenticated(device, httpRequest, request);
+        } catch (DeviceGoneException e) {
+            // Deleted while this check-in ran: answered as a device that is unknown now (its history foreign keys
+            // refused the write, so nothing of it is left behind).
+            logger.warn("Agent check-in: device {} was deleted during its check-in", deviceNumber);
+            return Response.ERROR("error.agent.unauthorized");
+        }
+    }
+
+    /** {@link #checkin} once the device is authenticated. */
+    private Response checkinAuthenticated(Device device, javax.servlet.http.HttpServletRequest httpRequest,
+                                          AgentCheckInRequest request) {
+        String deviceNumber = device.getNumber();
+
         // Before any result is recorded: a config.apply delivered before this moment and still open afterwards is
         // one the agent is not running (ConfigReconciler).
         long receivedAt = System.currentTimeMillis();
@@ -383,9 +415,10 @@ public class AgentResource {
         }
 
         // Backfill the stable hardware id for already-enrolled devices (set once / when it changes).
-        if (request.getHardwareId() != null && !request.getHardwareId().trim().isEmpty()
-                && !request.getHardwareId().trim().equals(device.getHardwareId())) {
-            commandDAO.updateHardwareId(deviceNumber, request.getHardwareId().trim());
+        String hardwareId = storable("Device " + deviceNumber, "hardware id", request.getHardwareId(),
+                MAX_HARDWARE_ID_CHARS);
+        if (hardwareId != null && !hardwareId.equals(device.getHardwareId())) {
+            commandDAO.updateHardwareId(deviceNumber, hardwareId);
         }
 
         // Refresh the stored capability matrix (kept fresh every check-in). Computed once here and
@@ -404,18 +437,23 @@ public class AgentResource {
         // Persist the latest device-state snapshot (powers the admin console).
         String appliedRevision = validRevision(deviceNumber,
                 request.getState() == null ? null : request.getState().getAppliedConfigRevision());
+        // A state value the database can't store would fail its write, and with it every check-in from the device.
+        String agentVersion = request.getState() == null ? null : storable("Device " + deviceNumber, "agentVersion",
+                request.getState().getAgentVersion(), MAX_AGENT_VERSION_CHARS);
         if (request.getState() != null) {
             AgentDeviceState s = request.getState();
+            String androidRelease = storable("Device " + deviceNumber, "androidRelease", s.getAndroidRelease(),
+                    MAX_ANDROID_RELEASE_CHARS);
             DeviceState row = new DeviceState();
             row.setDeviceNumber(deviceNumber);
             row.setBattery(s.getBattery());
             row.setCharging(s.getCharging());
             row.setLocked(s.getLocked());
             row.setKioskActive(s.getKioskActive());
-            row.setAndroidRelease(s.getAndroidRelease());
+            row.setAndroidRelease(androidRelease);
             row.setLastBootAt(s.getLastBootAt());
-            row.setAgentVersion(s.getAgentVersion());
-            row.setPowerMode(s.getPowerMode());
+            row.setAgentVersion(agentVersion);
+            row.setPowerMode(storable("Device " + deviceNumber, "powerMode", s.getPowerMode(), MAX_POWER_MODE_CHARS));
             row.setAppliedConfigRevision(appliedRevision);
             row.setAppliedConfigAt(null);
             // The server (not the device) knows the public IP — inject it into the census JSON.
@@ -437,42 +475,15 @@ public class AgentResource {
             commandDAO.upsertState(row);
             // Mirror the Android version into the device row (infojson) so the device LIST — which
             // reads infojson->>'androidVersion', not the state table — shows it.
-            String androidRelease = s.getAndroidRelease();
-            if (androidRelease != null && !androidRelease.trim().isEmpty()) {
-                commandDAO.updateAndroidVersion(deviceNumber, androidRelease.trim());
+            if (androidRelease != null && !androidRelease.isEmpty()) {
+                commandDAO.updateAndroidVersion(deviceNumber, androidRelease);
             }
             // Append the reported location (dynamic.location) to the device's breadcrumb trail.
             recordLocation(deviceNumber, tel);
         }
 
-        // Ingest buffered lifecycle events into the timeline — capped, so one check-in can't
-        // flood device_event (each entry is an INSERT with unbounded TEXT detail otherwise).
-        if (request.getEvents() != null) {
-            int ingested = 0;
-            for (com.hmdm.rest.json.agent.AgentTelemetryEvent e : request.getEvents()) {
-                if (e == null || e.getType() == null) {
-                    continue;
-                }
-                if (++ingested > MAX_EVENTS_PER_CHECKIN) {
-                    logger.warn("Device {} sent >{} events in one check-in — rest dropped",
-                            deviceNumber, MAX_EVENTS_PER_CHECKIN);
-                    break;
-                }
-                long ts = e.getTs() == null ? System.currentTimeMillis() : e.getTs();
-                String detail = e.getDetail();
-                if (detail != null && detail.length() > MAX_EVENT_DETAIL_CHARS) {
-                    detail = detail.substring(0, MAX_EVENT_DETAIL_CHARS);
-                }
-                if ("kioskReturn".equals(e.getType())) {
-                    // Timeline keeps the device timestamp. The durable proof is ordered by the server-owned kiosk
-                    // generation, so device clock skew cannot make it override a later kiosk command.
-                    commandDAO.recordKioskReturn(deviceNumber, ts, detail);
-                } else {
-                    commandDAO.insertEvent(deviceNumber, e.getType(), ts, detail);
-                }
-                kioskLockoutAlert.onEvent(device, e.getType(), detail);
-            }
-        }
+        int eventsAccepted = ingestEvents(device, request.getEvents(),
+                AgentProtocol.atLeast(request.getProtocolVersion(), 1, 12));
 
         // Ack results from previously-delivered commands.
         int resultsAccepted = 0;
@@ -499,7 +510,7 @@ public class AgentResource {
                 // Ownership is enforced inside the UPDATE's WHERE (id + deviceNumber) — no
                 // per-result pre-SELECT needed on the hot path.
                 String status = result.getStatus();
-                String detail = result.getDetail();
+                String detail = withoutNul(result.getDetail());
                 if (detail != null && detail.length() > MAX_RESULT_DETAIL_CHARS) {
                     logger.warn("Device {} result detail for command {} oversized ({} chars) — stored as failed",
                             deviceNumber, commandId, detail.length());
@@ -532,7 +543,6 @@ public class AgentResource {
                 capsJson != null ? capsJson : commandDAO.getDeviceCapabilities(deviceNumber));
         long now = System.currentTimeMillis();
 
-        String agentVersion = request.getState() == null ? null : request.getState().getAgentVersion();
         String configAgentVersion = null;
         String appsRevision = null;
         boolean configCapable = AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, deviceTokens);
@@ -590,7 +600,201 @@ public class AgentResource {
 
         AgentCheckInResponse response = new AgentCheckInResponse(commands);
         response.setResultsAccepted(resultsAccepted);
+        response.setEventsAccepted(eventsAccepted);
         return Response.OK(response);
+    }
+
+    /**
+     * Stores the check-in's buffered lifecycle events in the timeline and returns how many of them, counted from the
+     * first, it consumed (protocol 1.12 {@code eventsAccepted}): the agent drops those and resends the rest. Capped, so
+     * one check-in can't flood device_event. An event with no valid type is skipped, and so is one whose data the
+     * database refuses (SQL state class 22 or 23): both count as consumed, so the agent doesn't resend them forever. Any
+     * other database error (a lost connection, a failover) is not the event's fault: the events stop there, uncounted,
+     * and the agent sends them again. The rest of the check-in goes on, so a short blip doesn't cost its results. Only
+     * when {@code countsAccepted}, though: an agent before protocol 1.12 ignores {@code eventsAccepted} and drops its
+     * whole batch on a successful check-in, so for it the error fails the check-in, as it did before 1.12, and the agent
+     * sends the batch again.
+     *
+     * <p>The events go in as one transaction ({@link AgentCommandDAO#insertEvents}): one commit, and on a lost
+     * connection nothing half-stored for the agent to send twice. Only when the database refuses that batch's data does
+     * it store them one by one, to skip just the refused ones. That fallback runs outside any transaction on purpose:
+     * each row commits on its own, so a refused row can't abort the rows after it. So this must not be called inside
+     * an enclosing transaction, where the first refused row would fail every later one (SQL state 25P02, read here as a
+     * lost database).</p>
+     */
+    private int ingestEvents(Device device, List<AgentTelemetryEvent> events, boolean countsAccepted) {
+        if (events == null) {
+            return 0;
+        }
+        String deviceNumber = device.getNumber();
+        List<DeviceEvent> batch = new ArrayList<>();
+        // Where each batch row is in the request: the prefix the agent may drop is counted in request positions.
+        List<Integer> positions = new ArrayList<>();
+        int consumable = events.size();
+        int invalid = 0;
+        String firstInvalid = null;
+        for (int i = 0; i < events.size(); i++) {
+            AgentTelemetryEvent e = events.get(i);
+            if (e == null || e.getType() == null || !EVENT_TYPE.matcher(e.getType()).matches()) {
+                if (invalid++ == 0) {
+                    firstInvalid = e == null ? null : e.getType();
+                }
+                continue;
+            }
+            if (batch.size() == MAX_EVENTS_PER_CHECKIN) {
+                logger.info("Device {} sent more than {} events in one check-in: the agent resends the rest",
+                        deviceNumber, MAX_EVENTS_PER_CHECKIN);
+                consumable = i;
+                break;
+            }
+            batch.add(eventRow(deviceNumber, e));
+            positions.add(i);
+        }
+        if (invalid > 0) {
+            logger.warn("Device {} sent {} events without a valid type, skipped (the first: {})", deviceNumber,
+                    invalid, firstInvalid == null ? "no type" : "\"" + loggable(firstInvalid, 40) + "\"");
+        }
+        if (batch.isEmpty()) {
+            return consumable;
+        }
+        try {
+            commandDAO.insertEvents(deviceNumber, batch);
+        } catch (PersistenceException ex) {
+            if (!isDataError(ex)) {
+                return eventsStopped(deviceNumber, ex, batch.get(0).getType(), positions.get(0), countsAccepted);
+            }
+            logger.info("Device {} events refused as a batch (SQL state {}): storing them one by one", deviceNumber,
+                    sqlState(ex).orElse(null));
+            return ingestOneByOne(device, batch, positions, consumable, countsAccepted);
+        }
+        for (DeviceEvent row : batch) {
+            kioskLockoutAlert.onEvent(device, row.getType(), row.getDetail());
+        }
+        return consumable;
+    }
+
+    /**
+     * {@link #ingestEvents}'s fallback once the database refused the batch's data: each row on its own, outside any
+     * transaction, skipping the refused ones. Returns what {@link #ingestEvents} returns.
+     */
+    private int ingestOneByOne(Device device, List<DeviceEvent> batch, List<Integer> positions, int consumable,
+                               boolean countsAccepted) {
+        String deviceNumber = device.getNumber();
+        for (int k = 0; k < batch.size(); k++) {
+            DeviceEvent row = batch.get(k);
+            try {
+                if (AgentCommandDAO.KIOSK_RETURN.equals(row.getType())) {
+                    // Timeline keeps the device timestamp. The durable proof is ordered by the server-owned kiosk
+                    // generation, so device clock skew cannot make it override a later kiosk command.
+                    commandDAO.recordKioskReturn(deviceNumber, row.getTs(), row.getDetail());
+                } else {
+                    commandDAO.insertEvent(deviceNumber, row.getType(), row.getTs(), row.getDetail());
+                }
+            } catch (PersistenceException ex) {
+                if (!isDataError(ex)) {
+                    return eventsStopped(deviceNumber, ex, row.getType(), positions.get(k), countsAccepted);
+                }
+                // Not in the timeline, so no alert either.
+                logger.warn("Device {} event {} refused by the database (SQL state {}): skipped", deviceNumber,
+                        row.getType(), sqlState(ex).orElse(null));
+                continue;
+            }
+            kioskLockoutAlert.onEvent(device, row.getType(), row.getDetail());
+        }
+        return consumable;
+    }
+
+    /** The row for a validated event: the device's timestamp (now if it sent none), the detail cut and NUL-free. */
+    private static DeviceEvent eventRow(String deviceNumber, AgentTelemetryEvent e) {
+        String detail = e.getDetail();
+        if (detail != null && detail.length() > MAX_EVENT_DETAIL_CHARS) {
+            detail = detail.substring(0, MAX_EVENT_DETAIL_CHARS);
+        }
+        DeviceEvent row = new DeviceEvent();
+        row.setDeviceNumber(deviceNumber);
+        row.setType(e.getType());
+        row.setTs(e.getTs() == null ? System.currentTimeMillis() : e.getTs());
+        row.setDetail(withoutNul(detail));
+        return row;
+    }
+
+    /** The database refused the data itself (SQL state class 22 or 23): retrying the same values fails the same way. */
+    private static boolean isDataError(PersistenceException ex) {
+        String state = sqlState(ex).orElse(null);
+        return state != null && (state.startsWith("22") || state.startsWith("23"));
+    }
+
+    /**
+     * A database error not caused by the events stopped them at request position {@code position}: that is how many
+     * were consumed. An agent that can't take a partial count gets the error instead, failing its check-in.
+     */
+    private static int eventsStopped(String deviceNumber, PersistenceException ex, String type, int position,
+                                     boolean countsAccepted) {
+        // The class and SQL state only: a driver message can echo values.
+        logger.warn("Device {} events not stored ({}, SQL state {}): the agent resends them from {}", deviceNumber,
+                ex.getClass().getSimpleName(), sqlState(ex).orElse(null), type);
+        if (!countsAccepted) {
+            throw ex;
+        }
+        return position;
+    }
+
+    /** PostgreSQL refuses a NUL character in text, so a value carrying one would fail its statement. */
+    private static String withoutNul(String s) {
+        return s == null || s.indexOf('\0') < 0 ? s : s.replace("\0", "");
+    }
+
+    /**
+     * A device-sent value safe to log on one line: at most {@code max} code points (a surrogate pair is never split),
+     * control characters and line or paragraph separators shown as "?".
+     */
+    static String loggable(String s, int max) {
+        StringBuilder out = new StringBuilder();
+        int count = 0;
+        for (int i = 0; i < s.length(); i += Character.charCount(s.codePointAt(i))) {
+            if (count++ == max) {
+                return out.append('…').toString();
+            }
+            int cp = s.codePointAt(i);
+            if (Character.isISOControl(cp) || cp == '\u2028' || cp == '\u2029') {
+                out.append('?');
+            } else {
+                out.appendCodePoint(cp);
+            }
+        }
+        return out.toString();
+    }
+
+    /**
+     * One WARN per sender and field an hour for a value {@link #storable} ignores, DEBUG for the repeats: a device
+     * keeps reporting the same value on every check-in (every 5 s in the foreground). Keyed by authenticated device
+     * or token, capped all the same.
+     */
+    private static final WindowLimiter IGNORED_VALUE_WARNINGS =
+            new WindowLimiter(WindowLimiter.MONOTONIC, 60L * 60L * 1000L, 1, 10_000, 20);
+
+    /**
+     * The trimmed {@code value} of {@code field} a device sent, or null when there is none, it carries a control
+     * character (PostgreSQL refuses a NUL) or it is longer than its column's {@code max}: such a value would fail its
+     * write, and with it every check-in (or enroll) from the device. {@code who} names the sender in the log: the
+     * device, or the enrollment's token.
+     */
+    static String storable(String who, String field, String value, int max) {
+        String v = value == null ? null : value.trim();
+        if (v == null || v.isEmpty()) {
+            return null;
+        }
+        if (v.chars().anyMatch(Character::isISOControl) || v.length() > max) {
+            String message = "{}: {} ignored, the server can't store it ({} characters, at most {}, no control "
+                    + "characters)";
+            if (IGNORED_VALUE_WARNINGS.tryAcquire(who + "/" + field)) {
+                logger.warn(message, who, field, v.length(), max);
+            } else {
+                logger.debug(message, who, field, v.length(), max);
+            }
+            return null;
+        }
+        return v;
     }
 
     /**
@@ -715,6 +919,8 @@ public class AgentResource {
             }
             row.setCapturedAt(loc.hasNonNull("capturedAt") ? loc.get("capturedAt").asLong() : System.currentTimeMillis());
             commandDAO.recordLocation(row);
+        } catch (DeviceGoneException e) {
+            throw e;
         } catch (Exception e) {
             logger.warn("Failed to record location for {}: {}", deviceNumber, e.getMessage());
         }

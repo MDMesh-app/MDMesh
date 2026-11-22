@@ -65,6 +65,9 @@ public class AgentCheckInKioskAlertTest {
         @Override public String getDeviceCapabilities(String n) { return null; }
         @Override public List<AgentCommand> listPending(String n) { return Collections.emptyList(); }
         @Override public void insertEvent(String n, String type, Long ts, String detail) { events.add(type); }
+        @Override public void insertEvents(String n, List<com.hmdm.persistence.domain.DeviceEvent> rows) {
+            for (com.hmdm.persistence.domain.DeviceEvent row : rows) events.add(row.getType());
+        }
     }
 
     private static final class FakeEmail extends EmailService {

@@ -14,70 +14,163 @@
   line-height: var(--lh-meta);
 }
 
+/* The map over its key. */
+.v2 .v2-locmap-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* The path: a dark line on a white casing, and its markers, in --map-trail / --map-halo (the same in both themes: the
+   tiles stay light). CSS wins over the colours Leaflet writes as SVG attributes. */
+.v2 .v2-locmap .v2-locmap__halo {
+  stroke: var(--map-halo);
+}
+.v2 .v2-locmap .v2-locmap__line {
+  stroke: var(--map-trail);
+}
+.v2 .v2-locmap .v2-locmap__point,
+.v2 .v2-locmap .v2-locmap__latest {
+  stroke: var(--map-halo);
+  fill: var(--map-trail);
+}
+.v2 .v2-locmap .v2-locmap__oldest {
+  stroke: var(--map-trail);
+  fill: var(--map-halo);
+}
+.v2 .v2-locmap .v2-locmap__arrow svg {
+  display: block;
+  overflow: visible;
+}
+.v2 .v2-locmap .v2-locmap__arrow path {
+  fill: var(--map-trail);
+  stroke: var(--map-halo);
+  stroke-width: 1.5px;
+  stroke-linejoin: round;
+  paint-order: stroke;
+}
+
+/* The key under the map: a meta line (the card's "24 fixes · latest" type), each entry a 16 px swatch on the icon
+   grid and its label, spaced as the console's status text (Status.css). */
+.v2 .v2-locmap-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--secondary);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
+}
+.v2 .v2-locmap-key li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  white-space: nowrap;
+}
+.v2 .v2-locmap-key__swatch {
+  flex: 0 0 auto;
+  overflow: visible;
+}
+.v2 .v2-locmap-key__halo {
+  fill: none;
+  stroke: var(--map-halo);
+  stroke-width: 5px;
+  stroke-linecap: round;
+}
+.v2 .v2-locmap-key__line {
+  fill: none;
+  stroke: var(--map-trail);
+  stroke-width: 2.5px;
+  stroke-linecap: round;
+}
+.v2 .v2-locmap-key__arrow {
+  fill: var(--map-trail);
+  stroke: var(--map-halo);
+  stroke-width: 1.5px;
+  stroke-linejoin: round;
+  paint-order: stroke;
+}
+.v2 .v2-locmap-key__oldest {
+  fill: var(--map-halo);
+  stroke: var(--map-trail);
+  stroke-width: 2px;
+}
+.v2 .v2-locmap-key__latest {
+  fill: var(--map-trail);
+  stroke: var(--map-halo);
+  stroke-width: 2px;
+}
+
 /* Dark theme: the coloured tiles, gently dimmed. */
 [data-theme='dark'] .v2 .v2-locmap .leaflet-tile-pane,
 .v2[data-theme='dark'] .v2-locmap .leaflet-tile-pane {
   filter: brightness(0.82);
 }
 
-/* Zoom: two stacked icon buttons on a raised surface (the console's icon-button size and hover). */
+/* Zoom in / out: the console's small icon buttons (Button.css .v2-iconbtn--sm) with its plus and minus icons, two
+   squares stacked a step apart, lifted off the tiles by the raised-segment shadow. */
 .v2 .v2-locmap .leaflet-top .leaflet-control,
 .v2 .v2-locmap .leaflet-left .leaflet-control {
   margin-top: var(--space-3);
   margin-left: var(--space-3);
 }
 .v2 .v2-locmap .leaflet-bar {
-  border: var(--hairline) solid var(--border-strong);
-  border-radius: var(--radius-control);
-  background: var(--surface);
-  box-shadow: var(--elev-1);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
-.v2 .v2-locmap .leaflet-bar a {
+.v2 .v2-locmap .leaflet-bar a,
+.v2 .v2-locmap .leaflet-bar a:first-child,
+.v2 .v2-locmap .leaflet-bar a:last-child {
   display: flex;
   align-items: center;
   justify-content: center;
   width: var(--control-sm);
   height: var(--control-sm);
-  border-bottom: var(--hairline) solid var(--border);
-  border-radius: 0;
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-control);
   background: var(--surface);
   color: var(--text-2);
-  font-family: var(--font-sans);
-  font-size: var(--text-title);
-  line-height: var(--lh-title);
-  font-weight: var(--weight-regular);
+  box-shadow: var(--elev-1);
   text-indent: 0;
-  transition: background-color var(--dur-micro) var(--ease);
+  transition-property: background-color, border-color, color;
+  transition-duration: var(--dur-micro);
+  transition-timing-function: var(--ease);
 }
-.v2 .v2-locmap .leaflet-bar a:first-child {
-  border-top-left-radius: var(--radius-control);
-  border-top-right-radius: var(--radius-control);
-}
-.v2 .v2-locmap .leaflet-bar a:last-child {
-  border-bottom: 0;
-  border-bottom-left-radius: var(--radius-control);
-  border-bottom-right-radius: var(--radius-control);
+.v2 .v2-locmap .leaflet-bar a svg {
+  display: block;
 }
 @media (max-width: 860px) {
-  .v2 .v2-locmap .leaflet-bar a {
+  .v2 .v2-locmap .leaflet-bar a,
+  .v2 .v2-locmap .leaflet-bar a:first-child,
+  .v2 .v2-locmap .leaflet-bar a:last-child {
     width: var(--touch);
     height: var(--touch);
-    line-height: var(--touch);
   }
 }
-.v2 .v2-locmap .leaflet-bar a:hover {
+.v2 .v2-locmap .leaflet-bar a:not(.leaflet-disabled):hover {
+  border-color: var(--border-strong);
   background: var(--hover);
   color: var(--ink);
 }
-.v2 .v2-locmap .leaflet-bar a:active {
+.v2 .v2-locmap .leaflet-bar a:not(.leaflet-disabled):active {
   background: var(--pressed);
 }
+.v2 .v2-locmap .leaflet-bar a:focus {
+  background: var(--surface); /* Leaflet tints a focused button; the console shows the focus ring instead */
+}
 .v2 .v2-locmap .leaflet-bar a.leaflet-disabled {
-  background: var(--surface);
-  color: var(--faint);
+  opacity: var(--disabled-opacity);
+  cursor: default;
 }
 
-/* Attribution: kept (OpenStreetMap's licence asks for it), set quietly. */
+/* Attribution: OpenStreetMap's credit (its licence asks for it), quiet, at the smallest type size. */
 .v2 .v2-locmap .leaflet-control-attribution {
   padding: 0 var(--space-1);
   border-top-left-radius: var(--radius-chip);
@@ -91,22 +184,39 @@
   text-decoration: underline; /* a link inside text: not by colour alone (1.4.1) */
 }
 
-/* A fix's popup: a small popover. */
+/* A fix's popup: the console's popover (Overlay.css .v2-popover): hairline edge, control radius, no tip. */
 .v2 .v2-locmap .leaflet-popup-content-wrapper {
+  padding: 0;
+  border: var(--hairline) solid var(--border);
   border-radius: var(--radius-control);
   background: var(--surface);
   color: var(--text);
   box-shadow: var(--elev-2);
 }
 .v2 .v2-locmap .leaflet-popup-content {
-  margin: var(--space-2) var(--space-6) var(--space-2) var(--space-3); /* room for the close button */
+  margin: var(--space-2) var(--space-8) var(--space-2) var(--space-3); /* room for the close button */
   font-size: var(--text-meta);
   line-height: var(--lh-meta);
 }
-.v2 .v2-locmap .leaflet-popup-tip {
-  background: var(--surface);
-  box-shadow: none;
+.v2 .v2-locmap .leaflet-popup-tip-container {
+  display: none;
 }
+/* Its close button: a ghost icon button (Button.css .v2-iconbtn--xs) with the console's close icon. */
 .v2 .v2-locmap a.leaflet-popup-close-button {
+  top: var(--space-1);
+  right: var(--space-1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-xs);
+  height: var(--control-xs);
+  border-radius: var(--radius-chip);
   color: var(--secondary);
+  transition-property: background-color, color;
+  transition-duration: var(--dur-micro);
+  transition-timing-function: var(--ease);
+}
+.v2 .v2-locmap a.leaflet-popup-close-button:hover {
+  background: var(--hover);
+  color: var(--ink);
 }

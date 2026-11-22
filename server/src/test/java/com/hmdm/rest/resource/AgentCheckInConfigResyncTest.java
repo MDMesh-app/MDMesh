@@ -79,7 +79,7 @@ public class AgentCheckInConfigResyncTest {
         FakeCommandDAO() { this(new long[]{0L, -1L}); }
 
         private FakeCommandDAO(long[] kiosk) {
-            super(insertOnlyCommandMapper(), null, kioskStateMapper(kiosk), null);
+            super(insertOnlyCommandMapper(), presentDevices(), kioskStateMapper(kiosk), eventsDiscardedMapper());
             this.kiosk = kiosk;
         }
 
@@ -90,6 +90,28 @@ public class AgentCheckInConfigResyncTest {
                     new Class[]{com.hmdm.persistence.mapper.AgentCommandMapper.class}, (p, m, a) -> {
                         if (!"insert".equals(m.getName())) {
                             throw new AssertionError("unexpected AgentCommandMapper." + m.getName());
+                        }
+                        return null;
+                    });
+        }
+
+        /** The device exists: the kiosk-generation step locks its row first. */
+        private static com.hmdm.persistence.mapper.AgentDeviceMapper presentDevices() {
+            return (com.hmdm.persistence.mapper.AgentDeviceMapper) java.lang.reflect.Proxy.newProxyInstance(
+                    com.hmdm.persistence.mapper.AgentDeviceMapper.class.getClassLoader(),
+                    new Class[]{com.hmdm.persistence.mapper.AgentDeviceMapper.class}, (p, m, a) -> {
+                        if ("lockDeviceKeyShare".equals(m.getName())) return 1;
+                        throw new AssertionError("unexpected AgentDeviceMapper." + m.getName());
+                    });
+        }
+
+        /** Event rows go nowhere; the production event batch runs on top, for its kiosk-return statement. */
+        private static com.hmdm.persistence.mapper.DeviceEventMapper eventsDiscardedMapper() {
+            return (com.hmdm.persistence.mapper.DeviceEventMapper) java.lang.reflect.Proxy.newProxyInstance(
+                    com.hmdm.persistence.mapper.DeviceEventMapper.class.getClassLoader(),
+                    new Class[]{com.hmdm.persistence.mapper.DeviceEventMapper.class}, (p, m, a) -> {
+                        if (!"insertAll".equals(m.getName()) && !"insert".equals(m.getName())) {
+                            throw new AssertionError("unexpected DeviceEventMapper." + m.getName());
                         }
                         return null;
                     });

@@ -55,7 +55,7 @@ to the same server without special-casing. Unknown command types degrade to
 
 ```bash
 ./gradlew assembleDebug                                      # app/build/outputs/apk/debug/app-debug.apk
-./gradlew detekt assembleDebug lintDebug testDebugUnitTest :proto:test   # what CI runs (T0)
+./gradlew detekt assembleDebug lintDebug testDebugUnitTest assembleDebugAndroidTest :proto:test   # what CI runs (T0)
 ```
 
 > The Gradle wrapper is committed (`gradlew`, `gradlew.bat`, `gradle/wrapper/gradle-wrapper.jar`
@@ -104,9 +104,9 @@ adb shell am instrument -w -r -e class com.mdmesh.agent.OfflineKioskReturnTest \
   com.mdmesh.agent.debug.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
-CI neither compiles nor runs `OfflineKioskReturnTest`: build it with the first command above after changing the
-classes it uses. The tests skip unless running on an offline Device Owner Android emulator with no existing kiosk or
-saved/delivered configuration.
+CI builds the instrumented tests but doesn't run them, so run this after changing the classes they use. The tests
+skip unless running on an offline Device Owner Android emulator with no existing kiosk or saved/delivered
+configuration.
 
 ### Getting OFF Device Owner (dev cycle)
 

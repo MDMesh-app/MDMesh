@@ -179,7 +179,10 @@ jobs:
         # pre-existing findings are in agent-android/config/detekt/baseline.xml, new code must be clean.
         working-directory: agent-android
         # :proto is a plain JVM module, so testDebugUnitTest skips it; run its tests by name (release.yml does too).
-        run: ./gradlew --no-daemon detekt assembleDebug lintDebug testDebugUnitTest :proto:test
+        # assembleDebugAndroidTest builds every Android module's instrumented test APK (:proto has none): it compiles the
+        # tests and resolves their dependencies, so neither a change to the classes they use nor a test-only dependency
+        # conflict breaks them unseen. Running them needs an emulator (agent-android/README.md).
+        run: ./gradlew --no-daemon detekt assembleDebug lintDebug testDebugUnitTest assembleDebugAndroidTest :proto:test
 
       # --- supervisor (#27): build the image, run its unit tests on the shipped Node, then run it the
       # way docker-compose runs it (working_dir /project + project mounted) and probe its routes. ---
@@ -372,6 +375,5 @@ jobs:
             a11y-out/failures.txt
           if-no-files-found: ignore
 
-  # NOTE: an emulator-based instrumentation matrix (the "version-treadmill guard" — boot the agent
-  # across API levels so SDK_INT-gated breakage surfaces in CI) is deferred until real instrumented
-  # (androidTest) tests exist, per agent.yml. Nothing to migrate.
+  # NOTE: the agent entry above builds the instrumented (androidTest) tests but doesn't run them. Running them on an
+  # emulator is planned.

@@ -1,5 +1,6 @@
 package com.hmdm.rest.resource.support;
 
+import com.hmdm.persistence.DeviceGoneException;
 import com.hmdm.persistence.AgentCommandDAO;
 import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.AgentCommand;
@@ -155,7 +156,8 @@ public class ConfigReconciler {
      * @param configAgentVersion the version that last completed config.apply (null = no baseline yet)
      * @param receivedAt         when this check-in reached the server, before its results were recorded: a
      *                           config.apply delivered earlier and still open is not running on the device
-     * @return true when a config.apply was enqueued. Never throws.
+     * @return true when a config.apply was enqueued
+     * @throws com.hmdm.persistence.DeviceGoneException the device was deleted meanwhile; nothing else is thrown
      */
     public boolean reconcile(Device device, Set<String> deviceTokens, String appliedRevision,
                              String agentVersion, String configAgentVersion, long now, long receivedAt) {
@@ -191,6 +193,8 @@ public class ConfigReconciler {
             logger.info("config.apply queued for {} (revision {} -> {}, agent {})", number, appliedRevision,
                     doc.getRevision(), agentChanged ? configAgentVersion + " -> " + agentVersion : agentVersion);
             return true;
+        } catch (DeviceGoneException e) {
+            throw e; // the device was deleted meanwhile: its caller answers as for an unknown device
         } catch (Exception e) {
             // A broken configuration fails on EVERY check-in of every device on it: WARN at most once
             // per minute per configuration id, DEBUG otherwise.

@@ -56,6 +56,13 @@ public class AgentCheckInResponse {
      */
     private Integer resultsAccepted;
 
+    /**
+     * How many of the request's {@code events}, counted from the first, the server consumed (stored, or skipped as
+     * invalid). The agent drops those and sends the rest on its next check-in. Additive (protocol 1.12): older agents
+     * ignore it.
+     */
+    private Integer eventsAccepted;
+
     public AgentCheckInResponse() {
     }
 

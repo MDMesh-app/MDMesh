@@ -19,6 +19,8 @@ import {
   IconControl,
   IconDownload,
   IconEnroll,
+  IconEnterKiosk,
+  IconExitKiosk,
   IconHistory,
   IconInfo,
   IconLock,
@@ -41,7 +43,7 @@ import {
 } from '../ui';
 import { CommandsCard } from './DeviceDetailControl';
 import { LocationMap } from '../ui/LocationMap';
-import { EVENT_LABELS } from '../data/deviceActivity';
+import { EVENT_LABELS, eventDetail } from '../data/deviceActivity';
 import {
   DASH,
   capitalise,
@@ -360,7 +362,12 @@ export function EventIcon({ type }: { type: string }) {
     case 'wipeNotStarted':
     case 'storageRecovered':
     case 'configReapplyFailed':
+    case 'eventsDropped':
       return <IconAlert size={15} />;
+    case 'kioskExit':
+      return <IconExitKiosk size={15} />;
+    case 'kioskReturn':
+      return <IconEnterKiosk size={15} />;
     default:
       return <IconInfo size={15} />;
   }
@@ -393,16 +400,19 @@ export function ActivityTab({
           <SkeletonRows compact count={4} label="Loading events" />
         ) : events.length ? (
           <ActivityList aria-label="Device events">
-            {events.map((e) => (
-              <ActivityRow
-                key={e.id}
-                icon={<EventIcon type={e.type} />}
-                tone={eventTone(e.type)}
-                who={EVENT_LABELS[e.type] ?? e.type}
-                what={e.detail ? <span className="v2-device-evdetail">{e.detail}</span> : ''}
-                when={<RelativeTime value={e.ts} />}
-              />
-            ))}
+            {events.map((e) => {
+              const detail = eventDetail(e, { commands });
+              return (
+                <ActivityRow
+                  key={e.id}
+                  icon={<EventIcon type={e.type} />}
+                  tone={eventTone(e.type)}
+                  who={EVENT_LABELS[e.type] ?? e.type}
+                  what={detail ? <span className="v2-device-evdetail">{detail}</span> : ''}
+                  when={<RelativeTime value={e.ts} />}
+                />
+              );
+            })}
           </ActivityList>
         ) : (
           <div className="v2-device-cmds__empty">
@@ -492,7 +502,11 @@ export function LocationTab({
         </EmptyState>
       ) : null}
       {fixes && fixes.length > 0 ? (
-        <LocationMap fixes={fixes} label={`Map of the device’s ${inRange ? `locations in ${inRange}` : 'recent locations'}`} />
+        <LocationMap
+          fixes={fixes}
+          fitKey={range}
+          label={`Map of the device’s ${inRange ? `locations in ${inRange}` : 'recent locations'}`}
+        />
       ) : null}
       {fixes && fixes.length > 0 ? (
         // The map's points open their details on a pointer only; the same fixes as text, for keyboards and screen

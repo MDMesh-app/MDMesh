@@ -233,8 +233,7 @@ function ensureApk(desc) {
 /** A native install's enrollment copy follows the offered agent, also when it changes back to one already cached. */
 function publishOffered(desc) {
   if (!PUBLISH_APK_TO || desc !== lastApk || publishedSha === desc.sha256) return;
-  publishApk(cachePath(desc));
-  publishedSha = desc.sha256;
+  if (publishApk(cachePath(desc))) publishedSha = desc.sha256; // a failed copy is tried again at the next offer
 }
 
 /** Re-derive `available` once a download lands: setStatus() snapshots apkReady() before the download finishes, and
@@ -248,7 +247,7 @@ function refreshApkAvailable() {
  *  directory, such as a link planted at a predictable name or a leftover from an earlier run, is written through
  *  or blocks the publish. Temp files a killed process left behind are removed first (removeStalePublishTemps). */
 function publishApk(src) {
-  if (!PUBLISH_APK_TO) return;
+  if (!PUBLISH_APK_TO) return false;
   removeStalePublishTemps();
   const tmp = `${PUBLISH_APK_TO}.${crypto.randomBytes(8).toString('hex')}.tmp`;
   try {
@@ -256,9 +255,11 @@ function publishApk(src) {
     fs.copyFileSync(src, tmp, fs.constants.COPYFILE_EXCL);
     fs.renameSync(tmp, PUBLISH_APK_TO); // atomic — a device mid-download never sees a torn file
     console.log('[apk] published', PUBLISH_APK_TO);
+    return true;
   } catch (e) {
     console.log('[apk] publish failed:', String((e && e.message) || e));
     try { fs.rmSync(tmp, { force: true }); } catch { /* ignore */ }
+    return false;
   }
 }
 
@@ -691,12 +692,12 @@ http.createServer(async (req, res) => {
       const desc = v && /^\d+$/.test(v) ? knownAgent(v) : lastApk;
       if (!desc) { res.writeHead(404).end(v ? `agent ${v} is not available` : 'no apk'); return; }
       // (The offer itself already follows the rule; when the running version is unknown, any verified agent goes.)
-      const known = (running.get(currentVersion) || {}).kind !== 'unknown' && isReleaseVersion(currentVersion);
-      if (desc !== lastApk && known && semverGt(desc.version, currentVersion)) {
-        json(res, 409, { error: `agent ${desc.version} is newer than this server (${currentVersion}): update the server to ${desc.version} first` });
-        return;
-      }
+      const ahead = () => desc !== lastApk && semverGt(desc.version, currentVersion)
+        && (running.get(currentVersion) || {}).kind !== 'unknown' && isReleaseVersion(currentVersion);
+      const refuse = () => json(res, 409, { error: `agent ${desc.version} is newer than this server (${currentVersion}): update the server to ${desc.version} first` });
+      if (ahead()) { refuse(); return; }
       if (!(await ensureApk(desc))) { json(res, 502, { error: 'apk unavailable or checksum mismatch' }); return; }
+      if (ahead()) { refuse(); return; }   // the server was rolled back while the agent downloaded
       res.writeHead(200, { 'content-type': 'application/vnd.android.package-archive', 'content-length': fs.statSync(cachePath(desc)).size });
       fs.createReadStream(cachePath(desc)).on('error', () => res.destroy()).pipe(res);
       return;

@@ -694,8 +694,8 @@ async function fakeGitHub(dir, opts) {
   // that long), fail (a Set of <tag>/<name> assets whose downloads answer 500).
   // hide: a Set of tags that aren't published yet (not listed, 404 by tag).
   // otherKey: a Set of tags whose manifest is served with the other key's signature (opts.older.otherKey: from the start).
-  // listDelayMs: the release list answers only after that long.
-  const control = { down: false, tagStatus: null, tagDelayMs: 0, listDelayMs: 0, fail: new Set(), hide: new Set(),
+  // listDelayMs: the release list answers only after that long; apkDelayMs: so do agent APK downloads.
+  const control = { down: false, tagStatus: null, tagDelayMs: 0, listDelayMs: 0, apkDelayMs: 0, fail: new Set(), hide: new Set(),
     otherKey: new Set(opts.older && opts.older.otherKey ? ['v' + opts.older.version] : []) };
   const relJson = (r) => ({ tag_name: r.tag, html_url: 'https://github.com/o/r/releases/tag/' + r.tag,
     assets: Object.keys(r.bytes).map((name) => ({ name,
@@ -740,6 +740,7 @@ async function fakeGitHub(dir, opts) {
       hits.web++;
       const id = decodeURIComponent(u.slice('/web/o/r/releases/download/'.length));
       const name = id.split('/').pop();
+      if (control.apkDelayMs && id.endsWith('.apk')) await new Promise((res2) => setTimeout(res2, control.apkDelayMs));
       if (control.fail.has(id)) { res.statusCode = 500; res.end(); return; }
       if (opts.privateRepo || !byId(id) || missing.has(name)) { res.statusCode = 404; res.end(); return; }
       hits.got.push(id);
@@ -748,6 +749,7 @@ async function fakeGitHub(dir, opts) {
       hits.cdn.push({ auth: req.headers.authorization || null });
       if (req.headers.authorization) { res.statusCode = 400; res.end('auth header forwarded'); return; }
       const id = decodeURIComponent(u.slice('/cdn/signed/'.length).replace(/\?.*$/, ''));
+      if (control.apkDelayMs && id.endsWith('.apk')) await new Promise((res2) => setTimeout(res2, control.apkDelayMs));
       if (control.fail.has(id)) { res.statusCode = 500; res.end(); return; }
       if (byId(id) && !missing.has(id.split('/').pop())) { hits.got.push(id); res.end(byId(id)); } else { res.statusCode = 404; res.end(); }
     } else { res.statusCode = 404; res.end(); }
@@ -2254,6 +2256,47 @@ t.test('?v= serves a kept agent newer than a running release that GitHub doesn\'
         const r2 = await fetch(`http://127.0.0.1:${sup.port}/update/agent.apk?v=1`);
         a.equal(r2.status, 200);
         a.deepEqual(Buffer.from(await r2.arrayBuffer()), RUNNING_AGENT);
+      } finally { await stopChild(sup.child); }
+    });
+  });
+
+t.test('an agent whose download outlasts a rollback that makes it newer than the server is refused (409), not served',
+  { skip: !HAS_MINISIGN && 'minisign not installed', timeout: 40000 }, async () => {
+    const fs = require('fs'), path = require('path');
+    await withDeploy(envOf('mdmesh-app', '0.0.2'), GH(), async (d, gh, authz) => {
+      fs.writeFileSync(path.join(d.backups, 'latest'), '20260927-120000\n');
+      fs.writeFileSync(path.join(d.backups, '20260927-120000.env'), 'SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n');
+      fs.writeFileSync(path.join(d.backups, '20260927-120000.sql'), 'SELECT 1;\n-- PostgreSQL database dump complete\n');
+      fs.writeFileSync(path.join(d.dir, 'recovery.token'), 'tok123');
+      gh.control.apkDelayMs = 4000;   // 0.0.2's agent takes a while to mirror
+      const sup = await supervisorOn(d, gh, authz);
+      const status = async () => (await fetch(`http://127.0.0.1:${sup.port}/update/status`)).json();
+      try {
+        a.equal((await statusOf(sup)).apk.version, '0.0.2');
+        const download = fetch(`http://127.0.0.1:${sup.port}/update/agent.apk`);   // waits for the mirror
+        const rb = await fetch(`http://127.0.0.1:${sup.port}/update/rollback`, { method: 'POST',
+          headers: { 'X-MDMesh-Console': '1', 'X-Recovery-Token': 'tok123' } });
+        a.equal(rb.status, 202, await rb.text());
+        await waitFor(async () => { const x = await status(); return x.apply && x.apply.phase === 'rolled_back'; }, 'the rollback', 20000);
+        const r = await download;
+        a.equal(r.status, 409, 'the 0.0.2 agent is not sent to a 0.0.1 server');
+        a.match((await r.json()).error, /agent 0\.0\.2 is newer than this server \(0\.0\.1\)/);
+      } finally { await stopChild(sup.child); }
+    });
+  });
+
+t.test('native: a publish that failed (no files directory yet) is tried again at the next offer',
+  { skip: !HAS_MINISIGN && 'minisign not installed', timeout: 20000 }, async () => {
+    const fs = require('fs'), path = require('path');
+    await withDeploy('', GH(), async (d, gh, authz) => {
+      const files = path.join(d.dir, 'files'), pub = path.join(files, 'agent.apk');
+      fs.writeFileSync(files, 'a file where the directory should be');   // the copy can't be made
+      const sup = await supervisorOn(d, gh, authz, { ...FAST, APPLY_SUPPORTED: '0', CURRENT_VERSION: '0.0.1', PUBLISH_APK_TO: pub });
+      try {
+        await waitFor(async () => /\[apk\] publish failed/.test(sup.log()), 'the failed publish');
+        fs.rmSync(files); fs.mkdirSync(files);
+        await waitFor(async () => fs.existsSync(pub), 'published at a later offer');
+        a.deepEqual(fs.readFileSync(pub), RUNNING_AGENT);
       } finally { await stopChild(sup.child); }
     });
   });

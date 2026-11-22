@@ -52,6 +52,7 @@ Fixes
   retry, and every check-in.
 
 Under the hood
+- CI builds the agent's instrumented tests (they still run only by hand, on an emulator).
 - Agent protocol 1.12 (additive): the check-in response's `eventsAccepted`, the check-in request's `protocolVersion`
   (now always sent), and the `eventsDropped` event
   ([VERSIONING](https://github.com/MDMesh-app/MDMesh/blob/main/proto/VERSIONING.md)).

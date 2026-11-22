@@ -264,6 +264,9 @@ reloads the files checked then, not a new one.
 docker compose exec -e MDMESH_RAW_SITE_D=1 caddy caddy validate --config /etc/caddy/Caddyfile && docker compose restart caddy
 ```
 
+`MDMESH_RAW_SITE_D=1` checks `site.d` as it is now, through the same per-file check as a start: it validates exactly
+the files a restart would load, and says which it would leave out.
+
 A rule that doesn't parse stops the edge, and with it the console and `/recovery`, until it is fixed. An update whose
 edge doesn't start with your rules (a rule the new Caddy refuses) is rolled back by itself, like one whose server
 fails its health check; `docker compose logs caddy` says which rule. `.env`'s

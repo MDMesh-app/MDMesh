@@ -24,6 +24,9 @@ Heads-up
   move the install back to its earlier hosting mode, or set `TRUSTED_PROXIES=`, first.
 - Your own edge rules load only from files nobody but their owner can change (`site.d`'s owner's or root's,
   `chmod 644`, not a link); the edge leaves any other out at start, saying why in its log.
+  The documented check before a restart (`MDMESH_RAW_SITE_D=1 … caddy validate`) validates exactly what the restart
+  would load, and `caddy validate` and `adapt` run as the edge's own user, so they never leave root-owned files in its
+  data volume.
 
 New
 - Install behind the nginx, Apache, Caddy or Traefik you already run: the quick start's third choice (or `--proxy`),

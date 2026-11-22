@@ -92,6 +92,39 @@ for tp in "host 192.0.2.10" "host,192.0.2.10"; do
   fi
 done
 
+# Your own rules are loaded only from files their owner alone can change (docker/edge-peers.sh, at the edge's start): a
+# link, a group- or world-writable file, or one of another owner is left out, saying why; the rest is imported, and the
+# edge starts either way. An open site.d loads none. Made inside the container (as root, so ownership can be set).
+# shellcheck disable=SC2016  # expanded by the container's shell
+SITE_FILES_PROBE='set -u; F=0
+t() { l=$1; shift; if "$@"; then echo "  ok   site.d files: $l"; else echo "  FAIL site.d files: $l"; F=$((F + 1)); fi; }
+mk() { printf "header X-%s \"1\"\n" "$1" > "/sd/$1.caddy"; chown "$2" "/sd/$1.caddy"; chmod "$3" "/sd/$1.caddy"; }
+mkdir -p /sd && chmod 755 /sd && chown 1000:1000 /sd
+mk good 1000 644; mk root 0 644; mk open 1000 666; mk group 1000 664; mk stranger 12345 644
+ln -s /sd/good.caddy /sd/link.caddy
+loaded() { [ "$(ls "$EDGE_SITE_D" | tr "\n" " ")" = "$1" ]; }
+logged() { grep -qF "$1" /tmp/log; }
+adapted() { caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile > /tmp/adapted 2>&1 && grep -qi x-good /tmp/adapted && ! grep -qi x-open /tmp/adapted; }
+valid() { caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile > /tmp/valid 2>&1; }
+EDGE_SITE_SRC=/sd; export EDGE_SITE_SRC
+. /edge-peers.sh 2> /tmp/log
+t "only the files their owner alone can change are loaded (good, root)" loaded "good.caddy root.caddy "
+for n in open group stranger; do t "$n.caddy left out, saying why" logged "site.d/$n.caddy is not loaded: other users may change it"; done
+t "link.caddy left out, saying why" logged "site.d/link.caddy is not loaded: it is a link"
+t "the edge imports the loaded ones only" adapted
+t "the edge configuration is valid" valid
+chmod 777 /sd
+. /edge-peers.sh 2> /tmp/log
+t "an open site.d loads none" loaded ""
+t "an open site.d: saying so" logged "none of your own rules are loaded"
+t "an open site.d: the edge configuration is still valid" valid
+exit "$F"'
+out="$(docker run --rm --network none -e SITE_ADDRESS=:80 -e ACME_EMAIL= -e COMPOSE_PROFILES= \
+    -v "$CADDYFILE:/etc/caddy/Caddyfile:ro" -v "$EDGE_PEERS:/edge-peers.sh:ro" "$CADDY_IMAGE" sh -c "$SITE_FILES_PROBE" 2>&1)" && rc=0 || rc=$?
+printf '%s\n' "$out" | grep -E '^  (ok|FAIL) '
+n="$(grep -c '^  FAIL' <<<"$out" || true)"; FAILED=$((FAILED + n))
+if [ "$rc" -ne 0 ] && [ "$n" -eq 0 ]; then fail "site.d files: probe exited $rc"; printf '%s\n' "$out" | tail -5; fi
+
 # Your own rules: each site.d/*.caddy is imported into the site (its header is in the adapted config), and a broken one
 # is an error, not ignored. The directory is mounted read-only, as the compose files mount it.
 SITE_D="$(mktemp -d)"

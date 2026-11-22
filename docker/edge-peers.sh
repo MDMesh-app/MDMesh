@@ -182,3 +182,45 @@ else
   HTTP_CLIENT_IP_HEADER=X-Forwarded-For
 fi
 export HTTP_TRUSTED_PEERS HTTP_CLIENT_IP_HEADER
+
+# Your own rules (DEPLOY.md, "Your own edge rules"): the install directory's site.d, mounted read-only at EDGE_SITE_SRC
+# (/etc/caddy/site.d). Each *.caddy file goes into the edge's site, so only a file that its owner alone can change is
+# loaded: a regular file (not a link), writable by nobody but its owner, owned by root or by site.d's own owner, in a
+# site.d that is not a link and nobody else may write. Anything else is left out, saying why; the edge starts without
+# it. The files that pass are copied into EDGE_SITE_D (root's, under /run), which docker/Caddyfile imports, so what was
+# checked is what is loaded. Run at every start (docker compose restart caddy after a change). Nothing here can stop
+# the edge: at worst none of your rules are loaded, and MDMesh's own routes are unaffected.
+edge_site_log() { echo "MDMesh edge: $* (DEPLOY.md, Your own edge rules)." >&2; }
+# edge_site_open UID MODE OWNERS: the octal MODE gives group or others write, or UID is not one of OWNERS.
+edge_site_open() {
+  [ $(( 0$2 & 022 )) -ne 0 ] && return 0
+  case " $3 " in *" $1 "*) return 1 ;; esac
+  return 0
+}
+edge_site_d() {
+  _src=${EDGE_SITE_SRC:-/etc/caddy/site.d}
+  EDGE_SITE_D=/run/mdmesh-site.d
+  rm -rf "$EDGE_SITE_D" 2>/dev/null || true
+  mkdir -m 755 "$EDGE_SITE_D" 2>/dev/null || { edge_site_log "could not prepare $EDGE_SITE_D: your own rules are not loaded"; return 0; }
+  [ -d "$_src" ] || return 0
+  _st=$(stat -c '%u %a' "$_src" 2>/dev/null) || { edge_site_log "could not read site.d: your own rules are not loaded"; return 0; }
+  if [ -L "$_src" ] || edge_site_open "${_st%% *}" "${_st#* }" "0 ${_st%% *}"; then
+    edge_site_log "site.d may be changed by other users: none of your own rules are loaded"; return 0
+  fi
+  _owners="0 ${_st%% *}"
+  for _f in "$_src"/*.caddy; do
+    [ -e "$_f" ] || [ -L "$_f" ] || continue
+    _n=${_f##*/}
+    if [ -L "$_f" ] || [ ! -f "$_f" ]; then edge_site_log "site.d/$_n is not loaded: it is a link or not a regular file"; continue; fi
+    _st=$(stat -c '%u %a' "$_f" 2>/dev/null) || { edge_site_log "site.d/$_n is not loaded: it can't be read"; continue; }
+    if edge_site_open "${_st%% *}" "${_st#* }" "$_owners"; then
+      edge_site_log "site.d/$_n is not loaded: other users may change it (it must be site.d's owner's or root's, chmod 644)"; continue
+    fi
+    if cat "$_f" > "$EDGE_SITE_D/$_n" 2>/dev/null && chmod 644 "$EDGE_SITE_D/$_n"; then :; else
+      rm -f "$EDGE_SITE_D/$_n" 2>/dev/null || true
+      edge_site_log "site.d/$_n is not loaded: it can't be read"
+    fi
+  done
+}
+edge_site_d
+export EDGE_SITE_D

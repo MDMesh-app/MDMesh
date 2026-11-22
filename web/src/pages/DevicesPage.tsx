@@ -1114,11 +1114,15 @@ export function DevicesPage() {
           ids={shown.ids}
           label={shown.label}
           onClose={() => setDialog(null)}
-          onDone={async () => {
+          onDone={async (remaining = []) => {
+            // The devices deleted leave the selection; any not deleted stay selected, to delete again.
+            const keep = new Set(remaining);
             setSelected((prev) => {
-              if (shown.fromSelection) return new Set();
-              const next = new Set(prev);
-              for (const id of shown.ids) next.delete(id);
+              const next = shown.fromSelection ? new Set<number>() : new Set(prev);
+              for (const id of shown.ids) {
+                if (keep.has(id)) next.add(id);
+                else next.delete(id);
+              }
               return next;
             });
             await refreshList();

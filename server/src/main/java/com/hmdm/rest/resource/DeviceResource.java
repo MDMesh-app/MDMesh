@@ -25,7 +25,7 @@ import javax.inject.Inject;
 import javax.inject.Singleton;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -62,6 +62,12 @@ import org.slf4j.LoggerFactory;
 public class DeviceResource {
 
     private static final Logger log = LoggerFactory.getLogger(DeviceResource.class);
+
+    /** A bulk configuration change names no configuration. */
+    static final String BULK_CONFIGURATION_REQUIRED = "error.device.configuration.required";
+
+    /** Bulk delete deleted some devices, not all: data {deleted, notDeleted}, device ids. */
+    static final String BULK_DELETE_PARTIAL = "error.device.delete.partial";
 
     private DeviceDAO deviceDAO;
     private ConfigurationDAO configurationDAO;
@@ -253,23 +259,17 @@ public class DeviceResource {
                     }
                 } else if (device.getIds() != null) {
                     // This is a bulk request to update configurations for selected devices: all or nothing
-                    if (!this.deviceDAO.areAccessibleToUser(device.getIds())
-                            || !this.deviceDAO.isConfigurationUsableByUser(device.getConfigurationId())) {
-                        log.error("Bulk configuration change refused: devices or configuration not accessible to user {}",
-                                SecurityContext.get().getCurrentUserName());
-                        return Response.PERMISSION_DENIED();
+                    if (device.getConfigurationId() == null) {
+                        return Response.ERROR(BULK_CONFIGURATION_REQUIRED);
                     }
-                    Iterator it = device.getIds().iterator();
-
-                    while (it.hasNext()) {
-                        Integer id = (Integer) it.next();
-                        dbDevice = this.deviceDAO.getDeviceById(id);
-                        if (dbDevice != null) {
-                            this.deviceDAO.updateDeviceConfiguration(id, device.getConfigurationId());
-                            this.pushService.notifyDeviceOnSettingUpdate(dbDevice.getId());
-                            if (!Objects.equals(dbDevice.getConfigurationId(), device.getConfigurationId())) {
-                                this.wakeHub.wake(dbDevice.getNumber(), "commands");
-                            }
+                    // One transaction: every device moves, or none. The devices and the configuration are checked
+                    // there, under the rows' locks: a refusal answers PERMISSION_DENIED below, nothing changed.
+                    List<Device> changed = this.deviceDAO.updateDevicesConfiguration(device.getIds(),
+                            device.getConfigurationId());
+                    for (Device before : changed) {
+                        this.pushService.notifyDeviceOnSettingUpdate(before.getId());
+                        if (!Objects.equals(before.getConfigurationId(), device.getConfigurationId())) {
+                            this.wakeHub.wake(before.getNumber(), "commands");
                         }
                     }
                 } else {
@@ -291,8 +291,12 @@ public class DeviceResource {
             }
         } catch (SecurityException e) {
             // A device, configuration or group this user may not use: nothing was saved
-            log.error("Device change refused: {}", e.getMessage());
+            log.warn("Device save refused for user {}: {}; nothing changed",
+                    SecurityContext.get().getCurrentUserName(), e.getMessage());
             return Response.PERMISSION_DENIED();
+        } catch (DeviceDAO.AgentDeviceRenameException e) {
+            log.warn("Device {} not renamed: {}", device.getId(), e.getMessage());
+            return Response.ERROR(DeviceDAO.AgentDeviceRenameException.ERROR_KEY);
         } catch (Exception e) {
             log.error("Unexpected error when saving/creating device", e);
             return Response.ERROR();
@@ -316,14 +320,21 @@ public class DeviceResource {
             return Response.PERMISSION_DENIED();
         }
 
-        this.deviceDAO.removeDeviceById(id);
+        try {
+            this.deviceDAO.removeDeviceById(id);
+        } catch (SecurityException e) {
+            log.warn("Device {} not deleted: not accessible to user {}", id, SecurityContext.get().getCurrentUserName());
+            return Response.PERMISSION_DENIED();
+        }
         return Response.OK();
     }
 
     // =================================================================================================================
     @ApiOperation(
             value = "Delete bulk devices",
-            notes = "Delete multiple devices at once"
+            notes = "Delete multiple devices at once. Refused (PERMISSION_DENIED, nothing deleted) when the user can't "
+                    + "reach one of them. Devices already gone count as deleted. When some can't be deleted, answers "
+                    + "error.device.delete.partial with data {deleted, notDeleted}."
     )
     @POST
     @Path("/deleteBulk")
@@ -339,17 +350,22 @@ public class DeviceResource {
         }
 
         if (device.getIds() != null) {
-            // Device IDs are transferred in the "ids" parameter; all of them are deleted or none
-            if (!this.deviceDAO.areAccessibleToUser(device.getIds())) {
-                log.error("Bulk delete refused: not all devices are accessible to user {}",
+            // Device IDs are transferred in the "ids" parameter. The user must reach all of them, checked under the
+            // rows' locks (else none is deleted); then each is deleted on its own, and any not deleted is reported
+            // (DeviceDAO.removeDevicesByIds).
+            DeviceDAO.BulkDeleteResult result;
+            try {
+                result = this.deviceDAO.removeDevicesByIds(device.getIds());
+            } catch (SecurityException e) {
+                log.warn("Bulk delete refused: not all devices are accessible to user {}; nothing deleted",
                         SecurityContext.get().getCurrentUserName());
                 return Response.PERMISSION_DENIED();
             }
-            Iterator it = device.getIds().iterator();
-
-            while (it.hasNext()) {
-                Integer id = (Integer) it.next();
-                this.deviceDAO.removeDeviceById(id);
+            if (!result.notDeleted.isEmpty()) {
+                Map<String, Object> data = new LinkedHashMap<>();
+                data.put("deleted", result.deleted);
+                data.put("notDeleted", result.notDeleted);
+                return Response.ERROR(BULK_DELETE_PARTIAL, data);
             }
         }
         return Response.OK();
@@ -373,34 +389,18 @@ public class DeviceResource {
         }
 
         if (request.getIds() != null) {
-            // Device IDs are transferred in the "ids" parameter; all of them are regrouped or none
-            if (!this.deviceDAO.areAccessibleToUser(request.getIds())) {
-                log.error("Bulk regroup refused: not all devices are accessible to user {}",
+            // Device IDs are transferred in the "ids" parameter. One transaction: every device is regrouped, or none
+            // (DeviceDAO checks the devices and the groups under the rows' locks). No need to notify devices: a group
+            // doesn't affect a device.
+            try {
+                deviceDAO.updateDevicesGroups(request.getIds(), request.getGroups(), "set".equals(request.getAction()));
+            } catch (SecurityException e) {
+                log.warn("Bulk regroup refused: a device or group is not accessible to user {}; nothing changed",
                         SecurityContext.get().getCurrentUserName());
                 return Response.PERMISSION_DENIED();
-            }
-            if ("set".equals(request.getAction()) && request.getGroups() != null && !this.deviceDAO.areGroupsUsableByUser(
-                    request.getGroups().stream().map(LookupItem::getId).collect(Collectors.toList()))) {
-                log.error("Bulk regroup refused: not all groups are usable by user {}",
-                        SecurityContext.get().getCurrentUserName());
-                return Response.PERMISSION_DENIED();
-            }
-            Iterator it = request.getIds().iterator();
-
-            while (it.hasNext()) {
-                Integer id = (Integer) it.next();
-                Device device = deviceDAO.getDeviceById(id);
-                if (device == null) {
-                    // Not found
-                    continue;
-                }
-                List<LookupItem> groups = device.getGroups();
-                groups.removeAll(request.getGroups());
-                if (request.getAction().equals("set")) {
-                    groups.addAll(request.getGroups());
-                }
-                deviceDAO.updateDevice(device);
-                // No need to notify devices because changing a group doesn't affect a device
+            } catch (RuntimeException e) {
+                log.error("Bulk regroup failed; nothing changed", e);
+                return Response.ERROR();
             }
         }
         return Response.OK();

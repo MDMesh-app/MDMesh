@@ -112,6 +112,9 @@ services:
       GITHUB_REPO: ${GITHUB_REPO:-}
       UPDATE_CHANNEL: ${UPDATE_CHANNEL:-stable}
       POLL_INTERVAL_HOURS: ${POLL_INTERVAL_HOURS:-6}
+      # Seconds (at least 30) a new server gets to answer before an update is rolled back. apply.sh reads it from .env
+      # too, so a value set there counts without recreating the supervisor (docs/OPERATIONS.md).
+      HEALTH_TIMEOUT: ${HEALTH_TIMEOUT:-180}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       CURRENT_VERSION: ${CURRENT_VERSION:-0.0.0}
       AUTO_UPDATE: ${AUTO_UPDATE:-0}

@@ -841,7 +841,8 @@ exit 0
   return bin;
 }
 /** A deploy dir (project/.env) + backups dir + stubs under a fresh temp dir. HEALTH_TIMEOUT is 5, not 1: healthy()
- *  counts whole seconds, so with 1 a loaded machine can cross the deadline before the first (stubbed, instant) probe. */
+ *  counts whole seconds, so with 1 a loaded machine can cross the deadline before the first (stubbed, instant) probe.
+ *  HEALTH_TIMEOUT_MIN=0 lifts the scripts' 30 s floor, so a failing health check (HEALTH_TIMEOUT 0) ends at once. */
 function makeDeploy(envText) {
   const fs = require('fs'), os = require('os'), path = require('path');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sup-sh-'));
@@ -852,7 +853,7 @@ function makeDeploy(envText) {
   const log = path.join(dir, 'docker.log');
   fs.writeFileSync(log, '');
   const env = { ...process.env, PATH: bin + path.delimiter + process.env.PATH, STUB_LOG: log, COMPOSE_PROJECT_DIR: project,
-    BACKUP_DIR: backups, HEALTH_TIMEOUT: '5', HEALTH_URL: 'http://stub/health', EDGE_SETTLE: '0' };
+    BACKUP_DIR: backups, HEALTH_TIMEOUT: '5', HEALTH_TIMEOUT_MIN: '0', HEALTH_URL: 'http://stub/health', EDGE_SETTLE: '0' };
   return { dir, project, backups, log, env,
     envFile: () => fs.readFileSync(path.join(project, '.env'), 'utf8'),
     calls: () => fs.readFileSync(log, 'utf8').split('\n').filter(Boolean) };
@@ -1157,6 +1158,71 @@ t.test('rollback.sh: restore ok but the old server does not start or stay health
     a.match(r.out, /PHASE failed/);
     a.match(r.err, /^ERR still unhealthy/m);
   } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+});
+
+t.test('HEALTH_TIMEOUT: .env wins over the supervisor environment, and an unusable value is ignored', () => {
+  const fs = require('fs'), path = require('path');
+  const timeoutWith = (envLine, envVar) => {
+    const d = rollbackDeploy();
+    try {
+      if (envLine !== null) fs.appendFileSync(path.join(d.project, '.env'), envLine + '\n');
+      const env = { ...d.env, STUB_CURL_FAIL: '1' };
+      if (envVar === null) delete env.HEALTH_TIMEOUT; else env.HEALTH_TIMEOUT = envVar;
+      const r = runScript('rollback.sh', [], env);
+      const m = /still unhealthy after rollback \((\d+)s\)/.exec(r.err);
+      a.ok(m, r.all);
+      return { seconds: Number(m[1]), err: r.err };
+    } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+  };
+  // Set in .env (an existing install adds a line): used even when the container's environment says otherwise.
+  a.equal(timeoutWith('HEALTH_TIMEOUT=0', '600').seconds, 0);
+  a.equal(timeoutWith('HEALTH_TIMEOUT="0"\r', '600').seconds, 0, 'quotes and a CR are tolerated');
+  // Not in .env: the environment (compose passes it through).
+  a.equal(timeoutWith(null, '0').seconds, 0);
+  // Not a whole number: said, and the next source is used.
+  const bad = timeoutWith('HEALTH_TIMEOUT=ten', '0');
+  a.equal(bad.seconds, 0);
+  a.match(bad.err, /HEALTH_TIMEOUT=ten is not a whole number of seconds, at least 0; ignored/);
+});
+
+/** What the scripts' health_timeout() answers for this .env text and environment (the real 30 s floor unless set). */
+function resolveHealthTimeout(script, envText, extraEnv) {
+  const fs = require('fs'), os = require('os'), path = require('path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sup-ht-'));
+  try {
+    const envFile = path.join(dir, '.env');
+    fs.writeFileSync(envFile, envText);
+    const src = fs.readFileSync(path.join(__dirname, script), 'utf8');
+    const fn = /health_timeout\(\) \{[\s\S]*?\n\}\n/.exec(src)[0];
+    const env = { PATH: process.env.PATH, ...extraEnv };
+    const r = cp.spawnSync('bash', ['-c', `ENV_FILE=${JSON.stringify(envFile)}\n${fn}health_timeout`], { env, encoding: 'utf8' });
+    return { value: r.stdout.trim(), err: r.stderr };
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+}
+
+t.test('HEALTH_TIMEOUT: 180 by default; below 30 (0 included, not "no limit") is refused like any bad value', () => {
+  for (const script of ['apply.sh', 'rollback.sh']) {
+    a.equal(resolveHealthTimeout(script, '', {}).value, '180', script);
+    a.equal(resolveHealthTimeout(script, 'HEALTH_TIMEOUT=900\n', { HEALTH_TIMEOUT: '180' }).value, '900', script);
+    a.equal(resolveHealthTimeout(script, 'HEALTH_TIMEOUT=30\n', {}).value, '30', script);
+    // Read as docker compose reads .env: an inline comment after whitespace is not part of the value, quoted or not
+    a.equal(resolveHealthTimeout(script, 'HEALTH_TIMEOUT=900 # slow database update\n', {}).value, '900', script);
+    a.equal(resolveHealthTimeout(script, 'HEALTH_TIMEOUT=900\t#slow\r\n', {}).value, '900', script);
+    a.equal(resolveHealthTimeout(script, 'HEALTH_TIMEOUT="900" # slow\n', {}).value, '900', script);
+    a.equal(resolveHealthTimeout(script, "HEALTH_TIMEOUT='600' # slow\n", {}).value, '600', script);
+    a.equal(resolveHealthTimeout(script, 'HEALTH_TIMEOUT=900#slow\n', { HEALTH_TIMEOUT: '240' }).value, '240',
+      `${script}: no whitespace before # (compose keeps it in the value): not a number`);
+    a.equal(resolveHealthTimeout(script, '# HEALTH_TIMEOUT=900\n', {}).value, '180', `${script}: a commented-out line`);
+    for (const low of ['0', '29']) {
+      const r = resolveHealthTimeout(script, `HEALTH_TIMEOUT=${low}\n`, { HEALTH_TIMEOUT: '240' });
+      a.equal(r.value, '240', `${script}: ${low} falls through to the environment`);
+      a.match(r.err, new RegExp(`HEALTH_TIMEOUT=${low} is not a whole number of seconds, at least 30; ignored`));
+      a.equal(resolveHealthTimeout(script, `HEALTH_TIMEOUT=${low}\n`, {}).value, '180', `${script}: then the default`);
+    }
+  }
+  const fs = require('fs'), path = require('path');
+  const fn = (f) => /health_timeout\(\) \{[\s\S]*?\n\}\n/.exec(fs.readFileSync(path.join(__dirname, f), 'utf8'))[0];
+  a.equal(fn('apply.sh'), fn('rollback.sh'), 'apply.sh and rollback.sh agree');
 });
 
 t.test('apply.sh: a failed health check rolls back with the same safe restore; a failed restore fails the apply loudly', () => {

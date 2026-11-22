@@ -12,6 +12,24 @@ class ProtocolJsonTest {
     private val json = ProtocolJson.json
 
     @Test
+    fun `eventsAccepted is null from servers before protocol 1_12`() {
+        fun decode(raw: String) = ProtocolJson.json.decodeFromString(AgentCheckInResponse.serializer(), raw)
+        assertNull(decode("""{"protocolVersion":"1.11","commands":[],"resultsAccepted":0}""").eventsAccepted)
+        assertEquals(7, decode("""{"protocolVersion":"1.12","commands":[],"eventsAccepted":7}""").eventsAccepted)
+    }
+
+    @Test
+    fun `a check-in says which protocol the agent speaks`() {
+        // The server keeps a check-in retryable for an agent that can't take a partial eventsAccepted (before 1.12):
+        // it knows this one can only from the version it sends, though encodeDefaults is off.
+        val encoded = json.encodeToString(
+            AgentCheckInRequest.serializer(),
+            AgentCheckInRequest(deviceId = "d", capabilities = Capabilities()),
+        )
+        assertTrue(encoded, "\"protocolVersion\":\"${ProtocolJson.PROTOCOL_VERSION}\"" in encoded)
+    }
+
+    @Test
     fun `ignores unknown keys for forward compatibility`() {
         val payload = """
             {

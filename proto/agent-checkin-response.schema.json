@@ -21,6 +21,11 @@
       "type": "integer",
       "minimum": 0,
       "description": "How many of the request's results, counted from the first, the server took. The agent keeps the rest and resends them on its next check-in. Absent from older servers: treat as all."
+    },
+    "eventsAccepted": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Protocol 1.12. How many of the request's events, counted from the first, the server consumed (stored, or skipped as invalid). The agent drops those and resends the rest on its next check-in. Absent from older servers: treat as 100 (they store the first 100 and drop the rest)."
     }
   }
 }

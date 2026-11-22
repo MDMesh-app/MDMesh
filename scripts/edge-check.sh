@@ -181,7 +181,7 @@ cleanup_img() {
   [ -n "${IMG_D:-}" ] && [ -d "$IMG_D" ] || return 0
   docker rm -f "$IMG_CT" >> "$IMG_D/docker.log" 2>&1 || true
   docker rmi "$IMG_TAG" >> "$IMG_D/docker.log" 2>&1 || true
-  rm -f "$IMG_D/site.d/good.caddy" "$IMG_D/site.d/open.caddy" "$IMG_D/site700/rule.caddy" "$IMG_D/Dockerfile" \
+  rm -f "$IMG_D/site.d/good.caddy" "$IMG_D/site.d/open.caddy" "$IMG_D/site700/rule.caddy" "$IMG_D/site700/open.caddy" "$IMG_D/Dockerfile" \
     "$IMG_D/build.log" "$IMG_D/docker.log" "$IMG_D/validate.log" "$IMG_D/raw.log" "$IMG_D/reload.log"
   rmdir "$IMG_D/site.d" "$IMG_D/site700" "$IMG_D" 2>&1 | sed 's/^/         /' || true
   IMG_D=''
@@ -361,9 +361,14 @@ else
   # The live config lacks $1: fetched once, and only a real config counts (an unreachable admin API fails).
   cfg_lacks() { local c; c=$(cfg) || return 1; grep -q '"apps"' <<< "$c" && ! grep -qi -- "$1" <<< "$c"; }
   # The documented raw check on site700, its output kept for a failure.
-  raw_check() { docker exec -e MDMESH_RAW_SITE_D=1 -e EDGE_SITE_SRC=/etc/caddy/site700 "$IMG_CT" \
-    caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile > "$IMG_D/raw.log" 2>&1; }
-  raw_fails_on() { ! raw_check && grep -q "$1" "$IMG_D/raw.log" && return 0; tail -5 "$IMG_D/raw.log" | sed 's/^/         /'; return 1; }
+  # raw_check [CMD [EXEC-OPTION...]]: the documented raw check (validate, or adapt) on site700, its output kept.
+  raw_check() { local c=${1:-validate}; shift || true
+    docker exec "$@" -e MDMESH_RAW_SITE_D=1 -e EDGE_SITE_SRC=/etc/caddy/site700 "$IMG_CT" \
+      caddy "$c" --config /etc/caddy/Caddyfile --adapter caddyfile > "$IMG_D/raw.log" 2>&1; }
+  raw_shows() { raw_check adapt && grep -qi -- "$1" "$IMG_D/raw.log" && return 0; tail -5 "$IMG_D/raw.log" | sed 's/^/         /'; return 1; }
+  # raw_fails_on TEXT [EXEC-OPTION...]: the raw check fails, saying TEXT.
+  raw_fails_on() { local t=$1; shift; ! raw_check validate "$@" && grep -qF -- "$t" "$IMG_D/raw.log" && return 0
+    tail -5 "$IMG_D/raw.log" | sed 's/^/         /'; return 1; }
   reload_quiet() { ex caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile > "$IMG_D/reload.log" 2>&1 \
     || { sed 's/^/         /' "$IMG_D/reload.log"; return 1; }; }
   # caddy can't write its configuration: the write fails for want of permission, not for any other reason.
@@ -382,8 +387,14 @@ else
   chk "a validate through docker exec (as root) runs as caddy: what it provisions is caddy's" sh -c \
     "docker exec -e XDG_DATA_HOME=/tmp/vd '$IMG_CT' caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile > '$IMG_D/validate.log' 2>&1; rm -f '$IMG_D/validate.log'; [ \"\$(docker exec '$IMG_CT' stat -c %U /tmp/vd/caddy/pki/authorities/local/root.key 2>&1)\" = caddy ]"
   chk "the raw check passes a valid 600 rule in a 700 site.d" raw_check
+  chk "  and that rule is in what it checks" raw_shows x-seven
+  # A file the restart would leave out (others may change it): the raw check fails, saying so.
+  printf 'header X-Open7 "1"\n' > "$IMG_D/site700/open.caddy"; chmod 664 "$IMG_D/site700/open.caddy"
+  chk "the raw check fails when a restart would leave a 664 file out, naming it" raw_fails_on "site.d/open.caddy is not loaded"
+  rm -f "$IMG_D/site700/open.caddy"
   printf 'no_such_directive here\n' > "$IMG_D/site700/rule.caddy"
   chk "the raw check fails a broken 600 rule in a 700 site.d, saying why" raw_fails_on no_such_directive
+  chk "a raw check as caddy (which can't list a 700 site.d) fails, saying so, never Valid" raw_fails_on "could not read site.d" -u caddy
   chk "a reload through docker exec succeeds" reload_quiet
   chk "  and keeps the proxy as trusted peer" cfg_has 192.0.2.10/32
   chk "  and the HTTPS origin" cfg_has '"internal"'

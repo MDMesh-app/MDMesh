@@ -42,27 +42,37 @@ edge_site_open() {
   return 0
 }
 # edge_site_d SRC DST: DST, made afresh (root's, mode 755), holds a copy of each SRC/*.caddy that passes the check,
-# mode 644; the others are left out, saying why. Fails (DST unusable) only when DST can't be made.
+# mode 644; the others are left out, saying why, and counted in EDGE_SITE_SKIPPED (1 or more when SRC itself can't be
+# used: the start ignores it, the wrapper's raw check fails on it). Fails (DST unusable) only when DST can't be made.
 edge_site_d() {
+  EDGE_SITE_SKIPPED=0
   rm -rf "$2" || true
   mkdir -m 755 "$2" || { edge_site_log "could not prepare the checked copy of site.d: your own rules are not loaded"; return 1; }
   [ -d "$1" ] || return 0
-  _st=$(stat -c '%u %a' "$1") || { edge_site_log "could not read site.d: your own rules are not loaded"; return 0; }
+  _st=$(stat -c '%u %a' "$1") || { edge_site_log "could not read site.d: your own rules are not loaded"; EDGE_SITE_SKIPPED=1; return 0; }
   if edge_site_open "${_st%% *}" "${_st#* }" "0 ${_st%% *}"; then
-    edge_site_log "site.d may be changed by other users: none of your own rules are loaded"; return 0
+    edge_site_log "site.d may be changed by other users: none of your own rules are loaded"; EDGE_SITE_SKIPPED=1; return 0
+  fi
+  # Listed only if this user may (a 700 site.d of another uid, under userns-remap or for a non-root check, can't be):
+  # never an empty copy in silence.
+  if [ ! -r "$1" ] || [ ! -x "$1" ]; then
+    edge_site_log "could not read site.d (this user, uid $(id -u), can't list it): your own rules are not loaded"; EDGE_SITE_SKIPPED=1; return 0
   fi
   _owners="0 ${_st%% *}"
   for _f in "$1"/*.caddy; do
     [ -e "$_f" ] || [ -L "$_f" ] || continue
     _n=${_f##*/}
-    if [ -L "$_f" ] || [ ! -f "$_f" ]; then edge_site_log "site.d/$_n is not loaded: it is a link or not a regular file"; continue; fi
-    _st=$(stat -c '%u %a' "$_f") || { edge_site_log "site.d/$_n is not loaded: it can't be read"; continue; }
+    if [ -L "$_f" ] || [ ! -f "$_f" ]; then
+      edge_site_log "site.d/$_n is not loaded: it is a link or not a regular file"; EDGE_SITE_SKIPPED=$((EDGE_SITE_SKIPPED + 1)); continue
+    fi
+    _st=$(stat -c '%u %a' "$_f") || { edge_site_log "site.d/$_n is not loaded: it can't be read"; EDGE_SITE_SKIPPED=$((EDGE_SITE_SKIPPED + 1)); continue; }
     if edge_site_open "${_st%% *}" "${_st#* }" "$_owners"; then
-      edge_site_log "site.d/$_n is not loaded: other users may change it (it must be site.d's owner's or root's, chmod 644; under rootless Docker or userns-remap a file of the host's root shows as uid 65534: make it yours)"; continue
+      edge_site_log "site.d/$_n is not loaded: other users may change it (it must be site.d's owner's or root's, chmod 644; under rootless Docker or userns-remap a file of the host's root shows as uid 65534: make it yours)"
+      EDGE_SITE_SKIPPED=$((EDGE_SITE_SKIPPED + 1)); continue
     fi
     if cat "$_f" > "$2/$_n" && chmod 644 "$2/$_n"; then :; else
       rm -f "$2/$_n" || true
-      edge_site_log "site.d/$_n is not loaded: it can't be read"
+      edge_site_log "site.d/$_n is not loaded: it can't be read"; EDGE_SITE_SKIPPED=$((EDGE_SITE_SKIPPED + 1))
     fi
   done
   return 0

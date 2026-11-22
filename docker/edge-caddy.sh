@@ -5,8 +5,8 @@
 # docker/Caddyfile as the running edge did: the same trusted peers, HTTPS origin and checked copy of site.d.
 # MDMESH_RAW_SITE_D=1, for validate and adapt only: check site.d as it is now, to try a rule added since the start
 # (DEPLOY.md, Your own edge rules): its files go through the start's own check (edge-peers.sh's edge_site_d) into a
-# scratch copy, which is what is validated, so the check reads exactly what a restart would load. A reload or run
-# always loads the start's checked copy.
+# scratch copy, which is what is validated, so the check reads exactly what a restart would load, and fails if the
+# restart would leave a file out. A reload or run always loads the start's checked copy.
 if [ -r /run/mdmesh-edge.env ]; then
   set -a
   # shellcheck disable=SC1091  # written by docker/edge-peers.sh at start
@@ -29,16 +29,24 @@ fi
 
 case "${MDMESH_RAW_SITE_D:-}:${1:-}" in
   1:validate|1:adapt)
-    # Root reads the mount as the start does (site.d may be 700, its files 600); caddy reads the copy.
+    # Root reads the mount as the start does (site.d may be 700, its files 600); caddy reads the copy. A check that
+    # would leave any file out fails, after caddy's own result: `validate && restart` never restarts without a rule
+    # you expect (the start itself loads the rest, as always).
     scratch=$(mktemp -d /tmp/mdmesh-site-check.XXXXXX) || exit 1
+    trap 'rm -rf "$scratch"' EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
     chmod 755 "$scratch"
     # shellcheck source=docker/edge-peers.sh
     EDGE_PEERS_FUNCTIONS_ONLY=1 . /edge-peers.sh
-    edge_site_d "${EDGE_SITE_SRC:-/etc/caddy/site.d}" "$scratch/site.d" || { rm -rf "$scratch"; exit 1; }
+    edge_site_d "${EDGE_SITE_SRC:-/etc/caddy/site.d}" "$scratch/site.d" || exit 1
     EDGE_SITE_D=$scratch/site.d; export EDGE_SITE_D
     rc=0
     if [ -n "$as_caddy" ]; then "$su_exec" caddy /usr/bin/caddy "$@" || rc=$?; else /usr/bin/caddy "$@" || rc=$?; fi
-    rm -rf "$scratch"
+    if [ "${EDGE_SITE_SKIPPED:-0}" != 0 ]; then
+      echo "MDMesh edge: a restart would leave out what is listed above: fix it first (DEPLOY.md, Your own edge rules)." >&2
+      [ "$rc" != 0 ] || rc=1
+    fi
     exit "$rc" ;;
 esac
 if [ -n "$as_caddy" ]; then exec "$su_exec" caddy /usr/bin/caddy "$@"; fi

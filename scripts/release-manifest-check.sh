@@ -21,8 +21,10 @@ T=$(mktemp -d)
 cleanup() {
   rm -f -- "$T/manifest.json" "$T/manifest.json.minisig" "$T/k.pub" "$T/k.key" "$T/x.pub" "$T/x.key" \
     "$T/agent.apk" "$T/tampered.json" "$T/qs.sh" "$T/changelog.md" "$T/sec.json" "$T/sec.out" "$T/inspect.json" \
-    "$T/bin/docker" "$T/old.json" "$T/rc/apk-checksum.sh" "$T/rc/agent-signature-checksum"
-  rmdir -- "$T/bin" "$T/rc" "$T" 2>/dev/null || true
+    "$T/bin/docker" "$T/old.json" "$T/rc/apk-checksum.sh" "$T/rc/agent-signature-checksum" \
+    "$T/bin/curl" "$T/rel.json" "$T/fetch.urls" "$T/fetch.log" "$T/fetch/agent.apk" "$T/fetch/manifest.json" \
+    "$T/fetch/manifest.json.minisig" "$T/fetch/release.json"
+  rmdir -- "$T/bin" "$T/rc" "$T/fetch" "$T" 2>/dev/null || true
 }
 trap cleanup EXIT
 fail() { echo "release-manifest-check: $*" >&2; exit 1; }
@@ -263,4 +265,33 @@ node -e '
 # What install/lib/release.sh reads (setup.sh and the native installer).
 python3 -c 'import json,sys; m=json.load(open(sys.argv[1])); a=m["components"]["apk"]; assert m["version"]=="9.8.7" and a["sha256"] and a["signatureChecksum"]=="CKSUM"' "$T/manifest.json" \
   || fail "the installers' fields changed"
+# install/lib/release.sh fetches the agent of the checkout's release (the native installer passes it), never a newer
+# one; the latest release's only without a version, or when that release isn't published (404). curl stubbed.
+mkdir -p "$T/bin" "$T/fetch"
+printf '{"tag_name":"v9.8.7","assets":[{"name":"mdmesh-agent.apk","browser_download_url":"https://dl/agent.apk"},{"name":"manifest.json","browser_download_url":"https://dl/manifest.json"},{"name":"manifest.json.minisig","browser_download_url":"https://dl/manifest.json.minisig"}]}' > "$T/rel.json"
+# shellcheck disable=SC2016  # the stub expands them when it runs
+printf '%s\n' '#!/usr/bin/env bash' 'out=""; w=""; url=""' \
+  'while [ $# -gt 0 ]; do case "$1" in -o) out=$2; shift ;; -w) w=$2; shift ;; -H) shift ;; https://*) url=$1 ;; esac; shift; done' \
+  'echo "$url" >> "$FAKE_T/fetch.urls"' \
+  'case "$url" in' \
+  '  */releases/tags/v9.8.7|*/releases/latest) src=$FAKE_T/rel.json ;;' \
+  '  https://dl/agent.apk) src=$FAKE_T/agent.apk ;; https://dl/manifest.json) src=$FAKE_T/manifest.json ;;' \
+  '  https://dl/manifest.json.minisig) src=$FAKE_T/manifest.json.minisig ;; *) src="" ;;' \
+  'esac' \
+  'if [ -n "$src" ]; then cat "$src" > "$out"; [ -z "$w" ] || printf 200; exit 0; fi' \
+  '[ -z "$w" ] || { : > "$out"; printf 404; exit 0; }; exit 22' > "$T/bin/curl"
+chmod +x "$T/bin/curl"
+fetch_for() {   # VERSION: the release URLs mdm_fetch_release_apk asked for, one per line; fails when it fails
+  : > "$T/fetch.urls"; rm -f -- "$T/fetch/"*
+  ( PATH="$T/bin:$PATH" FAKE_T="$T"; export FAKE_T
+    # shellcheck source=../install/lib/release.sh
+    . "$ROOT/install/lib/release.sh"
+    mdm_fetch_release_apk o/r "$T/k.pub" "$T/fetch" "$T/fetch.log" "$@" && [ "$MDM_AGENT_CK" = CKSUM ] ) || return 1
+  grep releases/ "$T/fetch.urls"
+}
+[ "$(fetch_for 9.8.7)" = "https://api.github.com/repos/o/r/releases/tags/v9.8.7" ] || fail "release.sh did not fetch the checkout's release"
+[ "$(fetch_for 9.9.9 | tr '\n' ' ')" = "https://api.github.com/repos/o/r/releases/tags/v9.9.9 https://api.github.com/repos/o/r/releases/latest " ] \
+  || fail "release.sh did not fall back to the latest release for an unpublished version"
+[ "$(fetch_for)" = "https://api.github.com/repos/o/r/releases/latest" ] || fail "release.sh without a version did not fetch the latest"
+[ "$(fetch_for 0.0.0)" = "https://api.github.com/repos/o/r/releases/latest" ] || fail "release.sh looked up 0.0.0"
 echo "release-manifest-check: ok"

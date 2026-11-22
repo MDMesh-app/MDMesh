@@ -919,7 +919,8 @@ AGENT_FETCH_DIR=""
 agent_fetch_cleanup() { if [ -n "$AGENT_FETCH_DIR" ]; then rm -rf -- "$AGENT_FETCH_DIR"; AGENT_FETCH_DIR=""; fi; }
 trap agent_fetch_cleanup EXIT
 if [ -n "$GITHUB_REPO" ]; then
-  # fetch_agent_apk: sets AGENT_APK (and AGENT_CK) when the latest release's APK verifies (install/lib/release.sh);
+  # fetch_agent_apk: sets AGENT_APK (and AGENT_CK) when the APK of the checkout's release (the latest's when that isn't
+  # published) verifies (install/lib/release.sh);
   # otherwise says why in one line and leaves AGENT_APK empty. Always returns 0, so set -e still stops the run on
   # anything else.
   fetch_agent_apk() {
@@ -928,7 +929,7 @@ if [ -n "$GITHUB_REPO" ]; then
     # The ERR trap does not fire inside a function (no set -E), so a failure here must be caught here, or the install
     # would end without a word.
     AGENT_FETCH_DIR=$(mktemp -d) || { AGENT_FETCH_DIR=""; info "Could not create a temporary directory for the release files${soft}"; return 0; }
-    if mdm_fetch_release_apk "$GITHUB_REPO" "$REPO/release/minisign.pub" "$AGENT_FETCH_DIR" "$LOGFILE"; then
+    if mdm_fetch_release_apk "$GITHUB_REPO" "$REPO/release/minisign.pub" "$AGENT_FETCH_DIR" "$LOGFILE" "$(mdm_repo_version "$REPO")"; then
       AGENT_CK=$MDM_AGENT_CK; AGENT_APK="$AGENT_FETCH_DIR/agent.apk"
     else
       info "${MDM_RELEASE_PROBLEM}${soft}"

@@ -37,7 +37,11 @@ import java.util.List;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class AgentCheckInRequest {
 
-    private String protocolVersion = AgentProtocol.VERSION;
+    /**
+     * The version the agent speaks. Agents send it from protocol 1.12 on; null from older ones, which never sent it
+     * (their JSON leaves out defaults).
+     */
+    private String protocolVersion;
 
     private String deviceId;
 

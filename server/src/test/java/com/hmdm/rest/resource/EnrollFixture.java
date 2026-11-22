@@ -40,6 +40,10 @@ final class EnrollFixture {
     /** Attempt hash → device, while its enrollment can be resumed (until the device checks in). */
     final Map<String, String> retryable = new HashMap<>();
     final List<String> configAppsQueuedFor = new ArrayList<>();
+    /** The hardware id each completed enrollment stored. */
+    final List<String> hardwareIds = new ArrayList<>();
+    /** What enroll() sends as its hardware id. */
+    String hardwareId = "  hw-1 ";
 
     boolean creationEnabled = true;
     /** What completing does: "ok", "none" (no row) or "throw" (a database failure). */
@@ -81,6 +85,7 @@ final class EnrollFixture {
                     if ("none".equals(completion)) return 0;
                     String n = (String) a[0];
                     completed.add(n);
+                    hardwareIds.add((String) a[3]);
                     secretHashes.put(n, (String) a[1]);
                     if (a[4] != null) retryable.put((String) a[4], n);
                     return 1;
@@ -151,7 +156,7 @@ final class EnrollFixture {
         AgentEnrollRequest req = new AgentEnrollRequest();
         req.setEnrollToken(TOKEN);
         req.setEnrollAttempt(attempt);
-        req.setHardwareId("  hw-1 ");
+        req.setHardwareId(hardwareId);
         return resource.enroll(req);
     }
 }

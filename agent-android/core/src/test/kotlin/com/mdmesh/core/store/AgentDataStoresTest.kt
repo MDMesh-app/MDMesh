@@ -625,7 +625,7 @@ class AgentDataStoresTest {
     private class RecordingEvents : EventSink {
         val all = mutableListOf<Pair<String, String?>>()
         override fun record(type: String, detail: String?) { synchronized(all) { all += type to detail } }
-        override fun drain(): List<TelemetryEventDto> = emptyList()
+        override fun drain(max: Int): List<TelemetryEventDto> = emptyList()
         override fun restore(events: List<TelemetryEventDto>) = Unit
         fun recovered() = synchronized(all) { all.filter { it.first == EventType.STORAGE_RECOVERED }.map { it.second } }
     }

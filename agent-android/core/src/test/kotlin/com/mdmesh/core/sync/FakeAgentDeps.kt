@@ -20,7 +20,7 @@ import kotlinx.coroutines.CompletableDeferred
 /** No-op event sink for tests that don't assert on events. */
 object NoopEventSink : com.mdmesh.core.telemetry.EventSink {
     override fun record(type: String, detail: String?) {}
-    override fun drain(): List<com.mdmesh.proto.TelemetryEventDto> = emptyList()
+    override fun drain(max: Int): List<com.mdmesh.proto.TelemetryEventDto> = emptyList()
     override fun restore(events: List<com.mdmesh.proto.TelemetryEventDto>) {}
 }
 

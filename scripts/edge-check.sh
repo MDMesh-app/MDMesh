@@ -129,9 +129,9 @@ if [ "$rc" -ne 0 ] && [ "$n" -eq 0 ]; then fail "site.d files: probe exited $rc"
 # docker/edge-peers.sh computed at start. The edge's caddy (docker/edge-caddy.sh, mounted where the web image installs it)
 # reads that start's settings first, so an exec'd reload keeps them: here behind your own proxy with the HTTPS origin,
 # a reload in a bare environment keeps the proxy's address as trusted peer and the internal-CA site, and loads no
-# site.d file the start left out. MDMESH_RAW_SITE_D=1 lets validate and adapt (only) read the raw mount, to check a
-# new file; a reload with it still loads the checked copy. And with no saved settings at all (a failed save), nothing raw
-# is imported and a reload is refused rather than run without them.
+# site.d file the start left out. MDMESH_RAW_SITE_D=1 lets validate and adapt (only) check site.d as it is now, through
+# the start's own check, to try a new file; a reload with it still loads the start's copy. And with no saved settings at
+# all (a failed save), nothing raw is imported and a reload is refused rather than run without them.
 # shellcheck disable=SC2016  # expanded by the container's shell
 RELOAD_PROBE='set -u; F=0
 t() { l=$1; shift; if "$@"; then echo "  ok   exec reload: $l"; else echo "  FAIL exec reload: $l"; F=$((F + 1)); fi; }
@@ -148,10 +148,12 @@ t "keeps the proxy as trusted peer" has "192.0.2.10/32"
 t "keeps the HTTPS origin (internal CA)" has "\"internal\""
 t "loads the checked rule" has x-good
 t "does not load a rule the start left out" sh -c "! grep -qi x-open /tmp/cfg"
+mk new 644
 bare env MDMESH_RAW_SITE_D=1 caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile > /tmp/raw 2>&1
-t "MDMESH_RAW_SITE_D=1 adapt reads the raw mount (to check a new file)" grep -qi x-open /tmp/raw
+t "MDMESH_RAW_SITE_D=1 adapt checks a file added since the start" grep -qi x-new /tmp/raw
+t "  through the same check as the start (the open file stays out)" sh -c "! grep -qi x-open /tmp/raw"
 bare env MDMESH_RAW_SITE_D=1 caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile > /tmp/reload 2>&1; cfg
-t "MDMESH_RAW_SITE_D=1 reload still loads the checked copy only" sh -c "! grep -qi x-open /tmp/cfg"
+t "MDMESH_RAW_SITE_D=1 reload still loads the copy checked at start only" sh -c "! grep -qi x-open /tmp/cfg && ! grep -qi x-new /tmp/cfg"
 caddy stop > /dev/null 2>&1
 mv /run/mdmesh-edge.env /run/saved.env
 bare caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile > /tmp/nosave 2>&1
@@ -170,6 +172,28 @@ if [ "$rc" -ne 0 ] && [ "$n" -eq 0 ]; then fail "exec reload: probe exited $rc";
 # Your own rules: each site.d/*.caddy is imported into the site (its header is in the adapted config), and a broken one
 # is an error, not ignored. The directory is mounted read-only, as the compose files mount it, and imported as it is
 # (EDGE_SITE_D; the edge itself imports only the copy docker/edge-peers.sh checked, below).
+# The temporary directories (and the image-start block's container and image) are removed by cleanup_tmp, also from the
+# exit traps, so an abort or Ctrl-C leaves nothing behind: SITE_D here, PX_D (a throwaway key) and IMG_D below.
+SITE_D=''; PX_D=''; IMG_D=''; IMG_TAG="mdmesh-edgecheck-web:$$"; IMG_CT="mdmesh-edgecheck-web-$$"
+# cleanup_img: the image-start block's container, image and directory. Docker's own output goes to the block's log,
+# which goes with the directory.
+cleanup_img() {
+  [ -n "${IMG_D:-}" ] && [ -d "$IMG_D" ] || return 0
+  docker rm -f "$IMG_CT" >> "$IMG_D/docker.log" 2>&1 || true
+  docker rmi "$IMG_TAG" >> "$IMG_D/docker.log" 2>&1 || true
+  rm -f "$IMG_D/site.d/good.caddy" "$IMG_D/site.d/open.caddy" "$IMG_D/site700/rule.caddy" "$IMG_D/Dockerfile" \
+    "$IMG_D/build.log" "$IMG_D/docker.log" "$IMG_D/validate.log" "$IMG_D/raw.log" "$IMG_D/reload.log"
+  rmdir "$IMG_D/site.d" "$IMG_D/site700" "$IMG_D" 2>&1 | sed 's/^/         /' || true
+  IMG_D=''
+}
+cleanup_tmp() {
+  if [ -n "${SITE_D:-}" ] && [ -d "$SITE_D" ]; then rm -f "$SITE_D"/*.caddy; rmdir "$SITE_D" || true; SITE_D=''; fi
+  if [ -n "${PX_D:-}" ] && [ -d "$PX_D" ]; then rm -rf -- "$PX_D"; PX_D=''; fi
+  cleanup_img
+}
+trap cleanup_tmp EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 SITE_D="$(mktemp -d)"
 chmod 755 "$SITE_D"
 printf 'header X-Own-Rule "from site.d"\n' > "$SITE_D/own.caddy"; chmod 644 "$SITE_D/own.caddy"
@@ -230,7 +254,7 @@ if [ -s "$SITE_D/office.caddy" ]; then
 else
   fail "DEPLOY.md has no caddyfile example under Your own edge rules"
 fi
-rm -f "$SITE_D/office.caddy" "$SITE_D/own-path.caddy"; rmdir "$SITE_D"
+cleanup_tmp
 
 # Behind your own proxy, docker/edge-peers.sh turns TRUSTED_PROXIES into Caddy's list: `host` is this container's
 # default gateway(s) (`ip` stubbed here: --network none has none), a lone address a /32 or /128; and it stops the edge on
@@ -303,7 +327,7 @@ px_check "apache.conf: httpd -t" httpd:2.4-alpine sh -c 'c=/usr/local/apache2/co
   sed -i -E "s/^#(LoadModule (ssl|proxy|proxy_http|headers|rewrite|socache_shmcb)_module)/\1/" "$c"
   printf "Listen 443\nInclude /px/apache.conf\n" >> "$c" && httpd -t'
 px_check "Caddyfile: caddy validate" "$CADDY_IMAGE" caddy validate --config /px/Caddyfile --adapter caddyfile
-rm -rf -- "$PX_D"
+cleanup_tmp
 
 # --- 1d. The web image's own start: docker/web.Dockerfile's final stage (a stand-in page for the console, which needs
 # the web build), run as the image runs: the entrypoint as root, edge-peers.sh, then su-exec caddy through the wrapper.
@@ -312,38 +336,36 @@ rm -rf -- "$PX_D"
 # origin and the checked rules. ---
 echo "The web image's start (docker/web.Dockerfile, without the console build):"
 IMG_D="$(mktemp -d)"; chmod 755 "$IMG_D"
-IMG_TAG="mdmesh-edgecheck-web:$$"; IMG_CT="mdmesh-edgecheck-web-$$"
-# cleanup_img: this block's container, image and directory; also from the exit traps below, so an abort or Ctrl-C
-# leaves nothing behind. Docker's own output goes to the block's log, which goes with the directory.
-cleanup_img() {
-  [ -n "${IMG_D:-}" ] && [ -d "$IMG_D" ] || return 0
-  docker rm -f "$IMG_CT" >> "$IMG_D/docker.log" 2>&1 || true
-  docker rmi "$IMG_TAG" >> "$IMG_D/docker.log" 2>&1 || true
-  rm -f "$IMG_D/site.d/good.caddy" "$IMG_D/site.d/open.caddy" "$IMG_D/Dockerfile" "$IMG_D/build.log" "$IMG_D/docker.log"
-  rmdir "$IMG_D/site.d" "$IMG_D" 2>&1 | sed 's/^/         /' || true
-  IMG_D=''
-}
-trap cleanup_img EXIT
-trap 'exit 130' INT
-trap 'exit 143' TERM
 awk 'tolower($1) == "from" && $2 ~ /^caddy[:@]/ { s = 1 } s' "$ROOT/docker/web.Dockerfile" \
   | sed 's#^COPY --from=web /web/dist /srv$#RUN mkdir -p /srv \&\& echo spa > /srv/index.html#' > "$IMG_D/Dockerfile"
 mkdir -p "$IMG_D/site.d"; chmod 755 "$IMG_D/site.d"
 printf 'header X-Good "1"\n' > "$IMG_D/site.d/good.caddy"; chmod 644 "$IMG_D/site.d/good.caddy"
 printf 'header X-Open "1"\n' > "$IMG_D/site.d/open.caddy"; chmod 666 "$IMG_D/site.d/open.caddy"
+# A site.d of mode 700 with a rule of mode 600 (the edge loads these: only write bits count): the raw check
+# (MDMESH_RAW_SITE_D=1) must read it as the start does, not as caddy, which can't.
+mkdir -p "$IMG_D/site700"; chmod 700 "$IMG_D/site700"
+printf 'header X-Seven "1"\n' > "$IMG_D/site700/rule.caddy"; chmod 600 "$IMG_D/site700/rule.caddy"
 if ! grep -q '^RUN mkdir -p /srv' "$IMG_D/Dockerfile"; then
   fail "web image start: could not derive the final stage from docker/web.Dockerfile"
 elif ! docker build -q -f "$IMG_D/Dockerfile" -t "$IMG_TAG" "$ROOT" > "$IMG_D/build.log" 2>&1; then
   fail "web image start: the final stage did not build"; tail -5 "$IMG_D/build.log" | sed 's/^/         /'
 elif ! docker run -d --name "$IMG_CT" --network none -e MDMESH_EXPOSURE=proxy -e EDGE_TRUSTED_PROXIES=192.0.2.10 \
     -e EDGE_BIND=127.0.0.1:8080 -e BASE_URL=https://mdm.example.com -e MDMESH_ORIGIN_TLS=1 -e SITE_ADDRESS=:8080 \
-    -e ACME_EMAIL= -e TRUSTED_PROXIES= -v "$IMG_D/site.d:/etc/caddy/site.d:ro" "$IMG_TAG" >> "$IMG_D/docker.log" 2>&1; then
+    -e ACME_EMAIL= -e TRUSTED_PROXIES= -v "$IMG_D/site.d:/etc/caddy/site.d:ro" -v "$IMG_D/site700:/etc/caddy/site700:ro" \
+    "$IMG_TAG" >> "$IMG_D/docker.log" 2>&1; then
   fail "web image start: the container did not start"; tail -5 "$IMG_D/docker.log" | sed 's/^/         /'
 else
   ex() { docker exec "$IMG_CT" "$@"; }
   cfg() { ex wget -qO- http://127.0.0.1:2019/config/ 2>&1; }
   cfg_has() { cfg | grep -qi -- "$1"; }
-  cfg_lacks() { ! cfg | grep -qi -- "$1"; }
+  # The live config lacks $1: fetched once, and only a real config counts (an unreachable admin API fails).
+  cfg_lacks() { local c; c=$(cfg) || return 1; grep -q '"apps"' <<< "$c" && ! grep -qi -- "$1" <<< "$c"; }
+  # The documented raw check on site700, its output kept for a failure.
+  raw_check() { docker exec -e MDMESH_RAW_SITE_D=1 -e EDGE_SITE_SRC=/etc/caddy/site700 "$IMG_CT" \
+    caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile > "$IMG_D/raw.log" 2>&1; }
+  raw_fails_on() { ! raw_check && grep -q "$1" "$IMG_D/raw.log" && return 0; tail -5 "$IMG_D/raw.log" | sed 's/^/         /'; return 1; }
+  reload_quiet() { ex caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile > "$IMG_D/reload.log" 2>&1 \
+    || { sed 's/^/         /' "$IMG_D/reload.log"; return 1; }; }
   # caddy can't write its configuration: the write fails for want of permission, not for any other reason.
   denied() { local out; out=$(docker exec -u caddy "$IMG_CT" touch /etc/caddy/x 2>&1) && return 1; grep -q 'Permission denied' <<< "$out"; }
   owner() { ex stat -c %U "$@" 2>&1 | sort -u; }
@@ -359,7 +381,10 @@ else
   chk "caddy can't change its configuration (permission denied)" denied
   chk "a validate through docker exec (as root) runs as caddy: what it provisions is caddy's" sh -c \
     "docker exec -e XDG_DATA_HOME=/tmp/vd '$IMG_CT' caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile > '$IMG_D/validate.log' 2>&1; rm -f '$IMG_D/validate.log'; [ \"\$(docker exec '$IMG_CT' stat -c %U /tmp/vd/caddy/pki/authorities/local/root.key 2>&1)\" = caddy ]"
-  chk "a reload through docker exec succeeds" ex caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+  chk "the raw check passes a valid 600 rule in a 700 site.d" raw_check
+  printf 'no_such_directive here\n' > "$IMG_D/site700/rule.caddy"
+  chk "the raw check fails a broken 600 rule in a 700 site.d, saying why" raw_fails_on no_such_directive
+  chk "a reload through docker exec succeeds" reload_quiet
   chk "  and keeps the proxy as trusted peer" cfg_has 192.0.2.10/32
   chk "  and the HTTPS origin" cfg_has '"internal"'
   chk "  and loads no rule the start left out" cfg_lacks x-open
@@ -372,7 +397,7 @@ ENVF="$(mktemp)"
 ENVF_CF="$(mktemp)"   # the same, plus the COMPOSE_PROFILES line setup.sh / quickstart.sh write for tunnel mode
 ENVF_PX="$(mktemp)"   # the same, plus the lines they write behind your own proxy (install/lib/modes.sh, mdm_mode_env)
 ENVF_NOTP="$(mktemp)"   # that, without TRUSTED_PROXIES
-trap 'cleanup_img; rm -f "$ENVF" "$ENVF_CF" "$ENVF_PX" "$ENVF_NOTP"' EXIT
+trap 'cleanup_tmp; rm -f "$ENVF" "$ENVF_CF" "$ENVF_PX" "$ENVF_NOTP"' EXIT
 printf 'DB_PASSWORD=x\nBASE_URL=https://mdm.example.com\nHASH_SECRET=x\n' > "$ENVF"
 { cat "$ENVF"; echo COMPOSE_PROFILES=cloudflare; } > "$ENVF_CF"
 { cat "$ENVF"; echo MDMESH_BIND=127.0.0.1:8080; echo 'TRUSTED_PROXIES="host"'; echo MDMESH_ORIGIN_TLS=0
@@ -773,7 +798,7 @@ STUB_NET="mdmesh-edgecheck-$$"
 STUB_CT="mdmesh-edgecheck-stub-$$"
 STUB_FILE="$(mktemp)"
 cleanup_stub() { docker rm -f "$STUB_CT" >/dev/null 2>&1 || true; docker network rm "$STUB_NET" >/dev/null 2>&1 || true; rm -f "$STUB_FILE"; }
-trap 'cleanup_img; cleanup_stub; rm -f "$ENVF" "$ENVF_CF" "$ENVF_PX" "$ENVF_NOTP"' EXIT
+trap 'cleanup_tmp; cleanup_stub; rm -f "$ENVF" "$ENVF_CF" "$ENVF_PX" "$ENVF_NOTP"' EXIT
 cat > "$STUB_FILE" <<'STUB'
 {
 	admin off

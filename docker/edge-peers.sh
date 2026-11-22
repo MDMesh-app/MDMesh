@@ -24,6 +24,51 @@
 # CLOUDFLARED_WAIT seconds (default 15) because cloudflared starts after caddy. Not found: the loopback rule, so the
 # recorded address is the tunnel's, never forged.
 
+# Your own rules (DEPLOY.md, "Your own edge rules"): the install directory's site.d, mounted read-only at EDGE_SITE_SRC
+# (/etc/caddy/site.d). Each *.caddy file goes into the edge's site, so only a file that its owner alone can change is
+# loaded: a regular file (not a link), writable by nobody but its owner, owned by root or by site.d's own owner, in a
+# site.d nobody else may write. (That site.d is no link is the installers' rule: Docker resolves a bind mount's source,
+# so in here the mount point never is one; a link's target is checked like any directory.) Anything else is left out,
+# saying why; the edge starts without it. At start (below) the files that pass are copied into EDGE_SITE_D (root's,
+# under /run), which docker/Caddyfile imports, so what was checked is what is loaded. The wrapper (docker/edge-caddy.sh)
+# uses the same check for MDMESH_RAW_SITE_D=1, so a validate before a restart checks exactly what the restart will
+# load. Nothing here can stop the edge: at worst none of your rules are loaded, and MDMesh's own routes are unaffected.
+# With EDGE_PEERS_FUNCTIONS_ONLY=1 this file only defines these functions and returns.
+edge_site_log() { echo "MDMesh edge: $* (DEPLOY.md, Your own edge rules)." >&2; }
+# edge_site_open UID MODE OWNERS: the octal MODE gives group or others write, or UID is not one of OWNERS.
+edge_site_open() {
+  [ $(( 0$2 & 022 )) -ne 0 ] && return 0
+  case " $3 " in *" $1 "*) return 1 ;; esac
+  return 0
+}
+# edge_site_d SRC DST: DST, made afresh (root's, mode 755), holds a copy of each SRC/*.caddy that passes the check,
+# mode 644; the others are left out, saying why. Fails (DST unusable) only when DST can't be made.
+edge_site_d() {
+  rm -rf "$2" || true
+  mkdir -m 755 "$2" || { edge_site_log "could not prepare the checked copy of site.d: your own rules are not loaded"; return 1; }
+  [ -d "$1" ] || return 0
+  _st=$(stat -c '%u %a' "$1") || { edge_site_log "could not read site.d: your own rules are not loaded"; return 0; }
+  if edge_site_open "${_st%% *}" "${_st#* }" "0 ${_st%% *}"; then
+    edge_site_log "site.d may be changed by other users: none of your own rules are loaded"; return 0
+  fi
+  _owners="0 ${_st%% *}"
+  for _f in "$1"/*.caddy; do
+    [ -e "$_f" ] || [ -L "$_f" ] || continue
+    _n=${_f##*/}
+    if [ -L "$_f" ] || [ ! -f "$_f" ]; then edge_site_log "site.d/$_n is not loaded: it is a link or not a regular file"; continue; fi
+    _st=$(stat -c '%u %a' "$_f") || { edge_site_log "site.d/$_n is not loaded: it can't be read"; continue; }
+    if edge_site_open "${_st%% *}" "${_st#* }" "$_owners"; then
+      edge_site_log "site.d/$_n is not loaded: other users may change it (it must be site.d's owner's or root's, chmod 644; under rootless Docker or userns-remap a file of the host's root shows as uid 65534: make it yours)"; continue
+    fi
+    if cat "$_f" > "$2/$_n" && chmod 644 "$2/$_n"; then :; else
+      rm -f "$2/$_n" || true
+      edge_site_log "site.d/$_n is not loaded: it can't be read"
+    fi
+  done
+  return 0
+}
+[ "${EDGE_PEERS_FUNCTIONS_ONLY:-}" != 1 ] || return 0
+
 # ipv4_int A.B.C.D: the address as an integer; fails for anything else (leading zeros too: sh reads them as octal).
 ipv4_int() {
   case "$1" in *[!0-9.]*) return 1 ;; esac
@@ -183,52 +228,12 @@ else
 fi
 export HTTP_TRUSTED_PEERS HTTP_CLIENT_IP_HEADER
 
-# Your own rules (DEPLOY.md, "Your own edge rules"): the install directory's site.d, mounted read-only at EDGE_SITE_SRC
-# (/etc/caddy/site.d). Each *.caddy file goes into the edge's site, so only a file that its owner alone can change is
-# loaded: a regular file (not a link), writable by nobody but its owner, owned by root or by site.d's own owner, in a
-# site.d nobody else may write. (That site.d is no link is the installers' rule: Docker resolves a bind mount's source,
-# so in here the mount point never is one; a link's target is checked like any directory.) Anything else is left out,
-# saying why; the edge starts without it. The files that pass are copied into EDGE_SITE_D (root's, under /run), which
-# docker/Caddyfile imports, so what was checked is what is loaded. Run at every start (docker compose restart caddy
-# after a change). Nothing here can stop the edge: at worst none of your rules are loaded, and MDMesh's own routes are
-# unaffected.
-edge_site_log() { echo "MDMesh edge: $* (DEPLOY.md, Your own edge rules)." >&2; }
-# edge_site_open UID MODE OWNERS: the octal MODE gives group or others write, or UID is not one of OWNERS.
-edge_site_open() {
-  [ $(( 0$2 & 022 )) -ne 0 ] && return 0
-  case " $3 " in *" $1 "*) return 1 ;; esac
-  return 0
-}
-edge_site_d() {
-  _src=${EDGE_SITE_SRC:-/etc/caddy/site.d}
+if edge_site_d "${EDGE_SITE_SRC:-/etc/caddy/site.d}" /run/mdmesh-site.d; then
   EDGE_SITE_D=/run/mdmesh-site.d
-  rm -rf "$EDGE_SITE_D" 2>/dev/null || true
-  if ! mkdir -m 755 "$EDGE_SITE_D" 2>/dev/null; then
-    # Fail closed: a path with nothing in it, never an earlier start's copy.
-    EDGE_SITE_D=/run/mdmesh-site.d.none
-    edge_site_log "could not prepare the checked copy of site.d: your own rules are not loaded"; return 0
-  fi
-  [ -d "$_src" ] || return 0
-  _st=$(stat -c '%u %a' "$_src" 2>/dev/null) || { edge_site_log "could not read site.d: your own rules are not loaded"; return 0; }
-  if edge_site_open "${_st%% *}" "${_st#* }" "0 ${_st%% *}"; then
-    edge_site_log "site.d may be changed by other users: none of your own rules are loaded"; return 0
-  fi
-  _owners="0 ${_st%% *}"
-  for _f in "$_src"/*.caddy; do
-    [ -e "$_f" ] || [ -L "$_f" ] || continue
-    _n=${_f##*/}
-    if [ -L "$_f" ] || [ ! -f "$_f" ]; then edge_site_log "site.d/$_n is not loaded: it is a link or not a regular file"; continue; fi
-    _st=$(stat -c '%u %a' "$_f" 2>/dev/null) || { edge_site_log "site.d/$_n is not loaded: it can't be read"; continue; }
-    if edge_site_open "${_st%% *}" "${_st#* }" "$_owners"; then
-      edge_site_log "site.d/$_n is not loaded: other users may change it (it must be site.d's owner's or root's, chmod 644; under rootless Docker or userns-remap a file of the host's root shows as uid 65534: make it yours)"; continue
-    fi
-    if cat "$_f" > "$EDGE_SITE_D/$_n" 2>/dev/null && chmod 644 "$EDGE_SITE_D/$_n"; then :; else
-      rm -f "$EDGE_SITE_D/$_n" 2>/dev/null || true
-      edge_site_log "site.d/$_n is not loaded: it can't be read"
-    fi
-  done
-}
-edge_site_d
+else
+  # Fail closed: a path with nothing in it, never an earlier start's copy.
+  EDGE_SITE_D=/run/mdmesh-site.d.none
+fi
 export EDGE_SITE_D
 
 # What this start computed, for every later caddy command in the container: docker compose exec runs with the

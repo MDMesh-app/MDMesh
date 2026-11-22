@@ -1,16 +1,48 @@
 // Pure helpers for the updater supervisor — no I/O of their own (fetchAsset takes its fetch as a parameter),
 // unit-tested (supervisor/test.js).
 
+/** A semver 2.0 version (a leading v allowed): [major, minor, patch] with `pre`, its pre-release identifiers (empty
+ *  for a release); build metadata is ignored. Null for anything else. */
 function parseSemver(v) {
-  const m = String(v || '').replace(/^v/, '').match(/^(\d+)\.(\d+)\.(\d+)/);
-  return m ? [+m[1], +m[2], +m[3]] : null;
+  const m = String(v || '').replace(/^v/, '').match(/^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/);
+  return m ? Object.assign([+m[1], +m[2], +m[3]], { pre: m[4] ? m[4].split('.') : [] }) : null;
 }
 
+/** a is newer than b, by semver precedence: a pre-release comes before its release, and pre-release identifiers
+ *  compare in order, numbers as numbers and before text. False when either isn't a version. */
 function semverGt(a, b) {
   const x = parseSemver(a), y = parseSemver(b);
   if (!x || !y) return false;
   for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i];
+  if (!x.pre.length || !y.pre.length) return !x.pre.length && y.pre.length > 0;
+  for (let i = 0; i < Math.max(x.pre.length, y.pre.length); i++) {
+    const p = x.pre[i], q = y.pre[i];
+    if (p === undefined || q === undefined) return q === undefined;
+    if (p === q) continue;
+    const pn = /^\d+$/.test(p), qn = /^\d+$/.test(q);
+    if (pn && qn) return +p > +q;
+    if (pn !== qn) return qn;
+    return p > q;
+  }
   return false;
+}
+
+/** A version a release can be published as: X.Y.Z, or X.Y.Z-pre except a -dev build; not 0.0.0 (an install that
+ *  doesn't know its release). */
+function isReleaseVersion(v) {
+  const x = parseSemver(v);
+  return !!x && !/^v/.test(String(v)) && String(v) !== '0.0.0' && !x.pre.includes('dev');
+}
+
+/** The agent to offer, from what is known of the running release (`running`: lookUpRunning's result) and the latest
+ *  release's agent: the running release's own agent, never one ahead of the server; the latest's only when the running
+ *  version is unknown (a QR code must download something); nothing when the running release's agent isn't known yet
+ *  (GitHub didn't answer) or doesn't verify. */
+function agentOffer(running, latestAgent) {
+  if (!running) return null;
+  if (running.kind === 'agent') return running.desc;
+  if (running.kind === 'unknown') return latestAgent || null;
+  return null;
 }
 
 /** Newest non-draft release for the channel that actually ships a signed manifest. */
@@ -321,7 +353,7 @@ function legacyDeploymentAdmin(body) {
 }
 
 module.exports = {
-  parseSemver, semverGt, pickRelease, shapeStatus, updateBlocked, blockedLogLine, hostPlatform, missedSecurity,
+  parseSemver, semverGt, isReleaseVersion, agentOffer, pickRelease, shapeStatus, updateBlocked, blockedLogLine, hostPlatform, missedSecurity,
   imageTags, imagePins, nextPhase, isTerminal, APPLY_PHASES, APPLY_TERMINAL,
   apkAsset, sha256Matches, recoveryPage, isPublishTemp, assetRequest, fetchAsset, envValue, applyLine, applyRefusal,
   deploymentAdminVerdict, legacyDeploymentAdmin,

@@ -249,11 +249,18 @@ What anyone else could change is never loaded, since your rules reach every visi
 - Each `*.caddy` file in it must be a regular file (not a link), owned by `site.d`'s owner or root, and writable by its
   owner only: `chmod 644`. The edge checks every file when it starts and leaves out any other, saying why in
   `docker compose logs caddy`; it starts without it (and without all of them if `site.d` itself is open to others).
+  Under rootless Docker or userns-remap, a file of the host's root shows up as uid 65534 and is left out: make the
+  files yours.
+- Only the `*.caddy` files are loaded, from a checked copy: an `import` in one of them finds no other file of
+  `site.d`, so keep shared snippets in a `.caddy` file of their own.
+- On Windows (WSL2, Docker Desktop), keep the install directory inside the Linux filesystem (`~/…`), not on a Windows
+  drive (`/mnt/c/…`): files there show as writable by everyone, so every rule would be left out.
 
-Check a new file, then restart the edge (a restart, not `caddy reload`: the check runs at start):
+Check a new file, then restart the edge. The check runs at start: a `caddy reload` (which keeps the edge's settings)
+reloads the files checked then, not a new one.
 
 ```bash
-docker compose exec caddy caddy validate --config /etc/caddy/Caddyfile && docker compose restart caddy
+docker compose exec -e MDMESH_RAW_SITE_D=1 caddy caddy validate --config /etc/caddy/Caddyfile && docker compose restart caddy
 ```
 
 A rule that doesn't parse stops the edge, and with it the console and `/recovery`, until it is fixed. An update whose

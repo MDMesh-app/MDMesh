@@ -22,8 +22,8 @@ Heads-up
 - The updater (Settings → Updates, and Roll back) and `./setup.sh --update` (also with `--allow-downgrade`) refuse
   a release before 0.6.0 while the install runs behind your own proxy, or while `TRUSTED_PROXIES` still says `host`:
   move the install back to its earlier hosting mode, or set `TRUSTED_PROXIES=`, first.
-- Your own edge rules load only from files nobody but their owner can change (yours or root's, `chmod 644`, not a
-  link); the edge leaves any other out at start, saying why in its log.
+- Your own edge rules load only from files nobody but their owner can change (`site.d`'s owner's or root's,
+  `chmod 644`, not a link); the edge leaves any other out at start, saying why in its log.
 
 New
 - Install behind the nginx, Apache, Caddy or Traefik you already run: the quick start's third choice (or `--proxy`),

@@ -694,7 +694,8 @@ async function fakeGitHub(dir, opts) {
   // that long), fail (a Set of <tag>/<name> assets whose downloads answer 500).
   // hide: a Set of tags that aren't published yet (not listed, 404 by tag).
   // otherKey: a Set of tags whose manifest is served with the other key's signature (opts.older.otherKey: from the start).
-  const control = { down: false, tagStatus: null, tagDelayMs: 0, fail: new Set(), hide: new Set(),
+  // listDelayMs: the release list answers only after that long.
+  const control = { down: false, tagStatus: null, tagDelayMs: 0, listDelayMs: 0, fail: new Set(), hide: new Set(),
     otherKey: new Set(opts.older && opts.older.otherKey ? ['v' + opts.older.version] : []) };
   const relJson = (r) => ({ tag_name: r.tag, html_url: 'https://github.com/o/r/releases/tag/' + r.tag,
     assets: Object.keys(r.bytes).map((name) => ({ name,
@@ -731,6 +732,7 @@ async function fakeGitHub(dir, opts) {
       res.end('redirect body');
     } else if (u.startsWith('/api/repos/o/r/releases')) {
       hits.releases++;
+      if (control.listDelayMs) await new Promise((res2) => setTimeout(res2, control.listDelayMs));
       if (opts.failAfter != null && hits.releases > opts.failAfter) { res.statusCode = 500; res.end(); return; }
       res.setHeader('content-type', 'application/json');
       res.end(JSON.stringify(listed.filter((x) => !control.hide.has(x.tag)).map(relJson)));
@@ -2164,6 +2166,95 @@ t.test('native, restarted while GitHub is down: a published agent newer than the
       await published('0.0.4', Buffer.from('hosted by hand'), true);   // not a known agent
       // A downgrade to a version never run here (nothing kept for it, GitHub down): 0.0.2's agent is newer, so it goes.
       await published('0.0.0-rc.1', NEW_AGENT, false);
+    });
+  });
+
+t.test('an unreadable cached APK (a directory at its path) is not cached: the supervisor keeps running',
+  { skip: !HAS_MINISIGN && 'minisign not installed', timeout: 20000 }, async () => {
+    const fs = require('fs'), path = require('path');
+    await withDeploy(envOf('mdmesh-app'), GH(), async (d, gh, authz) => {
+      let sup = await supervisorOn(d, gh, authz);
+      try { await waitFor(async () => (await statusOf(sup)).apk.available, 'mirrored'); } finally { await stopChild(sup.child); }
+      const p = path.join(d.dir, 'apk', 'agent-1.apk');
+      fs.rmSync(p); fs.mkdirSync(p);   // at start-up the kept agent is offered, and its cached copy checked
+      gh.control.down = true;
+      sup = await supervisorOn(d, gh, authz);
+      try {
+        const st = await statusOf(sup);
+        a.deepEqual(st.apk && [st.apk.version, st.apk.available], ['0.0.1', false]);
+        a.equal(sup.child.exitCode, null, 'still running');
+        a.equal((await fetch(`http://127.0.0.1:${sup.port}/healthz`)).status, 200);
+      } finally { await stopChild(sup.child); }
+    });
+  });
+
+t.test('a kept manifest whose kept asset entry doesn\'t fit it is removed and fetched again, not taken as "unknown"',
+  { skip: !HAS_MINISIGN && 'minisign not installed', timeout: 20000 }, async () => {
+    const fs = require('fs'), path = require('path');
+    await withDeploy(envOf('mdmesh-app'), GH(), async (d, gh, authz) => {
+      let sup = await supervisorOn(d, gh, authz);
+      try { await statusOf(sup); } finally { await stopChild(sup.child); }
+      const asset = path.join(d.dir, 'apk', 'v0.0.1.asset.json');
+      fs.writeFileSync(asset, JSON.stringify({ name: 'something-else.apk', url: 'https://x', browser_download_url: 'https://x' }));
+      sup = await supervisorOn(d, gh, authz);
+      try {
+        const st = await statusOf(sup);
+        a.deepEqual(st.apk && [st.apk.version, st.apk.of], ['0.0.1', 'running'], 'not the latest\'s agent');
+        a.match(sup.log(), /the kept manifest of 0\.0\.1 is not usable \(its kept asset entry doesn't fit it/);
+        a.equal(JSON.parse(fs.readFileSync(asset, 'utf8')).name, 'mdmesh-agent.apk', 'kept again from GitHub');
+      } finally { await stopChild(sup.child); }
+    });
+  });
+
+t.test('a failed lookup is retried within the retry interval, not only at the next poll',
+  { skip: !HAS_MINISIGN && 'minisign not installed', timeout: 30000 }, async () => {
+    await withDeploy(envOf('mdmesh-app'), GH({ unlisted: true }), async (d, gh, authz) => {
+      gh.control.tagStatus = 403;
+      // A poll every 36 s, so a retry every 3.6 s: the agent must come from a retry, with no second poll.
+      const sup = await supervisorOn(d, gh, authz, { POLL_INTERVAL_HOURS: '0.01' });
+      try {
+        const st = await statusOf(sup);
+        a.equal(st.apk, null);
+        gh.control.tagStatus = null;
+        const ok = await waitFor(async () => { const x = await (await fetch(`http://127.0.0.1:${sup.port}/update/status`)).json(); return x.apk && x; }, 'the retry', 15000);
+        a.deepEqual([ok.apk.version, ok.apk.of], ['0.0.1', 'running']);
+        a.equal(gh.hits.releases, 1, 'no second poll');
+      } finally { await stopChild(sup.child); }
+    });
+  });
+
+t.test('the kept agent of the running release is offered at start-up, before the first poll answers',
+  { skip: !HAS_MINISIGN && 'minisign not installed', timeout: 20000 }, async () => {
+    await withDeploy(envOf('mdmesh-app'), GH(), async (d, gh, authz) => {
+      let sup = await supervisorOn(d, gh, authz);
+      try { await waitFor(async () => (await statusOf(sup)).apk.available, 'mirrored'); } finally { await stopChild(sup.child); }
+      gh.control.listDelayMs = 3000;
+      sup = await supervisorOn(d, gh, authz);
+      try {
+        const st = await (await fetch(`http://127.0.0.1:${sup.port}/update/status`)).json();
+        a.equal(st.checkedAt, null, 'the first poll hasn\'t answered');
+        a.deepEqual(st.apk && [st.apk.version, st.apk.of], ['0.0.1', 'running']);
+        a.deepEqual(await agentOf(sup), RUNNING_AGENT);
+      } finally { await stopChild(sup.child); }
+    });
+  });
+
+t.test('?v= serves a kept agent newer than a running release that GitHub doesn\'t know (404): no 409',
+  { skip: !HAS_MINISIGN && 'minisign not installed', timeout: 30000 }, async () => {
+    const fs = require('fs'), path = require('path');
+    await withDeploy(envOf('mdmesh-app'), GH(), async (d, gh, authz) => {
+      let sup = await supervisorOn(d, gh, authz);   // 0.0.1 ran here: its agent is kept
+      try { await waitFor(async () => (await statusOf(sup)).apk.available, 'mirrored'); } finally { await stopChild(sup.child); }
+      fs.writeFileSync(path.join(d.project, '.env'), envOf('mdmesh-app', '0.0.0-rc.1'));   // a release-shaped version, 404 by tag
+      sup = await supervisorOn(d, gh, authz);
+      try {
+        const st = await statusOf(sup);
+        a.deepEqual(st.apk && [st.apk.version, st.apk.of], ['0.0.2', 'latest']);
+        a.match(sup.log(), /running release v0\.0\.0-rc\.1 is unknown \(no such release\)/);
+        const r2 = await fetch(`http://127.0.0.1:${sup.port}/update/agent.apk?v=1`);
+        a.equal(r2.status, 200);
+        a.deepEqual(Buffer.from(await r2.arrayBuffer()), RUNNING_AGENT);
+      } finally { await stopChild(sup.child); }
     });
   });
 

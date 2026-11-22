@@ -28,8 +28,9 @@ const APPLY_SUPPORTED = process.env.APPLY_SUPPORTED !== '0';
 const PUBLISH_APK_TO = process.env.PUBLISH_APK_TO || '';
 const APPLY_SCRIPT = path.join(__dirname, 'apply.sh');
 const POLL_MS = (+(process.env.POLL_INTERVAL_HOURS || 6)) * 3600 * 1000;
-// A running release that couldn't be looked up is asked again this soon, not only at the next poll.
-const RETRY_MS = Math.min(POLL_MS, 5 * 60 * 1000);
+// A running release that couldn't be looked up is asked again this soon (5 min; sooner with a short poll interval),
+// not only at the next poll.
+const RETRY_MS = Math.min(POLL_MS / 10, 5 * 60 * 1000);
 const ROLLBACK_SCRIPT = path.join(__dirname, 'rollback.sh');
 
 // The running release. With one-click apply (Docker) the source of truth is CURRENT_VERSION in the project's .env
@@ -189,7 +190,9 @@ function cachedApkOk(desc) {
   try { st = fs.statSync(p); } catch { return false; }
   const key = `${desc.sha256} ${st.size} ${st.mtimeMs}`;
   if (hashedFiles.get(p) === key) return true;
-  if (sha256Matches(fs.readFileSync(p), desc.sha256)) { hashedFiles.set(p, key); return true; }
+  let ok = false;
+  try { ok = sha256Matches(fs.readFileSync(p), desc.sha256); } catch { /* unreadable (a directory, EACCES): not cached */ }
+  if (ok) { hashedFiles.set(p, key); return true; }
   console.log('[apk] cached', p, 'does not match its signed sha256 — removing it');
   hashedFiles.delete(p);
   try { fs.rmSync(p, { force: true }); } catch { /* ignore */ }
@@ -394,6 +397,10 @@ function loadPersisted(version) {
   const m = persisted(version, 'manifest.json');
   if (!fs.existsSync(m)) return null;
   let d = null, bad = null;
+  const remove = (why) => {
+    console.log(`[apk] the kept manifest of ${version} is not usable (${why}) — removing it`);
+    for (const ext of ['manifest.json', 'manifest.json.minisig', 'asset.json']) fs.rmSync(persisted(version, ext), { force: true });
+  };
   try {
     d = fs.mkdtempSync(path.join(os.tmpdir(), 'mf'));
     fs.copyFileSync(m, path.join(d, 'manifest.json'));
@@ -403,12 +410,11 @@ function loadPersisted(version) {
     if (problem) bad = `${problem.what}: ${problem.detail}`;
     const manifest = bad ? null : JSON.parse(fs.readFileSync(path.join(d, 'manifest.json'), 'utf8'));
     if (manifest && manifest.version !== version) bad = 'manifest of another version';
-    if (bad) {
-      console.log(`[apk] the kept manifest of ${version} is not usable (${bad}) — removing it`);
-      for (const ext of ['manifest.json', 'manifest.json.minisig', 'asset.json']) fs.rmSync(persisted(version, ext), { force: true });
-      return null;
-    }
-    return asResult({ assets: [JSON.parse(fs.readFileSync(persisted(version, 'asset.json'), 'utf8'))] }, manifest);
+    if (bad) { remove(bad); return null; }
+    // Only an agent is ever kept, so anything else is damage (asset.json isn't signed): fetch it again.
+    const result = asResult({ assets: [JSON.parse(fs.readFileSync(persisted(version, 'asset.json'), 'utf8'))] }, manifest);
+    if (result.kind !== 'agent') { remove(`its kept asset entry doesn't fit it (${result.why})`); return null; }
+    return result;
   } catch (e) {
     console.log(`[apk] the kept manifest of ${version} can't be checked now: ${errText(e)}`);
     return null;
@@ -692,7 +698,7 @@ http.createServer(async (req, res) => {
       }
       if (!(await ensureApk(desc))) { json(res, 502, { error: 'apk unavailable or checksum mismatch' }); return; }
       res.writeHead(200, { 'content-type': 'application/vnd.android.package-archive', 'content-length': fs.statSync(cachePath(desc)).size });
-      fs.createReadStream(cachePath(desc)).pipe(res);
+      fs.createReadStream(cachePath(desc)).on('error', () => res.destroy()).pipe(res);
       return;
     }
     if (req.method === 'POST' && req.url.startsWith('/update/check')) {

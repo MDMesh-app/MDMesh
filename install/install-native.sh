@@ -101,11 +101,9 @@ command -v apt-get >/dev/null || { echo "This script targets Debian/Ubuntu."; ex
 # tucked into a logfile that is auto-expanded only when something fails. Run with -v to stream it inline.
 # Colour/spinner auto-disable when stdout isn't a TTY or NO_COLOR is set, so piped runs stay clean.
 # ------------------------------------------------------------------------------------------------------
+# The log is emptied once the run is confirmed (below the question): answered no, it keeps the previous run's log, which
+# may hold the failure being looked into. Nothing writes to it before then.
 LOGFILE="${LOGFILE:-/var/log/mdmesh-install.log}"
-: > "$LOGFILE" 2>/dev/null || LOGFILE="/tmp/mdmesh-install.log"; : > "$LOGFILE" 2>/dev/null || true
-# The log can capture echoed SQL (including the DB password — see the Database step), so keep it
-# owner-only even if it pre-existed with looser modes (umask only covers newly created files).
-chmod 600 "$LOGFILE" 2>/dev/null || true
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
   c_reset=$'\033[0m'; c_dim=$'\033[2m'; c_grn=$'\033[32m'; c_red=$'\033[31m'
   c_yel=$'\033[33m'; c_cyn=$'\033[36m'; c_bold=$'\033[1m'; TTY=1
@@ -180,10 +178,10 @@ SUP_ENV_DIR=/etc/mdmesh
 # clone's tag, which an update stopped halfway or a git pull has already moved) and the one this clone holds.
 INSTALLED_VERSION=$(mdm_installed_version "$SUP_ENV_DIR")
 CLONE_VERSION=$(mdm_repo_version "$REPO")
-if [ "$UPDATING" = 1 ]; then
-  printf '\n  %sMDMesh · native update, %s → %s%s\n' "$c_bold" "${INSTALLED_VERSION:-?}" "${CLONE_VERSION:-?}" "$c_reset"
-else
-  printf '\n  %sMDMesh · native install%s\n' "$c_bold" "$c_reset"
+# (mdm_native_title, mdm_native_host_line, mdm_native_declined: install/lib/version.sh.)
+printf '\n  %s%s%s\n' "$c_bold" "$(mdm_native_title "$UPDATING" "$INSTALLED_VERSION" "$CLONE_VERSION")" "$c_reset"
+if [ "$UPDATING" != 1 ] && [ -n "$INSTALLED_VERSION" ]; then
+  printf '  %s\n' "$(mdm_native_host_line "$INSTALLED_VERSION" "$CLONE_VERSION")"
 fi
 cat <<WARN
 
@@ -193,7 +191,7 @@ cat <<WARN
     • create or alter a PostgreSQL role and database "mdmesh" (resets that role's password)
     • download and unpack Apache Tomcat 9 into /opt/mdmesh-tc (clears its webapps/)
     • write config and uploaded files under /opt/mdmesh (the server logs to the systemd journal)
-    • write the updater's settings to /etc/mdmesh/supervisor.env
+    • write the updater's settings and the installed release to /etc/mdmesh
     • start Tomcat, run database migrations, and seed the admin account
 
   Intended for a dedicated server you control. This script does not undo these changes.
@@ -203,19 +201,17 @@ WARN
 if [ "$ASSUME_YES" != "1" ]; then
   mdm_ask assume-yes
   printf '  Type "yes" to proceed: '
-  read -r _confirm   # answer: assume-yes
+  # End of input (stdin closed) is a no as well, not an error.
+  read -r _confirm || _confirm=''   # answer: assume-yes
   if [ "$_confirm" != "yes" ]; then
-    # Nothing on the host has changed. The clone may have: a `./setup.sh --update` from an older release checks out the
-    # new tag before it hands over to this script, which then asks (only a setup.sh that knows MDMESH_UPDATING skips it).
-    if [ -n "$INSTALLED_VERSION" ] && [ -n "$CLONE_VERSION" ] && [ "$INSTALLED_VERSION" != "$CLONE_VERSION" ]; then
-      echo "  Aborted. The install is unchanged: this host still runs v${INSTALLED_VERSION}. This clone is now on v${CLONE_VERSION};"
-      echo "  to update this host to it, run: sudo ./setup.sh --update --native"
-    else
-      echo "  Aborted — nothing on this host was changed."
-    fi
+    mdm_native_declined "$INSTALLED_VERSION" "$CLONE_VERSION" | sed 's/^/  /'
     exit 1
   fi
 fi
+# Confirmed: from here on the run changes the host. A fresh log, owner-only even if it pre-existed with looser modes
+# (umask only covers new files): it can capture echoed SQL, including the DB password (see the Database step).
+: > "$LOGFILE" 2>/dev/null || LOGFILE="/tmp/mdmesh-install.log"; : > "$LOGFILE" 2>/dev/null || true
+chmod 600 "$LOGFILE" 2>/dev/null || true
 
 rand() { mdm_rand; }
 
@@ -311,6 +307,11 @@ tc_guard()   { guard_under "$CATALINA" "$1"; }
 tc_write()   { local rel="$1"; shift; write_under "$CATALINA" "$rel" "$@"; }
 base_guard() { guard_under "$BASE_DIR" "$1"; }
 base_write() { local rel="$1"; shift; write_under "$BASE_DIR" "$rel" "$@"; }
+# An install from before the installed-version record: write down the release its supervisor.env names, now, before the
+# first change. This run rewrites supervisor.env's CURRENT_VERSION before it ends, so if it then failed, the next run
+# would otherwise read the new release as the one it updates from.
+_unrecorded=$(mdm_installed_version_unrecorded "$SUP_ENV_DIR")
+if [ -n "$_unrecorded" ]; then write_under "$SUP_ENV_DIR" installed-version printf '%s\n' "$_unrecorded"; fi
 have_systemd() { command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; }
 # unit_installed NAME: NAME.service is installed. Not `systemctl list-unit-files | grep -q`: grep exits at the first
 # match, systemctl then gets SIGPIPE writing its footer, and under pipefail the pipeline fails, so the unit reads as absent.

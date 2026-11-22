@@ -7,7 +7,8 @@
 #   killed   the same upgrade SIGKILLed at each kill point, then re-run: it must converge
 #   update   the change installed, then `sudo ./setup.sh --update --native` over it without -y: it must ask nothing
 #   update-resumed  the same after an update that stopped halfway (clone already moved, "no" at the question): it must
-#            say the install is unchanged, then name the installed release as the one it updates from
+#            say the install is unchanged, then name the installed release as the one it updates from (Debian 12 only,
+#            unless a distro is chosen)
 # Every install is followed by the same check step: units active, initialized.txt OK, /rest/public/name 200, and that
 # version's scripts/agent-v1-e2e.sh with FAIL=0.
 #
@@ -76,7 +77,10 @@ jobs:
           d, s = os.environ["IN_DISTRO"], os.environ["IN_SCENARIO"]
           distros = ["debian-12", "debian-13", "ubuntu-24.04"] if d == "all" else [d]
           scenarios = ["fresh", "upgrade", "killed", "update", "update-resumed"] if s == "all" else [s]
-          print("matrix=" + json.dumps({"include": [{"distro": x, "scenario": y} for x in distros for y in scenarios]}))
+          # update-resumed adds only distro-independent steps to update (git, the installer's question and its text): one
+          # distro covers it, unless a run names its distro.
+          print("matrix=" + json.dumps({"include": [{"distro": x, "scenario": y} for x in distros for y in scenarios
+                                                    if y != "update-resumed" or d != "all" or x == "debian-12"]}))
           EOF
           echo "upgrading from $from"
 

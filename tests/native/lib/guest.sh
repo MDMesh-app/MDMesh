@@ -21,6 +21,7 @@
 #   secrets                        a short fingerprint (sha256) of hash.secret / jwt.secretkey in ROOT.xml
 #   settings                       what a re-run must keep: base.url and proxy.addresses (ROOT.xml), GITHUB_REPO, a
 #                                  fingerprint of GITHUB_TOKEN, and the owner and mode of the supervisor.env they are in
+#                                  and of the installed-version record
 #   set-token <token>              GITHUB_TOKEN=<token> in the current supervisor.env, as an admin would edit it
 #   set-proxy <addresses>          proxy.addresses=<addresses> added to ROOT.xml, as an admin would edit it (docs/OPERATIONS.md)
 #   counts                         configurations / devices / users counts (psql as postgres)
@@ -285,6 +286,7 @@ cmd_settings() {
   echo "GITHUB_REPO_FROM=$(sup_param GITHUB_REPO_FROM)"
   echo "GITHUB_TOKEN=$(fp "$(sup_param GITHUB_TOKEN)")"
   echo "supervisor.env=$(stat -c '%U:%G %a' /etc/mdmesh/supervisor.env 2>/dev/null || echo missing)"
+  echo "installed-version=$(stat -c '%U:%G %a' /etc/mdmesh/installed-version 2>/dev/null || echo missing)"
 }
 
 psql_pg() { (cd / && runuser -u postgres -- psql -X -d mdmesh -tAc "$1"); }

@@ -145,6 +145,7 @@ settings_kept() {
   done
   check "GITHUB_REPO_FROM=setting after $label" "$(sed -n 's/^GITHUB_REPO_FROM=//p' "$OUT/$label.settings")" setting
   check "supervisor.env in /etc/mdmesh, root-only, after $label" "$(sed -n 's/^supervisor.env=//p' "$OUT/$label.settings")" "root:root 600"
+  check "installed-version in /etc/mdmesh, root-only, after $label" "$(sed -n 's/^installed-version=//p' "$OUT/$label.settings")" "root:root 600"
   if grep -q 'release agent APK fetched' "$OUT/$label.out"; then
     check "$label fetched and verified the release APK" yes yes
   elif grep -q 'rate limit' "$OUT/$label.out"; then
@@ -206,7 +207,7 @@ case "$SCENARIO" in
       docker cp "$CTR:/t2/out/decline.out" "$OUT/decline.out" > /dev/null 2>&1 || true
       check "answering no stops the install" "$rc" 1
       check "answering no says the install is unchanged and the clone moved" \
-        "$(grep -cF "The install is unchanged: this host still runs v${from}. This clone is now on v99.0.0" "$OUT/decline.out" || true)" 1
+        "$(grep -cF "The install is unchanged: this host still runs v${from}. This clone is on v99.0.0, newer than the install." "$OUT/decline.out" || true)" 1
       check "answering no leaves the record" "$(docker exec "$CTR" cat /etc/mdmesh/installed-version)" "$from"
     fi
     rc=0; run_update update || rc=$?

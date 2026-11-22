@@ -167,7 +167,8 @@ so "the newest tag" is not the last MDMesh release.
 | `T2_FROM_REF` | Release to upgrade from (default `v0.3.1`). |
 | `T2_MIN_FREE_GB` | Refuses to start with less free space under the Docker root (default 8). |
 | `T2_CACHE=1` | Shares Maven and npm caches between runs in the volumes `mdmesh-t2-cache-m2` and `mdmesh-t2-cache-npm` (remove them with `docker volume rm`). |
-| `T2_M2_REPO` | A host directory holding a Maven repository: copied (not mounted) into the first container as root's `~/.m2/repository` before any install, and the guest's repository copied back into it when the run passes. CI keeps it with `actions/cache`, because Maven Central rate-limits GitHub's runners. |
+| `T2_M2_REPO` | A dedicated host directory holding a Maven repository. Never point it at your real `~/.m2`: the rig rewrites it. It is copied (not mounted) into the first container as root's `~/.m2/repository` before any install, and replaced by the guest's repository after a converged install. Both are best-effort. CI keeps it with `actions/cache`, because Maven Central rate-limits GitHub's runners. |
+| `T2_M2_SEED=0` | With `T2_M2_REPO`: installs cold (no seed) but still saves. CI's nightly run uses it. |
 | `T2_OUT` | Logs and `results.tsv` (default `/tmp/mdmesh-t2`, or `$TMPDIR/mdmesh-t2`). Each run writes to `<T2_OUT>/<container>/`. |
 | `T2_STRICT=1` | Builds an upgrade's image without the old-release workarounds (see `tests/native/Dockerfile`). |
 

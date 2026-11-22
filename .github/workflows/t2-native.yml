@@ -94,6 +94,7 @@ jobs:
       T2_FROM_REF: ${{ needs.plan.outputs.from-ref }}
       DISTRO: ${{ matrix.distro }}
       SCENARIO: ${{ matrix.scenario }}
+      M2_BUILD: ${{ (matrix.scenario == 'fresh' || matrix.scenario == 'update') && 'head' || format('from-{0}', needs.plan.outputs.from-ref) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -102,24 +103,26 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      # The guest's Maven repository, seeded into the first container and saved from a passing run (T2_M2_REPO in
-      # tests/native/run.sh): Maven Central rate-limits the runners' shared IPs (HTTP 429) for longer than Maven's own
-      # back-off waits. Per distro (their Maven versions differ) and scenario (upgrade and killed also build the
-      # release); a change to a pom or a new release starts from the closest earlier repository.
+      # The guest's Maven repository, seeded into the first container and saved after a converged install (T2_M2_REPO
+      # in tests/native/run.sh): Maven Central rate-limits the runners' shared IPs (HTTP 429) for longer than Maven's
+      # own back-off waits. One per distro (their Maven versions differ) and build: fresh and update build the change
+      # only ("head"), upgrade and killed also build the release ("from-<release>"). A change to a pom or a new release
+      # starts from the closest earlier repository. The nightly run does not seed (one cold install a day, which sees
+      # what a new VPS sees, e.g. a dependency gone from its repository) but still saves.
       - name: Maven repository for the guest
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: ${{ runner.temp }}/t2-m2
-          key: t2-m2-${{ matrix.distro }}-${{ matrix.scenario }}-${{ needs.plan.outputs.from-ref }}-${{ hashFiles('**/pom.xml') }}
+          key: t2-m2-${{ matrix.distro }}-${{ env.M2_BUILD }}-${{ hashFiles('**/pom.xml') }}
           restore-keys: |
-            t2-m2-${{ matrix.distro }}-${{ matrix.scenario }}-${{ needs.plan.outputs.from-ref }}-
-            t2-m2-${{ matrix.distro }}-${{ matrix.scenario }}-
+            t2-m2-${{ matrix.distro }}-${{ env.M2_BUILD }}-
             t2-m2-${{ matrix.distro }}-
 
       - name: Run the rig
         env:
           T2_OUT: ${{ runner.temp }}/t2-out
           T2_M2_REPO: ${{ runner.temp }}/t2-m2
+          T2_M2_SEED: ${{ github.event_name == 'schedule' && '0' || '1' }}
         run: tests/native/run.sh "$DISTRO" "$SCENARIO"
 
       - name: Summary

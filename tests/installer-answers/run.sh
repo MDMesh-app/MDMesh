@@ -18,13 +18,14 @@
 #
 # Every installer run here is a dry run, in a temporary copy (setup.sh and the native installer) or a temporary working
 # directory (quickstart.sh), with an empty environment and stdin from /dev/null: nothing is installed, and a question
-# the scripts would ask fails the run. Needs: bash, jq, grep, sed, awk.
+# the scripts would ask fails the run. Needs: bash, jq, minisign, grep, sed, awk.
 set -euo pipefail
 unset CDPATH
 HERE=$(cd -P -- "$(dirname -- "$0")" && pwd)
 REPO=$(cd -P -- "$HERE/../.." && pwd)
 CONTRACT="$REPO/install/options.json"
 command -v jq > /dev/null || { echo "jq is required" >&2; exit 2; }
+command -v minisign > /dev/null || { echo "minisign is required (the resumed quick start's release fixture)" >&2; exit 2; }
 # Not as root: the native installer refuses a non-root user before it changes anything, a second guard should a dry run
 # ever stop working. (The commands that would change the host are stubbed out below as well.)
 [ "$(id -u)" != 0 ] || { echo "Run this as an unprivileged user, not root." >&2; exit 2; }

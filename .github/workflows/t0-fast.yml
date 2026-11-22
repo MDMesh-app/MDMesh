@@ -218,6 +218,11 @@ jobs:
       # install/options.json is the installers' answers contract, which the website's install wizard reads: every question
       # has an entry and every entry a question, with the same variable, rule, default and prompt text, and a full set of
       # answers runs without asking. Dry runs only (MDMESH_DRY_RUN=1), in a temporary copy: nothing is installed.
+      # minisign: the installer suites sign their own release fixtures (installer-answers, setup-update), and the
+      # manifest contract checks a signature.
+      - if: matrix.name == 'edge' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).installers)
+        name: Installer test tools (minisign)
+        run: command -v minisign >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq minisign; }
       - if: matrix.name == 'edge' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).installers)
         name: Installer answers contract (install/options.json)
         run: tests/installer-answers/run.sh
@@ -225,12 +230,10 @@ jobs:
       # (signature, image digests, file hashes) and supervisor/lib.js read it; its key copy matches release/minisign.pub.
       - if: matrix.name == 'edge' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).installers)
         name: Release manifest contract (build-manifest.sh, quickstart.sh, supervisor)
-        run: |
-          command -v minisign >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq minisign; }
-          scripts/release-manifest-check.sh
+        run: scripts/release-manifest-check.sh
       # `./setup.sh --update` (source and native installs move to the newest signed release tag) against a fixture
       # origin with releases signed by a throwaway key: unsigned, foreign-key, replayed, retargeted or dirty is refused.
-      # Clones in a temporary directory, curl and docker stubbed: nothing is installed. Needs minisign (step above).
+      # Clones in a temporary directory, curl and docker stubbed: nothing is installed. Needs minisign (installed above).
       - if: matrix.name == 'edge' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).installers)
         name: setup.sh --update (signed release tags)
         run: tests/setup-update/run.sh

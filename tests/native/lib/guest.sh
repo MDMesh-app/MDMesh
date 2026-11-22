@@ -13,7 +13,7 @@
 #                                  a throwaway release key committed into the checkout, a curl stub for the manifest)
 #   update <out> <repo>            the documented update, as t2user: `sudo ./setup.sh --update --native`, without -y and
 #                                  with stdin closed, GITHUB_REPO=<repo>; output to <out>
-#   move-clone <version>           as t2user: the checkout detached at origin's v<version>, as an update that stopped
+#   move-clone <version>           as t2user, with sudo: the checkout detached at origin's v<version>, as an update that stopped
 #                                  after moving it leaves it (an older setup.sh's --update, then "no" at its question)
 #   decline <out>                  as t2user: `sudo ./setup.sh --native`, answering "no" to its question; output to <out>
 #   kill-points                    list the kill points, one per line
@@ -236,9 +236,13 @@ cmd_update() {
   return "$rc"
 }
 
+# cmd_move_clone VERSION: as an older setup.sh's --update moves it, under sudo from t2user (so as root, with SUDO_UID
+# set, which is how git accepts t2user's checkout): fetch the tag from origin, then a detached checkout of it. Not as
+# t2user: origin (/t2/origin.git, made by update-release) is root's, and git refuses another user's repository
+# ("dubious ownership").
 cmd_move_clone() {
-  as_user git -C "$CHECKOUT" fetch -q --no-tags origin "refs/tags/v$1:refs/tags/v$1"
-  as_user git -C "$CHECKOUT" -c advice.detachedHead=false checkout -q --detach "v$1"
+  setsid runuser -l t2user -c "cd MDMesh && sudo git fetch -q --no-tags origin 'refs/tags/v$1:refs/tags/v$1' \
+    && sudo git -c advice.detachedHead=false checkout -q --detach 'v$1'"
   as_user git -C "$CHECKOUT" log -1 --format='checked out %h %s'
 }
 

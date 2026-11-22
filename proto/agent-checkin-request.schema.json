@@ -4,9 +4,9 @@
   "title": "AgentCheckInRequest",
   "type": "object",
   "additionalProperties": true,
-  "required": ["protocolVersion", "deviceId", "capabilities"],
+  "required": ["deviceId", "capabilities"],
   "properties": {
-    "protocolVersion": { "type": "string", "pattern": "^\\d+\\.\\d+$" },
+    "protocolVersion": { "type": "string", "pattern": "^\\d+\\.\\d+$", "description": "Sent on every check-in from 1.12 on; agents before 1.12 leave it out. The server keeps a check-in retryable for those (a database error that stops its events fails it), as they count every event delivered on success." },
     "deviceId": { "type": "string" },
     "capabilities": { "$ref": "capability-matrix.schema.json#/properties/capabilities" },
     "results": {
@@ -16,7 +16,7 @@
     },
     "state": { "type": "object", "additionalProperties": true, "description": "Compact device-state snapshot (AgentDeviceStateDto): battery, charging, locked, kioskActive, androidRelease, lastBootAt, and optional fields such as agentVersion and powerMode." },
     "telemetry": { "type": "object", "additionalProperties": true, "description": "Full device census (TelemetrySnapshot); supersedes state." },
-    "events": { "type": "array", "items": { "type": "object", "additionalProperties": true }, "description": "Buffered lifecycle events (TelemetryEventDto) flushed on this check-in." },
+    "events": { "type": "array", "items": { "type": "object", "additionalProperties": true }, "description": "Buffered lifecycle events (TelemetryEventDto) flushed on this check-in, oldest first. The response's eventsAccepted (protocol 1.12) says how many the server consumed; a server without it stores the first 100 and drops the rest, so send at most 100 until a response carries it. A type outside ^[A-Za-z0-9._-]{1,64}$ is skipped." },
     "hardwareId": { "type": "string", "description": "The same stable, permission-free device id as on enroll, so an enrolled device can backfill it." }
   }
 }

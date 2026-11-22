@@ -23,6 +23,20 @@ public class AgentEnrollAtomicTest {
     private static final String[] FINAL_MARKERS = {"token.used", "token.invalid", "token.expired", "enrollment.disabled"};
 
     @Test
+    public void a_hardware_id_longer_than_its_column_enrolls_without_it() {
+        // Stored, it would fail the enrollment on every retry.
+        EnrollFixture f = new EnrollFixture();
+        f.hardwareId = new String(new char[129]).replace('\0', 'h');
+
+        assertEquals(Response.ResponseStatus.OK, f.enroll(null).getStatus());
+        assertEquals(java.util.Collections.singletonList(null), f.hardwareIds);
+
+        EnrollFixture ok = new EnrollFixture();
+        ok.enroll(null);
+        assertEquals(java.util.Collections.singletonList("hw-1"), ok.hardwareIds);
+    }
+
+    @Test
     public void a_completed_enrollment_stores_the_hash_of_the_secret_it_returns() {
         EnrollFixture f = new EnrollFixture();
 

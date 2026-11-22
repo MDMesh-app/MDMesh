@@ -7,6 +7,7 @@ import com.mdmesh.core.install.InstallIntegrityPolicy
 import com.mdmesh.core.net.MdmApi
 import com.mdmesh.core.state.DeviceStateSource
 import com.mdmesh.core.store.DeviceIdentity
+import com.mdmesh.core.telemetry.EventLog
 import com.mdmesh.core.telemetry.EventSink
 import com.mdmesh.core.telemetry.TelemetrySource
 import com.mdmesh.proto.AgentCheckInRequest
@@ -28,8 +29,8 @@ import javax.inject.Singleton
  * One full check-in cycle — the source of truth of the sync loop:
  *
  *  1. ensure the device is enrolled (server-issued id);
- *  2. drain the next batch of pending command acks and POST it with the fresh capabilities (results beyond one
- *     batch, or that the server did not take, wait for the next check-in);
+ *  2. drain the next batch of pending command acks and of buffered events, and POST them with the fresh capabilities
+ *     (results and events beyond one batch, or that the server did not take, wait for the next check-in);
  *  3. dispatch each returned (capability-gated) command;
  *  4. buffer the new results for delivery on the next cycle.
  *
@@ -72,6 +73,9 @@ class CheckInCoordinator @Inject constructor(
 
     @VisibleForTesting
     internal val mutex = Mutex()
+
+    /** Events the next check-in may send. Only the cycle (under [mutex]) reads and writes it. */
+    private var eventBatch = EventLog.OLD_SERVER_EVENTS
 
     // Hand-offs, all guarded by handOffLock. While a holder is open, a runOrHandOff() that finds the lock busy leaves
     // a request instead of waiting for the lock. Before the running cycle has sent its check-in, the request joins
@@ -219,7 +223,7 @@ class CheckInCoordinator @Inject constructor(
         val authorization = "Bearer ${identity.secret().orEmpty()}"
         val matrix = capabilitySource.matrix(deviceId)
         val acks = pending.drain()
-        val bufferedEvents = eventSink.drain()
+        val bufferedEvents = eventSink.drain(eventBatch)
 
         sending()
         val response = try {
@@ -250,7 +254,10 @@ class CheckInCoordinator @Inject constructor(
         // The server answered: recorded now, not after the commands (an app.install can download for minutes).
         syncStatus.recordSuccess()
         pending.delivered(data.resultsAccepted)
-        eventSink.delivered()
+        eventSink.delivered(data.eventsAccepted)
+        // A server that says how many events it took (protocol 1.12) takes up to the whole buffer; one that doesn't (an
+        // older one, or after a rollback) keeps only the first 100.
+        eventBatch = if (data.eventsAccepted != null) EventLog.CAP else EventLog.OLD_SERVER_EVENTS
         // Before this batch runs: its installs are judged by what this server guarantees.
         installIntegrity.update(data.installIntegrity)
 

@@ -42,6 +42,9 @@ import org.mybatis.guice.transactional.Transactional;
 @Singleton
 public class AgentCommandDAO {
 
+    /** The event type whose row comes with kiosk-return evidence (see {@link #recordKioskReturn}). */
+    public static final String KIOSK_RETURN = "kioskReturn";
+
     private final AgentCommandMapper mapper;
     private final AgentDeviceMapper deviceMapper;
     private final DeviceStateMapper stateMapper;
@@ -157,10 +160,27 @@ public class AgentCommandDAO {
         eventMapper.insert(e);
     }
 
+    /**
+     * Stores a check-in's events, in order, all or none: one multi-row INSERT and, when a {@code kioskReturn} is among
+     * them, its kiosk-return evidence ({@link #recordKioskReturn}'s second statement, which only depends on the
+     * current kiosk generation, so once covers any number of them). One transaction, so one commit for the batch, not
+     * one per event. On any error nothing is stored.
+     */
+    @Transactional
+    public void insertEvents(String deviceNumber, List<DeviceEvent> events) {
+        if (events.isEmpty()) {
+            return;
+        }
+        eventMapper.insertAll(deviceNumber, events);
+        if (events.stream().anyMatch(e -> KIOSK_RETURN.equals(e.getType()))) {
+            stateMapper.recordKioskReturn(deviceNumber, System.currentTimeMillis());
+        }
+    }
+
     /** Store the audit event and durable current-generation evidence together. */
     @Transactional
     public void recordKioskReturn(String deviceNumber, Long deviceTs, String detail) {
-        insertEvent(deviceNumber, "kioskReturn", deviceTs, detail);
+        insertEvent(deviceNumber, KIOSK_RETURN, deviceTs, detail);
         stateMapper.recordKioskReturn(deviceNumber, System.currentTimeMillis());
     }
 

@@ -291,6 +291,9 @@ install_proxy_mode() {
   docker cp "$WORK/env" "$DIND:$D/.env" >>"$LOG"; in_dind chmod 600 "$D/.env"
   printf 'header X-E2E-Own-Rule "kept"\n' > "$WORK/own.caddy"; chmod 644 "$WORK/own.caddy"
   docker cp "$WORK/own.caddy" "$DIND:$D/site.d/e2e.caddy" >>"$LOG"
+  # docker cp keeps the file's uid (the runner's, 1001 on GitHub's runners), and the edge loads only files of site.d's
+  # owner or root: made root's, like the directory, as an install's own files are its owner's.
+  in_dind chown 0:0 "$D/site.d/e2e.caddy"
   dc pull -q server caddy supervisor >>"$LOG" 2>&1 || { fail "pulling release 0.6.0"; return 1; }
   dc up -d >>"$LOG" 2>&1 || { fail "docker compose up"; return 1; }
   wait_init || { fail "the server did not initialize"; return 1; }

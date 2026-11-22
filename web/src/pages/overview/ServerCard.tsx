@@ -107,12 +107,13 @@ export function ServerCard({ status }: { status: UpdateStatus }) {
         <span>Running {status.current}</span>
       </div>
       {panel ??
-        (lastCheckError(status) ? (
-          <span className="v2-ov-srv__meta">The last update check failed.</span>
-        ) : unverifiedRelease(status) ? (
+        // A newer release that didn't verify comes with the check's error too: the more specific line first.
+        (unverifiedRelease(status) ? (
           <span className="v2-ov-srv__meta">
             {status.latest} was found, but its signature couldn&rsquo;t be verified.
           </span>
+        ) : lastCheckError(status) ? (
+          <span className="v2-ov-srv__meta">The last update check failed.</span>
         ) : upToDate(status) ? (
           <span className="v2-ov-srv__meta">
             Up to date{channel}

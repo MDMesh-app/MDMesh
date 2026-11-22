@@ -96,16 +96,26 @@ describe('a release this server can’t install (blocked)', () => {
 
 describe('Overview Server card: no "Up to date" while a newer release can’t be trusted or the check failed', () => {
   it('says a newer unverified release was found', () => {
-    const st: UpdateStatus = { ...STATUS, updateAvailable: false, verified: false, missedSecurity: [] };
+    // As the supervisor sends it: a manifest that didn't verify sets the check's error too.
+    const st: UpdateStatus = { ...STATUS, updateAvailable: false, verified: false, missedSecurity: [],
+      error: 'manifest not verified: minisign signature check failed (details in the supervisor log)' };
     stub(st);
     renderInConsole(<ServerCard status={st} />);
     expect(screen.getByText('0.1.15 was found, but its signature couldn’t be verified.')).toBeTruthy();
+    expect(screen.queryByText(/The last update check failed/)).toBeNull();
     expect(screen.queryByText(/Up to date/)).toBeNull();
   });
-  it('is up to date when the unverified release is older than the running one', () => {
-    const st: UpdateStatus = { ...STATUS, current: '0.1.16', updateAvailable: false, verified: false, missedSecurity: [] };
+  it('an unverified release older than the running one is just a failed check', () => {
+    const st: UpdateStatus = { ...STATUS, current: '0.1.16', updateAvailable: false, verified: false, missedSecurity: [],
+      error: 'manifest not verified: minisign signature check failed (details in the supervisor log)' };
     stub(st);
     renderInConsole(<ServerCard status={st} />);
-    expect(screen.getByText(/Up to date/)).toBeTruthy();
+    expect(screen.getByText('The last update check failed.')).toBeTruthy();
+  });
+  it('a plain check failure still says so', () => {
+    const st: UpdateStatus = { ...STATUS, latest: null, updateAvailable: false, verified: false, missedSecurity: [], error: 'github 500' };
+    stub(st);
+    renderInConsole(<ServerCard status={st} />);
+    expect(screen.getByText('The last update check failed.')).toBeTruthy();
   });
 });

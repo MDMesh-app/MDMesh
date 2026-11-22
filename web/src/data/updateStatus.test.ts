@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { UpdateStatus } from '../api/updates';
 import {
+  agentUnavailable,
   blockedShort,
   blockedText,
   joinVersions,
@@ -181,5 +182,16 @@ describe('upToDate / unverifiedRelease: failed checks and older releases', () =>
     const b = status({ updateAvailable: false, blocked: 'r', blockedCode: 'platform', platform: 'linux/arm64' });
     expect(blockedShort(b, [])).toBe('Its images don’t include this server’s platform (linux/arm64).');
     expect(blockedText(b)).toMatch(/^Its images don’t include this server’s platform \(linux\/arm64\)\. /);
+  });
+});
+
+describe('agentUnavailable (Enroll warns instead of showing a QR code)', () => {
+  it('only once the updater has checked, on an install it serves the agent for, with none to offer', () => {
+    expect(agentUnavailable(status({ apk: null }))).toBe(false);   // checkedAt 0: not checked yet
+    expect(agentUnavailable(status({ apk: null, checkedAt: 1 }))).toBe(true);
+    expect(agentUnavailable(status({ apk: null, checkedAt: 1, applySupported: false }))).toBe(false);
+    const apk = { version: '0.1.12', versionCode: 1, sha256: 'a', available: false, of: 'running' as const };
+    expect(agentUnavailable(status({ apk, checkedAt: 1 }))).toBe(false);
+    expect(agentUnavailable(null)).toBe(false);
   });
 });

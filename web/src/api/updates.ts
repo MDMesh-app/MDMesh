@@ -36,7 +36,14 @@ export interface UpdateStatus {
    *  Absent (older supervisor) means supported. */
   applySupported?: boolean;
   /** The mirrored agent APK for the latest verified release (for device rollouts), or null. */
-  apk: { version: string; versionCode: number; sha256: string; available: boolean } | null;
+  apk: {
+    version: string;
+    versionCode: number;
+    sha256: string;
+    available: boolean;
+    /** Whose agent: the latest release's, or the running release's while the latest can't be installed here (0.6.0+). */
+    of?: 'latest' | 'running';
+  } | null;
   /** The security releases the offered update skips over (newer than `current`, older than `latest`; `latest` too
    *  when it is `blocked`), oldest first, from the verified manifest's securityReleases. Empty when nothing is skipped or the manifest isn't verified;
    *  absent from a supervisor before 0.5.0. */

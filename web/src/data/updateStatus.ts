@@ -82,6 +82,15 @@ export function unverifiedRelease(s: UpdateStatus | null | undefined): boolean {
   );
 }
 
+/**
+ * The updater has checked and has no agent APK to offer. On Docker installs it serves /files/agent.apk, which the
+ * enrollment QR code points at, so a device that scans the code can't install the agent. (A native install keeps its
+ * last published copy, and a console without a reachable updater can't tell.)
+ */
+export function agentUnavailable(s: UpdateStatus | null | undefined): boolean {
+  return !!s && !!s.checkedAt && s.applySupported !== false && !s.apk;
+}
+
 /** A blocked release, in a few words for the sidebar and the Overview (its cause, unless security comes first). */
 export function blockedShort(s: UpdateStatus, missed: readonly string[]): string {
   if (missed.length > 0) return `This server is missing security fixes from ${joinVersions(missed)}, and can’t install them itself.`;

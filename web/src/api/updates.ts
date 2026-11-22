@@ -38,7 +38,7 @@ export interface UpdateStatus {
   /** False on deployments that can't self-apply (native installs) — hide apply/auto controls.
    *  Absent (older supervisor) means supported. */
   applySupported?: boolean;
-  /** The mirrored agent APK for the latest verified release (for device rollouts), or null. */
+  /** The agent APK the updater offers for enrollment and rollouts (see `of`), or null. */
   apk: {
     version: string;
     versionCode: number;

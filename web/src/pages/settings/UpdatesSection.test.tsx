@@ -159,3 +159,15 @@ describe('Settings → Updates: the new release’s agent', () => {
     expect(line.textContent).toBe('The release carries agent 0.3.8. Once the server runs it, roll it out to devices.');
   });
 });
+
+describe('Settings → Updates: the new release’s agent when the updater already offers it', () => {
+  it('says nothing about waiting for the server (Agent rollout offers it now)', async () => {
+    stubApi();
+    // The running release is unknown, so the updater offers the latest release's agent (0.3.8) now.
+    const status = { ...STATUS, apk: { version: '0.3.8', versionCode: 308, sha256: 'a', available: true, of: 'latest' } } as UpdateStatus;
+    const sup = { status, loaded: true, reachable: true, refresh: async () => {}, setStatus: () => {}, patch: () => {} };
+    renderInConsole(<UpdatesSection id="updates" sup={sup} rolloutHref="#agent-rollout" />, { path: '/settings' });
+    await screen.findByText(/is ready/);
+    expect(screen.queryByText(/The release carries agent/)).toBeNull();
+  });
+});

@@ -29,6 +29,7 @@ import { entrySize, parseReleaseEntries, type ReleaseEntry } from '../../data/re
 import type { Block, NotesSection } from '../../whatsnew/changelog';
 import { InlineText, NotesList } from '../../whatsnew/NotesView';
 import {
+  agentAfterServerUpdate,
   applyPhaseLabel,
   blockedText,
   lastCheckError,
@@ -252,6 +253,7 @@ export function UpdatesSection({
   const lastError = lastCheckError(s);
   const releaseUrl = safeReleaseUrl(s?.release?.url);
   const offer = updateOffer(s);
+  const nextAgent = agentAfterServerUpdate(s);
   const missed = offer?.missed ?? [];
   const missedLink = missedSecurityLink(missed, s?.release?.url);
 
@@ -489,11 +491,11 @@ export function UpdatesSection({
               ) : null}
             </div>
           )}
-          {/* The updater offers an agent only for the release the server runs (s.apk is that one), so the new
-              release's agent comes after the update. */}
-          {offer?.kind === 'ready' ? (
+          {/* The new release's agent waits for its server (the rule Agent rollout follows too: agentAfterServerUpdate).
+              When the updater already offers it (the running release is unknown), Agent rollout offers it now. */}
+          {nextAgent ? (
             <p className="v2-settings-upd__help">
-              The release carries agent <span className="v2-num">{offer.latest}</span>. Once the server runs it,{' '}
+              The release carries agent <span className="v2-num">{nextAgent}</span>. Once the server runs it,{' '}
               <a href={rolloutHref}>roll it out to devices</a>.
             </p>
           ) : null}
@@ -503,7 +505,7 @@ export function UpdatesSection({
       {/* A newer release this updater can't install: why, and what to do, instead of an update or "the latest". */}
       {s && offer?.kind === 'blocked' && !running ? (
         // Quiet, as in the sidebar and on the Overview, unless it leaves security fixes missing (the notice above).
-        <Callout tone={offer.missed.length > 0 ? 'warn' : 'info'} icon={<IconAlert />}>
+        <Callout tone={offer.missed.length > 0 ? 'warn' : 'info'} icon={offer.missed.length > 0 ? <IconAlert /> : <IconInfo />}>
           MDMesh <span className="v2-num">{offer.latest}</span> can&rsquo;t be installed on this server. {blockedText(s)}
         </Callout>
       ) : null}

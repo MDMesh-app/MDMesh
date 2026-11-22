@@ -53,10 +53,11 @@ edge_site_d() {
   if edge_site_open "${_st%% *}" "${_st#* }" "0 ${_st%% *}"; then
     edge_site_log "site.d may be changed by other users: none of your own rules are loaded"; EDGE_SITE_SKIPPED=1; return 0
   fi
-  # Listed only if this user may (a 700 site.d of another uid, under userns-remap or for a non-root check, can't be):
-  # never an empty copy in silence.
-  if [ ! -r "$1" ] || [ ! -x "$1" ]; then
-    edge_site_log "could not read site.d (this user, uid $(id -u), can't list it): your own rules are not loaded"; EDGE_SITE_SKIPPED=1; return 0
+  # Listed only if the kernel lets this user list it (a 700 site.d of another uid: a non-root check, or root under
+  # userns-remap or without DAC capabilities): tried for real, as `test -r` answers from mode bits for root. Never an
+  # empty copy in silence.
+  if ! _ls=$(ls -A -- "$1" 2>&1); then
+    edge_site_log "could not read site.d (uid $(id -u): ${_ls##*: }): your own rules are not loaded"; EDGE_SITE_SKIPPED=1; return 0
   fi
   _owners="0 ${_st%% *}"
   for _f in "$1"/*.caddy; do

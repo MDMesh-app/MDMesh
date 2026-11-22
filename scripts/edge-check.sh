@@ -395,6 +395,24 @@ else
   printf 'no_such_directive here\n' > "$IMG_D/site700/rule.caddy"
   chk "the raw check fails a broken 600 rule in a 700 site.d, saying why" raw_fails_on no_such_directive
   chk "a raw check as caddy (which can't list a 700 site.d) fails, saying so, never Valid" raw_fails_on "could not read site.d" -u caddy
+  # Root that the kernel refuses (userns-remap, or no DAC capabilities): a 700 site.d of another uid can't be listed,
+  # whatever its mode bits say to `test`. A fresh container of the image, its own site.d, a broken rule in it.
+  # shellcheck disable=SC2016  # expanded by the container's shell
+  nodac() { docker run --rm --network none --cap-drop DAC_OVERRIDE --cap-drop DAC_READ_SEARCH -e SITE_ADDRESS=:80 \
+      -e ACME_EMAIL= -e MDMESH_RAW_SITE_D=1 -e EDGE_SITE_SRC=/sd --entrypoint sh "$IMG_TAG" -c 'mkdir /sd
+      printf "no_such_directive here\n" > /sd/rule.caddy; chmod 600 /sd/rule.caddy; chown 1000 /sd/rule.caddy /sd
+      chmod 700 /sd; caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile' > "$IMG_D/raw.log" 2>&1; }
+  # It fails (caddy may have called the empty copy valid; the check's own verdict comes last).
+  nodac_fails() { ! nodac && grep -qF "could not read site.d" "$IMG_D/raw.log" \
+    && tail -n1 "$IMG_D/raw.log" | grep -qF 'a restart would leave out what is listed above' && return 0
+    tail -5 "$IMG_D/raw.log" | sed 's/^/         /'; return 1; }
+  chk "a raw check as root without DAC capabilities on a 700 site.d fails, saying so" nodac_fails
+  # No *.caddy file to check (site.d not mounted: the image's own empty directory, as with a compose file from before
+  # 0.6.0): the raw check fails with a hint, rather than say Valid for a rule it never saw.
+  unmounted() { docker run --rm --network none -e SITE_ADDRESS=:80 -e ACME_EMAIL= -e MDMESH_RAW_SITE_D=1 --entrypoint caddy \
+      "$IMG_TAG" validate --config /etc/caddy/Caddyfile --adapter caddyfile > "$IMG_D/raw.log" 2>&1; }
+  unmounted_fails() { ! unmounted && grep -qF "is it mounted?" "$IMG_D/raw.log" && return 0; tail -5 "$IMG_D/raw.log" | sed 's/^/         /'; return 1; }
+  chk "a raw check with no *.caddy file (site.d not mounted) fails, with a hint" unmounted_fails
   chk "a reload through docker exec succeeds" reload_quiet
   chk "  and keeps the proxy as trusted peer" cfg_has 192.0.2.10/32
   chk "  and the HTTPS origin" cfg_has '"internal"'

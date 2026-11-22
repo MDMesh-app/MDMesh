@@ -907,6 +907,40 @@ qs_dir; qs_env COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml MDMESH_B
 qs_run
 grep -q '/docker compose pull$' "$WORK/docker.log" || { fail "quickstart.sh does not resume a sound proxy-mode install"; show; }
 ok
+# Resumed after its earlier run had seeded the database (it stopped between the seed and the report): the seed doesn't
+# run again, the repairs do, and the admin gets a new temporary password unless they had set their own. A docker stub
+# that answers like a running stack, the database seeded; STUB_ADMIN is what the admin-account query says.
+mkdir -p "$WORK/stubs-qsfull"
+# shellcheck disable=SC2016  # the stub's own variables
+printf '%s\n' '#!/bin/sh' 'echo "docker $*" >> "$STUB_LOG"' 'case "$*" in' \
+  '  ps\ *|"volume ls"*) ;;' \
+  '  *"exec -T -u mdmesh server cat"*) echo OK ;;' \
+  '  *psql*"FROM settings)||"*) echo 1/0 ;;' \
+  '  *psql*"passwordreset OR password"*) echo "$STUB_ADMIN" ;;' \
+  '  *psql*"createnewdevices AND"*) echo 1 ;;' \
+  '  *psql*) cat >> "$STUB_LOG.stdin" ;;' \
+  '  "compose ps -a -q caddy") echo edge1 ;;' \
+  '  "inspect "*) echo "running t0" ;;' \
+  'esac' 'exit 0' > "$WORK/stubs-qsfull/docker"
+chmod +x "$WORK/stubs-qsfull/docker"
+for a in t f; do
+  qs_dir; qs_env > "$WORK/qs7/mdmesh/.env"; chmod 600 "$WORK/qs7/mdmesh/.env"; : > "$WORK/docker.log.stdin"
+  : > "$WORK/docker.log"; rm -f -- "$WORK/PWNED"
+  (cd "$WORK/qs7" && env -i PATH="$WORK/stubs-rel:$WORK/stubs-qsfull:$PATH" HOME="$WORK" STUB_LOG="$WORK/docker.log" \
+    STUB_ADMIN=$a MDM_EDGE_SETTLE=0 MDMESH_RELEASE_PUBKEY="$(sed -n 2p "$FIX/k.pub")" bash "$REPO/quickstart.sh" \
+    < /dev/null > "$WORK/out/o" 2> "$WORK/out/e") || true
+  seed_ran=0; grep -q '_ADMIN_EMAIL_\|INSERT INTO settings' "$WORK/docker.log.stdin" && seed_ran=1
+  { grep -qF '== MDMesh is up ==' "$WORK/out/o" && [ "$seed_ran" = 0 ] && grep -q 'createnewdevices AND' "$WORK/docker.log" \
+    && [ ! -e "$WORK/qs7/mdmesh/.quickstart-unfinished" ]; } || { fail "a resume after a committed seed (admin $a) does not finish"; show; }
+  if [ "$a" = t ]; then
+    { grep -q "UPDATE users SET password=:'h', passwordreset=true" "$WORK/docker.log.stdin" && grep -qE 'Password: +[0-9a-f]{48} ' "$WORK/out/o"; } \
+      || { fail "a resume after a committed seed does not give the admin a new temporary password"; show; }
+  else
+    { ! grep -q 'UPDATE users SET password' "$WORK/docker.log.stdin" && grep -qF '(the one you set; unchanged)' "$WORK/out/o"; } \
+      || { fail "a resume after a committed seed replaces a password the admin had set"; show; }
+  fi
+  ok
+done
 # A login umask of 0002 (Debian and Ubuntu's default for a regular user): a new quick start still makes its directory
 # writable by this user only. A path that already exists and others may write (an install directory made by hand under
 # that umask, a file in it, its .env) is refused with the chmod to run, never made private and then trusted.

@@ -92,7 +92,8 @@ it is read. A directory of yours left open (by a `0002` umask) is refused too, w
 else could have changed it.
 
 If the quick start stops after it wrote `.env` (an image pull, a port in use), fix the cause and run it again with
-`MDMESH_DIR` set to that directory, as it says: it finishes the install with the same `.env`. Don't delete that
+`MDMESH_DIR` set to that directory, as it says: it finishes the install with the same `.env`. If it had already seeded
+the database, it shows a new temporary admin password (the earlier one was never shown), unless you had set your own. Don't delete that
 `.env` while the install's volumes exist: the database keeps the password in it.
 
 Run every `docker compose` command from `./mdmesh`, where `.env` lives. The install is pinned to the latest

@@ -1172,8 +1172,26 @@ resume_install() {
   # shellcheck source=install/lib/db.sh
   . ./install/lib/db.sh
   mdm_mode_settings "$MODE" rerun
-  ADMIN_PASSWORD=$(rand); RESET_TOKEN=$(openssl rand -hex 16)
+  ADMIN_PASSWORD=$(rand); RESET_TOKEN=$(openssl rand -hex 16); RESUMING=1
   finish_install
+}
+
+# qs_admin_after_seed: a resumed install whose earlier run seeded the database and then stopped (between the seed and
+# its admin password, in the repairs, or before it reported): that run's password was never shown. So unless the admin
+# has since set one of their own (no first-login change pending, and not Headwind's default md5('admin')), it gets a
+# new temporary one, which a first login must change (as a fresh seed's). Shown with ADMIN_SHOWN=1; else 0.
+qs_admin_after_seed() {
+  local st vars
+  st=$(mdm_psql -c "SELECT passwordreset OR password = '21232f297a57a5a743894a0e4a801fc3' FROM users WHERE login='admin'") \
+    || { err "Could not read the admin account."; return 1; }
+  case "$st" in
+    f) ADMIN_SHOWN=0; return 0 ;;
+    t) ;;
+    *) err "The database has no admin account to finish (got: ${st:-nothing})."; return 1 ;;
+  esac
+  vars="\\set h $(_mdm_psql_arg "$(mdm_pwhash "$ADMIN_PASSWORD")")"$'\n'"\\set t $(_mdm_psql_arg "$RESET_TOKEN")"
+  printf '%s\n' "$vars" "UPDATE users SET password=:'h', passwordreset=true, passwordresettoken=:'t' WHERE login='admin';" \
+    | mdm_psql || { err "Could not set a new temporary admin password."; return 1; }
 }
 
 # finish_install: pull, start, seed and report, with the .env in this directory. A new install runs it once .env is
@@ -1223,15 +1241,22 @@ finish_install() {
   # shellcheck disable=SC2034  # PSQL is consumed by install/lib/db.sh
   PSQL=(docker compose exec -T postgres psql -U mdmesh -d mdmesh)
   STATE=$(mdm_db_state)
+  ADMIN_SHOWN=1
   case "$STATE" in
-    fresh)  ;;
-    seeded) err "This database is already seeded — the quick start is for new installs only. To upgrade, use ./setup.sh in a clone."; exit 1 ;;
+    fresh)
+      say "Seeding settings + admin…"
+      if ! mdm_seed "admin@${HOST}" install/sql/hmdm_init.en.sql "$ADMIN_PASSWORD" "$RESET_TOKEN"; then
+        err "Seeding failed — the install is NOT usable yet. Fix the error above."; err "$RESUME_HINT"; exit 1
+      fi ;;
+    seeded)
+      # Only this install's own earlier run (it stopped before the end: .quickstart-unfinished) gets past this.
+      if [ "${RESUMING:-0}" != 1 ]; then
+        err "This database is already seeded — the quick start is for new installs only. To upgrade, use ./setup.sh in a clone."; exit 1
+      fi
+      say "The database was seeded by this install's earlier run: finishing it."
+      qs_admin_after_seed || { err "$RESUME_HINT"; exit 1; } ;;
     *)      err "Could not confirm a fresh database (state: ${STATE}). Aborting before touching data."; exit 1 ;;
   esac
-  say "Seeding settings + admin…"
-  if ! mdm_seed "admin@${HOST}" install/sql/hmdm_init.en.sql "$ADMIN_PASSWORD" "$RESET_TOKEN"; then
-    err "Seeding failed — the install is NOT usable yet. Fix the error above."; err "$RESUME_HINT"; exit 1
-  fi
   if ! mdm_post_seed install/sql/post_seed.sql; then
     err "Post-seed repairs failed — device enrollment would not work. Fix the error above."; err "$RESUME_HINT"; exit 1
   fi
@@ -1241,11 +1266,15 @@ finish_install() {
   echo "  Console:        ${BASE_URL}"
   echo "  REST API base:  ${BASE_URL}/rest"
   echo "  Login:          admin"
-  echo "  Password:       ${ADMIN_PASSWORD}   (temporary — you'll set your own on first login)"
+  if [ "$ADMIN_SHOWN" = 1 ]; then
+    echo "  Password:       ${ADMIN_PASSWORD}   (temporary — you'll set your own on first login)"
+  else
+    echo "  Password:       (the one you set; unchanged)"
+  fi
   echo "  Directory:      $(pwd)   (run 'docker compose' commands from here)"
   echo "  Reached via:    ${ENTRY}"
   echo
-  warn "Save that password now — it is not stored anywhere in clear text."
+  [ "$ADMIN_SHOWN" != 1 ] || warn "Save that password now — it is not stored anywhere in clear text."
   echo "Next: $EXTRA_NOTE"
   if [ "$MODE" = 3 ] && [ "$ORIGIN_TLS" = 1 ]; then
     echo "      Your proxy trusts MDMesh's CA: docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt ./mdmesh-origin-ca.crt"

@@ -7,6 +7,8 @@
 #      (site.d/*.caddy) are imported, and a broken one is an error. Behind your own proxy, the TRUSTED_PROXIES list
 #      docker/edge-peers.sh makes (`host`, single addresses) and the lists it refuses.
 #   1c. docs/proxies' nginx, Apache and Caddy configurations parse (nginx -t, httpd -t, caddy validate).
+#   1e. docs/proxies' HTTPS-origin lines, in nginx, Apache, Caddy and Traefik in front of a real edge: they reach it with
+#       MDMesh's CA and refuse it with another (each checks the edge's certificate).
 #   2. `docker compose config -q` for every compose file / overlay / profile combination the installers use; what the
 #      proxy overlay publishes and passes to the edge.
 #   2b. A digest pin comes out of `docker compose config --images` whole, as supervisor/apply.sh requires of it.
@@ -187,6 +189,7 @@ cleanup_img() {
   IMG_D=''
 }
 cleanup_tmp() {
+  if [ "$(type -t cleanup_ot)" = function ]; then cleanup_ot; fi
   if [ -n "${SITE_D:-}" ] && [ -d "$SITE_D" ]; then rm -f "$SITE_D"/*.caddy; rmdir "$SITE_D" || true; SITE_D=''; fi
   if [ -n "${PX_D:-}" ] && [ -d "$PX_D" ]; then rm -rf -- "$PX_D"; PX_D=''; fi
   cleanup_img
@@ -328,6 +331,86 @@ px_check "apache.conf: httpd -t" httpd:2.4-alpine sh -c 'c=/usr/local/apache2/co
   printf "Listen 443\nInclude /px/apache.conf\n" >> "$c" && httpd -t'
 px_check "Caddyfile: caddy validate" "$CADDY_IMAGE" caddy validate --config /px/Caddyfile --adapter caddyfile
 cleanup_tmp
+
+# --- 1e. docs/proxies' HTTPS-origin lines, as code: each proxy, its recipe's HTTPS-origin lines in use (only the
+# placeholders replaced), in front of a real edge with MDMESH_ORIGIN_TLS=1 at an IP address (as on another machine).
+# With MDMesh's CA the console answers through it, with its headers reaching the edge; with another CA the proxy refuses
+# the edge (no 200): each recipe verifies the certificate. ---
+echo "docs/proxies' HTTPS-origin lines (each proxy against a real edge, with MDMesh's CA and with another):"
+OT_D="$(mktemp -d)"; chmod 755 "$OT_D"; OT_NET="mdmesh-edgecheck-ot-$$"; OT_EDGE="mdmesh-edgecheck-ot-edge-$$"
+OT_FRONT="mdmesh-edgecheck-ot-front-$$"
+cleanup_ot() {
+  [ -n "${OT_D:-}" ] && [ -d "$OT_D" ] || return 0
+  docker rm -f "$OT_FRONT" "$OT_EDGE" >> "$OT_D/docker.log" 2>&1 || true
+  docker network rm "$OT_NET" >> "$OT_D/docker.log" 2>&1 || true
+  rm -rf -- "$OT_D"; OT_D=''
+}
+ot() {  # ot NAME WANT-CA(right|wrong): run the front, then a request through it from another container
+  local name=$1 ca=$2 out conf
+  docker rm -f "$OT_FRONT" >> "$OT_D/docker.log" 2>&1 || true
+  cp "$OT_D/$ca-ca.crt" "$OT_D/front/mdmesh-origin-ca.crt"; cp "$OT_D/$ca-ca.crt" "$OT_D/front/traefik/mdmesh-origin-ca.crt"
+  chmod 644 "$OT_D/front/mdmesh-origin-ca.crt" "$OT_D/front/traefik/mdmesh-origin-ca.crt"
+  case "$name" in
+    nginx) conf="-v $OT_D/front/nginx.conf:/etc/nginx/conf.d/default.conf:ro -v $OT_D/front/mdmesh-origin-ca.crt:/etc/nginx/mdmesh-origin-ca.crt:ro nginx:1.26-alpine" ;;
+    apache) conf="-v $OT_D/front/httpd.conf:/usr/local/apache2/conf/httpd.conf:ro -v $OT_D/front/apache.conf:/usr/local/apache2/conf/mdmesh.conf:ro -v $OT_D/front/mdmesh-origin-ca.crt:/etc/apache2/mdmesh-origin-ca.crt:ro httpd:2.4-alpine" ;;
+    caddy) conf="-v $OT_D/front/Caddyfile:/etc/caddy/Caddyfile:ro -v $OT_D/front/mdmesh-origin-ca.crt:/etc/caddy/mdmesh-origin-ca.crt:ro $CADDY_IMAGE" ;;
+    traefik) conf="-v $OT_D/front/traefik:/etc/traefik:ro $OT_TRAEFIK" ;;
+  esac
+  # shellcheck disable=SC2086  # conf is a list of docker run words
+  docker run -d --name "$OT_FRONT" --network "$OT_NET" -v "$OT_D/front/certs:/etc/letsencrypt/live/mdm.example.com:ro" \
+    $conf >> "$OT_D/docker.log" 2>&1 || { echo "000 the proxy did not start"; return 0; }
+  local ip _; ip="$(docker inspect -f "{{(index .NetworkSettings.Networks \"$OT_NET\").IPAddress}}" "$OT_FRONT")"
+  for _ in $(seq 1 40); do
+    out="$(docker run --rm --network "$OT_NET" curlimages/curl:latest -sk -m 5 -o /tmp/body -w '%{http_code}' \
+      --resolve "mdm.example.com:443:$ip" https://mdm.example.com/ 2>&1)" || true
+    case "$out" in 000*|'') sleep 0.5 ;; *) break ;; esac
+  done
+  echo "$out"
+}
+docker network create --internal "$OT_NET" >> "$OT_D/docker.log" 2>&1
+OT_SUBNET="$(docker network inspect -f '{{(index .IPAM.Config 0).Subnet}}' "$OT_NET")"
+mkdir -p "$OT_D/srv" "$OT_D/front/certs" "$OT_D/front/traefik"; echo spa > "$OT_D/srv/index.html"; chmod -R a+rX "$OT_D/srv"
+# The edge: proxy mode, HTTPS origin for mdm.example.com from its own CA, trusting the stack network's addresses.
+docker run -d --name "$OT_EDGE" --network "$OT_NET" -e MDMESH_EXPOSURE=proxy -e "EDGE_TRUSTED_PROXIES=$OT_SUBNET" \
+  -e EDGE_BIND=0.0.0.0:8080 -e BASE_URL=https://mdm.example.com -e MDMESH_ORIGIN_TLS=1 -e SITE_ADDRESS=:8080 -e ACME_EMAIL= \
+  -e TRUSTED_PROXIES= -v "$CADDYFILE:/etc/caddy/Caddyfile:ro" -v "$EDGE_PEERS:/edge-peers.sh:ro" -v "$OT_D/srv:/srv:ro" \
+  --entrypoint sh "$CADDY_IMAGE" -c '. /edge-peers.sh && exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile' \
+  >> "$OT_D/docker.log" 2>&1
+OT_IP="$(docker inspect -f "{{(index .NetworkSettings.Networks \"$OT_NET\").IPAddress}}" "$OT_EDGE")"
+for _ in $(seq 1 40); do docker exec "$OT_EDGE" test -s /data/caddy/pki/authorities/local/root.crt && break; sleep 0.5; done
+docker exec "$OT_EDGE" cat /data/caddy/pki/authorities/local/root.crt > "$OT_D/right-ca.crt" 2>> "$OT_D/docker.log"
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=another CA" -keyout "$OT_D/wrong-ca.key" \
+  -out "$OT_D/wrong-ca.crt" >> "$OT_D/docker.log" 2>&1
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=mdm.example.com -addext subjectAltName=DNS:mdm.example.com \
+  -keyout "$OT_D/front/certs/privkey.pem" -out "$OT_D/front/certs/fullchain.pem" >> "$OT_D/docker.log" 2>&1
+chmod -R a+rX "$OT_D/front"
+# Each recipe with its HTTPS-origin lines in use instead of the plain ones, 192.0.2.20 the edge's address.
+ot_render() { sed -e "s#192\.0\.2\.20#$OT_IP#g" "$ROOT/docs/proxies/$1" > "$OT_D/front/$2"; chmod 644 "$OT_D/front/$2"; }
+ot_render nginx.conf nginx.conf
+sed -i -E 's#^( *)proxy_pass http://127\.0\.0\.1:8080;#\1\# plain origin replaced#; s#^( *)\# (proxy_(pass https|ssl_)[^;]*;)#\1\2#' "$OT_D/front/nginx.conf"
+ot_render apache.conf apache.conf
+sed -i -E 's#^( *)(ProxyPass(Reverse)? +/ http://127)#\1\# \2#; s#^( *)\# (SSLProxy[A-Za-z]+ |ProxyPass(Reverse)? +/ https://)#\1\2#' "$OT_D/front/apache.conf"
+docker run --rm httpd:2.4-alpine cat /usr/local/apache2/conf/httpd.conf > "$OT_D/front/httpd.conf" 2>> "$OT_D/docker.log"
+sed -i -E 's/^#(LoadModule (ssl|proxy|proxy_http|headers|rewrite|socache_shmcb)_module )/\1/' "$OT_D/front/httpd.conf"
+printf 'Listen 443\nInclude conf/mdmesh.conf\n' >> "$OT_D/front/httpd.conf"
+ot_render Caddyfile Caddyfile
+sed -i -E 's#^(\t)reverse_proxy 127\.0\.0\.1:8080$#\1\# plain origin replaced#; s#^(\t)\# (reverse_proxy https|\t|\})#\1\2#' "$OT_D/front/Caddyfile"
+sed -i 's#^mdm.example.com {#mdm.example.com {\n\ttls /etc/letsencrypt/live/mdm.example.com/fullchain.pem /etc/letsencrypt/live/mdm.example.com/privkey.pem#' "$OT_D/front/Caddyfile"
+ot_render traefik.yml traefik/traefik.yml
+ot_render traefik-dynamic.yml traefik/traefik-dynamic.yml
+sed -i -E '/^        servers:$/,/^          - url: http:\/\/127/d; s#^( +)\# (servers:|  - url: https|serversTransport:|serversTransports:|  mdmesh-origin:|    serverName:|    rootCAs:|      - /etc/traefik)#\1\2#' "$OT_D/front/traefik/traefik-dynamic.yml"
+chmod -R a+rX "$OT_D/front"
+OT_TRAEFIK=traefik:${E2E_TRAEFIK:-v3.3}
+for name in nginx apache caddy traefik; do
+  r="$(ot "$name" right)"
+  if [ "$r" = 200 ]; then pass "docs/proxies $name, HTTPS origin with MDMesh's CA: the console answers ($r)"
+  else fail "docs/proxies $name, HTTPS origin with MDMesh's CA: the console answers (got $r)"
+    docker logs --tail 5 "$OT_FRONT" 2>&1 | sed 's/^/         /'; fi
+  r="$(ot "$name" wrong)"
+  case "$r" in 200) fail "docs/proxies $name, HTTPS origin with another CA: the edge's certificate is not checked (200)" ;;
+    *) pass "docs/proxies $name, HTTPS origin with another CA: refused ($r)" ;; esac
+done
+cleanup_ot
 
 # --- 1d. The web image's own start: docker/web.Dockerfile's final stage (a stand-in page for the console, which needs
 # the web build), run as the image runs: the entrypoint as root, edge-peers.sh, then su-exec caddy through the wrapper.

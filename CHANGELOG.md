@@ -40,6 +40,8 @@ Fixes
   gone, it stops too, instead of starting with a database password that can't work.
 - The quick start and `./setup.sh` fail, showing the edge's last log lines, when the edge (Caddy) doesn't stay up;
   before, they reported MDMesh up. `./setup.sh` still runs its database repairs first.
+- A `caddy reload` through `docker compose exec` keeps the edge's trusted peers (before, in tunnel mode, every client
+  then counted as one address for the sign-in limits) and, behind your own proxy, its HTTPS origin.
 - An update (or Roll back) counts as healthy only when the edge stays up too, not just the server: an edge the new
   release can't start, say over a rule in `site.d`, is rolled back instead of leaving the console unreachable.
 

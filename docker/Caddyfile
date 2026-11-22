@@ -130,8 +130,9 @@
 		# mounted read-only at /etc/caddy/site.d (MDMESH_SITE_DIR in .env), that docker/edge-peers.sh let through at
 		# start (only files nobody but their owner can change) into EDGE_SITE_D, /run/mdmesh-site.d (also the default: a
 		# caddy command that missed those settings never reads the raw mount). Updates never touch them. None there:
-		# nothing is imported. A handle here answers before MDMesh's own below; any other directive (a header, a
-		# bare respond) applies to every request that gets this far.
+		# nothing is imported. Each file is pasted here, inside this route, so it can't define a snippet or import
+		# another file. A handle here answers before MDMesh's own below; any other directive (a header, a bare respond)
+		# applies to every request that gets this far.
 		import {$EDGE_SITE_D:/run/mdmesh-site.d}/*.caddy
 
 		# Canonical agent-APK URL: /files/agent.apk works on BOTH deployment shapes (native serves a

@@ -251,8 +251,9 @@ What anyone else could change is never loaded, since your rules reach every visi
   `docker compose logs caddy`; it starts without it (and without all of them if `site.d` itself is open to others).
   Under rootless Docker or userns-remap, a file of the host's root shows up as uid 65534 and is left out: make the
   files yours.
-- Only the `*.caddy` files are loaded, from a checked copy: an `import` in one of them finds no other file of
-  `site.d`, so keep shared snippets in a `.caddy` file of their own.
+- Each file stands alone: it is pasted into MDMesh's site, inside its route, so it can't define a snippet
+  (`(name) { … }`) or `import` another file (only the `*.caddy` files are loaded, from the checked copy). Repeat a
+  shared directive in each file, or put one that applies to every request in a file of its own.
 - On Windows (WSL2, Docker Desktop), keep the install directory inside the Linux filesystem (`~/…`), not on a Windows
   drive (`/mnt/c/…`): files there show as writable by everyone, so every rule would be left out.
 

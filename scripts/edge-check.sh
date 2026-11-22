@@ -362,11 +362,16 @@ ot() {  # ot NAME WANT-CA(right|wrong): run the front, then a request through it
   local ip _; ip="$(docker inspect -f "{{(index .NetworkSettings.Networks \"$OT_NET\").IPAddress}}" "$OT_FRONT")"
   for _ in $(seq 1 40); do
     out="$(docker run --rm --network "$OT_NET" curlimages/curl:latest -sk -m 5 -o /tmp/body -w '%{http_code}' \
-      --resolve "mdm.example.com:443:$ip" https://mdm.example.com/ 2>&1)" || true
+      --resolve "mdm.example.com:443:$ip" https://mdm.example.com/ 2>> "$OT_D/docker.log")" || true
     case "$out" in 000*|'') sleep 0.5 ;; *) break ;; esac
   done
   echo "$out"
 }
+# The images first: a pull's progress (docker run's, on stderr) must never mix into a probe's answer.
+OT_TRAEFIK=traefik:${E2E_TRAEFIK:-v3.3}
+for i in curlimages/curl:latest nginx:1.26-alpine httpd:2.4-alpine "$OT_TRAEFIK"; do
+  docker image inspect "$i" >> "$OT_D/docker.log" 2>&1 || docker pull -q "$i" >> "$OT_D/docker.log" 2>&1 || true
+done
 docker network create --internal "$OT_NET" >> "$OT_D/docker.log" 2>&1
 OT_SUBNET="$(docker network inspect -f '{{(index .IPAM.Config 0).Subnet}}' "$OT_NET")"
 mkdir -p "$OT_D/srv" "$OT_D/front/certs" "$OT_D/front/traefik"; echo spa > "$OT_D/srv/index.html"; chmod -R a+rX "$OT_D/srv"
@@ -400,7 +405,6 @@ ot_render traefik.yml traefik/traefik.yml
 ot_render traefik-dynamic.yml traefik/traefik-dynamic.yml
 sed -i -E '/^        servers:$/,/^          - url: http:\/\/127/d; s#^( +)\# (servers:|  - url: https|serversTransport:|serversTransports:|  mdmesh-origin:|    serverName:|    rootCAs:|      - /etc/traefik)#\1\2#' "$OT_D/front/traefik/traefik-dynamic.yml"
 chmod -R a+rX "$OT_D/front"
-OT_TRAEFIK=traefik:${E2E_TRAEFIK:-v3.3}
 for name in nginx apache caddy traefik; do
   r="$(ot "$name" right)"
   if [ "$r" = 200 ]; then pass "docs/proxies $name, HTTPS origin with MDMesh's CA: the console answers ($r)"

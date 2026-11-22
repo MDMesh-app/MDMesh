@@ -68,11 +68,12 @@ done
 # confirm, and the base URL, the port and the data are kept, as with -y (an answer given in advance still counts). On a
 # host without one it is an install, with its questions. (The release it updates from is the install's own record, read
 # below, never anything in the environment.)
-UPDATING=0
-if [ "${MDMESH_UPDATING:-0}" = 1 ] \
-   && { [ -e /opt/mdmesh-tc/conf/Catalina/localhost/ROOT.xml ] || [ -L /opt/mdmesh-tc/conf/Catalina/localhost/ROOT.xml ]; }; then
-  UPDATING=1; ASSUME_YES=1
+HAS_INSTALL=0   # this host has an install: its ROOT.xml
+if [ -e /opt/mdmesh-tc/conf/Catalina/localhost/ROOT.xml ] || [ -L /opt/mdmesh-tc/conf/Catalina/localhost/ROOT.xml ]; then
+  HAS_INSTALL=1
 fi
+UPDATING=0
+if [ "${MDMESH_UPDATING:-0}" = 1 ] && [ "$HAS_INSTALL" = 1 ]; then UPDATING=1; ASSUME_YES=1; fi
 # Without -y the run starts with the confirmation, which MDMESH_NONINTERACTIVE=1 can't answer.
 [ "$ASSUME_YES" = 1 ] || mdm_ask assume-yes
 if [ "${MDMESH_DRY_RUN:-0}" = 1 ]; then
@@ -101,9 +102,17 @@ command -v apt-get >/dev/null || { echo "This script targets Debian/Ubuntu."; ex
 # tucked into a logfile that is auto-expanded only when something fails. Run with -v to stream it inline.
 # Colour/spinner auto-disable when stdout isn't a TTY or NO_COLOR is set, so piped runs stay clean.
 # ------------------------------------------------------------------------------------------------------
-# The log is emptied once the run is confirmed (below the question): answered no, it keeps the previous run's log, which
-# may hold the failure being looked into. Nothing writes to it before then.
-LOGFILE="${LOGFILE:-/var/log/mdmesh-install.log}"
+# The log can capture echoed SQL, including the DB password (see the Database step), so it is owner-only and never a
+# link: LOGFILE (default /var/log/mdmesh-install.log) when its directory is writable and it is a regular file or absent;
+# otherwise a fresh private file from mktemp in /tmp (created exclusively, mode 600, so a link planted there is never
+# followed). It is emptied only once the run is confirmed (below the question): answered no, it keeps the previous run's
+# log, which may hold the failure being looked into. Nothing writes to it before then, and the error handler shows
+# its lines only from then on (_log_started).
+LOGFILE="${LOGFILE:-/var/log/mdmesh-install.log}"; _log_tmp=0; _log_started=0
+if [ -L "$LOGFILE" ] || { [ -e "$LOGFILE" ] && [ ! -f "$LOGFILE" ]; } || [ ! -d "${LOGFILE%/*}" ] || [ ! -w "${LOGFILE%/*}" ]; then
+  LOGFILE=$(mktemp /tmp/mdmesh-install.XXXXXX) || { echo "Could not create a log file (${LOGFILE} is not usable, nor is /tmp)." >&2; exit 1; }
+  _log_tmp=1
+fi
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
   c_reset=$'\033[0m'; c_dim=$'\033[2m'; c_grn=$'\033[32m'; c_red=$'\033[31m'
   c_yel=$'\033[33m'; c_cyn=$'\033[36m'; c_bold=$'\033[1m'; TTY=1
@@ -127,7 +136,7 @@ _spin_stop() {
   [ "$TTY" = 1 ] && printf '\r\033[K'
   return 0
 }
-_show_log() { hr; tail -n 30 "$LOGFILE" 2>/dev/null | sed "s/^/    ${c_dim}/;s/$/${c_reset}/"; hr; printf '  full log: %s\n' "$LOGFILE"; }
+_show_log() { [ "$_log_started" = 1 ] || return 0; hr; tail -n 30 "$LOGFILE" 2>/dev/null | sed "s/^/    ${c_dim}/;s/$/${c_reset}/"; hr; printf '  full log: %s\n' "$LOGFILE"; }
 _fail()     { _spin_stop; printf '  %s✗ %s%s\n' "$c_red" "$1" "$c_reset"; printf '\n  %sIt failed — last lines of the log:%s\n' "$c_yel" "$c_reset"; _show_log; exit 1; }
 trap '_spin_stop; printf "\n  %s✗ install aborted (line %s)%s\n" "$c_red" "$LINENO" "$c_reset"; _show_log' ERR
 
@@ -201,17 +210,18 @@ WARN
 if [ "$ASSUME_YES" != "1" ]; then
   mdm_ask assume-yes
   printf '  Type "yes" to proceed: '
-  # End of input (stdin closed) is a no as well, not an error.
-  read -r _confirm || _confirm=''   # answer: assume-yes
+  # End of input (stdin closed, an empty pipe) is a no as well, not an error; it ends the prompt's line.
+  read -r _confirm || { _confirm=''; echo; }   # answer: assume-yes
   if [ "$_confirm" != "yes" ]; then
     mdm_native_declined "$INSTALLED_VERSION" "$CLONE_VERSION" | sed 's/^/  /'
+    if [ "$_log_tmp" = 1 ]; then rm -f -- "$LOGFILE"; fi   # the empty one made above
     exit 1
   fi
 fi
 # Confirmed: from here on the run changes the host. A fresh log, owner-only even if it pre-existed with looser modes
-# (umask only covers new files): it can capture echoed SQL, including the DB password (see the Database step).
-: > "$LOGFILE" 2>/dev/null || LOGFILE="/tmp/mdmesh-install.log"; : > "$LOGFILE" 2>/dev/null || true
-chmod 600 "$LOGFILE" 2>/dev/null || true
+# (umask only covers new files).
+{ : > "$LOGFILE" && chmod 600 "$LOGFILE"; } || { echo "Could not write the log file $LOGFILE." >&2; exit 1; }
+_log_started=1
 
 rand() { mdm_rand; }
 
@@ -307,11 +317,13 @@ tc_guard()   { guard_under "$CATALINA" "$1"; }
 tc_write()   { local rel="$1"; shift; write_under "$CATALINA" "$rel" "$@"; }
 base_guard() { guard_under "$BASE_DIR" "$1"; }
 base_write() { local rel="$1"; shift; write_under "$BASE_DIR" "$rel" "$@"; }
-# An install from before the installed-version record: write down the release its supervisor.env names, now, before the
-# first change. This run rewrites supervisor.env's CURRENT_VERSION before it ends, so if it then failed, the next run
-# would otherwise read the new release as the one it updates from.
-_unrecorded=$(mdm_installed_version_unrecorded "$SUP_ENV_DIR")
-if [ -n "$_unrecorded" ]; then write_under "$SUP_ENV_DIR" installed-version printf '%s\n' "$_unrecorded"; fi
+# An install without the installed-version record (from before it): write down the release it runs, as read above
+# (supervisor.env's CURRENT_VERSION, or empty when not known), now, before the first change. This run rewrites
+# supervisor.env before it ends, so if it then failed, the next run would otherwise read the new release as the one it
+# updates from.
+if [ "$HAS_INSTALL" = 1 ] && [ ! -e "$SUP_ENV_DIR/installed-version" ] && [ ! -L "$SUP_ENV_DIR/installed-version" ]; then
+  write_under "$SUP_ENV_DIR" installed-version printf '%s\n' "$INSTALLED_VERSION"
+fi
 have_systemd() { command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; }
 # unit_installed NAME: NAME.service is installed. Not `systemctl list-unit-files | grep -q`: grep exits at the first
 # match, systemctl then gets SIGPIPE writing its footer, and under pipefail the pipeline fails, so the unit reads as absent.

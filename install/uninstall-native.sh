@@ -88,7 +88,7 @@ echo "  MDMesh native uninstall — this host will lose:"
 [ -f "$SERVER_UNIT" ] && echo "    • server service:             mdmesh-server (systemd unit removed)"
 id -u "$SVC_USER" >/dev/null 2>&1 && [ "$KEEP_DATA" != 1 ] && echo "    • service user:               $SVC_USER"
 [ -f "$UNIT" ]     && echo "    • updater service:            mdmesh-supervisor (systemd unit removed)"
-[ -d "$SUP_ENV_DIR" ] && echo "    • updater settings:           $SUP_ENV_DIR"
+[ -d "$SUP_ENV_DIR" ] && echo "    • updater settings, installed-release record: $SUP_ENV_DIR"
 if [ "$KEEP_DATA" = 1 ]; then
   [ -d "$BASE_DIR" ] && echo "    • app dir (KEEPING files/ and backups/): $BASE_DIR"
   [ -n "$counts" ]   && echo "    • database:                   KEPT ($counts)"

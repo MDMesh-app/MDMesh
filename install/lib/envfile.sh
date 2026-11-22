@@ -32,11 +32,12 @@ mdm_envfile_param() {
 # it; nothing when it cannot tell. Never the clone's tag: the clone can move ahead of the install (an update stopped
 # before it changed anything, a git pull), and only a completed run changes what the install runs.
 #   DIR/installed-version: written by install-native.sh as the very last step of a run that succeeded, so a run that
-#     stops or fails leaves the release before it. When the file is there it is the answer (empty: the clone had no
-#     release tag when it was installed).
+#     stops or fails leaves the release before it. When the file is there it is the answer (empty: not known, as when
+#     the clone had no release tag). An older installer (0.5.1 or earlier) run over it, a native rollback, leaves it as
+#     it was: it names the newer release until this installer's next run. Cosmetic; accepted.
 #   DIR/supervisor.env CURRENT_VERSION: installs from before that record have only this. It is written late in a run,
 #     but before the run ends, so it is the fallback only, and it is read once: the installer records it as
-#     installed-version as soon as a run is confirmed (mdm_installed_version_unrecorded), before it changes anything.
+#     installed-version as soon as a run over such an install is confirmed, before it changes anything.
 #     0.0.0 is the installer's "untagged" placeholder.
 #   Installs from before v0.3.2 kept supervisor.env in the service account's tree, which root must not read as itself:
 #     nothing (the caller shows "?").
@@ -57,10 +58,3 @@ mdm_installed_version() {
   printf '%s\n' "$v"
 }
 
-# mdm_installed_version_unrecorded DIR: the version mdm_installed_version DIR reads from the supervisor.env fallback, when
-# DIR has no installed-version record yet; nothing otherwise. The installer writes it down as the record before its first
-# change, so a run that then fails after rewriting supervisor.env can't make the next one start from the new release.
-mdm_installed_version_unrecorded() {
-  if [ -e "$1/installed-version" ] || [ -L "$1/installed-version" ]; then return 0; fi
-  mdm_installed_version "$1"
-}

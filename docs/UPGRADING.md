@@ -93,8 +93,10 @@ sudo ./setup.sh --update --native
 From 0.4.x, move the clone to 0.5.0 once with `git fetch --tags && git checkout v0.5.0 && sudo ./setup.sh --update --native` ([v0.5.0](#v050)): 0.4.x has no `--update`.
 
 Over an install, `--update` asks nothing. It shows `MDMesh · native update, <from> → <to>` and keeps the data, the
-base URL and the port, as `-y` does. `<from>` is the release the install runs, as the install recorded it (not the
-release the clone is on), or `?` when it has no record. From 0.5.0 it still asks once, because 0.5.0's `--update`
+base URL and the port, as `-y` does. `<from>` is the release the install runs, as the install recorded it
+(`/etc/mdmesh/installed-version`, or for installs from before that record `CURRENT_VERSION` in `supervisor.env`), never the release
+the clone is on; `?` when it has neither. After a rollback with an older release's installer the record still names
+the newer release until the next run; that is cosmetic. From 0.5.0 it still asks once, because 0.5.0's `--update`
 doesn't tell the installer it is an update: it shows `This host runs v<from>; this clone is on v<to>` under its title.
 Add `-y` to skip the questions. If you answer no there, the install is unchanged but the clone is already on the new
 release: run `sudo ./setup.sh --update --native` again to finish.

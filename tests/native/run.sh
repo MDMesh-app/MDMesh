@@ -236,6 +236,9 @@ case "$SCENARIO" in
     install_with_settings "install-$T2_FROM_REF" "$FROM_SHA"
     [ "$CHECK_FAILS" -eq 0 ] || die "the $T2_FROM_REF install failed its checks; not upgrading it"
     continuity_before
+    # The release the install reports: what the upgrade's installer reads as the one it updates from (supervisor.env's
+    # CURRENT_VERSION; empty before v0.3.2, whose file it can't read). A killed upgrade must keep it as that.
+    from_ver=$(docker exec "$CTR" sed -n 's/^CURRENT_VERSION=//p' /etc/mdmesh/supervisor.env) || from_ver=''
     docker exec "$CTR" systemctl stop mdmesh-supervisor mdmesh-server postgresql
     IMAGES+=("$SNAPSHOT")
     docker commit "$CTR" "$SNAPSHOT" > /dev/null
@@ -258,6 +261,10 @@ case "$SCENARIO" in
       else
         guest state > "$OUT/kill-$point.state" 2>&1 || true
         note="killed at: $(sed -n 's/.*last installer line: *//p' "$OUT/kill-$point.result" | head -n 1)"
+        # The installer records the release it started from before its first change, so wherever it was killed (even
+        # after rewriting supervisor.env) the record, if there is one yet, still names it.
+        rec=$(docker exec "$CTR" sh -c 'if [ -e /etc/mdmesh/installed-version ]; then cat /etc/mdmesh/installed-version; else echo absent; fi') || rec=error
+        [ "$rec" = absent ] || check "the killed upgrade still records the release it started from" "$rec" "$from_ver"
         rc=0; OMIT_PORT=1 OMIT_BASE_URL=1 run_install "rerun-$point" || rc=$?   # the re-run must find the port and URL itself
         if [ "$rc" -ne 0 ]; then
           note="$note; re-run FAILED (rc=$rc): $(grep -v '^[[:space:]]*$' "$OUT/rerun-$point.out" | grep -m1 '✗' | sed 's/^ *//')"
@@ -266,6 +273,11 @@ case "$SCENARIO" in
           note="$note; a second re-run $([ "$rc" -eq 0 ] && echo succeeded || echo "failed too (rc=$rc)")"
           verdict="NOT-CONVERGED"
           CHECK_FAILS=$((CHECK_FAILS + 1))
+        fi
+        # ... and the re-run (with -y: not an update) says the host still runs it.
+        if [ -n "$from_ver" ]; then
+          check "the re-run after the kill says the host runs v$from_ver" \
+            "$(grep -cF "This host runs v${from_ver};" "$OUT/rerun-$point.out" || true)" 1
         fi
         continuity_after "rerun-$point"
         settings_kept "rerun-$point"

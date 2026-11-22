@@ -333,13 +333,13 @@ for c in "9.1.0 9.1.0" "9.1.0 9.0.0" "'' 9.1.0" "9.0.0 ''" "'' ''"; do
   eval "set -- $c"
   expect_lib "Aborted — nothing on this host was changed." "declining with install '$1', clone '$2'" mdm_native_declined "$1" "$2"
 done
-# The supervisor.env fallback is read once: the installer records it before its first change, so a run that then fails
-# after rewriting CURRENT_VERSION to the new release still leaves the old one as the release to update from.
-expect_lib 9.0.0 "the fallback to record, without a record" mdm_installed_version_unrecorded "$E"
-printf '%s\n' "$(lib mdm_installed_version_unrecorded "$E")" > "$E/installed-version"   # as the installer writes it
-printf 'CURRENT_VERSION=9.1.0\n' > "$E/supervisor.env"                                # the failed run's rewrite
+# The supervisor.env fallback is read once: over an install without the record, the installer writes what it read
+# (mdm_installed_version) as the record before its first change, so a run that then fails after rewriting CURRENT_VERSION
+# to the new release still leaves the old one as the release to update from. (The installer's own part is checked by
+# tests/native's killed scenario.)
+printf '%s\n' "$(lib mdm_installed_version "$E")" > "$E/installed-version"   # as the installer writes it
+printf 'CURRENT_VERSION=9.1.0\n' > "$E/supervisor.env"                     # the failed run's rewrite
 expect_lib 9.0.0 "the release to update from after a failed first run" mdm_installed_version "$E"
-expect_lib "" "the fallback to record, with a record" mdm_installed_version_unrecorded "$E"
 rm -f -- "$E/installed-version"
 printf 'SUPERVISOR_PORT=9000\nCURRENT_VERSION=9.0.0\nAPPLY_SUPPORTED=0\n' > "$E/supervisor.env"
 # expect_installed WANT WHAT: mdm_installed_version of $E is WANT.

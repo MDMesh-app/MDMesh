@@ -124,22 +124,13 @@ describe('AuthProvider: the role is refreshed from the server', () => {
     expect(currentUserCalls(fetch)).toHaveLength(0);
   });
 
-  it('does not ask while the sign-in still owes the second step the customer requires (twoFactor)', async () => {
-    const fetch = stubApi((path) => (path.endsWith('/public/auth/login') ? { ...ROLES.admin, twoFactor: true } : null));
+  it('asks after a sign-in whose answer says twoFactor (0.5.x and older): there is no second step to wait for', async () => {
+    const fetch = stubApi((path) =>
+      path.endsWith('/public/auth/login') ? { ...ROLES.admin, twoFactor: true } : isCurrentUser(path) ? ROLES.admin : null,
+    );
     const { result } = renderHook(() => useAuth(), { wrapper });
     await act(() => result.current.signIn('admin', 'password'));
-    expect(result.current.user?.twoFactor).toBe(true);
-    expect(currentUserCalls(fetch)).toHaveLength(0);
-    // The flag describes that sign-in, not the account: the stored copy leaves it out.
-    expect(stored()).not.toHaveProperty('twoFactor');
-  });
-
-  it('asks for a session whose stored copy says twoFactor (written by an older console)', async () => {
-    const fetch = stubApi((path) => (isCurrentUser(path) ? ROLES.admin : null));
-    const { result } = signedInAs({ ...ROLES.admin, twoFactor: true });
     await waitFor(() => expect(currentUserCalls(fetch)).toHaveLength(1));
-    expect(result.current.user).not.toHaveProperty('twoFactor');
-    expect(stored()).not.toHaveProperty('twoFactor');
   });
 
   it('makes no request signed out', async () => {

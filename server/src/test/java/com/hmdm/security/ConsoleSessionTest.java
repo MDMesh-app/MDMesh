@@ -75,14 +75,14 @@ public class ConsoleSessionTest {
         FakeSessions.Session before = sessions.existing("before");
         User user = new User();
         before.attributes.put(AuthFilter.sessionCredentials, user);
-        before.attributes.put(AuthFilter.twoFactorNeeded, "true");
+        before.attributes.put("marker", "true");
 
         HttpSession renewed = ConsoleSession.renew(sessions.request());
 
         assertTrue(before.invalidated);
         assertNotEquals("before", renewed.getId());
         assertSame(user, renewed.getAttribute(AuthFilter.sessionCredentials));
-        assertEquals("true", renewed.getAttribute(AuthFilter.twoFactorNeeded));
+        assertEquals("true", renewed.getAttribute("marker"));
     }
 
     @Test

@@ -31,6 +31,7 @@ import static com.hmdm.persistence.domain.DesktopHeader.NO_HEADER;
 import static com.hmdm.persistence.domain.IconSize.SMALL;
 
 @ApiModel(description = "The settings for MDM web application")
+// Fields since removed (twoFactor, 0.6.0) still come from older clients: ignored, not refused
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class Settings implements CustomerData, Serializable {
 
@@ -94,8 +95,6 @@ public class Settings implements CustomerData, Serializable {
     private int passwordLength;
     @ApiModelProperty("Password strength for users (0 - none, 1 - alphanumeric, 2 - alphanumeric + special characters")
     private int passwordStrength;
-    @ApiModelProperty("Two-factor authentication")
-    private boolean twoFactor;
     @ApiModelProperty("Timeout in seconds for logging out while idle (0 - no logout)")
     private Integer idleLogout;
 
@@ -332,14 +331,6 @@ public class Settings implements CustomerData, Serializable {
 
     public void setPasswordStrength(int passwordStrength) {
         this.passwordStrength = passwordStrength;
-    }
-
-    public boolean isTwoFactor() {
-        return twoFactor;
-    }
-
-    public void setTwoFactor(boolean twoFactor) {
-        this.twoFactor = twoFactor;
     }
 
     public Integer getIdleLogout() {

@@ -35,15 +35,15 @@ progressively replace it with our own code so we own the project.
 
 Build on the Apache-2.0 base via a **strangler** approach: retain the community backend as a
 foundation and replace modules with our own code over time. MDMesh is Apache-2.0 as a whole.
-New components (`proto/`, React `web/`) are original works. The agent v1 endpoints were written for MDMesh, though
-some carry the upstream header. The Kotlin agent is new, but parts of it are ported from the Headwind Android agent;
+New components (`proto/`, React `web/`) are original works. The agent v1 endpoints were written for MDMesh and
+carry the MDMesh header. The Kotlin agent is new, but parts of it are ported from the Headwind Android agent;
 those files carry the upstream header and say what changed.
 
 **Obligations we will honor:**
 1. Keep upstream Apache license headers on retained/derived files; new files need no header.
 2. Propagate `NOTICE` (Apache §4d) — upstream attribution retained, ours added (done in `NOTICE`).
 3. Changed upstream files carry a notice saying so (§4b). Ported agent files state what changed; retained server
-   files do not yet.
+   files do too (since 2026-11-23: [docs/licenses/upstream-files.tsv](../licenses/upstream-files.tsv), checked in CI).
 4. **No trademark use** (§6): the product is NOT named "Headwind"; no Headwind logos/marks; no
    implied endorsement. All product-facing surfaces get rebranded (starts with the React UI).
 5. Run a formal dependency license scan + obtain legal sign-off before commercial launch. (The scan is done: every

@@ -29,7 +29,7 @@ Heads-up
   write. For a directory of yours it shows the `chmod` to run; anything else, install into a directory of your own.
 - The updater (Settings → Updates, and Roll back) and `./setup.sh --update` (also with `--allow-downgrade`) refuse
   a release before 0.6.0 while the install runs behind your own proxy, or while `TRUSTED_PROXIES` still says `host`:
-  move the install back to its earlier hosting mode, or set `TRUSTED_PROXIES=`, first.
+  move the install back to its earlier hosting mode and set `TRUSTED_PROXIES=` first (either alone is still refused).
 - Your own edge rules load only from files nobody but their owner can change (`site.d`'s owner's or root's,
   `chmod 644`, not a link); the edge leaves any other out at start, saying why in its log.
   The documented check before a restart (`MDMESH_RAW_SITE_D=1 … caddy validate`) validates exactly what the restart

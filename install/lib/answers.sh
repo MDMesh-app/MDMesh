@@ -175,13 +175,14 @@ _mdm_ipv6() {
 }
 # _mdm_bind_ok IP:PORT: an address to listen on: an IPv4 address or an [IPv6] one, then :port (1-65535).
 _mdm_bind_ok() {
-  local a
+  local a p
   case "$1" in
-    \[*\]:*) a=${1%\]:*}; _mdm_ipv6 "${a#\[}" || return 1 ;;
-    *:*) _mdm_ipv4 "${1%:*}" || return 1 ;;
+    \[*\]:*) a=${1%%\]:*}; p=${1#*\]:}; _mdm_ipv6 "${a#\[}" || return 1 ;;
+    *:*) p=${1##*:}; _mdm_ipv4 "${1%:*}" || return 1 ;;
     *) return 1 ;;
   esac
-  [ -z "$(_mdm_hostport_problem "[::1]:${1##*:}")" ]
+  case "$p" in ''|*[!0-9]*) return 1 ;; esac
+  [ -z "$(_mdm_hostport_problem "[::1]:$p")" ]
 }
 # _mdm_proxies_check LIST: the proxy addresses in LIST (separated by spaces or commas). Each is "host" (a proxy on this
 # machine: MDMesh's edge sees it at its Docker network's gateway), an IP address, or a range (CIDR) no wider than an IPv4
@@ -189,6 +190,7 @@ _mdm_bind_ok() {
 # _MDM_V is the list with one space between entries; else _MDM_WHY says why. Empty: the default, host.
 _mdm_proxies_check() {
   local t a l min max out='' list
+  case "$1" in *$'\n'*|*$'\r'*) _MDM_WHY='has a line break'; return ;; esac
   IFS=', ' read -r -a list <<< "$1"
   for t in ${list[@]+"${list[@]}"}; do
     case "$t" in '') continue ;; host) out="$out $t"; continue ;; esac

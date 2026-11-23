@@ -391,13 +391,14 @@ _mdm_ipv6() {
 }
 # _mdm_bind_ok IP:PORT: an address to listen on: an IPv4 address or an [IPv6] one, then :port (1-65535).
 _mdm_bind_ok() {
-  local a
+  local a p
   case "$1" in
-    \[*\]:*) a=${1%\]:*}; _mdm_ipv6 "${a#\[}" || return 1 ;;
-    *:*) _mdm_ipv4 "${1%:*}" || return 1 ;;
+    \[*\]:*) a=${1%%\]:*}; p=${1#*\]:}; _mdm_ipv6 "${a#\[}" || return 1 ;;
+    *:*) p=${1##*:}; _mdm_ipv4 "${1%:*}" || return 1 ;;
     *) return 1 ;;
   esac
-  [ -z "$(_mdm_hostport_problem "[::1]:${1##*:}")" ]
+  case "$p" in ''|*[!0-9]*) return 1 ;; esac
+  [ -z "$(_mdm_hostport_problem "[::1]:$p")" ]
 }
 # _mdm_proxies_check LIST: the proxy addresses in LIST (separated by spaces or commas). Each is "host" (a proxy on this
 # machine: MDMesh's edge sees it at its Docker network's gateway), an IP address, or a range (CIDR) no wider than an IPv4
@@ -405,6 +406,7 @@ _mdm_bind_ok() {
 # _MDM_V is the list with one space between entries; else _MDM_WHY says why. Empty: the default, host.
 _mdm_proxies_check() {
   local t a l min max out='' list
+  case "$1" in *$'\n'*|*$'\r'*) _MDM_WHY='has a line break'; return ;; esac
   IFS=', ' read -r -a list <<< "$1"
   for t in ${list[@]+"${list[@]}"}; do
     case "$t" in '') continue ;; host) out="$out $t"; continue ;; esac
@@ -632,7 +634,9 @@ EOF
   if [ "$MODE" != 3 ] && [ "${MDMESH_ORIGIN_TLS:-0}" = 1 ]; then
     printf 'MDMesh installer: MDMESH_ORIGIN_TLS is not used in %s mode: ignoring it.\n' "$(mdm_mode_name "$MODE")" >&2
   fi
-  if [ "$MODE" = 3 ] && mdm_given bind; then
+  # Only when the proxies won't be asked (given, no questions, or a dry run): a run at the terminal asks first.
+  if [ "$MODE" = 3 ] && mdm_given bind && { mdm_given trusted-proxies || [ "${MDMESH_NONINTERACTIVE:-0}" = 1 ] \
+     || [ "${MDMESH_DRY_RUN:-0}" = 1 ]; }; then
     why=$(mdm_proxy_trust_problem "${PROXY_BIND:-$MDM_PROXY_BIND_DEFAULT}" "${PROXY_TRUSTED:-$MDM_PROXY_TRUSTED_DEFAULT}")
     [ -z "$why" ] || _mdm_answer_fail "MDMESH_BIND and MDMESH_TRUSTED_PROXIES: $why"
   fi
@@ -962,8 +966,18 @@ mode_problem() {
       echo "TRUSTED_PROXIES in .env still says host (left from the proxy mode), which ${v}'s edge can't read: it would not start. Set TRUSTED_PROXIES= in .env (docs/UPGRADING.md, Changing the hosting mode), then try again. Nothing was changed." ;;
   esac
 }
-# _mode_env KEY: KEY's value in .env, without quotes.
-_mode_env() { grep -E "^$1=" "${ENV_FILE:-/project/.env}" 2>/dev/null | head -1 | cut -d= -f2- | tr -d "\"'\r"; }
+# _mode_env KEY: KEY's value in .env as compose reads it: quoted, the text between the quotes; else up to a " # comment".
+_mode_env() {
+  local f=${ENV_FILE:-/project/.env} v
+  [ -f "$f" ] && [ -r "$f" ] || return 0
+  v=$(grep -E "^$1=" "$f" | head -1 | cut -d= -f2- | tr -d '\r')
+  case "$v" in
+    \"*) v=${v#\"}; v=${v%%\"*} ;;
+    \'*) v=${v#\'}; v=${v%%\'*} ;;
+    *) v=${v%%[[:space:]]#*} ;;
+  esac
+  printf '%s\n' "$v"
+}
 # <<< mode-guard.sh functions <<<
 
 # The only arguments: one hosting mode, which answers the first question. Nothing else runs before the answers are
@@ -989,14 +1003,17 @@ mdm_answer tunnel-token TUNNEL_TOKEN tunnel-token MDMESH_TUNNEL_TOKEN
 mdm_answer acme-email ACME_EMAIL email MDMESH_ACME_EMAIL
 mdm_answer bind PROXY_BIND bind MDMESH_BIND
 mdm_answer trusted-proxies PROXY_TRUSTED proxies MDMESH_TRUSTED_PROXIES
-# The rules across answers, for a new install: a resume ignores the answers (it uses its .env).
-[ -f "${MDMESH_DIR:-mdmesh}/.quickstart-unfinished" ] || mdm_mode_check_answers
-# Behind your own proxy needs a release from 0.6.0 on: one named in advance is refused now, before anything happens.
-if mdm_given mode && [ "$MODE" = 3 ] && [ -n "$(ENV_FILE=/nonexistent COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml mode_problem "${MDMESH_VERSION#v}")" ]; then
-  _mdm_answer_fail "MDMESH_VERSION=${MDMESH_VERSION}: behind your own proxy came in 0.6.0, so install 0.6.0 or later, or pick another mode."
+# A resume ignores the answers (it uses its .env): what follows is for a new install only.
+_resume=0; [ ! -f "${MDMESH_DIR:-mdmesh}/.quickstart-unfinished" ] || _resume=1
+if [ "$_resume" = 0 ]; then
+  mdm_mode_check_answers
+  # Behind your own proxy needs a release from 0.6.0 on: one named in advance is refused now.
+  if mdm_given mode && [ "$MODE" = 3 ] && [ -n "$(ENV_FILE=/nonexistent COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml mode_problem "${MDMESH_VERSION#v}")" ]; then
+    _mdm_answer_fail "MDMESH_VERSION=${MDMESH_VERSION}: behind your own proxy came in 0.6.0, so install 0.6.0 or later, or pick another mode."
+  fi
+  mdm_need mode; mdm_need host
+  if mdm_given mode && [ "$MODE" = 1 ]; then mdm_need tunnel-token; fi
 fi
-mdm_need mode; mdm_need host
-if mdm_given mode && [ "$MODE" = 1 ]; then mdm_need tunnel-token; fi
 if [ "${MDMESH_DRY_RUN:-0}" = 1 ]; then
   say "== MDMesh quick start: dry run (MDMESH_DRY_RUN=1) =="
   echo "The answers check out. Nothing on this host was checked or changed. What a run would do:"
@@ -1267,6 +1284,11 @@ finish_install() {
   local k
   # shellcheck disable=SC2163  # unexporting the variable named k
   while IFS= read -r k; do export -n "$k"; done < <(sed -n 's/^\([A-Z][A-Z0-9_]*\)=.*/\1/p' .env)
+  # And compose reads this .env, not files COMPOSE_ENV_FILES names.
+  if [ -n "${COMPOSE_ENV_FILES+x}" ]; then
+    warn "Ignoring COMPOSE_ENV_FILES (${COMPOSE_ENV_FILES}): this install's compose reads its own .env."
+    unset COMPOSE_ENV_FILES
+  fi
   say "Pulling images…"
   docker compose pull || { err "Could not pull the v${RELEASE} images from ghcr.io/${IMAGE_OWNER} (pinned by digest in .env). Has a release been published? (to cut one, see RELEASING.md)"; err "$RESUME_HINT"; exit 1; }
   # The init marker the wait below reads is on the server's data volume, and the server writes it only when it is absent.

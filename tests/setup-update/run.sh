@@ -416,13 +416,15 @@ for t in $("${G[@]}" -C "$WORK/origin4" tag -l 'v9*'); do "${G[@]}" -C "$WORK/or
 manifest "$R/old" v0.5.9 0.5.9 "$c900" "$WORK/k.key"
 for a in '' --allow-downgrade dry; do
   clone "proxy$a" '' "$WORK/origin4"
+  "${G[@]}" -C "$WORK/proxy$a" tag -d v0.5.9 > "$WORK/tagd.out"   # so a fetch of the tag would show
   printf '%s\n' 'COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml' 'CURRENT_VERSION=0.6.0' > "$WORK/proxy$a/.env"
   case "$a" in
     dry) upd "proxy$a" old MDMESH_DRY_RUN=1 -- ;;
     *) upd "proxy$a" old -- $a ;;
   esac
   { [ "$RC" != 0 ] && grep -qF "runs behind your own proxy (docker-compose.proxy.yml), which came in 0.6.0, so it can't go to 0.5.9" "$WORK/out" \
-    && head_is "proxy$a" "$cmain"; } || { fail "--update ${a:-} to v0.5.9 behind your own proxy is not refused"; show; }
+    && head_is "proxy$a" "$cmain" && [ -z "$("${G[@]}" -C "$WORK/proxy$a" tag -l v0.5.9)" ]; } \
+    || { fail "--update ${a:-} to v0.5.9 behind your own proxy is not refused before fetching the tag"; show; }
   ok
 done
 # Moved out of the proxy mode with TRUSTED_PROXIES="host" left: the same rule as the updater's, --allow-downgrade too.

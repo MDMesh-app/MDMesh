@@ -836,6 +836,19 @@ SETUP_ARGS=(); setup_run "$WORK/src6" MDMESH_MODE=proxy MDMESH_BIND=0.0.0.0:8080
 { [ "$(up_args)" = '-f docker-compose.yml -f docker-compose.proxy.yml' ] && grep -qF 'answers are not used' "$WORK/out/o" "$WORK/out/e"; } \
   || { fail "a setup.sh re-run is stopped by answers it doesn't use"; show; }
 ok
+# A proxy list with a line break is refused (the line after it would be dropped from .env).
+dry setup.sh MDMESH_MODE=proxy MDMESH_HOST=mdm.example.com "MDMESH_TRUSTED_PROXIES=192.0.2.10
+10.0.0.1"
+{ [ "$RC" != 0 ] && grep -qF 'has a line break' "$WORK/out/e"; } || { fail "a proxy list with a line break is not refused"; show; }
+ok
+# Asked at the terminal with a non-loopback MDMESH_BIND given: the proxies are asked for, not refused before.
+rm -rf -- "$WORK/src12"; mkdir -p "$WORK/src12/install"; cp_setup "$WORK/src12"; cp -R -- "$REPO/install/lib" "$WORK/src12/install/"
+: > "$WORK/docker.log"
+(cd "$WORK/src12" && printf '%s\n' mdm.example.com 192.0.2.10 | env -i PATH="$WORK/stubs-ssfree:$WORK/stubs:$PATH" HOME="$WORK" \
+  STUB_LOG="$WORK/docker.log" STUB_DOCKER_OK=1 MDMESH_MODE=proxy MDMESH_BIND=10.0.0.5:8080 bash ./setup.sh > "$WORK/out/o" 2> "$WORK/out/e") || true
+{ grep -qxF 'TRUSTED_PROXIES="192.0.2.10"' "$WORK/src12/.env" && ! grep -qF 'needs MDMesh on a loopback' "$WORK/out/e"; } \
+  || { fail "setup.sh at the terminal with a non-loopback MDMESH_BIND doesn't ask for the proxies"; show; [ ! -f "$WORK/src12/.env" ] || sed 's/^/    env| /' "$WORK/src12/.env" >&2; }
+ok
 # A release before 0.6.0 named in advance has no proxy mode: refused at once, dry run included.
 dry quickstart.sh MDMESH_MODE=proxy MDMESH_HOST=mdm.example.com MDMESH_VERSION=0.5.1
 { [ "$RC" != 0 ] && grep -qF 'behind your own proxy came in 0.6.0' "$WORK/out/e"; } || { fail "proxy mode with MDMESH_VERSION=0.5.1 is not refused"; show; }
@@ -966,7 +979,7 @@ printf '%s\n' '#!/bin/sh' 'echo "docker $*" >> "$STUB_LOG"' 'case "$*" in' \
   '  *psql*"SELECT passwordreset FROM users"*) echo "$STUB_ADMIN" ;;' \
   '  *psql*"createnewdevices AND"*) echo "${STUB_REPAIRS:-1}" ;;' \
   '  *psql*) cat >> "$STUB_LOG.stdin" ;;' \
-  '  "compose up -d") echo "up env MDMESH_BIND=${MDMESH_BIND-unset}" >> "$STUB_LOG" ;;' \
+  '  "compose up -d") echo "up env MDMESH_BIND=${MDMESH_BIND-unset} COMPOSE_ENV_FILES=${COMPOSE_ENV_FILES-unset}" >> "$STUB_LOG" ;;' \
   '  "compose ps -a -q caddy") echo edge1 ;;' \
   '  "inspect "*) echo "${STUB_EDGE:-running} t0" ;;' \
   'esac' 'exit 0' > "$WORK/stubs-qsfull/docker"
@@ -974,11 +987,11 @@ chmod +x "$WORK/stubs-qsfull/docker"
 for a in t f; do
   qs_dir; qs_env > "$WORK/qs7/mdmesh/.env"; chmod 600 "$WORK/qs7/mdmesh/.env"; : > "$WORK/docker.log.stdin"
   : > "$WORK/docker.log"; rm -f -- "$WORK/PWNED"
-  (cd "$WORK/qs7" && env -i PATH="$WORK/stubs-rel:$WORK/stubs-qsfull:$PATH" HOME="$WORK" STUB_LOG="$WORK/docker.log" \
+  RC=0; (cd "$WORK/qs7" && env -i PATH="$WORK/stubs-rel:$WORK/stubs-qsfull:$PATH" HOME="$WORK" STUB_LOG="$WORK/docker.log" \
     STUB_ADMIN=$a MDM_EDGE_SETTLE=0 MDMESH_RELEASE_PUBKEY="$(sed -n 2p "$FIX/k.pub")" bash "$REPO/quickstart.sh" \
-    < /dev/null > "$WORK/out/o" 2> "$WORK/out/e") || true
+    < /dev/null > "$WORK/out/o" 2> "$WORK/out/e") || RC=$?
   seed_ran=0; grep -q '_ADMIN_EMAIL_\|INSERT INTO settings' "$WORK/docker.log.stdin" && seed_ran=1
-  { grep -qF '== MDMesh is up ==' "$WORK/out/o" && [ "$seed_ran" = 0 ] && grep -q 'createnewdevices AND' "$WORK/docker.log" \
+  { [ "$RC" = 0 ] && grep -qF '== MDMesh is up ==' "$WORK/out/o" && [ "$seed_ran" = 0 ] && grep -q 'createnewdevices AND' "$WORK/docker.log" \
     && [ ! -e "$WORK/qs7/mdmesh/.quickstart-unfinished" ]; } || { fail "a resume after a committed seed (admin $a) does not finish"; show; }
   if [ "$a" = t ]; then
     { grep -q "UPDATE users SET password=:'h', passwordreset=true" "$WORK/docker.log.stdin" && grep -qE 'Password: +[0-9a-f]{48} ' "$WORK/out/o"; } \
@@ -989,21 +1002,21 @@ for a in t f; do
   fi
   ok
 done
-qs_full() {  # qs_full [NAME=VALUE...]: quickstart.sh in $WORK/qs7 against the running-stack stub
-  : > "$WORK/docker.log.stdin"; : > "$WORK/docker.log"; rm -f -- "$WORK/PWNED"
+qs_full() {  # qs_full [NAME=VALUE...]: quickstart.sh in $WORK/qs7 against the running-stack stub; its status in QS_RC
+  QS_RC=0; : > "$WORK/docker.log.stdin"; : > "$WORK/docker.log"; rm -f -- "$WORK/PWNED"
   (cd "$WORK/qs7" && env -i PATH="$WORK/stubs-rel:$WORK/stubs-qsfull:$PATH" HOME="$WORK" STUB_LOG="$WORK/docker.log" \
     STUB_ADMIN=t MDM_EDGE_SETTLE=0 MDMESH_RELEASE_PUBKEY="$(sed -n 2p "$FIX/k.pub")" "$@" bash "$REPO/quickstart.sh" \
-    < /dev/null > "$WORK/out/o" 2> "$WORK/out/e") || true
+    < /dev/null > "$WORK/out/o" 2> "$WORK/out/e") || QS_RC=$?
 }
 qs_unfinished() { qs_dir; qs_env "$@" > "$WORK/qs7/mdmesh/.env"; chmod 600 "$WORK/qs7/mdmesh/.env"; }
 # Stopped in the repairs: not reported up, the marker kept (removed only at the very end), the way back said.
 qs_unfinished; qs_full STUB_REPAIRS=0
-{ ! grep -qF '== MDMesh is up ==' "$WORK/out/o" && [ -e "$WORK/qs7/mdmesh/.quickstart-unfinished" ] && grep -qF 'MDMESH_DIR=' "$WORK/out/e"; } \
+{ [ "$QS_RC" != 0 ] && ! grep -qF '== MDMesh is up ==' "$WORK/out/o" && [ -e "$WORK/qs7/mdmesh/.quickstart-unfinished" ] && grep -qF 'MDMESH_DIR=' "$WORK/out/e"; } \
   || { fail "a resume whose repairs fail is reported up, or loses its marker"; show; }
 ok
 # An edge that doesn't stay up: not reported up, the marker kept, and nothing seeded or set before it.
 qs_unfinished; qs_full STUB_EDGE=restarting STUB_STATE=0/0
-{ ! grep -qF '== MDMesh is up ==' "$WORK/out/o" && [ -e "$WORK/qs7/mdmesh/.quickstart-unfinished" ] \
+{ [ "$QS_RC" != 0 ] && ! grep -qF '== MDMesh is up ==' "$WORK/out/o" && [ -e "$WORK/qs7/mdmesh/.quickstart-unfinished" ] \
   && grep -qF 'The edge (caddy) did not stay up' "$WORK/out/e" && ! grep -q 'INSERT INTO\|UPDATE users' "$WORK/docker.log.stdin"; } \
   || { fail "a quick start whose edge doesn't stay up is reported up, loses its marker, or seeds"; show; }
 ok
@@ -1012,8 +1025,15 @@ qs_unfinished COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml MDMESH_BI
   "MDMESH_SITE_DIR=$WORK/qs7/mdmesh/site.d"
 # Also not stopped by the rules across answers, which a resume doesn't use (0.0.0.0 with the default host).
 qs_full MDMESH_MODE=proxy MDMESH_BIND=0.0.0.0:8081
-{ grep -qxF 'up env MDMESH_BIND=unset' "$WORK/docker.log" && grep -qF '== MDMesh is up ==' "$WORK/out/o"; } \
+{ [ "$QS_RC" = 0 ] && grep -qF 'up env MDMESH_BIND=unset ' "$WORK/docker.log" && grep -qF '== MDMesh is up ==' "$WORK/out/o"; } \
   || { fail "an exported MDMESH_BIND reaches compose over .env's, or stops a resume"; show; }
+ok
+# Headless with nothing but the directory (and no questions), as the resume hint says: it finishes, without the answers
+# a new install needs. And an exported COMPOSE_ENV_FILES doesn't reach compose (it would read other files than .env).
+qs_unfinished; printf 'COMPOSE_PROJECT_NAME=other\n' > "$WORK/other.env"
+qs_full MDMESH_NONINTERACTIVE=1 COMPOSE_ENV_FILES="$WORK/other.env"
+{ [ "$QS_RC" = 0 ] && grep -qF '== MDMesh is up ==' "$WORK/out/o" && grep -qF 'COMPOSE_ENV_FILES=unset' "$WORK/docker.log"; } \
+  || { fail "a headless resume with only MDMESH_NONINTERACTIVE=1 doesn't finish, or COMPOSE_ENV_FILES reaches compose"; show; }
 ok
 # Two at once in one directory (a resume after a hang-up, run twice): the second is refused while the first runs.
 qs_unfinished; flock "$WORK/qs7/mdmesh/.quickstart.lock" sleep 30 & held=$!
@@ -1195,5 +1215,5 @@ if [ -e "$WORK/stubs.called" ]; then fail "a dry run ran a command that changes 
 TREE=$(git -c safe.directory='*' -C "$REPO" describe --always --dirty 2>&1) || TREE='?'
 TREE="$REPO at $TREE"
 if [ "$FAILS" != 0 ]; then echo "installer answers: $FAILS failure(s) ($TREE)" >&2; exit 1; fi
-if [ "$CHECKS" -lt 642 ]; then echo "installer answers: only $CHECKS checks ran, expected at least 642 ($TREE)" >&2; exit 1; fi
+if [ "$CHECKS" -lt 647 ]; then echo "installer answers: only $CHECKS checks ran, expected at least 647 ($TREE)" >&2; exit 1; fi
 echo "installer answers: all $CHECKS checks passed ($TREE)"

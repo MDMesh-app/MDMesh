@@ -268,10 +268,10 @@ update_to_release() {
     exit 0
   fi
   if [ "$cur" = "$tgt" ]; then say "This clone is already on ${tag}, the newest signed release."; return 0; fi
+  update_mode_check "$tag"   # before anything is fetched: it needs only the tag and .env
   git fetch -q --no-tags origin "refs/tags/${tag}:refs/tags/${tag}" \
     || _upd_stop "Could not fetch ${tag} from origin (above). If this clone has a different ${tag}, remove it (git tag -d ${tag}) and re-run."
   [ "$(git rev-parse --verify -q "${tag}^{commit}")" = "$tgt" ] || _upd_stop "${tag} in this clone is not the commit origin and the signed manifest name."
-  update_mode_check "$tag"
   update_downgrade_check "$cur" "$tgt" "$tag"
   git -c advice.detachedHead=false checkout -q --detach "$tgt" || _upd_stop "git checkout ${tag} failed (above)."
   say "Checked out ${tag} (signed release, verified)."
@@ -367,6 +367,11 @@ if ! docker compose version >/dev/null 2>&1; then
     err "or run ./setup.sh --native."
   fi
   exit 1
+fi
+# compose would read the files COMPOSE_ENV_FILES names instead of this install's .env.
+if [ -n "${COMPOSE_ENV_FILES+x}" ]; then
+  warn "Ignoring COMPOSE_ENV_FILES (${COMPOSE_ENV_FILES}): this install's compose reads its own .env."
+  unset COMPOSE_ENV_FILES
 fi
 command -v openssl >/dev/null || { err "openssl is required."; exit 1; }
 

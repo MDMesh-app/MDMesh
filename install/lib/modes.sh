@@ -94,7 +94,9 @@ EOF
   if [ "$MODE" != 3 ] && [ "${MDMESH_ORIGIN_TLS:-0}" = 1 ]; then
     printf 'MDMesh installer: MDMESH_ORIGIN_TLS is not used in %s mode: ignoring it.\n' "$(mdm_mode_name "$MODE")" >&2
   fi
-  if [ "$MODE" = 3 ] && mdm_given bind; then
+  # Only when the proxies won't be asked (given, no questions, or a dry run): a run at the terminal asks first.
+  if [ "$MODE" = 3 ] && mdm_given bind && { mdm_given trusted-proxies || [ "${MDMESH_NONINTERACTIVE:-0}" = 1 ] \
+     || [ "${MDMESH_DRY_RUN:-0}" = 1 ]; }; then
     why=$(mdm_proxy_trust_problem "${PROXY_BIND:-$MDM_PROXY_BIND_DEFAULT}" "${PROXY_TRUSTED:-$MDM_PROXY_TRUSTED_DEFAULT}")
     [ -z "$why" ] || _mdm_answer_fail "MDMESH_BIND and MDMESH_TRUSTED_PROXIES: $why"
   fi

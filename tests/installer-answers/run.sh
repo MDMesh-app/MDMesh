@@ -64,6 +64,9 @@ sed -i '2i [ "${STUB_DOCKER_OK:-}" = 1 ] \&\& [ "$1 $2" = "compose version" ] \&
 sed -i '2i [ "${STUB_DOCKER_OK:-}" = 1 ] \&\& [ "$1" = ps ] \&\& { [ -z "${STUB_LOG:-}" ] || echo "$0 $*" >> "$STUB_LOG"; [ -z "${STUB_DOCKER_PS:-}" ] || printf "%s\\n" "$STUB_DOCKER_PS" | sed -e "s/^-\$//" -e "s/^/dir:/"; exit 0; }' "$WORK/stubs/docker"
 # shellcheck disable=SC2016  # the stub's own variables
 sed -i '2i [ "${STUB_DOCKER_OK:-}" = 1 ] \&\& [ "$1 $2" = "volume ls" ] \&\& { [ -z "${STUB_LOG:-}" ] || echo "$0 $*" >> "$STUB_LOG"; [ -z "${STUB_DOCKER_VOLUMES:-}" ] || printf "%s\\n" "$STUB_DOCKER_VOLUMES"; exit 0; }' "$WORK/stubs/docker"
+# With STUB_DOCKER_OK=1, the quick start's architecture query fails quietly, so it reads uname (as without a daemon).
+# shellcheck disable=SC2016  # the stub's own variables
+sed -i '2i [ "${STUB_DOCKER_OK:-}" = 1 ] \&\& [ "$*" = "info --format {{.Architecture}}" ] \&\& exit 1' "$WORK/stubs/docker"
 # With STUB_DOCKER_INFO, `docker info` prints it (what install/lib/modes.sh reads to tell rootless Docker apart).
 sed -i '2i [ -n "${STUB_DOCKER_INFO:-}" ] \&\& [ "$1" = info ] \&\& { echo "$STUB_DOCKER_INFO"; exit 0; }' "$WORK/stubs/docker"
 
@@ -957,6 +960,7 @@ mkdir -p "$WORK/stubs-qsfull"
 # shellcheck disable=SC2016  # the stub's own variables
 printf '%s\n' '#!/bin/sh' 'echo "docker $*" >> "$STUB_LOG"' 'case "$*" in' \
   '  ps\ *|"volume ls"*) ;;' \
+  '  "info --format {{.Architecture}}") exit 1 ;;' \
   '  *"exec -T -u mdmesh server cat"*) echo OK ;;' \
   '  *psql*"FROM settings)||"*) echo "${STUB_STATE:-1/0}" ;;' \
   '  *psql*"SELECT passwordreset FROM users"*) echo "$STUB_ADMIN" ;;' \
@@ -1191,5 +1195,5 @@ if [ -e "$WORK/stubs.called" ]; then fail "a dry run ran a command that changes 
 TREE=$(git -c safe.directory='*' -C "$REPO" describe --always --dirty 2>&1) || TREE='?'
 TREE="$REPO at $TREE"
 if [ "$FAILS" != 0 ]; then echo "installer answers: $FAILS failure(s) ($TREE)" >&2; exit 1; fi
-if [ "$CHECKS" -lt 637 ]; then echo "installer answers: only $CHECKS checks ran, expected at least 637 ($TREE)" >&2; exit 1; fi
+if [ "$CHECKS" -lt 642 ]; then echo "installer answers: only $CHECKS checks ran, expected at least 642 ($TREE)" >&2; exit 1; fi
 echo "installer answers: all $CHECKS checks passed ($TREE)"

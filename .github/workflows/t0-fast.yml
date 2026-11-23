@@ -61,7 +61,7 @@ jobs:
             # The installer scripts, and the signed manifest they and the supervisor read. Only the edge entry's cheap
             # quickstart.sh checks run on these, not its image work. README.md and DEPLOY.md carry the install commands
             # release-manifest-check.sh checks.
-            installers: README.md, DEPLOY.md, quickstart.sh, setup.sh, install/**, release/**, supervisor/lib.js, scripts/release-manifest-check.sh, tests/installer-answers/**, tests/setup-update/**, tests/apt-lock/**
+            installers: README.md, DEPLOY.md, quickstart.sh, setup.sh, install/**, release/**, supervisor/lib.js, scripts/release-manifest-check.sh, tests/installer-answers/**, tests/setup-update/**, tests/apt-lock/**, tests/lib/**
             # The T2 native rig's own helpers (the rig itself runs in t2-native.yml).
             native: tests/native/**
 
@@ -76,6 +76,9 @@ jobs:
     env:
       SUP_IMG: mdmesh-supervisor:ci-${{ github.run_id }}-${{ github.run_attempt }}
       WEB_IMG: mdmesh-web:ci-${{ github.run_id }}-${{ github.run_attempt }}
+      # The Ubuntu containers' apt mirror (tests/lib/ubuntu-mirror.sh): on a GitHub-hosted runner, Azure's, next to it.
+      # The public archive alone has been slow enough (30 kB/s) to run the edge entry's Ubuntu suites into the timeout.
+      MDMESH_TEST_UBUNTU_MIRROR: ${{ !vars.CI_RUNNER && 'http://azure.archive.ubuntu.com/ubuntu/' || '' }}
     strategy:
       fail-fast: false
       matrix:

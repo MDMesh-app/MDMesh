@@ -16,8 +16,9 @@ IMAGE=${1:?usage: in-container.sh IMAGE [busybox-awk]}
 SHIM=${2:-}
 case "$SHIM" in ''|busybox-awk) ;; *) echo "unknown option: $SHIM" >&2; exit 2 ;; esac
 NAME="mdmesh-installer-tests-$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n')"
-docker run --rm --name "$NAME" -v "$REPO:/src:ro" -e SHIM="$SHIM" "$IMAGE" bash -euc '
+docker run --rm --name "$NAME" -v "$REPO:/src:ro" -e SHIM="$SHIM" -e MDMESH_TEST_UBUNTU_MIRROR "$IMAGE" bash -euc '
   export DEBIAN_FRONTEND=noninteractive
+  sh /src/tests/lib/ubuntu-mirror.sh
   apt-get update -qq >/dev/null
   apt-get install -y -qq --no-install-recommends jq git minisign openssl python3 ca-certificates ${SHIM:+busybox} >/dev/null
   shim=""

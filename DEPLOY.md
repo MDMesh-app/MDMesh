@@ -171,11 +171,13 @@ one address, `127.0.0.1:8080` by default. It asks:
   machine, not only your proxy: anyone who can run commands here can reach the edge from that gateway and name any
   client address (past the sign-in limits, and a `client_ip` rule of your own). Keep it for a machine where only your
   proxy runs, or nobody else has a shell; otherwise list your proxy's own address. For a proxy elsewhere, its IP address (or a
-  range, no wider than an IPv4 /8 or IPv6 /16; IPv4 addresses as IPv4, not `::ffff:…`), several separated by spaces or commas.
+  range, no wider than an IPv4 /8 or IPv6 /16, holding your proxies and not your clients; IPv4 addresses as IPv4, not
+  `::ffff:…`), several separated by spaces or commas.
   Anyone else's `X-Forwarded-For` and `X-Forwarded-Proto` are ignored.
 
 `.env` then holds `COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml`, `MDMESH_BIND`, `TRUSTED_PROXIES` and
-`MDMESH_ORIGIN_TLS`; the overlay publishes the edge on `MDMESH_BIND` and nothing else.
+`MDMESH_ORIGIN_TLS`; the overlay publishes the edge on `MDMESH_BIND` and nothing else. Write `COMPOSE_FILE` and
+`TRUSTED_PROXIES` out in full: the installers and the updater read them as written, not a `${VAR}` in them.
 
 **Your proxy's configuration.** Ready ones, each tested in front of MDMesh by `tests/proxy-e2e`:
 
@@ -278,7 +280,9 @@ are never rules), couldn't read `site.d`,
 or finds no `*.caddy` file at all (most likely `site.d` isn't mounted: see `MDMESH_SITE_DIR` below), so the restart
 after `&&` never runs without a rule you expect. The start itself still starts without such a file.
 
-A rule that doesn't parse stops the edge, and with it the console and `/recovery`, until it is fixed. An update whose
+A rule that doesn't parse stops the edge, and with it the console and `/recovery`, until it is fixed. The check above
+needs a running edge, so it can't run then: fix or remove the file, and Docker's next restart of the edge loads it
+(`docker compose logs caddy` says why it stopped). An update whose
 edge doesn't start with your rules (a rule the new Caddy refuses) is rolled back by itself, like one whose server
 fails its health check; `docker compose logs caddy` says which rule. `.env`'s
 `MDMESH_SITE_DIR` names the directory (an absolute path, so the updater mounts the same one). An install from

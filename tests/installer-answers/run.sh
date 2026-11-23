@@ -713,6 +713,13 @@ SETUP_ARGS=(--domain); setup_run "$WORK/src6"; SETUP_ARGS=()
   && cmp -s <(grep -v '_VERSION=\|^VITE_\|^APPLY_SUPPORTED=' "$WORK/env6.before") <(grep -v '_VERSION=\|^VITE_\|^APPLY_SUPPORTED=' "$WORK/src6/.env"); } \
   || { fail "a setup.sh re-run does not keep the proxy mode and its .env"; show; diff "$WORK/env6.before" "$WORK/src6/.env" >&2; }
 ok
+# With an override of the operator's own in .env's COMPOSE_FILE, the re-run starts the stack with it too.
+sed -i 's#^COMPOSE_FILE=.*#COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml:docker-compose.local.yml#' "$WORK/src6/.env"
+setup_run "$WORK/src6"
+[ "$(up_args)" = '-f docker-compose.yml -f docker-compose.proxy.yml -f docker-compose.local.yml' ] \
+  || { fail "a setup.sh re-run ignores the COMPOSE_FILE list .env saved (compose args \"$(up_args)\")"; show; }
+cp "$WORK/env6.before" "$WORK/src6/.env"
+ok
 # Installs from before 0.6.0 keep their compose command (tunnel: COMPOSE_FILE from .env; domain: the domain overlay),
 # gain MDMESH_SITE_DIR, and keep their other .env values (SITE_ADDRESS, TRUSTED_PROXIES as the operator set them).
 for c in 'cloudflare|:80|--profile cloudflare' '|mdm.example.com, www.example.com|-f docker-compose.yml -f docker-compose.domain.yml'; do
@@ -893,7 +900,8 @@ for f in docker-compose.release.yml docker-compose.domain.yml docker-compose.pro
          install/sql/post_seed.sql install/lib/db.sh; do cp -- "$REPO/$f" "$FIX/raw/$f"; done
 D1=$(printf 'a%.0s' {1..64}); D2=$(printf 'b%.0s' {1..64}); D3=$(printf 'c%.0s' {1..64})
 {
-  printf '{\n  "version": "0.6.0",\n  "components": {\n    "images": {\n'
+  # Both platforms, so the resume tests run on an Arm64 host too (no components.platforms means linux/amd64 only).
+  printf '{\n  "version": "0.6.0",\n  "components": {\n    "platforms": "linux/amd64,linux/arm64",\n    "images": {\n'
   printf '      "server": "ghcr.io/me/mdmesh-server@sha256:%s",\n      "web": "ghcr.io/me/mdmesh-web@sha256:%s",\n' "$D1" "$D2"
   printf '      "supervisor": "ghcr.io/me/mdmesh-supervisor@sha256:%s"\n    }\n  },\n  "files": {\n' "$D3"
   for f in docker-compose.release.yml docker-compose.domain.yml docker-compose.proxy.yml install/sql/hmdm_init.en.sql \
@@ -1230,5 +1238,5 @@ if [ -e "$WORK/stubs.called" ]; then fail "a dry run ran a command that changes 
 TREE=$(git -c safe.directory='*' -C "$REPO" describe --always --dirty 2>&1) || TREE='?'
 TREE="$REPO at $TREE"
 if [ "$FAILS" != 0 ]; then echo "installer answers: $FAILS failure(s) ($TREE)" >&2; exit 1; fi
-if [ "$CHECKS" -lt 649 ]; then echo "installer answers: only $CHECKS checks ran, expected at least 649 ($TREE)" >&2; exit 1; fi
+if [ "$CHECKS" -lt 650 ]; then echo "installer answers: only $CHECKS checks ran, expected at least 650 ($TREE)" >&2; exit 1; fi
 echo "installer answers: all $CHECKS checks passed ($TREE)"

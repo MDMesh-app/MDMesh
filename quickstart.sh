@@ -776,6 +776,8 @@ mdm_mode_settings() {
     *) _mdm_answer_fail "internal: unknown hosting mode $1" ;;
   esac
   COMPOSE_ARGS=''
+  # A re-run uses the list its .env saved (an override of the operator's own included), else the mode's.
+  [ "${2:-}" != rerun ] || [ -z "${COMPOSE_FILE:-}" ] || file=$COMPOSE_FILE
   # compose's own default file is left to COMPOSE_FILE (.env), as setup.sh always did in tunnel mode.
   [ "$file" = docker-compose.yml ] || for f in $(printf '%s' "$file" | tr ':' ' '); do COMPOSE_ARGS="$COMPOSE_ARGS -f $f"; done
   [ -z "$profiles" ] || COMPOSE_ARGS="$COMPOSE_ARGS --profile $profiles"

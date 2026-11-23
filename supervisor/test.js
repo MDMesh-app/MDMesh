@@ -949,8 +949,8 @@ t.test('an unverifiable release logs why (HTTP status / minisign), without secre
 // run with -c BEGIN, prints an ERROR and exits 3, as psql -v ON_ERROR_STOP=1 does). Like the real restore, the stub
 // psql fails when its input does not end with the COMMIT apply.sh/rollback.sh add after a complete dump (they send a
 // RAISE instead). curl succeeds unless STUB_CURL_FAIL=1. The edge (caddy) is up and stays up, unless STUB_EDGE says
-// otherwise: "restarting" (its config doesn't load), "flapping" (it restarted between two looks), or "gone" (no
-// container); with STUB_EDGE_BAD_WEB, only while .env's WEB_VERSION starts with that value (an edge the new web image
+// otherwise: "restarting" (its config doesn't load), "flapping" (it restarted between two looks), "dies-late" (up for
+// the first two looks, then exited), or "gone" (no container); with STUB_EDGE_BAD_WEB, only while .env's WEB_VERSION starts with that value (an edge the new web image
 // can't start, the old one can). ---
 function makeStubs(dir) {
   const fs = require('fs'), path = require('path');
@@ -980,6 +980,7 @@ case "$*" in
     case "$edge" in
       restarting) echo "restarting 2026-11-01T00:00:00Z";;
       flapping) echo "running 2026-11-01T00:00:0$(grep -c '^inspect ' "$STUB_LOG")Z";;
+      dies-late) if [ "$(grep -c '^inspect ' "$STUB_LOG")" -le 2 ]; then echo "running 2026-11-01T00:00:00Z"; else echo "exited 2026-11-01T00:00:00Z"; fi;;
       *) echo "running 2026-11-01T00:00:00Z";;
     esac;;
   *" pg_dump "*) echo "-- stub dump"; echo "SELECT 1;"; echo "-- PostgreSQL database dump complete";;
@@ -1476,6 +1477,14 @@ t.test('apply.sh: healthy means the server still answers after the edge settles'
     a.match(r.err, /^ERR the server stopped answering /m);
     a.match(r.out, /PHASE rollback/);
   } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+  // An edge that stops after it looked steady, while the server is rechecked: not healthy.
+  const d3 = makeDeploy('SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n');
+  try {
+    const r = runScript('apply.sh', applyArgs('0.0.2'), { ...d3.env, STUB_EDGE: 'dies-late', HEALTH_RETRY_WAIT: '0' });
+    a.notEqual(r.code, 0, r.all);
+    a.match(r.err, /^ERR the edge \(caddy\) did not stay up \(exited /m);
+    a.doesNotMatch(r.out, /PHASE done/);
+  } finally { fs.rmSync(d3.dir, { recursive: true, force: true }); }
   // One slow answer in that recheck (the next one fine) is no failure: the update is done.
   const d2 = makeDeploy('SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n');
   try {

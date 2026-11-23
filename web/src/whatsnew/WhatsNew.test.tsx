@@ -1,6 +1,6 @@
 // The What's new dialog in the console: once per version per browser after sign-in, never on a first visit or over
 // the signed-out pages, and again from Settings. The bundled notes are this file's (the virtual module, mocked).
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { describe, expect, it, vi } from 'vitest';
 import { AppRoutes } from '../App';
@@ -8,6 +8,7 @@ import { ROLES, renderInConsole, stubApi } from '../test/console';
 import { parseNotes } from './changelog';
 import { NotesView } from './NotesView';
 import { readHistoryAgain, seenKey } from './seen';
+import { render } from '../test/render';
 
 const BODY = [
   'Upgrading',

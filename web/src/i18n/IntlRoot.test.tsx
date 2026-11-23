@@ -16,8 +16,9 @@ vi.mock('./locales', async (actual) => ({
 
 const Hello = () => <FormattedMessage id="test.hello" defaultMessage="Hello" />;
 
+// Neither set, so a test sees only what IntlRoot sets.
 afterEach(() => {
-  document.documentElement.lang = 'en';
+  document.documentElement.lang = '';
   document.documentElement.dir = '';
 });
 

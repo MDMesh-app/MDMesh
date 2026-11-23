@@ -1,6 +1,7 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider, useToast, type ToastApi } from './toast';
+import { render } from '../test/render';
 
 const REAL_MATCH_MEDIA = Object.getOwnPropertyDescriptor(window, 'matchMedia')!;
 

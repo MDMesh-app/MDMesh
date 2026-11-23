@@ -1,1 +1,4 @@
 proto/vectors/kiosk-scrim.json linguist-generated=true
+# The message catalogs: formatjs writes them with LF, and the catalog test compares them as written
+# (web/src/i18n/catalog.test.ts), so a Windows checkout keeps LF too.
+web/src/i18n/locales/*.json text eol=lf

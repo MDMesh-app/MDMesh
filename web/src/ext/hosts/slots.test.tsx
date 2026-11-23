@@ -354,6 +354,7 @@ describe('list.column, list.rowAction, list.bulkAction on Devices', () => {
     expect(await screen.findByText('Lock queued')).toBeTruthy();
     expect(hijack).not.toHaveBeenCalled();
     expect(fetch.mock.calls.some(([url]) => String(url).includes('/devices/WH-1/commands'))).toBe(true);
+    await settled();
   });
 
   it('keeps a row action’s label that crashes to its menu item, which still works', async () => {

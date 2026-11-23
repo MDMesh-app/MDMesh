@@ -250,9 +250,11 @@ tags or publishes anything, but either may leave untagged images in your GHCR pa
   `linux/arm64` from the release job's `PLATFORMS`, in the same commit. Its releases then serve x86_64 only, and its
   quick start and updater say so on Arm64.
 
-Forks that change core console files: new text there must be a react-intl message, or `npm test` fails
-(`src/i18n/literals.test.ts`, which names the file). Text you already added before merging this release fails too:
-make it a message ([web/README.md](../web/README.md#translatable-text)), or raise that file's count in
+### v0.6.0 for forks that change the console
+
+New text in core console files must be a react-intl message, or `npm test` fails (`web/src/i18n/literals.test.ts`
+names the file and lists its strings). That includes text you added before merging this release: make it a message
+([web/README.md](../web/README.md#translatable-text)), or raise that file's count in
 `web/src/i18n/literals-baseline.json`. Extensions in `web/src/extensions/` are not checked.
 
 ### v0.5.1

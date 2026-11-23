@@ -1,5 +1,5 @@
 /*
- * MDMesh: fork of Headwind MDM. Apache-2.0.
+ * Copyright (C) 2026 the MDMesh contributors. Licensed under the Apache License, Version 2.0.
  */
 package com.hmdm.rest.filter;
 

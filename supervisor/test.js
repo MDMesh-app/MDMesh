@@ -1112,7 +1112,10 @@ t.test('behind your own proxy, apply.sh and rollback.sh refuse a release before 
   for (const cf of ['docker-compose.yml:./docker-compose.proxy.yml', '/srv/mdmesh/docker-compose.yml:/srv/mdmesh/docker-compose.proxy.yml',
     'docker-compose.yml:docker-compose.proxy.yml # behind our nginx', '"docker-compose.yml:docker-compose.proxy.yml" # ok',
     'docker-compose.yml:docker-compose.proxy.yml   ', 'docker-compose.yml:docker-compose.domain.yml\nCOMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml',
-    'docker-compose.yml:docker-compose.domain.yml\nexport COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml']) {
+    'docker-compose.yml:docker-compose.domain.yml\nexport COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml',
+    'docker-compose.yml:docker-compose.domain.yml\nCOMPOSE_FILE = docker-compose.yml:docker-compose.proxy.yml',
+    'docker-compose.yml:docker-compose.domain.yml\nCOMPOSE_FILE: docker-compose.yml:docker-compose.proxy.yml',
+    ' "docker-compose.yml:docker-compose.proxy.yml"']) {
     // (trailing blanks; a later line wins, as compose reads .env; and an "export " before it)
     d = makeDeploy(`SERVER_VERSION=0.6.0\nWEB_VERSION=0.6.0\nCURRENT_VERSION=0.6.0\nCOMPOSE_FILE=${cf}\n`);
     try {
@@ -1121,6 +1124,12 @@ t.test('behind your own proxy, apply.sh and rollback.sh refuse a release before 
       a.match(r.all, /^ERR this install runs behind your own proxy/m);
     } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
   }
+  // A last "COMPOSE_FILE=" with no newline after it empties it for compose: not the proxy mode any more.
+  d = makeDeploy('SERVER_VERSION=0.6.0\nWEB_VERSION=0.6.0\nCURRENT_VERSION=0.6.0\nCOMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml\nCOMPOSE_FILE=');
+  try {
+    const r = runScript('apply.sh', applyArgs('0.5.9'), d.env);
+    a.doesNotMatch(r.all, /behind your own proxy/, r.all);
+  } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
   // Moved out of the proxy mode with TRUSTED_PROXIES="host" left: an older edge would hand it to Caddy and not start.
   for (const tp of ['"host"', 'host,192.0.2.10']) {
     const envText = `SERVER_VERSION=0.6.0\nWEB_VERSION=0.6.0\nCURRENT_VERSION=0.6.0\nCOMPOSE_FILE=docker-compose.yml:docker-compose.domain.yml\nTRUSTED_PROXIES=${tp}\n`;
@@ -1355,7 +1364,8 @@ function resolveHealthTimeout(script, envText, extraEnv) {
     const src = fs.readFileSync(path.join(__dirname, script), 'utf8');
     const fn = /health_timeout\(\) \{[\s\S]*?\n\}\n/.exec(src)[0];
     const env = { PATH: process.env.PATH, ...extraEnv };
-    const r = cp.spawnSync('bash', ['-c', `ENV_FILE=${JSON.stringify(envFile)}\n${fn}health_timeout`], { env, encoding: 'utf8' });
+    const guard = JSON.stringify(path.join(__dirname, 'mode-guard.sh'));
+    const r = cp.spawnSync('bash', ['-c', `. ${guard}\nENV_FILE=${JSON.stringify(envFile)}\n${fn}health_timeout`], { env, encoding: 'utf8' });
     return { value: r.stdout.trim(), err: r.stderr };
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 }
@@ -1373,6 +1383,12 @@ t.test('HEALTH_TIMEOUT: 180 by default; below 30 (0 included, not "no limit") is
     a.equal(resolveHealthTimeout(script, 'HEALTH_TIMEOUT=900#slow\n', { HEALTH_TIMEOUT: '240' }).value, '240',
       `${script}: no whitespace before # (compose keeps it in the value): not a number`);
     a.equal(resolveHealthTimeout(script, '# HEALTH_TIMEOUT=900\n', {}).value, '180', `${script}: a commented-out line`);
+    // The other forms compose reads (supervisor/mode-guard.sh's _mode_env): "export ", blanks around =, KEY: v, the last line.
+    a.equal(resolveHealthTimeout(script, 'export HEALTH_TIMEOUT=900\n', {}).value, '900', `${script}: export`);
+    a.equal(resolveHealthTimeout(script, '  HEALTH_TIMEOUT = 900\n', {}).value, '900', `${script}: blanks`);
+    a.equal(resolveHealthTimeout(script, 'HEALTH_TIMEOUT: 900\n', {}).value, '900', `${script}: KEY: v`);
+    a.equal(resolveHealthTimeout(script, 'HEALTH_TIMEOUT=900\nHEALTH_TIMEOUT=', {}).value, '180',
+      `${script}: a last empty line with no newline after it`);
     for (const low of ['0', '29']) {
       const r = resolveHealthTimeout(script, `HEALTH_TIMEOUT=${low}\n`, { HEALTH_TIMEOUT: '240' });
       a.equal(r.value, '240', `${script}: ${low} falls through to the environment`);

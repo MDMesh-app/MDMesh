@@ -966,12 +966,16 @@ mode_problem() {
       echo "TRUSTED_PROXIES in .env still says host (left from the proxy mode), which ${v}'s edge can't read: it would not start. Set TRUSTED_PROXIES= in .env (docs/UPGRADING.md, Changing the hosting mode), then try again. Nothing was changed." ;;
   esac
 }
-# _mode_env KEY: KEY's value in .env as compose reads it: the last KEY= line (an "export " before it allowed); quoted,
-# the text between the quotes; else up to a " # comment", trailing blanks trimmed.
+# _mode_env KEY: KEY's value in .env, read as compose reads the usual forms: the last KEY line (blanks and "export "
+# before it, KEY=v, KEY = v or KEY: v); quoted, the text between the quotes; else up to a blank and "#", trailing blanks
+# trimmed. Unlike compose: no escapes in quotes, no multi-line values, no ${VAR}, and a tab before "#" also starts a
+# comment.
 _mode_env() {
   local f=${ENV_FILE:-/project/.env} v
   [ -f "$f" ] && [ -r "$f" ] || return 0
-  v=$(sed -n -E "s/^[[:space:]]*(export[[:space:]]+)?$1=//p" "$f" | tail -1 | tr -d '\r')
+  # (each match printed as "=value", so a last "KEY=" with no newline after it still counts)
+  v=$(sed -n -E "s/^[[:space:]]*(export[[:space:]]+)?$1[[:space:]]*[=:][[:space:]]*/=/p" "$f" | tail -1 | tr -d '\r')
+  v=${v#=}
   case "$v" in
     \"*) v=${v#\"}; v=${v%%\"*} ;;
     \'*) v=${v#\'}; v=${v%%\'*} ;;
@@ -1285,7 +1289,7 @@ finish_install() {
   # MDMESH_BIND from the first run must not override the one fixed in .env since).
   local k
   # shellcheck disable=SC2163  # unexporting the variable named k
-  while IFS= read -r k; do export -n "$k"; done < <(sed -n 's/^\([A-Z][A-Z0-9_]*\)=.*/\1/p' .env)
+  while IFS= read -r k; do export -n "$k"; done < <(sed -n -E 's/^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*[=:].*/\2/p' .env)
   # And compose reads this .env, not files COMPOSE_ENV_FILES names.
   if [ -n "${COMPOSE_ENV_FILES+x}" ]; then
     warn "Ignoring COMPOSE_ENV_FILES (${COMPOSE_ENV_FILES}): this install's compose reads its own .env."

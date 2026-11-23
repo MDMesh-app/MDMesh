@@ -1036,6 +1036,13 @@ qs_full MDMESH_MODE=proxy MDMESH_BIND=0.0.0.0:8081
 { [ "$QS_RC" = 0 ] && grep -qF 'up env MDMESH_BIND=unset ' "$WORK/docker.log" && grep -qF '== MDMesh is up ==' "$WORK/out/o"; } \
   || { fail "an exported MDMESH_BIND reaches compose over .env's, or stops a resume"; show; }
 ok
+# Also when .env writes it "export MDMESH_BIND=..." (a hand edit): the value the resume checked is the one compose gets.
+qs_unfinished COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml 'export MDMESH_BIND=127.0.0.1:8082' 'TRUSTED_PROXIES="host"' \
+  "MDMESH_SITE_DIR=$WORK/qs7/mdmesh/site.d"
+qs_full MDMESH_MODE=proxy MDMESH_BIND=0.0.0.0:443
+{ [ "$QS_RC" = 0 ] && grep -qF 'up env MDMESH_BIND=unset ' "$WORK/docker.log"; } \
+  || { fail "an exported MDMESH_BIND reaches compose over .env's \"export MDMESH_BIND=\" line"; show; }
+ok
 # Headless with nothing but the directory (and no questions), as the resume hint says: it finishes, without the answers
 # a new install needs. And an exported COMPOSE_ENV_FILES doesn't reach compose (it would read other files than .env).
 qs_unfinished; printf 'COMPOSE_PROJECT_NAME=other\n' > "$WORK/other.env"
@@ -1223,5 +1230,5 @@ if [ -e "$WORK/stubs.called" ]; then fail "a dry run ran a command that changes 
 TREE=$(git -c safe.directory='*' -C "$REPO" describe --always --dirty 2>&1) || TREE='?'
 TREE="$REPO at $TREE"
 if [ "$FAILS" != 0 ]; then echo "installer answers: $FAILS failure(s) ($TREE)" >&2; exit 1; fi
-if [ "$CHECKS" -lt 648 ]; then echo "installer answers: only $CHECKS checks ran, expected at least 648 ($TREE)" >&2; exit 1; fi
+if [ "$CHECKS" -lt 649 ]; then echo "installer answers: only $CHECKS checks ran, expected at least 649 ($TREE)" >&2; exit 1; fi
 echo "installer answers: all $CHECKS checks passed ($TREE)"

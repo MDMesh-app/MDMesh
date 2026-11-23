@@ -107,8 +107,10 @@ ln -s /sd/good.caddy /sd/link.caddy
 cp /sd/good.caddy /sd/.hidden.caddy; chown 1000 /sd/.hidden.caddy
 printf "header X-Shared \"1\"\n" > /sd/shared.conf; chmod 666 /sd/shared.conf
 printf "import /etc/caddy/site.d/shared.conf\n" > /sd/imports.caddy; chown 1000 /sd/imports.caddy; chmod 644 /sd/imports.caddy
-printf "  \"import\" /etc/caddy/site.d/shared.conf\n" > /sd/dq.caddy; printf "%simport%s /etc/caddy/site.d/shared.conf\n" "\`" "\`" > /sd/bq.caddy
-chown 1000 /sd/dq.caddy /sd/bq.caddy; chmod 644 /sd/dq.caddy /sd/bq.caddy
+# The forms Caddy also reads as an import: quoted, ended by the closing quote alone, after a BOM or a Unicode blank.
+imp() { printf "$2/etc/caddy/site.d/shared.conf${3:-}\n" > "/sd/$1.caddy"; chown 1000 "/sd/$1.caddy"; chmod 644 "/sd/$1.caddy"; }
+imp dq "  \"import\" "; imp bq "\`import\` "; imp dqnb "\"import\""; imp bqnb "\`import\`"; imp dqdq "\"import\"\"" "\""
+imp bom "\357\273\277import "; imp nbsp "\302\240import "
 loaded() { [ "$(ls "$EDGE_SITE_D" | tr "\n" " ")" = "$1" ]; }
 logged() { grep -qF "$1" /tmp/log; }
 adapted() { caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile > /tmp/adapted 2>&1 && grep -qi x-good /tmp/adapted && ! grep -qi x-open /tmp/adapted && ! grep -qi x-shared /tmp/adapted; }
@@ -119,7 +121,7 @@ t "only the files their owner alone can change are loaded (good, root)" loaded "
 for n in open group stranger; do t "$n.caddy left out, saying why" logged "site.d/$n.caddy is not loaded: other users may change it"; done
 t "link.caddy left out, saying why" logged "site.d/link.caddy is not loaded: it is a link"
 t ".hidden.caddy left out, saying why" logged "site.d/.hidden.caddy is not loaded: a hidden file"
-for n in imports dq bq; do t "$n.caddy left out, saying why" logged "site.d/$n.caddy is not loaded: it imports another file"; done
+for n in imports dq bq dqnb bqnb dqdq bom nbsp; do t "$n.caddy left out, saying why" logged "site.d/$n.caddy is not loaded: it imports another file"; done
 t "the edge imports the loaded ones only" adapted
 t "the edge configuration is valid" valid
 chmod 777 /sd

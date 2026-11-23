@@ -20,6 +20,9 @@ errln() { echo "ERR $1" >&2; }
 dc()    { docker compose "$@"; }
 
 cd "$PROJECT_DIR" || { errln "cannot cd $PROJECT_DIR"; phase failed; exit 1; }
+# mode_problem, and _mode_env (a .env value as compose reads it)
+# shellcheck source=supervisor/mode-guard.sh
+. "${BASH_SOURCE[0]%/*}/mode-guard.sh"
 
 # How long the server gets to answer after a recreate, in whole seconds: HEALTH_TIMEOUT in the project .env (read here,
 # so an edit there counts without recreating the supervisor), else the supervisor's environment, else 180. A large
@@ -27,12 +30,7 @@ cd "$PROJECT_DIR" || { errln "cannot cd $PROJECT_DIR"; phase failed; exit 1; }
 # is not "no limit") would fail every update at once. HEALTH_TIMEOUT_MIN lowers that floor for the tests only.
 health_timeout() {
   local v min="${HEALTH_TIMEOUT_MIN:-30}" file
-  # The value as docker compose reads it from .env: quoted, the text between the quotes; else up to a " # comment".
-  file="$(grep -E '^HEALTH_TIMEOUT=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '\r')"
-  case "$file" in
-    [\"\']*) file="${file:1}"; file="${file%%[\"\']*}" ;;
-    *) file="${file%%[[:space:]]#*}" ;;
-  esac
+  file="$(ENV_FILE=$ENV_FILE _mode_env HEALTH_TIMEOUT)"
   for v in "${file//[[:space:]]/}" "${HEALTH_TIMEOUT:-}"; do
     [ -z "$v" ] && continue
     if [[ "$v" =~ ^[0-9]{1,6}$ ]] && [ "$((10#$v))" -ge "$min" ]; then echo "$((10#$v))"; return; fi
@@ -133,8 +131,6 @@ else
 fi
 # The install's hosting mode allows the version it would go back to (supervisor/mode-guard.sh): checked before the
 # database is touched.
-# shellcheck source=supervisor/mode-guard.sh
-. "${BASH_SOURCE[0]%/*}/mode-guard.sh"
 _why="$(mode_problem "${OLD_CURRENT:-}")"
 [ -n "$_why" ] || _why="$(mode_problem "${OLD_WEB:-}")"
 if [ -n "$_why" ]; then errln "$_why"; phase failed; exit 1; fi

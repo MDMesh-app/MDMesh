@@ -692,7 +692,10 @@ class ConfigApplierTest {
 
     @Test fun `EFRP is released only when a previously applied document managed it`() = runTest {
         val frp = FakeFrp(); val store = InMemoryConfigStateStore()
-        val a = ConfigApplier(fixedToggles(), kiosk(FakeController()), {}, store, setPowerMode = {}, factoryResetProtection = frp)
+        val a = ConfigApplier(
+            fixedToggles(), kiosk(FakeController()), {}, store,
+            setPowerMode = {}, factoryResetProtection = frp,
+        )
         a.apply(ConfigApplyPayload(revision = "f1", factoryResetProtection = FactoryResetProtectionConfig()))
         assertEquals("still managed -> no release", 0, frp.releases)
         val released = a.apply(ConfigApplyPayload(revision = "f2"))
@@ -708,7 +711,10 @@ class ConfigApplierTest {
 
     @Test fun `a failed EFRP release keeps the revision unsaved and is retried`() = runTest {
         val frp = FakeFrp(); val store = InMemoryConfigStateStore()
-        val a = ConfigApplier(fixedToggles(), kiosk(FakeController()), {}, store, setPowerMode = {}, factoryResetProtection = frp)
+        val a = ConfigApplier(
+            fixedToggles(), kiosk(FakeController()), {}, store,
+            setPowerMode = {}, factoryResetProtection = frp,
+        )
         a.apply(ConfigApplyPayload(revision = "f1", factoryResetProtection = FactoryResetProtectionConfig()))
         frp.releaseOutcome = PolicyOutcome.Failed("dpm busy")
         val off = ConfigApplyPayload(revision = "f2")

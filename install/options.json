@@ -47,21 +47,21 @@
     },
     {
       "id": "repo", "env": "MDMESH_REPO", "aliases": [], "installers": ["quickstart.sh"],
-      "type": "string", "default": "MDMesh-app/MDMesh", "emptyMeans": "default",
+      "type": "string", "default": "Keidevk/MDMesh", "emptyMeans": "default",
       "required": false, "when": null, "secret": false, "rule": "github-repo",
       "regex": "^(\\.?[A-Za-z0-9_-][A-Za-z0-9._-]*|\\.\\.[A-Za-z0-9._-]+)/(\\.?[A-Za-z0-9_-][A-Za-z0-9._-]*|\\.\\.[A-Za-z0-9._-]+)$",
       "description": "The GitHub repository whose releases are installed (owner/name).",
-      "prompts": [ { "id": "repo.ask", "text": "Pull releases from GitHub repo [MDMesh-app/MDMesh]:", "script": "Pull releases from GitHub repo [${REPO}]: " } ],
-      "examples": { "valid": ["MDMesh-app/MDMesh", "me/my.fork", "a/..b", ""], "invalid": ["MDMesh", "a/b/c", "../x", "a/.", "a b/c", "https://github.com/a/b"] }
+      "prompts": [ { "id": "repo.ask", "text": "Pull releases from GitHub repo [Keidevk/MDMesh]:", "script": "Pull releases from GitHub repo [${REPO}]: " } ],
+      "examples": { "valid": ["Keidevk/MDMesh", "me/my.fork", "a/..b", ""], "invalid": ["MDMesh", "a/b/c", "../x", "a/.", "a b/c", "https://github.com/a/b"] }
     },
     {
       "id": "image-owner", "env": "MDMESH_IMAGE_OWNER", "aliases": [], "installers": ["quickstart.sh"],
-      "type": "string", "default": "mdmesh-app", "emptyMeans": "default",
+      "type": "string", "default": "keidevk", "emptyMeans": "default",
       "required": false, "when": null, "secret": false, "rule": "image-owner",
       "regex": "^[a-z0-9][a-z0-9._-]*$",
       "description": "The GHCR owner of the release's images, in lowercase.",
-      "prompts": [ { "id": "image-owner.ask", "text": "Image owner (GHCR, lowercase) [mdmesh-app]:", "script": "Image owner (GHCR, lowercase) [${IMAGE_OWNER_DEFAULT}]: " } ],
-      "examples": { "valid": ["mdmesh-app", "me", "a.b_c-d", ""], "invalid": ["MDMesh-app", "-x", "a/b", "ghcr.io/me"] }
+      "prompts": [ { "id": "image-owner.ask", "text": "Image owner (GHCR, lowercase) [keidevk]:", "script": "Image owner (GHCR, lowercase) [${IMAGE_OWNER_DEFAULT}]: " } ],
+      "examples": { "valid": ["keidevk", "me", "a.b_c-d", ""], "invalid": ["MDMesh-app", "-x", "a/b", "ghcr.io/me"] }
     },
     {
       "id": "host", "env": "MDMESH_HOST", "aliases": [], "installers": ["quickstart.sh", "setup.sh"],

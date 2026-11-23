@@ -42,7 +42,7 @@ import kotlinx.coroutines.sync.withLock
  * @param setPowerMode sets the live-connection mode for the `connectivity` section (1.5), as `device.powerMode` does.
  *   Only called with a mode this agent knows; another one is reported unsupported.
  */
-@Suppress("TooManyFunctions") // Coordinator for independently releasable desired-state sections.
+@Suppress("TooManyFunctions", "LongParameterList") // Coordinator for independently releasable desired-state sections.
 class ConfigApplier(
     private val toggles: () -> ResolvedToggles,
     private val kiosk: KioskApplier,

@@ -1,6 +1,6 @@
 // The device page as a host: core and extension tabs and rail groups through one registry, the open tab in the URL,
 // and what useDevice() hands a tab. Rendered through the real routes, against a stubbed API.
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { useState, type ReactNode } from 'react';
 import { useLocation, useNavigate, type NavigateFunction } from 'react-router';
 import { describe, expect, it, vi } from 'vitest';
@@ -13,6 +13,7 @@ import { ORDER } from '../core/order';
 import { createRegistry } from '../registry';
 import { defineExtension, lazyComponent, type Contribution, type DeviceCommand } from '../types';
 import { useDevice } from '../useDevice';
+import { render } from '../../test/render';
 
 const DEVICE = { id: 7, number: 'WH-1', description: 'Front desk', configurationId: 3, lastUpdate: Date.now() };
 const HOUR_AGO = Date.now() - 3600 * 1000;

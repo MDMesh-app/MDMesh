@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { Button } from './Button';
 import { Modal } from './Modal';
 import { Tooltip } from './Tooltip';
+import { render } from '../test/render';
 
 /** A tooltip'd button that goes busy while its confirmation dialog runs (Reset passcode, Factory reset). */
 function BusyAction() {

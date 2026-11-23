@@ -66,7 +66,8 @@ const messages = defineMessages({
 <FormattedMessage id="devices.list.empty" defaultMessage="No devices yet" />   // JSX text
 ```
 
-Ids are `area.topic.purpose` and never change with the wording. Plurals and variables use ICU
+Ids are lowerCamel segments joined by dots, at least two and usually three (`area.topic.purpose`), and never change
+with the wording. Plurals and variables use ICU
 (`{count, plural, one {# device} other {# devices}}`), not string concatenation. A destructive action's message gets a
 `description` starting `DESTRUCTIVE:`, so translators and reviewers see it.
 
@@ -74,11 +75,24 @@ Ids are `area.topic.purpose` and never change with the wording. Plurals and vari
   `npm test` fails while it is out of date, on a message without an id, and on a translation that adds ids or changes
   a message's placeholders. A translation with messages missing passes: the locale is `partial` and shows those in
   English.
-- `npm test` also counts the English written straight into the UI, per file (`src/i18n/literals.test.ts`). A file may
-  not gain any. When a change turns text into messages, `npm run i18n:baseline` lowers the counts in
-  `src/i18n/literals-baseline.json`; commit that too.
+- `npm test` also counts the English written straight into the UI, per file (`src/i18n/literals.test.ts`): JSX text
+  and children, UI props (`title`, `label`, `header`, `aria-label`…) and capitalised sentences, not console or Error
+  messages. A file's count may not go up; the failure lists the file's strings with their lines. It is a count, so
+  converting one string makes room for another in the same file: review catches that. When a change turns text into
+  messages, `npm run i18n:baseline` lowers the counts in `src/i18n/literals-baseline.json`; commit that too. It
+  refuses a drop of more than 10% (or a file with more than 5 to none), which usually means the scan broke; after a
+  look, `npm run i18n:baseline:force` writes it anyway.
+- Component tests render with `render` from `src/test/render.tsx` (Testing Library's, inside `IntlRoot`), and page
+  tests with `renderInConsole`, so a component whose text is a message finds its provider.
 - `npm run i18n:pseudo`, then `localStorage.setItem('mdmesh-locale', 'en-XA')` in the dev console's browser, shows
   every message accented and padded; text that stays plain English isn't a message yet. Remove the key to go back.
+
+Two things to know:
+- The console's locale is a language (`en`), not a region: an en-GB browser gets `en`, so dates and numbers formatted
+  through react-intl come out US-style. Passing the browser's full tag when its language matches is for later.
+- `formatjs` (extract, compile, verify) is a native binary, published for Linux (x64 and arm64, glibc and musl),
+  macOS and Windows, with no JavaScript fallback; `npm ci --omit=optional` leaves it out. The production build doesn't
+  run it, only `npm test` and the `i18n:*` scripts do.
 
 ## How the dev server reaches the API
 

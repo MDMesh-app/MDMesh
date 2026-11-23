@@ -1,6 +1,7 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { Modal } from './Modal';
+import { render } from '../test/render';
 
 /** jsdom has no layout: the body's heights, and every element shown. ResizeObserver reports once when observing. */
 function layout({ scrollHeight, clientHeight }: { scrollHeight: number; clientHeight: number }) {

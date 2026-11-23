@@ -1,3 +1,4 @@
+// @vitest-environment node
 // The message catalog, checked with FormatJS's own CLI:
 // - locales/en.json is what `npm run i18n:extract` writes from the code today, so an edited or new defaultMessage
 //   can't reach translators without its catalog entry;
@@ -49,7 +50,9 @@ describe('the message catalog', () => {
       'extract', 'src/**/*.{ts,tsx}', '--ignore', 'src/**/*.test.*', '--ignore', 'src/**/*.d.ts', '--out-file', out, '--throws',
     );
     expect(run.ok, run.output).toBe(true);
-    const stale = readFileSync(out, 'utf8') !== readFileSync(join(LOCALES, 'en.json'), 'utf8');
+    // Line endings aside (.gitattributes keeps LF; a checkout made before that may still have CRLF).
+    const text = (path: string) => readFileSync(path, 'utf8').replace(/\r\n/g, '\n');
+    const stale = text(out) !== text(join(LOCALES, 'en.json'));
     expect(stale, 'web/src/i18n/locales/en.json is out of date: run `npm run i18n:extract` in web/ and commit it').toBe(false);
   });
 

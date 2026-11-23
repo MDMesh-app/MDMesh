@@ -31,19 +31,25 @@ internal class FactoryResetProtectionDpmPolicy(
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
             handle.dpm.isDeviceOwnerApp(handle.admin.packageName)
 
-    override fun apply(enabled: Boolean, accounts: List<String>): PolicyOutcome = runCatching {
-        // "Disabled + allow-list" is contradictory; an explicit Off always wins and drops the accounts.
-        val allowList = if (enabled) accounts else emptyList()
-        val policy = AndroidFactoryResetProtectionPolicy.Builder()
-            .setFactoryResetProtectionEnabled(enabled)
-            .setFactoryResetProtectionAccounts(allowList)
-            .build()
-        handle.dpm.setFactoryResetProtectionPolicy(handle.admin, policy)
-        PolicyOutcome.Applied
-    }.getOrElse { PolicyOutcome.Failed(it.message ?: "factoryResetProtection apply failed") }
+    override fun apply(enabled: Boolean, accounts: List<String>): PolicyOutcome {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return PolicyOutcome.Unsupported
+        return runCatching {
+            // "Disabled + allow-list" is contradictory; an explicit Off always wins and drops the accounts.
+            val allowList = if (enabled) accounts else emptyList()
+            val policy = AndroidFactoryResetProtectionPolicy.Builder()
+                .setFactoryResetProtectionEnabled(enabled)
+                .setFactoryResetProtectionAccounts(allowList)
+                .build()
+            handle.dpm.setFactoryResetProtectionPolicy(handle.admin, policy)
+            PolicyOutcome.Applied
+        }.getOrElse { PolicyOutcome.Failed(it.message ?: "factoryResetProtection apply failed") }
+    }
 
-    override fun release(): PolicyOutcome = runCatching {
-        handle.dpm.setFactoryResetProtectionPolicy(handle.admin, null)
-        PolicyOutcome.Applied
-    }.getOrElse { PolicyOutcome.Failed(it.message ?: "factoryResetProtection release failed") }
+    override fun release(): PolicyOutcome {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return PolicyOutcome.Unsupported
+        return runCatching {
+            handle.dpm.setFactoryResetProtectionPolicy(handle.admin, null)
+            PolicyOutcome.Applied
+        }.getOrElse { PolicyOutcome.Failed(it.message ?: "factoryResetProtection release failed") }
+    }
 }

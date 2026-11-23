@@ -97,7 +97,7 @@ public class EmailService {
         this.smtpPassword = smtpPassword;
         this.smtpFrom = smtpFrom;
         if (appName.equals("")) {
-            appName = "Headwind MDM";
+            appName = "MDMesh";
         }
         this.baseUrl = baseUrl;
         this.appName = appName;

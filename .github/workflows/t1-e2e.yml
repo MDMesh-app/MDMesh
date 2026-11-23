@@ -157,14 +157,15 @@ jobs:
           df -h / /var/lib/docker || df -h /
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
           df -h /
-      # build TAG CONTEXT: the three images, quietly; one that fails is built once more with its output shown, so the
-      # cause is in the log (a download that failed once, say Maven Central's, goes through then; a real error shows).
+      # build TAG CONTEXT: the three images, quietly; one that fails is built once more, a minute later, with its output
+      # shown, so the cause is in the log (a download that failed, say Maven Central's 429 to a busy runner address, goes
+      # through then; a real error shows).
       - name: Build this checkout's images
         run: |
           build() {
             for n in server web supervisor; do
               docker build -q -f "$2/docker/$n.Dockerfile" -t "ghcr.io/local/mdmesh-$n:$1" "$2" \
-                || { echo "::warning::the $n image failed to build; once more, with its output"
+                || { echo "::warning::the $n image failed to build; once more in a minute, with its output"; sleep 60
                      docker build --progress=plain -f "$2/docker/$n.Dockerfile" -t "ghcr.io/local/mdmesh-$n:$1" "$2"; }
             done
           }

@@ -408,7 +408,7 @@ plugins/push/src/main/webapp/i18n/ja_JP.json	413bd4ecd9eea40dad1fff4c068c0f4bc81
 plugins/push/src/main/webapp/i18n/pt_PT.json	cd31e37556317e5b5e1624d83146b9bd34c5cd1b	no	
 plugins/push/src/main/webapp/i18n/ru_RU.json	dd8684e65a6af88f59f441621cb2454ddc26bd28	no	
 plugins/push/src/main/webapp/i18n/tr_TR.json	3cf61c0da6891a84122d5945d2e892c13cd2d546	no	
-plugins/push/src/main/webapp/i18n/vi_VN.json	73a48b99f791eb7d2b1bdf19e762dec5bfbcca96	no	
+plugins/push/src/main/webapp/i18n/vi_VN.json	73a48b99f791eb7d2b1bdf19e762dec5bfbcca96	no	JSON has no comments; this list is its notice
 plugins/push/src/main/webapp/i18n/zh_CN.json	69042d4d8bd7d876d46b27f983e0ffb807b85ac7	no	
 plugins/push/src/main/webapp/i18n/zh_TW.json	03ebb23fba1a4bdd122d042fb74b7a491df78927	no	
 plugins/push/src/main/webapp/push.module.js	9c03edf986587f448a572ed9b143c1bc4c742399	no	
@@ -503,9 +503,6 @@ server/src/main/webapp/images/circle-green.png	ec281403d84e8a42bcd56b1d576fb654e
 server/src/main/webapp/images/circle-grey.png	a8460748b2b49a0a322f3ba4ed1bbb7fc709f40e	no	
 server/src/main/webapp/images/circle-red.png	c7d750a40b216ddbd099f6e8ba0e7440094949ed	no	
 server/src/main/webapp/images/circle-yellow.png	060db71dcbc5769b9a59164debb2f02905dc7b96	no	
-server/src/main/webapp/images/favicon.ico	8929b2d25ea81ccc4282de3fe598379e342d458e	no	
-server/src/main/webapp/images/loading.gif	db03b039928d81428b39af0847631483053ff3c9	no	
-server/src/main/webapp/images/logo.png	d3c28d52f2de7902414a0c9b383695331f421148	no	
 server/src/main/webapp/images/offline.png	c7d750a40b216ddbd099f6e8ba0e7440094949ed	no	
 server/src/main/webapp/images/online.png	ec281403d84e8a42bcd56b1d576fb654e8da7bb5	no	
 agent-android/core/src/main/kotlin/com/mdmesh/core/install/InstallManager.kt	ported from hmdm-android	yes	

@@ -40,6 +40,7 @@ EXEMPT = {
     "NOTICE": "rewritten for MDMesh",
     "README.md": "rewritten for MDMesh",
     "plugins/audit/src/main/webapp/i18n/en_US.json": "JSON has no comments; this list is its notice",
+    "plugins/push/src/main/webapp/i18n/vi_VN.json": "JSON has no comments; this list is its notice",
 }
 # The agent files ported from hmdm-android (NOTICE): not copies of an upstream file, so no blob to compare.
 PORTED = "ported from hmdm-android"

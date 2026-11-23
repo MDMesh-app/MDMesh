@@ -50,6 +50,10 @@ Fixes
 - Enrollment and check-ins: a hardware id longer than 128 characters or with a control character is ignored, so the
   device enrolls and checks in without it. Before, one too long or holding a NUL failed the enrollment on every
   retry, and every check-in.
+- Native: an update names the release the host runs as the one it updates from, not the release the clone is already
+  on (it read "0.5.1 → 0.5.1" on a host still running 0.5.0). Answering "no" to the installer's question no longer
+  wipes the previous run's log, and when the clone is ahead of the install it says the install is unchanged and how to
+  finish the update.
 
 Under the hood
 - CI builds the agent's instrumented tests (they still run only by hand, on an emulator).

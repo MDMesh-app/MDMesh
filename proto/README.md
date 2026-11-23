@@ -42,7 +42,7 @@ differs from the one it just computed. See `payloads/config-apply.schema.json` f
 |-------|---------|
 | `name` | the section's key in the document |
 | `since` | the release whose agent first applies it (a release in `VERSIONING.md`) |
-| `capability` | optional: the capability an agent advertises when it applies the section. An agent before 0.6.0 applies a section when it runs `since` or later and, for a row with `capability`, advertises it |
+| `capability` | optional: the capability an agent advertises when it applies the section. An agent before 0.6.0 applies a section with `capability` when it advertises it, and one without when it runs `since` or later |
 | `label` | the console's message id for the section's name |
 
 A new section adds one row, with the release it ships in, and its wire change in that release's `VERSIONING.md` row.

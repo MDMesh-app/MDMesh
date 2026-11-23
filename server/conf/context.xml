@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- Derived from Headwind MDM (Apache-2.0); modified by the MDMesh contributors. -->
 <Context>
     <!-- The session cookie is SameSite=Lax: a cross-site page cannot send a POST, PUT or DELETE with it. -->
     <CookieProcessor className="org.apache.tomcat.util.http.Rfc6265CookieProcessor" sameSiteCookies="lax"/>

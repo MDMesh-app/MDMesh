@@ -1,3 +1,4 @@
+-- Derived from Headwind MDM (Apache-2.0); modified by the MDMesh contributors.
 UPDATE userroles SET name='Super-Admin', description='Can sign in as any user. In shared mode, manages corporate accounts' WHERE id=1;
 UPDATE userroles SET name='Admin', description='Full access to the control panel' WHERE id=2;
 UPDATE userroles SET name='User', description='Limited access to the control panel' WHERE id=3;

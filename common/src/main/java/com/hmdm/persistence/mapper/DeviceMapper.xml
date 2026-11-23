@@ -99,8 +99,8 @@
             SELECT 1
             FROM device_state imeiState,
                  LATERAL jsonb_array_elements_text(
-                     CASE WHEN jsonb_typeof(imeiState.telemetry::jsonb #&gt; '{identity,imei}') = 'array'
-                          THEN imeiState.telemetry::jsonb #&gt; '{identity,imei}'
+                     CASE WHEN jsonb_typeof(mdm_safe_jsonb(imeiState.telemetry) #&gt; '{identity,imei}') = 'array'
+                          THEN mdm_safe_jsonb(imeiState.telemetry) #&gt; '{identity,imei}'
                           ELSE '[]'::jsonb END
                  ) AS reportedImei(value)
             WHERE imeiState.deviceNumber = devices.number

@@ -3,6 +3,10 @@
  */
 package com.hmdm.rest.resource;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.inject.Guice;
 import com.google.inject.Inject;
 import com.google.inject.Injector;
@@ -40,6 +44,7 @@ import org.mybatis.guice.datasource.builtin.PooledDataSourceProvider;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
+import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -314,6 +319,51 @@ public class AgentEventIngestPgTest {
                 "SELECT " + field.getName() + " FROM " + schema + ".device_state")) {
             assertTrue(rs.next());
             return rs.getString(1);
+        }
+    }
+
+    @Test
+    public void incompatibleTelemetryDoesNotFailTheCheckinOrPersistUnsafeText() throws Exception {
+        JsonNodeFactory nodes = JsonNodeFactory.instance;
+        List<JsonNode> incompatible = Arrays.asList(
+                nodes.objectNode().put("model", "a\0b"),
+                nodes.objectNode().put("bad\0key", "model"),
+                nodes.objectNode().put("value", new BigDecimal("1e1000000")));
+        for (JsonNode telemetry : incompatible) {
+            // Exercise both the first INSERT and replacement of an existing valid snapshot.
+            assertNull(storedTelemetry(telemetry));
+            assertTrue(storedTelemetry(nodes.objectNode().put("model", "valid")).contains("valid"));
+            assertNull(storedTelemetry(telemetry));
+        }
+    }
+
+    @Test
+    public void compatibleTelemetryKeepsLiteralEscapesAndUnicode() throws Exception {
+        ObjectNode telemetry = JsonNodeFactory.instance.objectNode();
+        telemetry.put("literal", "\\u0000");
+        telemetry.put("literal\\u0000key", "a\\b");
+        telemetry.put("unicode", "ñ\ud83d\ude00\n");
+        telemetry.putObject("identity").putArray("imei").add("359881234567890");
+        assertEquals(telemetry, new ObjectMapper().readTree(storedTelemetry(telemetry)));
+        assertNull(storedTelemetry(null));
+    }
+
+    private static String storedTelemetry(JsonNode telemetry) throws Exception {
+        AgentCheckInRequest req = new AgentCheckInRequest();
+        req.setDeviceId(AgentCheckInLimitsTest.DEVICE);
+        AgentDeviceState state = new AgentDeviceState();
+        state.setBattery(73);
+        req.setState(state);
+        req.setTelemetry(telemetry);
+        assertEquals(Response.ResponseStatus.OK,
+                resource.checkin("Bearer " + AgentCheckInLimitsTest.SECRET, null, req).getStatus());
+        try (Connection c = connect(); Statement s = c.createStatement(); ResultSet rs = s.executeQuery(
+                "SELECT battery, telemetry FROM " + schema + ".device_state")) {
+            assertTrue(rs.next());
+            assertEquals(73, rs.getInt("battery"));
+            String stored = rs.getString("telemetry");
+            assertFalse(rs.next());
+            return stored;
         }
     }
 

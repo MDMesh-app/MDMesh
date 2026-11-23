@@ -3296,4 +3296,21 @@
         <rollback/>
     </changeSet>
 
+    <changeSet id="26.11.23-safe-telemetry-jsonb" author="lared3294" context="common">
+        <comment>Safely parse device telemetry for search and ingestion. TEXT snapshots can contain JSON that
+            PostgreSQL JSONB cannot represent, including escaped NUL, invalid Unicode and out-of-range numbers.
+            Return NULL for incompatible snapshots without aborting other devices' searches or check-ins.</comment>
+        <sql splitStatements="false"><![CDATA[
+            CREATE FUNCTION mdm_safe_jsonb(snapshot TEXT) RETURNS JSONB
+            LANGUAGE plpgsql IMMUTABLE STRICT AS $$
+            BEGIN
+                RETURN snapshot::jsonb;
+            EXCEPTION WHEN data_exception OR program_limit_exceeded THEN
+                RETURN NULL;
+            END;
+            $$;
+        ]]></sql>
+        <rollback>DROP FUNCTION mdm_safe_jsonb(TEXT);</rollback>
+    </changeSet>
+
 </databaseChangeLog>

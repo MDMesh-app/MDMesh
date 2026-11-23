@@ -183,6 +183,30 @@ public class DeviceImeiSearchQueriesTest {
     }
 
     @Test
+    public void incompatibleStoredTelemetryCannotAbortTextOrImeiSearches() throws Exception {
+        int c = customer(), u = user(c, true);
+        int healthy = device(c, "healthy-" + c, null, null,
+                "{\"identity\":{\"imei\":[\"424241234567890\"]}}");
+        String[] incompatible = {
+                "{\"identity\":{\"imei\":[\"424241234567890\"]},\"model\":\"\\u0000\"}",
+                "{\"identity\":{\"imei\":[\"42424\\u0000\"]}}",
+                "{\"identity\":{\"imei\":[\"424241234567890\"]},\"\\u0000\":true}",
+                "{\"identity\":{\"imei\":[\"424241234567890\"]},\"model\":\"\\ud800\"}",
+                "{\"identity\":{\"imei\":[\"424241234567890\"]},\"value\":1e1000000}",
+                "{\"identity\":", "", "not JSON"
+        };
+        int[] poisoned = new int[incompatible.length];
+        for (int i = 0; i < incompatible.length; i++) {
+            // Raw historical rows deliberately bypass the ingestion guard.
+            poisoned[i] = device(c, "poison-" + i + "-" + c, null, null, incompatible[i]);
+        }
+        matches(request(c,u,"42424"), healthy);
+        matches(request(c,u,"healthy"), healthy);
+        matches(request(c,u,"poison-"), poisoned);
+        matches(request(c,u,"no-such-device"));
+    }
+
+    @Test
     public void legacyAndManualImeisRemainSearchableAlongsideTelemetry() throws Exception {
         int c = customer(), u = user(c, true);
         int manual = device(c, "manual-" + c, "123451111111111", null, null);

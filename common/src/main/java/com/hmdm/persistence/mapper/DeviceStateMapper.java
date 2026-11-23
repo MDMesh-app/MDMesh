@@ -15,7 +15,9 @@ public interface DeviceStateMapper {
     @Insert({"INSERT INTO device_state " +
             "(deviceNumber, battery, charging, locked, kioskActive, androidRelease, lastBootAt, updatedAt, agentVersion, powerMode, telemetry, appliedConfigRevision, appliedConfigAt) " +
             "VALUES (#{deviceNumber}, #{battery}, #{charging}, #{locked}, #{kioskActive}, " +
-            "#{androidRelease}, #{lastBootAt}, #{updatedAt}, #{agentVersion}, #{powerMode}, #{telemetry}, #{appliedConfigRevision}, #{appliedConfigAt}) " +
+            // Validate with PostgreSQL's own JSONB rules before storing TEXT. An incompatible snapshot is absent;
+            // the rest of the authenticated check-in still persists. STRICT also preserves omitted telemetry as null.
+            "#{androidRelease}, #{lastBootAt}, #{updatedAt}, #{agentVersion}, #{powerMode}, mdm_safe_jsonb(#{telemetry})::text, #{appliedConfigRevision}, #{appliedConfigAt}) " +
             "ON CONFLICT (deviceNumber) DO UPDATE SET " +
             "battery = EXCLUDED.battery, charging = EXCLUDED.charging, locked = EXCLUDED.locked, " +
             "kioskActive = EXCLUDED.kioskActive, androidRelease = EXCLUDED.androidRelease, " +

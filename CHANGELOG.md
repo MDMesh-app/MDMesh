@@ -10,6 +10,9 @@ Unreleased.
 ## Unreleased
 
 Upgrading
+- Forks that publish their own releases: record your release certificate's checksum in
+  `release/agent-signature-checksum` before you tag, and have Arm64 runners for the image builds
+  ([UPGRADING.md](docs/UPGRADING.md#v060-for-forks)).
 - On its first start the server deletes the commands, state, events and locations of devices deleted before this
   release. No screen showed them ([UPGRADING.md](docs/UPGRADING.md#unreleased)).
 - Quick start: `HEALTH_TIMEOUT` in `.env` sets how many seconds an updated server gets to answer before the update is
@@ -32,6 +35,10 @@ Heads-up
   The documented check before a restart (`MDMESH_RAW_SITE_D=1 … caddy validate`) validates exactly what the restart
   would load, and fails if the restart would leave a file out or there is no file to check (`site.d` not mounted);
   `caddy validate` and `adapt` run as the edge's own user, so they never leave root-owned files in its data volume.
+- New devices and rollouts get the agent of the release the server runs, never a newer one: update the server first,
+  then roll out its agent from Settings → Agent rollout, which says so while a newer release waits. Only a server whose
+  release isn't published (a development build, say), or whose release has no agent in its manifest, offers the latest
+  release's agent.
 
 New
 - Install behind the nginx, Apache, Caddy or Traefik you already run: the quick start's third choice (or `--proxy`),
@@ -41,10 +48,24 @@ New
 - A quick start that stopped part way (a failed pull, a slow first start) can be finished: run it again with
   `MDMESH_DIR=<its directory>`, and it carries on with the same `.env` (past a seeded database too, with a new
   temporary admin password).
+- Arm64: the server, web and supervisor images are built for linux/amd64 and linux/arm64, so the quick start and
+  one-click updates run on Arm64 hosts such as Oracle Ampere (#205, thanks @sgofferj). On any other architecture,
+  or on Arm64 with an `MDMESH_VERSION` that has no Arm64 images, the quick start stops and says why before it pulls
+  anything.
+- Updates: a newer release this server can't install (no images for its platform, images under another owner, or
+  images not pinned by digest) is shown as such, with the reason and what to do, and with any security fixes it
+  leaves missing. It is no longer offered as an update that then fails, or retried automatically.
 - Console extensions: a menu item (`MenuItem`, as in a list's row actions) can set `movesFocus: true` when its
   `onSelect` moves focus itself, so the menu leaves focus there rather than returning it to its trigger.
 
 Fixes
+- Enrollment keeps its agent through a restart with GitHub down: the updater keeps the signed manifest and agent of
+  each release it has run, and checks both again before it serves them. When it has no agent to give new devices
+  (GitHub didn't answer yet, or the release's manifest doesn't verify), the Enroll page says so on Docker installs
+  instead of showing a QR code that can't work, and a native install stops publishing an agent newer than its server.
+- A rollout started before a server update still downloads its own agent, also after the updater restarts. A rollout
+  of an agent newer than the server (after a rollback) stops: the updater refuses it, and Settings → Agent rollout
+  says so.
 - Agent rollout: a device already on a newer agent counts as updated and is no longer sent the older APK, which it
   refused, so the rollout never finished. Versions now compare as numbers (0.10.0 is newer than 0.9.0).
 - Deleting a device, or a customer, now deletes the device's commands, state, events and locations too, and renaming
@@ -84,6 +105,10 @@ Fixes
 - Enrollment and check-ins: a hardware id longer than 128 characters or with a control character is ignored, so the
   device enrolls and checks in without it. Before, one too long or holding a NUL failed the enrollment on every
   retry, and every check-in.
+- Native: an update names the release the host runs as the one it updates from, not the release the clone is already
+  on (it read "0.5.1 → 0.5.1" on a host still running 0.5.0). Answering "no" to the installer's question no longer
+  wipes the previous run's log, and when the clone is ahead of the install it says the install is unchanged and how to
+  finish the update.
 
 Under the hood
 - CI builds the agent's instrumented tests (they still run only by hand, on an emulator).

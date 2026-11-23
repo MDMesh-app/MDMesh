@@ -126,6 +126,16 @@ mdm_manifest_field() {
   [ -n "$hits" ] && [ "$(printf '%s\n' "$hits" | wc -l)" -eq 1 ] || return 1
   printf '%s\n' "$hits" | sed -E 's/^[[:space:]]*"[^"]*": "([^"]*)",?$/\1/'
 }
+# mdm_manifest_platforms FILE: prints the platforms the manifest's images hold, comma-separated. A manifest without
+# components.platforms (from before the first release with Arm64 images) holds linux/amd64 only.
+mdm_manifest_platforms() {
+  mdm_manifest_field "$1" platforms '[abcdefghijklmnopqrstuvwxyz0123456789/,]+' || echo linux/amd64
+}
+# mdm_manifest_has_platform FILE PLATFORM: the manifest's images hold PLATFORM (linux/<arch>).
+mdm_manifest_has_platform() {
+  case ",$(mdm_manifest_platforms "$1")," in *",$2,"*) return 0 ;; esac
+  return 1
+}
 MDM_SHA256_ERE='[0123456789abcdef]{64}'
 MDM_IMAGE_REF_ERE='[abcdefghijklmnopqrstuvwxyz0123456789._/-]+@sha256:[0123456789abcdef]{64}'
 
@@ -1008,6 +1018,29 @@ command -v docker >/dev/null || { err "Docker is required."; exit 1; }
 docker compose version >/dev/null 2>&1 || { err "Docker Compose v2 is required ('docker compose')."; exit 1; }
 command -v curl    >/dev/null || { err "curl is required."; exit 1; }
 command -v openssl >/dev/null || { err "openssl is required."; exit 1; }
+# The images are published for linux/amd64 and, from the first release with Arm64 images, linux/arm64 (the signed
+# manifest's components.platforms, checked below); docker pulls the one for the host it runs on.
+# The daemon's architecture (what it pulls for), within 30 s; else the host's.
+HOST_ARCH=$(timeout 30 docker info --format '{{.Architecture}}' 2>/dev/null) || HOST_ARCH=$(uname -m)
+case "$HOST_ARCH" in
+  x86_64|amd64) HOST_ARCH=amd64 ;;
+  aarch64|arm64) HOST_ARCH=arm64 ;;
+  *) err "MDMesh's images are built for x86_64 and Arm64 (aarch64); this host is ${HOST_ARCH}. Nothing was installed."
+     exit 1 ;;
+esac
+# no_host_images VERSION PLATFORMS: release VERSION of GH_REPO has no images for this host; stop, saying what it has
+# instead. Which later releases have them is known only for MDMesh's own (Arm64 from 0.6.0); a fork's may never.
+no_host_images() {
+  err "Release v$1 of ${GH_REPO} has no images for this host (linux/${HOST_ARCH}), only for ${2//,/, }."
+  if [ "${GH_REPO,,}" = mdmesh-app/mdmesh ]; then
+    err "MDMesh's releases have Arm64 images from 0.6.0: leave MDMESH_VERSION unset for the latest, or use the native"
+    err "install (DEPLOY.md, Option C). Nothing was installed."
+  else
+    err "Use a release whose images include linux/${HOST_ARCH}, or the native install (DEPLOY.md, Option C)."
+    err "Nothing was installed."
+  fi
+  exit 1
+}
 
 DIR="${MDMESH_DIR:-mdmesh}"
 # Two statements, not `mkdir && cd`: under set -e a failure before an && is not fatal, so a failed mkdir would fall
@@ -1096,6 +1129,8 @@ verify_release() {
   if [ "$MANIFEST_VERSION" != "$RELEASE" ]; then
     err "The signed manifest is for version ${MANIFEST_VERSION:-(none)}, not v${RELEASE}. Nothing was installed."; exit 1
   fi
+  # Images for this host's platform: a manifest without components.platforms has linux/amd64 only.
+  mdm_manifest_has_platform "$MANIFEST" "linux/${HOST_ARCH}" || no_host_images "$RELEASE" "$(mdm_manifest_platforms "$MANIFEST")"
   # The image digests: all three, under the owner chosen above.
   SERVER_REF=$(mdm_manifest_field "$MANIFEST" server "$MDM_IMAGE_REF_ERE" || true)
   WEB_REF=$(mdm_manifest_field "$MANIFEST" web "$MDM_IMAGE_REF_ERE" || true)
@@ -1358,6 +1393,8 @@ if [ -n "${MDMESH_VERSION:-}" ]; then
   RELEASE=${MDMESH_VERSION#v}
   [[ "$RELEASE" =~ ^([0-9]+)\.([0-9]+)\.[0-9]+([-+][0-9A-Za-z.+-]+)?$ ]] || { err "MDMESH_VERSION=${MDMESH_VERSION} is not a release version (X.Y.Z)."; exit 1; }
   if [ "$((10#${BASH_REMATCH[1]}))" -eq 0 ] && [ "$((10#${BASH_REMATCH[2]}))" -lt 5 ]; then
+    # Their images are x86_64 only, so their own quickstart.sh can't install them here either.
+    [ "$HOST_ARCH" = amd64 ] || no_host_images "$RELEASE" linux/amd64
     err "Releases before 0.5.0 can't be installed with this quick start: it pins the images and verifies each download"
     err "against the signed release, which those releases don't record. Run the quickstart.sh from that release's tag instead:"
     err "  bash <(curl -fsSL https://raw.githubusercontent.com/${REPO}/refs/tags/v${RELEASE}/quickstart.sh)"

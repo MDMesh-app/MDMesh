@@ -23,8 +23,9 @@ mdm_version_core() {
   printf '%s\n' "$1" | sed -nE 's/^v?([0-9]+)\.([0-9]+)\.([0-9]+).*$/\1 \2 \3/p'
 }
 
-# mdm_version_gt A B: succeeds when A is newer than B, compared on major.minor.patch as numbers — the supervisor's
-# semverGt rule (supervisor/lib.js). Equal, older, or either side without a core → fails.
+# mdm_version_gt A B: succeeds when A is newer than B, compared on major.minor.patch as numbers (pre-release suffixes
+# ignored; the supervisor's semverGt also orders those, and no pre-release is published). Equal, older, or either side
+# without a core → fails.
 mdm_version_gt() {
   local a b i
   read -r -a a <<< "$(mdm_version_core "$1")"
@@ -34,4 +35,31 @@ mdm_version_gt() {
     if [ "$((10#${a[i]}))" -ne "$((10#${b[i]}))" ]; then [ "$((10#${a[i]}))" -gt "$((10#${b[i]}))" ]; return; fi
   done
   return 1
+}
+
+# The native installer's lines about the release the host runs (A: the install's own record, mdm_installed_version in
+# install/lib/envfile.sh) and the one this clone holds (B: mdm_repo_version). Either may be empty: not known.
+# mdm_native_title UPDATING A B: the title (UPDATING=1: `./setup.sh --update` handed over, over an install).
+mdm_native_title() {
+  if [ "$1" = 1 ]; then printf 'MDMesh · native update, %s → %s\n' "${2:-?}" "${3:-?}"
+  else printf 'MDMesh · native install\n'; fi
+}
+# mdm_native_host_line A B: under the install title over a host with a recorded release, so a re-run that is really an
+# update (or a downgrade) says so before it asks anything; nothing when the host has none.
+mdm_native_host_line() {
+  [ -n "$1" ] || return 0
+  if [ -n "$2" ]; then printf 'This host runs v%s; this clone is on v%s.\n' "$1" "$2"
+  else printf 'This host runs v%s; this clone is on no release tag.\n' "$1"; fi
+}
+# mdm_native_declined A B: what the installer says when its question is answered no. Nothing on the host has changed, but
+# the clone may have moved ahead of the install (an older setup.sh's --update checks out the new tag before it hands
+# over, and the installer then asks): only then does it point to --update, which goes to the newest release, not
+# necessarily the clone's.
+mdm_native_declined() {
+  if [ -n "$1" ] && [ -n "$2" ] && mdm_version_gt "$2" "$1"; then
+    printf 'Aborted. The install is unchanged: this host still runs v%s. This clone is on v%s, newer than the install.\n' "$1" "$2"
+    printf 'To update this host, run: sudo ./setup.sh --update --native\n'
+  else
+    printf 'Aborted — nothing on this host was changed.\n'
+  fi
 }

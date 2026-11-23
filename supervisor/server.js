@@ -7,7 +7,7 @@ const os = require('os');
 const cp = require('child_process');
 const path = require('path');
 const crypto = require('crypto');
-const { pickRelease, shapeStatus, imageTags, imagePins, isTerminal, apkAsset, sha256Matches, recoveryPage, isPublishTemp, fetchAsset,
+const { semverGt, isReleaseVersion, agentOffer, pickRelease, shapeStatus, updateBlocked, blockedLogLine, hostPlatform, imageTags, imagePins, isTerminal, apkAsset, sha256Matches, recoveryPage, isPublishTemp, fetchAsset,
   envValue, applyLine, applyRefusal, deploymentAdminVerdict, legacyDeploymentAdmin } = require('./lib');
 
 const PORT = +(process.env.SUPERVISOR_PORT || 9000);
@@ -22,11 +22,15 @@ const TOKEN = process.env.GITHUB_TOKEN || '';
 // docker compose, so native (source-built) installs set 0: status advertises it, the mutating
 // routes refuse, and unattended auto-apply never fires. Rollouts/APK mirroring are unaffected.
 const APPLY_SUPPORTED = process.env.APPLY_SUPPORTED !== '0';
-// When set, every verified APK is also atomically published to this path (the native install
-// points it at Tomcat's files dir so /files/agent.apk always serves the latest verified release;
-// Docker doesn't need it — Caddy routes /files/agent.apk to this process directly).
+// When set, the offered agent (the running release's; setOffer) is also atomically published to this path: the native
+// install points it at Tomcat's files dir, which serves /files/agent.apk. Docker doesn't need it: Caddy routes
+// /files/agent.apk to this process directly.
 const PUBLISH_APK_TO = process.env.PUBLISH_APK_TO || '';
 const APPLY_SCRIPT = path.join(__dirname, 'apply.sh');
+const POLL_MS = (+(process.env.POLL_INTERVAL_HOURS || 6)) * 3600 * 1000;
+// A running release that couldn't be looked up is asked again this soon (5 min; sooner with a short poll interval),
+// not only at the next poll.
+const RETRY_MS = Math.min(POLL_MS / 10, 5 * 60 * 1000);
 const ROLLBACK_SCRIPT = path.join(__dirname, 'rollback.sh');
 
 // The running release. With one-click apply (Docker) the source of truth is CURRENT_VERSION in the project's .env
@@ -49,7 +53,7 @@ function readImageOwner() {
 }
 // Last verified manifest from poll() — the source of the image refs an apply will deploy.
 let lastManifest = null;
-// Downloadable APK for the latest verified release {version,versionCode,sha256,url,apiUrl}; null if none.
+// The agent APK this install offers {version,versionCode,sha256,url,apiUrl,of} (setOffer); null if none.
 let lastApk = null;
 // Release notes / link / date for the picked release {notes,url,publishedAt}; null when no release.
 let lastRelease = null;
@@ -106,19 +110,20 @@ function blockAuto(v) {
   console.log('[auto] will not auto-apply', v, 'again (apply failed or rolled back); Update still applies it by hand');
 }
 
-let state = { current: currentVersion, latest: null, updateAvailable: false, verified: false, checkedAt: null, error: 'not polled yet', missedSecurity: [], apply: null, auto: autoUpdate, autoSkipped: skipVersion, applySupported: APPLY_SUPPORTED };
+let state = { current: currentVersion, latest: null, updateAvailable: false, blocked: null, blockedCode: null, platform: hostPlatform(), verified: false, checkedAt: null, error: 'not polled yet', missedSecurity: [], apply: null, auto: autoUpdate, autoSkipped: skipVersion, applySupported: APPLY_SUPPORTED };
 
 async function ghJson(url) {
   const headers = { 'User-Agent': 'mdmesh-updater', Accept: 'application/vnd.github+json' };
   if (TOKEN) headers.Authorization = 'Bearer ' + TOKEN;
-  const r = await fetch(url, { headers });
-  if (!r.ok) throw new Error('github ' + r.status);
+  const r = await fetch(url, { headers, signal: AbortSignal.timeout(30_000) });
+  if (!r.ok) throw Object.assign(new Error('github ' + r.status), { status: r.status });
   return r.json();
 }
 
 /** Download a release asset: through the asset API URL with the token when one is set (the only way a private repo
- *  serves it), else browser_download_url. The one download path for the manifest, its signature and the APK. */
-const ghAsset = (asset) => fetchAsset(asset, TOKEN);
+ *  serves it), else browser_download_url. The one download path for the manifest, its signature (30 s) and the APK
+ *  (`ms`: 10 min), each bounded so a stuck GitHub can't hold a poll or a lookup. */
+const ghAsset = (asset, ms = 30_000) => fetchAsset(asset, TOKEN, globalThis.fetch, 5, AbortSignal.timeout(ms));
 
 /** A fetch/exec error as one loggable line: the message plus the low-level cause code, never headers or URLs
  *  (a redirect target is a signed URL, and the token lives in a header). */
@@ -127,74 +132,112 @@ function errText(e) {
   return String((e && e.message) || e) + (cause ? ' (' + cause + ')' : '');
 }
 
-/** Download + minisign-verify a release's manifest. Returns { manifest } when verified, else { error }. A silent
- *  refusal made a private-repo 404 look like a bad signature, so the reason is logged in full ([verify] line) — but
- *  /update/status is public (Caddy proxies it), so `error` names only the kind of failure: no upstream output
- *  (minisign's text, fetch causes) and no configuration hints. */
+/** minisign-verify DIR/manifest.json against DIR/manifest.json.minisig and the release key: null when it verifies,
+ *  else { what, detail } (detail: minisign's own words, without DIR, for the log only). */
+function minisignProblem(dir) {
+  const v = cp.spawnSync('minisign', ['-V', '-p', PUB, '-m', path.join(dir, 'manifest.json')], { encoding: 'utf8' });
+  if (v.error) return { what: 'minisign could not run', detail: errText(v.error), transient: true };
+  if (v.status === 0) return null;
+  return { what: 'minisign signature check failed',
+    detail: (v.stderr || v.stdout || '').split(dir + path.sep).join('').replace(/\s+/g, ' ').trim() || 'exit ' + v.status };
+}
+
+/** Download + minisign-verify a release's manifest. Returns { manifest, files } when verified (files: the manifest's and
+ *  its signature's bytes, which runningAgent persists), else { error, transient }: transient when a download failed
+ *  (the release lists the files, so this is GitHub or the network, this time), not when the signature or JSON is bad.
+ *  The reason is logged in full ([verify] line), but /update/status is public (Caddy proxies it), so `error` names
+ *  only the kind of failure. */
 async function verifyManifest(mAsset, sAsset) {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'mf'));
-  const fail = (what, detail) => {
+  let d = null;
+  const fail = (what, detail, transient = false) => {
     console.log('[verify] manifest not verified:', what + (detail ? ': ' + detail : ''));
-    return { error: 'manifest not verified: ' + what + ' (details in the supervisor log)' };
+    return { error: 'manifest not verified: ' + what + ' (details in the supervisor log)', transient };
   };
   try {
+    d = fs.mkdtempSync(path.join(os.tmpdir(), 'mf'));
+    const files = {};
     for (const [asset, f] of [[mAsset, 'manifest.json'], [sAsset, 'manifest.json.minisig']]) {
       let r;
-      try { r = await ghAsset(asset); } catch (e) { return fail(`${f}: download failed`, errText(e)); }
-      if (!r.ok) return fail(`${f}: HTTP ${r.status}`, r.status === 404 && !TOKEN ? 'a private repo needs GITHUB_TOKEN' : '');
-      fs.writeFileSync(path.join(d, f), Buffer.from(await r.arrayBuffer()));
+      try { r = await ghAsset(asset); } catch (e) { return fail(`${f}: download failed`, errText(e), true); }
+      if (!r.ok) return fail(`${f}: HTTP ${r.status}`, r.status === 404 && !TOKEN ? 'a private repo needs GITHUB_TOKEN' : '', true);
+      files[f] = Buffer.from(await r.arrayBuffer());
+      fs.writeFileSync(path.join(d, f), files[f]);
     }
-    const v = cp.spawnSync('minisign', ['-V', '-p', PUB, '-m', path.join(d, 'manifest.json')], { encoding: 'utf8' });
-    if (v.error) return fail('minisign could not run', errText(v.error));
-    if (v.status !== 0) {
-      const why = (v.stderr || v.stdout || '').split(d + path.sep).join('').replace(/\s+/g, ' ').trim();
-      return fail('minisign signature check failed', why || 'exit ' + v.status);
-    }
-    try { return { manifest: JSON.parse(fs.readFileSync(path.join(d, 'manifest.json'), 'utf8')) }; }
+    const bad = minisignProblem(d);
+    if (bad) return fail(bad.what, bad.detail, !!bad.transient);
+    try { return { manifest: JSON.parse(files['manifest.json'].toString('utf8')), files }; }
     catch (e) { return fail('manifest.json is not valid JSON', errText(e)); }
   } catch (e) {
-    return fail('download or check failed', errText(e)); // unreachable / unreadable → refuse, but say why in the log
+    return fail('download or check failed', errText(e), true); // unreachable / unreadable → refuse, but say why in the log
   } finally {
-    fs.rmSync(d, { recursive: true, force: true });
+    if (d) fs.rmSync(d, { recursive: true, force: true });
   }
 }
 
-// --- APK mirror: download the verified release APK and serve it from the deployment's own origin, so
-// devices never need to reach GitHub. Served only after SHA-256 matches the signed manifest. ---
+// --- APK mirror: the offered agent's APK, served from the deployment's own origin so devices never need to reach
+// GitHub, and only with the SHA-256 of the verified manifest it came from. ---
 const APK_DIR = process.env.APK_CACHE_DIR || '/backups/apk';
-function apkPath() { return lastApk ? path.join(APK_DIR, `agent-${lastApk.versionCode}.apk`) : null; }
-function apkReady() { const p = apkPath(); return !!(p && fs.existsSync(p)); }
-let apkFetching = null;
-async function ensureApk() {
-  if (!lastApk) return false;
-  const dest = apkPath();
-  if (fs.existsSync(dest)) return true;
-  if (apkFetching) return apkFetching; // coalesce concurrent first-requests
-  apkFetching = (async () => {
-    const tmp = dest + '.tmp';
-    try {
-      fs.mkdirSync(APK_DIR, { recursive: true });
-      const r = await ghAsset({ url: lastApk.apiUrl, browser_download_url: lastApk.url }); // 302s to a CDN; see fetchAsset
-      if (!r.ok) { console.log('[apk] download failed', r.status); return false; }
-      const buf = Buffer.from(await r.arrayBuffer());
-      if (!sha256Matches(buf, lastApk.sha256)) { console.log('[apk] sha256 mismatch — refusing to serve'); return false; }
-      fs.writeFileSync(tmp, buf);
-      fs.renameSync(tmp, dest); // atomic publish only after verification
-      console.log('[apk] mirrored', dest);
-      publishApk(dest);
-      refreshApkAvailable();
-      return true;
-    } catch (e) {
-      console.log('[apk] error', errText(e));
-      try { fs.rmSync(tmp, { force: true }); } catch { /* ignore */ }
-      return false;
-    } finally { apkFetching = null; }
-  })();
-  return apkFetching;
+const cachePath = (desc) => path.join(APK_DIR, `agent-${desc.versionCode}.apk`);
+function apkReady() { return !!lastApk && cachedApkOk(lastApk); }
+// Cached files whose bytes were hashed against a verified descriptor: path → `${sha256} ${size} ${mtimeMs}`.
+const hashedFiles = new Map();
+/** The cached copy of `desc`'s agent is there and has its verified SHA-256 (hashed once per file version, again if the
+ *  file changes). A copy that doesn't match (tampered, or another release's agent with the same versionCode) is
+ *  removed, so it is downloaded again. */
+function cachedApkOk(desc) {
+  const p = cachePath(desc);
+  let st;
+  try { st = fs.statSync(p); } catch { return false; }
+  const key = `${desc.sha256} ${st.size} ${st.mtimeMs}`;
+  if (hashedFiles.get(p) === key) return true;
+  let ok = false;
+  try { ok = sha256Matches(fs.readFileSync(p), desc.sha256); } catch { /* unreadable (a directory, EACCES): not cached */ }
+  if (ok) { hashedFiles.set(p, key); return true; }
+  console.log('[apk] cached', p, 'does not match its signed sha256 — removing it');
+  hashedFiles.delete(p);
+  try { fs.rmSync(p, { force: true }); } catch { /* ignore */ }
+  return false;
+}
+const fetchingApk = new Map();   // sha256 → the download in flight for it
+let publishedSha = null;         // the agent last copied to PUBLISH_APK_TO in this process
+/** Make sure `desc`'s agent is in the cache with its verified SHA-256, downloading it if needed (one download per
+ *  agent at a time). Resolves true when it is. */
+function ensureApk(desc) {
+  if (!desc) return Promise.resolve(false);
+  if (cachedApkOk(desc)) { publishOffered(desc); return Promise.resolve(true); }
+  const key = desc.sha256;
+  if (!fetchingApk.has(key)) {
+    fetchingApk.set(key, (async () => {
+      const dest = cachePath(desc), tmp = `${dest}.${key.slice(0, 12)}.tmp`; // one writer per name; a leftover is overwritten
+      try {
+        fs.mkdirSync(APK_DIR, { recursive: true });
+        const r = await ghAsset({ url: desc.apiUrl, browser_download_url: desc.url }, 10 * 60_000); // 302s to a CDN
+        if (!r.ok) { console.log('[apk] download failed', r.status); return false; }
+        const buf = Buffer.from(await r.arrayBuffer());
+        if (!sha256Matches(buf, desc.sha256)) { console.log('[apk] sha256 mismatch — refusing to serve'); return false; }
+        fs.writeFileSync(tmp, buf);
+        fs.renameSync(tmp, dest); // atomic: only verified bytes ever sit at dest
+        console.log('[apk] mirrored', dest);
+        publishOffered(desc);
+        refreshApkAvailable();
+        return true;
+      } catch (e) {
+        console.log('[apk] error', errText(e));
+        try { fs.rmSync(tmp, { force: true }); } catch { /* ignore */ }
+        return false;
+      } finally { fetchingApk.delete(key); }
+    })());
+  }
+  return fetchingApk.get(key);
+}
+/** A native install's enrollment copy follows the offered agent, also when it changes back to one already cached. */
+function publishOffered(desc) {
+  if (!PUBLISH_APK_TO || desc !== lastApk || publishedSha === desc.sha256) return;
+  if (publishApk(cachePath(desc))) publishedSha = desc.sha256; // a failed copy is tried again at the next offer
 }
 
-/** Re-derive `available` once a download lands: setStatus() snapshots apkReady() before poll()'s warm-up download
- *  finishes, and nothing else rebuilds `state` until the next poll (POLL_INTERVAL_HOURS). */
+/** Re-derive `available` once a download lands: setStatus() snapshots apkReady() before the download finishes, and
+ *  nothing else rebuilds `state` until the next poll (POLL_INTERVAL_HOURS). */
 function refreshApkAvailable() {
   if (state.apk) state.apk = { ...state.apk, available: apkReady() };
 }
@@ -204,7 +247,7 @@ function refreshApkAvailable() {
  *  directory, such as a link planted at a predictable name or a leftover from an earlier run, is written through
  *  or blocks the publish. Temp files a killed process left behind are removed first (removeStalePublishTemps). */
 function publishApk(src) {
-  if (!PUBLISH_APK_TO) return;
+  if (!PUBLISH_APK_TO) return false;
   removeStalePublishTemps();
   const tmp = `${PUBLISH_APK_TO}.${crypto.randomBytes(8).toString('hex')}.tmp`;
   try {
@@ -212,9 +255,11 @@ function publishApk(src) {
     fs.copyFileSync(src, tmp, fs.constants.COPYFILE_EXCL);
     fs.renameSync(tmp, PUBLISH_APK_TO); // atomic — a device mid-download never sees a torn file
     console.log('[apk] published', PUBLISH_APK_TO);
+    return true;
   } catch (e) {
     console.log('[apk] publish failed:', String((e && e.message) || e));
     try { fs.rmSync(tmp, { force: true }); } catch { /* ignore */ }
+    return false;
   }
 }
 
@@ -237,19 +282,196 @@ function removeStalePublishTemps() {
   }
 }
 
-/** Rebuild `state` from a poll result while preserving the live `apply`/`auto` view. */
+/** Rebuild `state` from a poll result while preserving the live `apply`/`auto` view. A newer release this install
+ *  can't apply (updateBlocked) is shown with its reason instead of as an update, so auto-apply leaves it alone; the
+ *  reason is logged once per release and reason, not on every poll. */
+let lastBlockedLog = null;
 function setStatus(args) {
   maybeClearSkip();
+  const blocked = blockedFor(args.manifest, args.verified, args.current);
+  const logged = blockedLogLine(lastBlockedLog, blocked);
+  if (logged.line) console.log(logged.line);
+  lastBlockedLog = logged.lastReason;
   state = {
-    ...shapeStatus(args),
+    ...shapeStatus({ ...args, blocked }),
     apply,
     auto: autoUpdate,
     autoSkipped: skipVersion,
     applySupported: APPLY_SUPPORTED,
-    apk: lastApk ? { version: lastApk.version, versionCode: lastApk.versionCode, sha256: lastApk.sha256, available: apkReady() } : null,
+    platform: hostPlatform(),   // the platform an update's images must include (blockedCode 'platform')
+    apkServed: !PUBLISH_APK_TO,  // this supervisor serves /files/agent.apk (Docker); else a published copy (native)
+    // `of`: whose agent this is: 'running' (the release the server runs), or 'latest' when that is unknown (setOffer).
+    apk: lastApk ? { version: lastApk.version, versionCode: lastApk.versionCode, sha256: lastApk.sha256, available: apkReady(),
+      of: lastApk.of } : null,
     release: lastRelease,
   };
   maybeAutoApply();
+}
+
+/** Why this install can't install the release in a verified `manifest` (updateBlocked), or null. */
+function blockedFor(manifest, verified = true, current = currentVersion) {
+  return updateBlocked({ manifest, verified, current, imageOwner: readImageOwner(), applySupported: APPLY_SUPPORTED });
+}
+
+// --- The agent this install offers (state.apk, /update/agent.apk, a native install's /files/agent.apk) ---
+// It is the running release's own agent: never one ahead of the server it talks to (the release notes always say
+// "update the server first"). That agent is a verified fact, resolved per running version and kept on disk with its
+// signed manifest, so a restart with GitHub down still has it. Only when the running version is unknown does the
+// latest release's agent stand in, so a QR code still downloads something (lib.js agentOffer).
+const running = new Map();     // version → { kind: 'agent', desc } | { kind: 'unknown' | 'failed', why }: the kept
+                               // store (loaded at start-up) and lookups; poll() drops all but 'agent', so a release
+                               // published or re-signed later is asked again
+const resolving = new Map();   // version → the resolution in flight
+let latestAgent = null;        // the latest verified release's agent, { ...desc, of: 'latest' }
+let lastVerified = null;       // the latest release poll() verified: { rel, manifest, files }
+let lastList = null;           // the release list poll() last read
+const persisted = (version, ext) => path.join(APK_DIR, `v${version}.${ext}`);
+const tagVersion = (rel) => String((rel && rel.tag_name) || '').replace(/^v/, '');
+
+/** The running release's agent for `version` (lookUpRunning), one lookup per version at a time; kept unless it was
+ *  { kind: 'transient' } (GitHub didn't answer), so the next attempt asks again. */
+function resolveRunning(version, list) {
+  if (running.has(version)) return Promise.resolve(running.get(version));
+  if (!resolving.has(version)) {
+    resolving.set(version, (async () => {
+      const result = await lookUpRunning(version, list);
+      if (result.kind !== 'transient') running.set(version, result);
+      return result;
+    })().finally(() => resolving.delete(version)));
+  }
+  return resolving.get(version);
+}
+/** In order: from disk (re-verified; for when minisign couldn't run at start-up); the latest release poll() verified,
+ *  when that is the one running (no second download, and what an apply installs); the release in `list`, else looked
+ *  up by tag. Only a 404 there means no such release (unknown); a failed lookup or download, or anything unexpected, is
+ *  transient. A manifest that doesn't verify is 'failed': nothing is offered. */
+async function lookUpRunning(version, list) {
+  try {
+    if (!isReleaseVersion(version)) return { kind: 'unknown', why: 'not a published release version' };
+    const latest = loadPersisted(version) || fromLatest(version);
+    if (latest) return latest;
+    let rel = (list || []).find((x) => tagVersion(x) === version);
+    if (!rel) {
+      try { rel = await ghJson(`https://api.github.com/repos/${REPO}/releases/tags/v${version}`); }
+      catch (e) { return e.status === 404 ? { kind: 'unknown', why: 'no such release' } : { kind: 'transient' }; }
+    }
+    const asset = (n) => (rel.assets || []).find((a) => a.name === n);
+    if (!asset('manifest.json') || !asset('manifest.json.minisig')) return { kind: 'unknown', why: 'no signed manifest' };
+    const v = await verifyManifest(asset('manifest.json'), asset('manifest.json.minisig'));
+    if (!v.manifest) return v.transient ? { kind: 'transient' } : { kind: 'failed', why: v.error };
+    if (v.manifest.version !== version) return { kind: 'failed', why: `its manifest is for ${v.manifest.version}` };
+    return keep(version, rel, v);
+  } catch (e) {
+    console.log('[apk] looking up the running release failed:', errText(e));
+    return { kind: 'transient' };
+  }
+}
+/** The latest release poll() verified, as the running release's agent when it is `version`; else null. */
+function fromLatest(version) {
+  return lastVerified && lastVerified.manifest.version === version ? keep(version, lastVerified.rel, lastVerified) : null;
+}
+/** A verified release's agent as a result, built by apkAsset from the release's (or the kept) asset entry. */
+function asResult(rel, manifest) {
+  const desc = apkAsset(rel, manifest);
+  return desc ? { kind: 'agent', desc: { ...desc, of: 'running' } } : { kind: 'unknown', why: 'no agent in its manifest' };
+}
+/** Keep a verified release's manifest, its signature and its APK's asset entry (where the bytes come from) on disk,
+ *  each written whole, then renamed; then its result. Nothing here is trusted on the way back in: loadPersisted
+ *  verifies the signature again, and the APK's bytes are checked against the signed sha256. */
+function keep(version, rel, v) {
+  const result = asResult(rel, v.manifest);
+  if (result.kind !== 'agent') return result;
+  try {
+    fs.mkdirSync(APK_DIR, { recursive: true });
+    const write = (f, bytes) => { fs.writeFileSync(f + '.tmp', bytes); fs.renameSync(f + '.tmp', f); };
+    const a = rel.assets.find((x) => x.name === v.manifest.components.apk.file);
+    write(persisted(version, 'manifest.json.minisig'), v.files['manifest.json.minisig']);
+    write(persisted(version, 'asset.json'), JSON.stringify({ name: a.name, url: a.url, browser_download_url: a.browser_download_url }));
+    write(persisted(version, 'manifest.json'), v.files['manifest.json']);
+  } catch (e) { console.log('[apk] could not keep the manifest of', version + ':', errText(e)); }
+  return result;
+}
+/** The agent of `version` from disk, its manifest verified again (minisign, offline); null when there is none or it
+ *  can't be read or checked now (minisign didn't run). A manifest that doesn't verify, or is another version's, is
+ *  removed (and fetched again). */
+function loadPersisted(version) {
+  const m = persisted(version, 'manifest.json');
+  if (!fs.existsSync(m)) return null;
+  let d = null, bad = null;
+  const remove = (why) => {
+    console.log(`[apk] the kept manifest of ${version} is not usable (${why}) — removing it`);
+    for (const ext of ['manifest.json', 'manifest.json.minisig', 'asset.json']) fs.rmSync(persisted(version, ext), { force: true });
+  };
+  try {
+    d = fs.mkdtempSync(path.join(os.tmpdir(), 'mf'));
+    fs.copyFileSync(m, path.join(d, 'manifest.json'));
+    fs.copyFileSync(persisted(version, 'manifest.json.minisig'), path.join(d, 'manifest.json.minisig'));
+    const problem = minisignProblem(d);
+    if (problem && problem.transient) throw new Error(problem.detail);
+    if (problem) bad = `${problem.what}: ${problem.detail}`;
+    const manifest = bad ? null : JSON.parse(fs.readFileSync(path.join(d, 'manifest.json'), 'utf8'));
+    if (manifest && manifest.version !== version) bad = 'manifest of another version';
+    if (bad) { remove(bad); return null; }
+    // Only an agent is ever kept, so anything else is damage (asset.json isn't signed): fetch it again.
+    const result = asResult({ assets: [JSON.parse(fs.readFileSync(persisted(version, 'asset.json'), 'utf8'))] }, manifest);
+    if (result.kind !== 'agent') { remove(`its kept asset entry doesn't fit it (${result.why})`); return null; }
+    return result;
+  } catch (e) {
+    console.log(`[apk] the kept manifest of ${version} can't be checked now: ${errText(e)}`);
+    return null;
+  } finally { if (d) fs.rmSync(d, { recursive: true, force: true }); }
+}
+/** The kept store, loaded once at start-up: every release this install has run whose manifest still verifies. */
+function loadKept() {
+  let names = [];
+  try { names = fs.readdirSync(APK_DIR); } catch { /* nothing kept yet */ }
+  for (const n of names) {
+    const v = /^v(.+)\.manifest\.json$/.exec(n);
+    if (v && isReleaseVersion(v[1])) { const r = loadPersisted(v[1]); if (r) running.set(v[1], r); }
+  }
+}
+
+/** Every agent read from a verified manifest: the latest's, and the running or kept releases'. */
+const verifiedAgents = () => [latestAgent, ...[...running.values()].map((x) => x.desc)].filter(Boolean);
+const knownAgent = (versionCode) => verifiedAgents().find((d) => String(d.versionCode) === String(versionCode)) || null;
+
+/** Offer what `result` (lookUpRunning's) says, logging why when it isn't the running release's agent; a lookup that
+ *  failed is retried within minutes. */
+let offerLog = '';
+let retry = null;
+function setOffer(result) {
+  const line = result.kind === 'unknown' ? `[apk] running release v${currentVersion} is unknown (${result.why}); offering the latest release's agent`
+    : result.kind === 'failed' ? `[apk] running release v${currentVersion} has no verified agent (${result.why}); offering none`
+      : result.kind === 'transient' ? `[apk] running release v${currentVersion} could not be looked up yet; offering none, retrying` : '';
+  if (line && line !== offerLog) console.log(line);
+  offerLog = line;
+  lastApk = agentOffer(result, latestAgent);
+  retirePublished();
+  if (result.kind === 'transient' && !retry) retry = setTimeout(() => { retry = null; void offerAgain(); }, RETRY_MS);
+}
+/** Resolve the running version and offer its agent. A result for a version that is no longer running is dropped (its
+ *  replacement is on its way). Never throws: it runs from timers and request handlers. */
+async function offerAgain() {
+  try {
+    const version = currentVersion;
+    const result = await resolveRunning(version, lastList);
+    if (version !== currentVersion) return;
+    setOffer(result);
+    refreshStatus(false);
+    void ensureApk(lastApk);
+  } catch (e) { console.log('[apk] offering the agent failed:', errText(e)); }
+}
+/** A native install's published /files/agent.apk that is a known agent newer than the server (published by an
+ *  installer, or before a rollback) is removed when nothing replaces it, so enrollment gets nothing rather than an
+ *  agent ahead of its server. */
+function retirePublished() {
+  if (!PUBLISH_APK_TO || !isReleaseVersion(currentVersion) || (lastApk && publishedSha === lastApk.sha256)) return;
+  let sha;
+  try { sha = crypto.createHash('sha256').update(fs.readFileSync(PUBLISH_APK_TO)).digest('hex'); } catch { return; }
+  const desc = verifiedAgents().find((d) => d.sha256 === sha);
+  if (!desc || desc === lastApk || !semverGt(desc.version, currentVersion)) return;
+  try { fs.rmSync(PUBLISH_APK_TO, { force: true }); publishedSha = null; console.log(`[apk] removed the published agent ${desc.version}: it is newer than this server (${currentVersion})`); }
+  catch (e) { console.log('[apk] could not remove the published agent:', errText(e)); }
 }
 
 /** If unattended is on and a fresh verified update is available, apply it (once per version). */
@@ -266,9 +488,12 @@ function maybeAutoApply() {
 
 async function poll() {
   lastPollAt = Date.now(); // stamp up-front so /update/check throttling also covers an in-flight poll
+  // A running version found unknown (404) or unverifiable is asked again: it may be published, or re-signed, since.
+  for (const [version, result] of running) if (result.kind !== 'agent') running.delete(version);
   if (!REPO) { lastManifest = null; lastRelease = null; setStatus({ current: currentVersion, manifest: null, verified: false, checkedAt: Date.now(), error: 'GITHUB_REPO not set' }); return; }
   try {
-    const rel = pickRelease(await ghJson(`https://api.github.com/repos/${REPO}/releases?per_page=10`), CHANNEL);
+    lastList = await ghJson(`https://api.github.com/repos/${REPO}/releases?per_page=10`);
+    const rel = pickRelease(lastList, CHANNEL);
     if (!rel) { lastManifest = null; lastRelease = null; setStatus({ current: currentVersion, manifest: null, verified: false, checkedAt: Date.now(), error: 'no matching release' }); return; }
     lastRelease = { notes: rel.body || null, url: rel.html_url || null, publishedAt: rel.published_at || null };
     const m = rel.assets.find((a) => a.name === 'manifest.json');
@@ -276,18 +501,29 @@ async function poll() {
     const v = (m && s) ? await verifyManifest(m, s) : { error: 'release has no manifest.json.minisig' };
     const manifest = v.manifest || null;
     lastManifest = manifest; // only verified manifests are ever stored
-    lastApk = manifest ? apkAsset(rel, manifest) : null;
+    if (manifest) {
+      const a = apkAsset(rel, manifest);
+      latestAgent = a && { ...a, of: 'latest' };
+      lastVerified = { rel, manifest, files: v.files };
+    }
+    // The offer first, so a status with this poll's checkedAt carries this poll's offer too.
+    await offerAgain(); // warms the mirror too, so a rollout or enrollment is instant
     setStatus({ current: currentVersion, manifest, verified: !!manifest, checkedAt: Date.now(), error: manifest ? null : v.error });
-    if (lastApk) void ensureApk(); // warm the mirror cache (download+verify) so a rollout is instant
   } catch (e) {
+    await offerAgain(); // the running release's agent may be kept on disk
     state = { ...state, current: currentVersion, checkedAt: Date.now(), error: String((e && e.message) || e) };
   }
 }
 
 /** Re-derive the status from what is already known (the last verified manifest) after `current` changed, without
  *  waiting for GitHub: the follow-up poll can be slow or fail, and until then `current`/`updateAvailable` were stale. */
-function refreshStatus() {
+function refreshStatus(reoffer = true) {
+  // `current` changed (apply, rollback): the old offer may be ahead of it, so what is known for the new version is
+  // offered before anything is published, and offerAgain resolves the rest (from the kept store or the manifest the
+  // last poll verified, without network, before this tick ends).
+  if (reoffer) lastApk = agentOffer(running.get(currentVersion) || null, latestAgent);
   setStatus({ current: currentVersion, manifest: lastManifest, verified: !!lastManifest, checkedAt: state.checkedAt, error: state.error });
+  if (reoffer) void offerAgain();
 }
 
 // Spawn a phase-emitting script (apply.sh/rollback.sh) and stream its PHASE/ERR lines into the live
@@ -411,7 +647,8 @@ function validToken(req) {
 
 /** GET a private server route with the caller's cookie: its JSON body on HTTP 200, else null. */
 async function serverJson(p, cookie) {
-  const r = await fetch(SERVER_BASE + p, { headers: { Cookie: cookie, Accept: 'application/json' }, redirect: 'manual' });
+  const r = await fetch(SERVER_BASE + p, { headers: { Cookie: cookie, Accept: 'application/json' }, redirect: 'manual',
+    signal: AbortSignal.timeout(10_000) });
   if (r.status !== 200) return null;               // 403 = not logged in; 3xx = login redirect
   return r.json().catch(() => null);
 }
@@ -445,15 +682,24 @@ http.createServer(async (req, res) => {
     if (req.url === '/healthz') { res.writeHead(200).end('ok'); return; }
     if (req.url.startsWith('/update/status')) { json(res, 200, state); return; }
     if (req.url.startsWith('/update/agent.apk')) {
-      // The mirrored agent APK for device rollouts. Public GET (the device fetches it during an
-      // app.install); integrity is guaranteed by the SHA-256 check in ensureApk + the agent's own
-      // payload sha256. ?v=<versionCode> is advisory — we always serve the current verified apk.
-      if (!lastApk) { res.writeHead(404).end('no apk'); return; }
-      const ready = await ensureApk();
-      const p = apkPath();
-      if (!ready || !p || !fs.existsSync(p)) { json(res, 502, { error: 'apk unavailable or checksum mismatch' }); return; }
-      res.writeHead(200, { 'content-type': 'application/vnd.android.package-archive', 'content-length': fs.statSync(p).size });
-      fs.createReadStream(p).pipe(res);
+      // The mirrored agent APK, for enrollment (/files/agent.apk) and device rollouts. Public GET (the device fetches
+      // it during an app.install). Every file served was just checked against the SHA-256 of a verified manifest
+      // (ensureApk / cachedApkOk), and the agent checks the payload's sha256 too. Without ?v=: the offered agent.
+      // ?v=<versionCode> (a rollout's URL): that agent, if it was read from a verified manifest and isn't newer than the
+      // server (a rollout started before an update still gets its own bytes); one that is newer since a rollback
+      // gets 409, so no device installs an agent ahead of its server.
+      const v = new URL(req.url, 'http://x').searchParams.get('v');
+      const desc = v && /^\d+$/.test(v) ? knownAgent(v) : lastApk;
+      if (!desc) { res.writeHead(404).end(v ? `agent ${v} is not available` : 'no apk'); return; }
+      // (The offer itself already follows the rule; when the running version is unknown, any verified agent goes.)
+      const ahead = () => desc !== lastApk && semverGt(desc.version, currentVersion)
+        && (running.get(currentVersion) || {}).kind !== 'unknown' && isReleaseVersion(currentVersion);
+      const refuse = () => json(res, 409, { error: `agent ${desc.version} is newer than this server (${currentVersion}): update the server to ${desc.version} first` });
+      if (ahead()) { refuse(); return; }
+      if (!(await ensureApk(desc))) { json(res, 502, { error: 'apk unavailable or checksum mismatch' }); return; }
+      if (ahead()) { refuse(); return; }   // the server was rolled back while the agent downloaded
+      res.writeHead(200, { 'content-type': 'application/vnd.android.package-archive', 'content-length': fs.statSync(cachePath(desc)).size });
+      fs.createReadStream(cachePath(desc)).on('error', () => res.destroy()).pipe(res);
       return;
     }
     if (req.method === 'POST' && req.url.startsWith('/update/check')) {
@@ -503,6 +749,9 @@ http.createServer(async (req, res) => {
 }).listen(PORT, BIND, () => console.log('supervisor on', BIND + ':' + PORT));
 
 removeStalePublishTemps();
+loadKept();
 maybeClearSkip(); // at start-up too, even if GitHub is unreachable (the poll's error path does not rebuild the status)
+// The kept agent of the running release is offered at once, without waiting for GitHub.
+if (running.has(currentVersion)) { setOffer(running.get(currentVersion)); refreshStatus(false); void ensureApk(lastApk); }
 poll();
-setInterval(poll, (+(process.env.POLL_INTERVAL_HOURS || 6)) * 3600 * 1000);
+setInterval(poll, POLL_MS);

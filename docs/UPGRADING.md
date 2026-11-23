@@ -94,8 +94,13 @@ sudo ./setup.sh --update --native
 From 0.4.x, move the clone to 0.5.0 once with `git fetch --tags && git checkout v0.5.0 && sudo ./setup.sh --update --native` ([v0.5.0](#v050)): 0.4.x has no `--update`.
 
 Over an install, `--update` asks nothing. It shows `MDMesh · native update, <from> → <to>` and keeps the data, the
-base URL and the port, as `-y` does. From 0.5.0 it still asks once, because 0.5.0's `--update` doesn't tell the
-installer it is an update: add `-y` to skip the questions.
+base URL and the port, as `-y` does. `<from>` is the release the install runs, as the install recorded it
+(`/etc/mdmesh/installed-version`, or for installs from before that record `CURRENT_VERSION` in `supervisor.env`), never the release
+the clone is on; `?` when it has neither. After a rollback with an older release's installer the record still names
+the newer release until the next run; that is cosmetic. From 0.5.0 it still asks once, because 0.5.0's `--update`
+doesn't tell the installer it is an update: it shows `This host runs v<from>; this clone is on v<to>` under its title.
+Add `-y` to skip the questions. If you answer no there, the install is unchanged but the clone is already on the new
+release: run `sudo ./setup.sh --update --native` again to finish.
 
 Run without `--update` (`sudo ./setup.sh --native`), the installer asks you to type `yes`, then for the base URL and
 the port, then to choose **Keep** (the default) or **Erase** (type `ERASE`). Keep runs migrations and leaves all data
@@ -283,6 +288,10 @@ exited or credentials cleared while the older agent ran.
 - **Going back to 0.5.1 without a restore** (`--allow-downgrade`) works: 0.5.1 starts on the new database unchanged.
   It keeps the links, so in 0.5.1 too, deleting a device deletes its history and renaming one carries it. A check-in
   or command that races a delete gets a server error in 0.5.1 (this release answers it as for an unknown device).
+- **The server first, then its agent.** New devices and rollouts get the agent of the release the server runs, never
+  a newer one. Update the server, then roll out its agent from **Settings → Agent rollout**. After a rollback, a
+  rollout of the newer agent stops: cancel it, or update the server again. A server whose release isn't published
+  (a development build), or has no agent in its manifest, gets the latest release's agent.
 - **Existing installs keep their hosting mode.** Cloudflare Tunnel and own-domain installs, quick start or from
   source, keep their mode, `.env` and compose files through the update. Answers files and `MDMESH_MODE=1` or `2` mean
   what they meant before; `3` (or `proxy`) is the new mode. Native is unchanged.
@@ -302,6 +311,22 @@ exited or credentials cleared while the older agent ran.
   (`up -d` recreates the edge with the directory mounted; updates read both files, so they keep it.)
 - **A rollback below 0.6.0** of an install you moved to the proxy mode is refused by the updater: move it back first
   ([how](#changing-the-hosting-mode)).
+
+### v0.6.0 for forks
+
+For forks that publish their own releases with `.github/workflows/release.yml` (RELEASING.md). Neither of these
+tags or publishes anything, but either may leave untagged images in your GHCR packages:
+
+- **Record your release certificate.** `release/agent-signature-checksum` holds MDMesh's release certificate, and
+  the release stops with an error on a signed APK with another one. Put your own there in a PR to your main branch before you tag:
+  `release/apk-checksum.sh` prints it for an APK signed with your key, and it is `components.apk.signatureChecksum`
+  in your earlier releases' signed manifests.
+- **Arm64 runners.** The images are built for linux/amd64 and linux/arm64, each on its own runner; Arm64 on
+  `ubuntu-24.04-arm`, which GitHub provides free for public repositories only. Without one, the release doesn't fail:
+  its Arm64 `images` jobs wait for a runner that never comes, and GitHub cancels them after 24 hours. A private fork
+  needs a paid Arm runner under that label, or drops Arm64: remove `arm64` from the `images` job's `matrix.arch` and
+  `linux/arm64` from the release job's `PLATFORMS`, in the same commit. Its releases then serve x86_64 only, and its
+  quick start and updater say so on Arm64.
 
 ### v0.5.1
 

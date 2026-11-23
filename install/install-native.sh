@@ -28,6 +28,9 @@ REPO="$PWD"   # repo root — used for absolute paths inside subshells (e.g. exp
 . "$REPO/install/lib/db.sh"
 # shellcheck source=lib/version.sh
 . "$REPO/install/lib/version.sh"
+# mdm_envfile_param, mdm_installed_version: the install's own records in /etc/mdmesh (supervisor.env, installed-version).
+# shellcheck source=lib/envfile.sh
+. "$REPO/install/lib/envfile.sh"
 # shellcheck source=lib/url.sh
 . "$REPO/install/lib/url.sh"
 # as_svc_user / as_postgres / as_mdmesh_role: the service account, postgres (superuser-only statements, in the postgres
@@ -61,14 +64,16 @@ for a in "$@"; do
     *) echo "Unknown option: $a (the native installer takes -y and -v; from setup.sh: --update, --native)." >&2; exit 2 ;;
   esac
 done
-# MDMESH_UPDATING=1 (and MDMESH_UPDATE_FROM, the release it leaves): `./setup.sh --update` hands over. Over an install
-# (its ROOT.xml) that is an update: nothing to confirm, and the base URL, the port and the data are kept, as with -y
-# (an answer given in advance still counts). On a host without one it is an install, with its questions.
-UPDATING=0
-if [ "${MDMESH_UPDATING:-0}" = 1 ] \
-   && { [ -e /opt/mdmesh-tc/conf/Catalina/localhost/ROOT.xml ] || [ -L /opt/mdmesh-tc/conf/Catalina/localhost/ROOT.xml ]; }; then
-  UPDATING=1; ASSUME_YES=1
+# MDMESH_UPDATING=1: `./setup.sh --update` hands over. Over an install (its ROOT.xml) that is an update: nothing to
+# confirm, and the base URL, the port and the data are kept, as with -y (an answer given in advance still counts). On a
+# host without one it is an install, with its questions. (The release it updates from is the install's own record, read
+# below, never anything in the environment.)
+HAS_INSTALL=0   # this host has an install: its ROOT.xml
+if [ -e /opt/mdmesh-tc/conf/Catalina/localhost/ROOT.xml ] || [ -L /opt/mdmesh-tc/conf/Catalina/localhost/ROOT.xml ]; then
+  HAS_INSTALL=1
 fi
+UPDATING=0
+if [ "${MDMESH_UPDATING:-0}" = 1 ] && [ "$HAS_INSTALL" = 1 ]; then UPDATING=1; ASSUME_YES=1; fi
 # Without -y the run starts with the confirmation, which MDMESH_NONINTERACTIVE=1 can't answer.
 [ "$ASSUME_YES" = 1 ] || mdm_ask assume-yes
 if [ "${MDMESH_DRY_RUN:-0}" = 1 ]; then
@@ -97,11 +102,18 @@ command -v apt-get >/dev/null || { echo "This script targets Debian/Ubuntu."; ex
 # tucked into a logfile that is auto-expanded only when something fails. Run with -v to stream it inline.
 # Colour/spinner auto-disable when stdout isn't a TTY or NO_COLOR is set, so piped runs stay clean.
 # ------------------------------------------------------------------------------------------------------
-LOGFILE="${LOGFILE:-/var/log/mdmesh-install.log}"
-: > "$LOGFILE" 2>/dev/null || LOGFILE="/tmp/mdmesh-install.log"; : > "$LOGFILE" 2>/dev/null || true
-# The log can capture echoed SQL (including the DB password — see the Database step), so keep it
-# owner-only even if it pre-existed with looser modes (umask only covers newly created files).
-chmod 600 "$LOGFILE" 2>/dev/null || true
+# The log can capture echoed SQL, including the DB password (see the Database step), so it is owner-only: LOGFILE
+# (default /var/log/mdmesh-install.log) when, as the run starts, its directory is writable and it is a regular file
+# (not a link) or absent; otherwise a fresh private file from mktemp in /tmp (created exclusively, mode 600, so a link
+# planted at a fixed /tmp name can't redirect it). That check is made once, before the question; each step reopens the
+# log by its path. It is emptied only once the run is confirmed (below the question): answered no, it keeps the
+# previous run's log, which may hold the failure being looked into. Nothing writes to it before then, and the error
+# handler shows its lines only from then on (_log_started).
+LOGFILE="${LOGFILE:-/var/log/mdmesh-install.log}"; _log_tmp=0; _log_started=0
+if [ -L "$LOGFILE" ] || { [ -e "$LOGFILE" ] && [ ! -f "$LOGFILE" ]; } || [ ! -d "${LOGFILE%/*}" ] || [ ! -w "${LOGFILE%/*}" ]; then
+  LOGFILE=$(mktemp /tmp/mdmesh-install.XXXXXX) || { echo "Could not create a log file (${LOGFILE} is not usable, nor is /tmp)." >&2; exit 1; }
+  _log_tmp=1
+fi
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
   c_reset=$'\033[0m'; c_dim=$'\033[2m'; c_grn=$'\033[32m'; c_red=$'\033[31m'
   c_yel=$'\033[33m'; c_cyn=$'\033[36m'; c_bold=$'\033[1m'; TTY=1
@@ -125,7 +137,7 @@ _spin_stop() {
   [ "$TTY" = 1 ] && printf '\r\033[K'
   return 0
 }
-_show_log() { hr; tail -n 30 "$LOGFILE" 2>/dev/null | sed "s/^/    ${c_dim}/;s/$/${c_reset}/"; hr; printf '  full log: %s\n' "$LOGFILE"; }
+_show_log() { [ "$_log_started" = 1 ] || return 0; hr; tail -n 30 "$LOGFILE" 2>/dev/null | sed "s/^/    ${c_dim}/;s/$/${c_reset}/"; hr; printf '  full log: %s\n' "$LOGFILE"; }
 _fail()     { _spin_stop; printf '  %s✗ %s%s\n' "$c_red" "$1" "$c_reset"; printf '\n  %sIt failed — last lines of the log:%s\n' "$c_yel" "$c_reset"; _show_log; exit 1; }
 trap '_spin_stop; printf "\n  %s✗ install aborted (line %s)%s\n" "$c_red" "$LINENO" "$c_reset"; _show_log' ERR
 
@@ -167,13 +179,22 @@ run() {
 }
 
 # ------------------------------------------------------------------------------------------------------
-if [ "$UPDATING" = 1 ]; then
-  # Versions only (the setting comes from the environment): anything else shows as "?".
-  _from=${MDMESH_UPDATE_FROM:-}; [[ "$_from" =~ ^[0-9A-Za-z.+-]{1,40}$ ]] || _from='?'
-  _to=$(mdm_repo_version "$REPO"); [ -n "$_to" ] || _to='?'
-  printf '\n  %sMDMesh · native update, %s → %s%s\n' "$c_bold" "$_from" "$_to" "$c_reset"
-else
-  printf '\n  %sMDMesh · native install%s\n' "$c_bold" "$c_reset"
+# The supervisor's settings (GITHUB_TOKEN included). They live outside $BASE_DIR on purpose: systemd reads an
+# EnvironmentFile as root and follows links, so one inside the service user's tree would let that user point it at any
+# root-only KEY=VALUE file and receive its contents in the supervisor's environment. The install's own record of the
+# release it runs is kept there too (installed-version, written last; see the end of this script).
+SUP_ENV_DIR=/etc/mdmesh
+# The release this host runs (mdm_installed_version: the install's record, read before anything changes; never the
+# clone's tag, which an update stopped halfway or a git pull has already moved) and the one this clone holds.
+# Only over an install (HAS_INSTALL, the same signal as UPDATING and the early record write below): a record left by an
+# older uninstaller on a host with no install must not make a fresh install say "this host runs vX".
+INSTALLED_VERSION=''
+if [ "$HAS_INSTALL" = 1 ]; then INSTALLED_VERSION=$(mdm_installed_version "$SUP_ENV_DIR"); fi
+CLONE_VERSION=$(mdm_repo_version "$REPO")
+# (mdm_native_title, mdm_native_host_line, mdm_native_declined: install/lib/version.sh.)
+printf '\n  %s%s%s\n' "$c_bold" "$(mdm_native_title "$UPDATING" "$INSTALLED_VERSION" "$CLONE_VERSION")" "$c_reset"
+if [ "$UPDATING" != 1 ] && [ -n "$INSTALLED_VERSION" ]; then
+  printf '  %s\n' "$(mdm_native_host_line "$INSTALLED_VERSION" "$CLONE_VERSION")"
 fi
 cat <<WARN
 
@@ -183,7 +204,7 @@ cat <<WARN
     • create or alter a PostgreSQL role and database "mdmesh" (resets that role's password)
     • download and unpack Apache Tomcat 9 into /opt/mdmesh-tc (clears its webapps/)
     • write config and uploaded files under /opt/mdmesh (the server logs to the systemd journal)
-    • write the updater's settings to /etc/mdmesh/supervisor.env
+    • write the updater's settings and the installed release to /etc/mdmesh
     • start Tomcat, run database migrations, and seed the admin account
 
   Intended for a dedicated server you control. This script does not undo these changes.
@@ -193,9 +214,24 @@ WARN
 if [ "$ASSUME_YES" != "1" ]; then
   mdm_ask assume-yes
   printf '  Type "yes" to proceed: '
-  read -r _confirm   # answer: assume-yes
-  [ "$_confirm" = "yes" ] || { echo "  Aborted — no changes made."; exit 1; }
+  # End of input (stdin closed, an empty pipe) is a no as well, not an error. An answer that isn't typed at a terminal
+  # (end of input, a pipe) isn't echoed, so the prompt's line is ended here.
+  if read -r _confirm; then [ -t 0 ] || echo; else _confirm=''; echo; fi   # answer: assume-yes
+  if [ "$_confirm" != "yes" ]; then
+    mdm_native_declined "$INSTALLED_VERSION" "$CLONE_VERSION" | sed 's/^/  /'
+    if [ "$_log_tmp" = 1 ]; then rm -f -- "$LOGFILE"; fi   # the empty one made above
+    exit 1
+  fi
 fi
+# Confirmed: from here on the run changes the host. A fresh log, owner-only even if it pre-existed with looser modes
+# (umask only covers new files).
+# If it can't be emptied (an append-only or immutable file, say), the run carries on with a private file instead.
+if ! { : > "$LOGFILE" && chmod 600 "$LOGFILE"; }; then
+  _log_old=$LOGFILE
+  LOGFILE=$(mktemp /tmp/mdmesh-install.XXXXXX) || { echo "Could not write the log file $_log_old, nor create one in /tmp." >&2; exit 1; }
+  echo "  Could not write the log file $_log_old: this run logs to $LOGFILE."
+fi
+_log_started=1
 
 rand() { mdm_rand; }
 
@@ -253,10 +289,6 @@ export CATALINA_PID="$CATALINA/tomcat.pid"
 SVC_USER=mdmesh            # unprivileged account Tomcat runs as (mirrors the Docker image)
 SVC_UNIT=mdmesh-server     # systemd unit that owns Tomcat
 SUP_UNIT=mdmesh-supervisor # systemd unit that owns the updater supervisor (also runs as $SVC_USER)
-# The supervisor's settings (GITHUB_TOKEN included). They live outside $BASE_DIR on purpose: systemd reads an
-# EnvironmentFile as root and follows links, so one inside the service user's tree would let that user point it at any
-# root-only KEY=VALUE file and receive its contents in the supervisor's environment.
-SUP_ENV_DIR=/etc/mdmesh
 # Root writes into $CATALINA and $BASE_DIR, which this script chowns to $SVC_USER (on this run and on every earlier one),
 # so a link planted there must never be followed. guard_under ROOT REL refuses (fails the install) when ROOT or any
 # component of ROOT/REL is a symbolic link. write_under ROOT REL CMD... guards REL, runs CMD with its stdout going to a
@@ -295,6 +327,13 @@ tc_guard()   { guard_under "$CATALINA" "$1"; }
 tc_write()   { local rel="$1"; shift; write_under "$CATALINA" "$rel" "$@"; }
 base_guard() { guard_under "$BASE_DIR" "$1"; }
 base_write() { local rel="$1"; shift; write_under "$BASE_DIR" "$rel" "$@"; }
+# An install without the installed-version record (from before it): write down the release it runs, as read above
+# (supervisor.env's CURRENT_VERSION, or empty when not known), now, before the first change. This run rewrites
+# supervisor.env before it ends, so if it then failed, the next run would otherwise read the new release as the one it
+# updates from.
+if [ "$HAS_INSTALL" = 1 ] && [ ! -e "$SUP_ENV_DIR/installed-version" ] && [ ! -L "$SUP_ENV_DIR/installed-version" ]; then
+  write_under "$SUP_ENV_DIR" installed-version printf '%s\n' "$INSTALLED_VERSION"
+fi
 have_systemd() { command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; }
 # unit_installed NAME: NAME.service is installed. Not `systemctl list-unit-files | grep -q`: grep exits at the first
 # match, systemctl then gets SIGPIPE writing its footer, and under pipefail the pipeline fails, so the unit reads as absent.
@@ -855,29 +894,9 @@ elif [ -e "$SUP_ENV_LEGACY" ] || [ -L "$SUP_ENV_LEGACY" ]; then
     else info "Could not read $SUP_ENV_LEGACY as $SVC_USER (not a regular file?): the updater settings start from their defaults"; fi
   fi
 fi
-# sup_old_param KEY: KEY's value in _sup_old, as systemd reads an EnvironmentFile: lines starting with # or ; are
-# comments, the last KEY= line wins, and the CR of a CRLF line, whitespace around the key, the "=" and the value, and one
-# pair of matching quotes around the value are dropped. A value that runs on (a quote not closed on its line, or a
-# trailing \) is not followed: the lines it runs over are skipped, never read as KEY= lines of their own, and its first
-# line fails repo_ok/token_ok. (Escapes inside a value are not undone either; they fail those checks too.)
-sup_old_param() {
-  local line k v="" raw q="" cont=0
-  while IFS= read -r line; do
-    line=${line%$'\r'}
-    if [ -n "$q" ]; then case "$line" in *"$q"*) q="" ;; esac; continue; fi       # inside an open quote
-    if [ "$cont" = 1 ]; then case "$line" in *\\) ;; *) cont=0 ;; esac; continue; fi   # after a trailing \
-    line=${line#"${line%%[![:space:]]*}"}
-    case "$line" in '#'*|';'*) continue ;; *=*) ;; *) continue ;; esac
-    k=${line%%=*}; k=${k%"${k##*[![:space:]]}"}
-    raw=${line#*=}; raw=${raw#"${raw%%[![:space:]]*}"}; raw=${raw%"${raw##*[![:space:]]}"}
-    case "$raw" in \"*|\'*) case "${raw:1}" in *"${raw:0:1}"*) ;; *) q=${raw:0:1} ;; esac ;; esac
-    if [ -z "$q" ]; then case "$raw" in *\\) cont=1 ;; esac; fi
-    [ "$k" = "$1" ] || continue
-    v=$raw
-    case "$v" in \"*\"|\'*\') v=${v:1:${#v}-2} ;; esac
-  done <<< "$_sup_old"
-  printf '%s' "$v"
-}
+# sup_old_param KEY: KEY's value in _sup_old, as systemd reads an EnvironmentFile (mdm_envfile_param). A value that runs
+# on past its line, or holds escapes, comes back as it stands and fails repo_ok/token_ok.
+sup_old_param() { mdm_envfile_param "$1" <<< "$_sup_old"; }
 # origin_repo: owner/name of the clone's origin, or empty (no origin, no git, or not a GitHub owner/name).
 origin_repo() {
   local o
@@ -919,7 +938,8 @@ AGENT_FETCH_DIR=""
 agent_fetch_cleanup() { if [ -n "$AGENT_FETCH_DIR" ]; then rm -rf -- "$AGENT_FETCH_DIR"; AGENT_FETCH_DIR=""; fi; }
 trap agent_fetch_cleanup EXIT
 if [ -n "$GITHUB_REPO" ]; then
-  # fetch_agent_apk: sets AGENT_APK (and AGENT_CK) when the latest release's APK verifies (install/lib/release.sh);
+  # fetch_agent_apk: sets AGENT_APK (and AGENT_CK) when the APK of the checkout's release (the latest's when that isn't
+  # published) verifies (install/lib/release.sh);
   # otherwise says why in one line and leaves AGENT_APK empty. Always returns 0, so set -e still stops the run on
   # anything else.
   fetch_agent_apk() {
@@ -928,7 +948,7 @@ if [ -n "$GITHUB_REPO" ]; then
     # The ERR trap does not fire inside a function (no set -E), so a failure here must be caught here, or the install
     # would end without a word.
     AGENT_FETCH_DIR=$(mktemp -d) || { AGENT_FETCH_DIR=""; info "Could not create a temporary directory for the release files${soft}"; return 0; }
-    if mdm_fetch_release_apk "$GITHUB_REPO" "$REPO/release/minisign.pub" "$AGENT_FETCH_DIR" "$LOGFILE"; then
+    if mdm_fetch_release_apk "$GITHUB_REPO" "$REPO/release/minisign.pub" "$AGENT_FETCH_DIR" "$LOGFILE" "$(mdm_repo_version "$REPO")"; then
       AGENT_CK=$MDM_AGENT_CK; AGENT_APK="$AGENT_FETCH_DIR/agent.apk"
     else
       info "${MDM_RELEASE_PROBLEM}${soft}"
@@ -1169,10 +1189,11 @@ for _f in server.js lib.js recovery.html; do base_write "supervisor/$_f" cat "$R
 base_write supervisor/minisign.pub cat "$REPO/release/minisign.pub"
 # chown -R follows no links, but it would chown a hard link's target: relies on fs.protected_hardlinks=1 (the default).
 chown -R "$SVC_USER:$SVC_USER" "$SUP_DIR"
-# The running version: the checkout's latest release tag (source installs track the repo). The
-# supervisor compares it against GitHub's latest to decide "update available". Same rule as setup.sh
-# (install/lib/version.sh).
-CURRENT_VERSION=$(mdm_repo_version "$REPO")
+# The running version: the checkout's latest release tag (source installs track the repo), read at the start of the run
+# (CLONE_VERSION). The supervisor compares it against GitHub's latest to decide "update available". Same rule as
+# setup.sh (install/lib/version.sh). It is written here, before the run ends, because the supervisor starts here; the
+# install's record of what it runs is installed-version, written once the run has succeeded (the end of this script).
+CURRENT_VERSION=$CLONE_VERSION
 # Settings go to $SUP_ENV_DIR (root-owned; see its definition). Versions before v0.3.2 kept them in $SUP_ENV_LEGACY, which
 # is removed once the new file is in place (so a run killed in between still finds the settings in one of them).
 # GITHUB_REPO / GITHUB_TOKEN: settled in the release-fetch step above. Never print the token itself.
@@ -1383,6 +1404,11 @@ for _rt in "$RUNTIME_DIR"/node-v* "$RUNTIME_DIR"/jdk-*; do
   rm -rf "$_rt"; info "removed the unused runtime $_rt"
 done
 rm -rf "$RUNTIME_DIR"/.fetch.??????   # a failed download's leftovers
+
+# The install's record of the release it runs (mdm_installed_version reads it), written as the run's last step: a run
+# that stops or fails before here leaves the release it started from, which is what the next run updates from. Empty
+# when the clone has no release tag. Root-only, in root's directory (see SUP_ENV_DIR).
+write_under "$SUP_ENV_DIR" installed-version printf '%s\n' "$CLONE_VERSION"
 
 trap - ERR
 if [ "$UPDATING" = 1 ]; then printf '\n  %s%s✓ MDMesh updated (native)%s\n\n' "$c_grn" "$c_bold" "$c_reset"

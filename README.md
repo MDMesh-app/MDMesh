@@ -42,8 +42,8 @@ APK.
   only sends it commands it reports it supports, and the agent protocol (`/agent/v1`) only ever adds fields. A test
   in CI checks this.
 - **One command installs the server.** It runs on Docker Compose with automatic HTTPS (Caddy) or a Cloudflare Tunnel,
-  or natively on Debian 12/13 and Ubuntu 24.04, on x86_64 or Arm64. The published Docker images are x86_64 only for
-  now; Arm64 images are planned.
+  or natively on Debian 12/13 and Ubuntu 24.04, on x86_64 or Arm64. The published Docker images cover Arm64 from
+  0.6.0.
 
 ## ■ Features
 
@@ -86,10 +86,10 @@ APK.
 
 ## ■ Quick start
 
-On an x86_64 Linux host with Docker, Docker Compose v2, `curl`, `openssl` 3.0+ (or an older `openssl` and
-`minisign`), and a domain. It asks how your phones will reach MDMesh: through a Cloudflare Tunnel (no ports to open),
-on your own domain (ports 80 and 443 reach the host), or behind the nginx, Apache, Caddy or Traefik you already run
-([which one is for me?](DEPLOY.md#which-install-is-for-me)):
+On a Linux host (x86_64, or Arm64 from 0.6.0) with Docker, Docker Compose v2, `curl`, `openssl` 3.0+ (or an older
+`openssl` and `minisign`), and a domain. It asks how your phones will reach MDMesh: through a Cloudflare Tunnel (no
+ports to open), on your own domain (ports 80 and 443 reach the host), or behind the nginx, Apache, Caddy or Traefik you
+already run ([which one is for me?](DEPLOY.md#which-install-is-for-me)):
 
 ```bash
 bash <(curl -fsSL https://github.com/MDMesh-app/MDMesh/releases/latest/download/quickstart.sh)
@@ -108,8 +108,9 @@ git clone https://github.com/MDMesh-app/MDMesh.git && cd MDMesh
 ```
 
 Without Docker, run `sudo ./setup.sh --update --native` from the clone on Debian 12/13 or Ubuntu 24.04 (x86_64 or
-Arm64). It only needs `git` and brings the rest ([native install](DEPLOY.md#option-c--native-no-docker)). Each
-installer prints the console URL and a temporary admin password. Then enroll a device:
+Arm64; CI tests the native install on x86_64 only). It only needs `git` and brings the rest
+([native install](DEPLOY.md#option-c--native-no-docker)). Each installer prints the console URL and a temporary admin
+password. Then enroll a device:
 
 1. Sign in and set your own password.
 2. Open **Enroll** and choose a configuration. The page shows its QR code.

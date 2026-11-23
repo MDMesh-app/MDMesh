@@ -88,7 +88,7 @@ echo "  MDMesh native uninstall — this host will lose:"
 [ -f "$SERVER_UNIT" ] && echo "    • server service:             mdmesh-server (systemd unit removed)"
 id -u "$SVC_USER" >/dev/null 2>&1 && [ "$KEEP_DATA" != 1 ] && echo "    • service user:               $SVC_USER"
 [ -f "$UNIT" ]     && echo "    • updater service:            mdmesh-supervisor (systemd unit removed)"
-[ -d "$SUP_ENV_DIR" ] && echo "    • updater settings:           $SUP_ENV_DIR"
+[ -d "$SUP_ENV_DIR" ] && echo "    • updater settings, installed-release record: $SUP_ENV_DIR"
 if [ "$KEEP_DATA" = 1 ]; then
   [ -d "$BASE_DIR" ] && echo "    • app dir (KEEPING files/ and backups/): $BASE_DIR"
   [ -n "$counts" ]   && echo "    • database:                   KEPT ($counts)"
@@ -151,9 +151,11 @@ if [ -f "$UNIT" ] || [ -n "$(systemctl list-unit-files --no-legend mdmesh-superv
 fi
 if [ -d "$SUP_ENV_DIR" ]; then
   # With the temp file a killed install run may have left (install-native.sh write_under's .NAME.mdmesh-tmp.XXXXXX).
-  rm -f "$SUP_ENV_DIR/supervisor.env" "$SUP_ENV_DIR"/.supervisor.env.mdmesh-tmp.??????
-  if rmdir "$SUP_ENV_DIR" 2>/dev/null; then echo "  ✓ removed $SUP_ENV_DIR/supervisor.env and $SUP_ENV_DIR"
-  else echo "  ✓ removed $SUP_ENV_DIR/supervisor.env (kept $SUP_ENV_DIR: it holds other files)"; fi
+  # installed-version: the install's record of its release (install-native.sh), gone with the install.
+  rm -f "$SUP_ENV_DIR/supervisor.env" "$SUP_ENV_DIR"/.supervisor.env.mdmesh-tmp.?????? \
+    "$SUP_ENV_DIR/installed-version" "$SUP_ENV_DIR"/.installed-version.mdmesh-tmp.??????
+  if rmdir "$SUP_ENV_DIR" 2>/dev/null; then echo "  ✓ removed $SUP_ENV_DIR (the updater settings and the installed-version record)"
+  else echo "  ✓ removed $SUP_ENV_DIR/supervisor.env and installed-version (kept $SUP_ENV_DIR: it holds other files)"; fi
 fi
 
 # 4. Database.

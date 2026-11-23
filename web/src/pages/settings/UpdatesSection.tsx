@@ -29,12 +29,16 @@ import { entrySize, parseReleaseEntries, type ReleaseEntry } from '../../data/re
 import type { Block, NotesSection } from '../../whatsnew/changelog';
 import { InlineText, NotesList } from '../../whatsnew/NotesView';
 import {
+  agentAfterServerUpdate,
   applyPhaseLabel,
+  blockedText,
   lastCheckError,
-  missedSecurity,
   missedSecurityLink,
   missedSecurityText,
   safeReleaseUrl,
+  unverifiedRelease,
+  upToDate,
+  updateOffer,
 } from '../../data/updateStatus';
 
 /** Apply phases in order (supervisor APPLY_PHASES before `done`). */
@@ -248,7 +252,9 @@ export function UpdatesSection({
   const canApply = s?.applySupported !== false;
   const lastError = lastCheckError(s);
   const releaseUrl = safeReleaseUrl(s?.release?.url);
-  const missed = missedSecurity(s);
+  const offer = updateOffer(s);
+  const nextAgent = agentAfterServerUpdate(s);
+  const missed = offer?.missed ?? [];
   const missedLink = missedSecurityLink(missed, s?.release?.url);
 
   const header = (
@@ -403,12 +409,12 @@ export function UpdatesSection({
             ) : undefined
           }
         >
-          <p>{missedSecurityText(missed, s.current, s.latest)}</p>
+          <p>{missedSecurityText(missed, s.current, s.latest, offer?.kind === 'blocked')}</p>
         </Notice>
       ) : null}
 
       {/* A release is ready. */}
-      {s && s.updateAvailable && s.latest && !running ? (
+      {s && offer?.kind === 'ready' && !running ? (
         <div className="v2-settings-upd v2-settings-upd--ready">
           <div className="v2-settings-upd__titleline">
             <span className="v2-settings-upd__title">
@@ -485,17 +491,27 @@ export function UpdatesSection({
               ) : null}
             </div>
           )}
-          {s.apk?.available ? (
+          {/* The new release's agent waits for its server (the rule Agent rollout follows too: agentAfterServerUpdate).
+              When the updater already offers it (the running release is unknown), Agent rollout offers it now. */}
+          {nextAgent ? (
             <p className="v2-settings-upd__help">
-              The release carries agent <span className="v2-num">{s.apk.version}</span>.{' '}
-              <a href={rolloutHref}>Roll it out to devices</a> after the server update.
+              The release carries agent <span className="v2-num">{nextAgent}</span>. Once the server runs it,{' '}
+              <a href={rolloutHref}>roll it out to devices</a>.
             </p>
           ) : null}
         </div>
       ) : null}
 
-      {/* Nothing to install. */}
-      {s && !s.updateAvailable && !running ? (
+      {/* A newer release this updater can't install: why, and what to do, instead of an update or "the latest". */}
+      {s && offer?.kind === 'blocked' && !running ? (
+        // Quiet, as in the sidebar and on the Overview, unless it leaves security fixes missing (the notice above).
+        <Callout tone={offer.missed.length > 0 ? 'warn' : 'info'} icon={offer.missed.length > 0 ? <IconAlert /> : <IconInfo />}>
+          MDMesh <span className="v2-num">{offer.latest}</span> can&rsquo;t be installed on this server. {blockedText(s)}
+        </Callout>
+      ) : null}
+
+      {/* Nothing newer: not on offer, blocked, or found unverified. */}
+      {s && upToDate(s) && !running ? (
         <div className="v2-settings-uptodate">
           <span className="v2-settings-uptodate__icon" aria-hidden="true">
             <IconCheck size={12} />
@@ -506,7 +522,7 @@ export function UpdatesSection({
           </span>
         </div>
       ) : null}
-      {s && !s.updateAvailable && s.latest && !s.verified && s.latest !== s.current ? (
+      {s && unverifiedRelease(s) ? (
         <Callout tone="warn" icon={<IconAlert />}>
           MDMesh <span className="v2-num">{s.latest}</span> was found, but its signature couldn&rsquo;t be verified, so it
           won&rsquo;t be offered or installed.

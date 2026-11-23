@@ -21,13 +21,16 @@ one question, how your phones will reach MDMesh:
 
 | Install | Needs |
 |---|---|
-| Quick start | An x86_64 host, Docker with Compose v2, `curl`, `minisign` to check the script, `openssl` 3.0+ (or an older `openssl` and `minisign`) |
+| Quick start | An x86_64 host, or Arm64 from 0.6.0; Docker with Compose v2, `curl`, `minisign` to check the script, `openssl` 3.0+ (or an older `openssl` and `minisign`) |
 | From source | Docker with Compose v2, a clone, and for `./setup.sh --update`: `git`, `curl`, `openssl` 3.0+ (or an older `openssl` and `minisign`). `python3` to verify the release for the QR (optional) |
 | Native | Debian 12/13 or Ubuntu 24.04 on x86_64 or Arm64, root, `git` (`--update` installs `curl` and `openssl` when they are missing) |
 
 Native runs on x86_64 and Arm64 (aarch64). The published Docker images (the quick start, and updates from Settings →
-Updates) are x86_64 (amd64) only for now; Arm64 images are planned. From source builds the images on your host from
-base images that cover both, but it is not tested on Arm64. 32-bit Arm is not supported.
+Updates) hold both from 0.6.0 on, and docker pulls the host's; before 0.6.0 they are x86_64 (amd64) only. The 0.6.0
+and later quick start stops on Arm64 before it pulls anything when asked for an earlier release
+(`MDMESH_VERSION`); an earlier release's own quick start doesn't check, and fails at the image download. From source
+builds the images on your host from base images that cover both; CI builds them on Arm64, but doesn't test
+`setup.sh` there. 32-bit Arm is not supported.
 
 The quick start and from source ask for the public hostname and set `BASE_URL=https://<hostname>`. Native asks for the
 full base URL (`https://…`; `http://` is accepted too). See the [rules](docs/OPERATIONS.md#base-url-and-hostname-rules).
@@ -454,8 +457,9 @@ guide on the website reads it from the release, and CI checks it against the ins
 Sign in as **admin** with the temporary password the installer printed, then set your own.
 
 One prebuilt agent APK works for every deployment. The server URL travels in the enrollment QR
-(`com.mdmesh.SERVER_URL`), not in the APK. The latest verified release's APK is served at `/files/agent.apk`; if it
-isn't, host one there yourself. Generate the QR on the console's **Enroll** page, with the console open at your
+(`com.mdmesh.SERVER_URL`), not in the APK. The updater serves the agent of the release the server runs at
+`/files/agent.apk`, verified against that release's signed manifest (a server whose release isn't published, such as a
+development build, or has no agent in its manifest, gets the latest release's); if none is served, the Enroll page says so on Docker installs (a native install can host one there by hand). Generate the QR on the console's **Enroll** page, with the console open at your
 `BASE_URL`: the QR holds the address the console is open at (the page warns when that is localhost, `http://`, a local
 address or not `BASE_URL`, since devices keep it until a factory reset), the APK location and an enrollment token: single-use and valid for 24 hours by default, or, to set up a batch, for up to 100
 devices and 30 days (the API allows up to 1000 devices). **Stop all codes** on the same page ends every code that

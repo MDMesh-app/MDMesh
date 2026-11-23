@@ -9,7 +9,9 @@
 # routes against stub upstreams, plus `docker compose config` for every compose file/overlay/profile combination; then
 # it builds the web image (docker/web.Dockerfile), which nothing else builds before a release. When the installers change,
 # the edge entry also checks that quickstart.sh's inline BASE_URL check and answers functions are still install/lib's,
-# byte for byte, and that install/options.json (the installers' answers contract) matches the scripts.
+# byte for byte, and that install/options.json (the installers' answers contract) matches the scripts. The arm64 job
+# builds the three release images on GitHub's Arm runner when docker/**, .dockerignore or the server's JVM flags (and
+# their check) change, and on the kit's fail-closed paths (lockfiles such as web/package-lock.json, .github/**); not on other source changes.
 name: t0-fast
 
 on:
@@ -54,6 +56,10 @@ jobs:
             # web-entrypoint.sh, edge-peers.sh, CHANGELOG.md and .dockerignore are the web image build's inputs.
             # DEPLOY.md: edge-check runs its site.d example; docs/proxies/**: it parses the ready proxy configurations.
             edge: docker/Caddyfile, docker/web.Dockerfile, docker/web-entrypoint.sh, docker/edge-peers.sh, docker/edge-caddy.sh, web/**, CHANGELOG.md, .dockerignore, docker-compose*.yml, docker/dev.env, scripts/edge-check.sh, supervisor/apply.sh, DEPLOY.md, docs/proxies/**
+            # The release images' Dockerfiles and entrypoints: where an Arm64-only break comes from (a base image, an Alpine
+            # package), with npm binaries via the fail-closed lockfiles, and the server's JVM flags and their check.
+            # Source changes alone don't trigger the arm64 job.
+            images: docker/**, .dockerignore, install/tomcat-setenv.sh, scripts/server-jvm-check.sh
             # The installer scripts, and the signed manifest they and the supervisor read. Only the edge entry's cheap
             # quickstart.sh checks run on these, not its image work. README.md and DEPLOY.md carry the install commands
             # release-manifest-check.sh checks. setup.sh sources supervisor/mode-guard.sh (--update's version rule).
@@ -268,6 +274,49 @@ jobs:
       - if: always() && matrix.name == 'edge'
         name: Remove the per-run web image
         run: docker rmi -f "$WEB_IMG" >/dev/null 2>&1 || true
+
+  # The release images on Arm64, built on GitHub's Arm runner as release.yml builds them: a base image, Alpine package
+  # or npm binary without an arm64 build would otherwise first fail in a release. The supervisor also runs its unit
+  # tests and smoke there, and the server starts on the dev stack's postgres, runs with -XX:-UseBASE64Intrinsics, and
+  # serves the API (dev-seed.sh: first boot, migrations, seed, and the console's Set Password call). (The x86_64 builds are the build job's supervisor
+  # and edge entries, and T1's server.)
+  arm64:
+    name: arm64 ${{ matrix.image }}
+    needs: paths
+    if: needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).images
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 25
+    env:
+      IMG: mdmesh-${{ matrix.image }}:ci-arm64-${{ github.run_id }}-${{ github.run_attempt }}
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [server, web, supervisor]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - if: matrix.image != 'server'
+        name: Build the ${{ matrix.image }} image for linux/arm64
+        env:
+          IMAGE: ${{ matrix.image }}
+        run: docker build --platform linux/arm64 -f "docker/${IMAGE}.Dockerfile" -t "$IMG" .
+      - if: matrix.image == 'server'
+        name: Build the server image, start it on postgres, and check it serves
+        run: |
+          docker compose --env-file docker/dev.env up -d --build postgres server
+          docker compose --env-file docker/dev.env exec -T server uname -m | grep -qx aarch64
+          # -XX:-UseBASE64Intrinsics in effect on Arm64 too (install/tomcat-setenv.sh), as release.yml checks it there.
+          scripts/server-jvm-check.sh --container "$(docker compose --env-file docker/dev.env ps -q server)"
+          ADMIN_PW=$(openssl rand -hex 24)
+          echo "::add-mask::$ADMIN_PW"
+          DEV_ADMIN_PASSWORD=$ADMIN_PW scripts/dev-seed.sh
+      - if: failure() && matrix.image == 'server'
+        name: Server logs
+        run: docker compose --env-file docker/dev.env logs --no-color --tail 200 server postgres || true
+      - if: matrix.image == 'supervisor'
+        name: Supervisor unit tests + compose-shaped smoke on arm64
+        run: |
+          docker run --rm -w /app "$IMG" node --test test.js
+          scripts/supervisor-smoke.sh "$IMG"
 
   # The console's accessibility sweep in a real browser: axe (WCAG 2.0-2.2 A/AA) on every page and its key states
   # (dialogs, menus, errors, empty lists), plus horizontal scroll, page titles and text spacing, in the light theme

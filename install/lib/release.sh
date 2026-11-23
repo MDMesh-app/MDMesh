@@ -24,8 +24,10 @@ _mdm_manifest_apk() { python3 -c 'import sys,json;print(json.load(open(sys.argv[
 # _mdm_manifest_version FILE: the manifest's top-level "version" (release/build-manifest.sh: the tag without its "v").
 _mdm_manifest_version() { python3 -c 'import sys,json;v=json.load(open(sys.argv[1])).get("version");print(v if isinstance(v,str) else "")' "$1" 2>/dev/null || true; }
 
-# mdm_fetch_release_apk GITHUB_REPO PUBKEY DIR LOG: fetch the latest release of GITHUB_REPO (owner/name) into DIR (an
+# mdm_fetch_release_apk GITHUB_REPO PUBKEY DIR LOG [VERSION]: fetch a release of GITHUB_REPO (owner/name) into DIR (an
 # existing private directory the caller owns and removes) and verify it as described above, sending tool output to LOG.
+# With VERSION (the checkout's release, X.Y.Z[-pre]), that release: an agent is never newer than the server it talks to,
+# as the supervisor offers it. Without it, or when GitHub has no such release (404), the latest release.
 # Returns 0 with MDM_AGENT_CK (the APK's signing-certificate checksum from the signed manifest) and the APK at
 # DIR/agent.apk; otherwise returns 1 with MDM_RELEASE_PROBLEM set to a one-line reason and MDM_AGENT_CK empty.
 # Either way MDM_RELEASE_NOTE is a one-line note for the caller to show, or empty: when GitHub refuses GITHUB_TOKEN
@@ -34,8 +36,10 @@ _mdm_manifest_version() { python3 -c 'import sys,json;v=json.load(open(sys.argv[
 # MDM_MINISIGN names the minisign command (default: minisign on PATH); setup.sh points it at the supervisor image's.
 # shellcheck disable=SC2034  # MDM_AGENT_CK / MDM_RELEASE_PROBLEM / MDM_RELEASE_NOTE are results for the caller
 mdm_fetch_release_apk() {
-  local repo=$1 pubkey=$2 d=$3 log=$4 rel="" code apk_url man_url sig_url tag mver want_sha details="" ms=${MDM_MINISIGN:-minisign}
+  local repo=$1 pubkey=$2 d=$3 log=$4 version=${5:-} rel="" code apk_url man_url sig_url tag mver want_sha details="" ms=${MDM_MINISIGN:-minisign}
   local api="https://api.github.com/repos/${repo}/releases/latest"
+  [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] && [ "$version" != 0.0.0 ] \
+    && api="https://api.github.com/repos/${repo}/releases/tags/v${version}"
   MDM_AGENT_CK=""; MDM_RELEASE_PROBLEM=""; MDM_RELEASE_NOTE=""
   [ "$log" = /dev/null ] || details=" (details in $log)"
   # The HTTP status says why a lookup failed (curl prints 000 when GitHub could not be reached).
@@ -44,6 +48,11 @@ mdm_fetch_release_apk() {
     MDM_RELEASE_NOTE="GitHub refused GITHUB_TOKEN (HTTP 401: expired or revoked?), so the release was fetched without it"
     # Shadows the caller's GITHUB_TOKEN for the rest of this function (and mdm_gh_curl, which it calls) only.
     local GITHUB_TOKEN=""
+    code=$(mdm_gh_curl -sSL -o "$d/release.json" -w '%{http_code}' "$api" 2>>"$log" || true)
+  fi
+  if [ "$code" = 404 ] && [ "${api%/releases/latest}" = "$api" ]; then
+    # No such release (a tag that was never published): the latest one's agent, as the supervisor offers it then.
+    api="https://api.github.com/repos/${repo}/releases/latest"
     code=$(mdm_gh_curl -sSL -o "$d/release.json" -w '%{http_code}' "$api" 2>>"$log" || true)
   fi
   case "$code" in
@@ -80,7 +89,7 @@ mdm_fetch_release_apk() {
   # replay) it would verify. Its version must be the release tag without the "v".
   tag=$(printf '%s' "$rel" | _mdm_rel_get tag); mver=$(_mdm_manifest_version "$d/manifest.json")
   if [ -z "$mver" ] || [ "$mver" != "${tag#v}" ]; then
-    MDM_RELEASE_PROBLEM="The signed manifest is for version ${mver:-(none)}, not for the latest release ${tag:-(untagged)}, so its APK is not trusted"; return 1
+    MDM_RELEASE_PROBLEM="The signed manifest is for version ${mver:-(none)}, not for the release ${tag:-(untagged)}, so its APK is not trusted"; return 1
   fi
   MDM_AGENT_CK=$(_mdm_manifest_apk signatureChecksum "$d/manifest.json"); want_sha=$(_mdm_manifest_apk sha256 "$d/manifest.json")
   if [ -z "$MDM_AGENT_CK" ] || [ -z "$want_sha" ]; then

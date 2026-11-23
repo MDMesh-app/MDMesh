@@ -1,16 +1,48 @@
 // Pure helpers for the updater supervisor — no I/O of their own (fetchAsset takes its fetch as a parameter),
 // unit-tested (supervisor/test.js).
 
+/** A semver 2.0 version (a leading v allowed): [major, minor, patch] with `pre`, its pre-release identifiers (empty
+ *  for a release); build metadata is ignored. Null for anything else. */
 function parseSemver(v) {
-  const m = String(v || '').replace(/^v/, '').match(/^(\d+)\.(\d+)\.(\d+)/);
-  return m ? [+m[1], +m[2], +m[3]] : null;
+  const m = String(v || '').replace(/^v/, '').match(/^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/);
+  return m ? Object.assign([+m[1], +m[2], +m[3]], { pre: m[4] ? m[4].split('.') : [] }) : null;
 }
 
+/** a is newer than b, by semver precedence: a pre-release comes before its release, and pre-release identifiers
+ *  compare in order, numbers as numbers and before text. False when either isn't a version. */
 function semverGt(a, b) {
   const x = parseSemver(a), y = parseSemver(b);
   if (!x || !y) return false;
   for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i];
+  if (!x.pre.length || !y.pre.length) return !x.pre.length && y.pre.length > 0;
+  for (let i = 0; i < Math.max(x.pre.length, y.pre.length); i++) {
+    const p = x.pre[i], q = y.pre[i];
+    if (p === undefined || q === undefined) return q === undefined;
+    if (p === q) continue;
+    const pn = /^\d+$/.test(p), qn = /^\d+$/.test(q);
+    if (pn && qn) return +p > +q;
+    if (pn !== qn) return qn;
+    return p > q;
+  }
   return false;
+}
+
+/** A version a release can be published as: X.Y.Z, or X.Y.Z-pre except a -dev build; not 0.0.0 (an install that
+ *  doesn't know its release). */
+function isReleaseVersion(v) {
+  const x = parseSemver(v);
+  return !!x && !/^v/.test(String(v)) && String(v) !== '0.0.0' && !x.pre.includes('dev');
+}
+
+/** The agent to offer, from what is known of the running release (`running`: lookUpRunning's result) and the latest
+ *  release's agent: the running release's own agent, never one ahead of the server; the latest's only when the running
+ *  version is unknown (a QR code must download something); nothing when the running release's agent isn't known yet
+ *  (GitHub didn't answer) or doesn't verify. */
+function agentOffer(running, latestAgent) {
+  if (!running) return null;
+  if (running.kind === 'agent') return running.desc;
+  if (running.kind === 'unknown') return latestAgent || null;
+  return null;
 }
 
 /** Newest non-draft release for the channel that actually ships a signed manifest. */
@@ -29,46 +61,68 @@ const RELEASE_VERSION = /^\d+\.\d+\.\d+$/;
 /** The security releases an update from `current` to the manifest's version skips over: the versions in the manifest's
  *  securityReleases (every release whose CHANGELOG.md section has a Security heading, release/build-manifest.sh) newer
  *  than `current` and older than the offered release, oldest first. The offered release itself is left out (its own
- *  notes already say "Security fixes"). Trusted only from a VERIFIED manifest; an unverified one, or one from release
- *  tooling before the field (0.4.x and older), gives []. */
-function missedSecurity(manifest, verified, current) {
+ *  notes already say "Security fixes"), unless `withLatest`: a release this install can't apply (updateBlocked) leaves
+ *  its own fixes missing too. Trusted only from a VERIFIED manifest; an unverified one, or one from release tooling
+ *  before the field (0.4.x and older), gives []. */
+function missedSecurity(manifest, verified, current, withLatest = false) {
   const latest = manifest && manifest.version;
   const list = manifest && manifest.securityReleases;
   if (!verified || !latest || !Array.isArray(list)) return [];
   const seen = new Set();
   return list
-    .filter((v) => typeof v === 'string' && RELEASE_VERSION.test(v) && semverGt(v, current) && semverGt(latest, v)
-      && !seen.has(v) && seen.add(v))
+    .filter((v) => typeof v === 'string' && RELEASE_VERSION.test(v) && semverGt(v, current)
+      && (semverGt(latest, v) || (withLatest && v === latest)) && !seen.has(v) && seen.add(v))
     .sort((a, b) => (semverGt(a, b) ? 1 : semverGt(b, a) ? -1 : 0));
 }
 
-/** Build the status object the console + recovery page read. Update only offered if VERIFIED. */
-function shapeStatus({ current, manifest, verified, checkedAt, error }) {
+/** Build the status object the console + recovery page read. Update only offered if VERIFIED, and not `blocked`
+ *  (updateBlocked's { code, reason }: why this install can't apply the newer release; the console shows that instead,
+ *  with the security fixes it leaves missing). */
+function shapeStatus({ current, manifest, verified, checkedAt, error, blocked }) {
   const latest = manifest && manifest.version;
   return {
     current,
     latest: latest || null,
-    updateAvailable: !!(verified && latest && semverGt(latest, current)),
+    updateAvailable: !!(verified && latest && semverGt(latest, current) && !blocked),
+    blocked: (blocked && blocked.reason) || null,
+    blockedCode: (blocked && blocked.code) || null,
     verified: !!verified,
     channel: (manifest && manifest.channel) || null,
     checkedAt: checkedAt || null,
     error: error || null,
-    missedSecurity: missedSecurity(manifest, verified, current),
+    missedSecurity: missedSecurity(manifest, verified, current, !!blocked),
   };
+}
+
+/** Why the newer verified release in `manifest` can't be applied by this supervisor, as imagePins says it: { code,
+ *  reason }, code 'digests', 'owner' or 'platform'. Null when it can, when there's nothing newer and verified, or on an
+ *  install that doesn't apply updates itself (a native install builds from source: the images don't concern it). */
+function updateBlocked({ manifest, verified, current, imageOwner, platform, applySupported }) {
+  if (!applySupported || !verified || !manifest || !parseSemver(manifest.version) || !parseSemver(current)) return null;
+  if (!semverGt(manifest.version, current)) return null;
+  const p = imagePins(manifest, imageOwner, platform);
+  return p.error ? { code: p.code, reason: p.error } : null;
+}
+
+/** The supervisor's log line for a blocked release: once per reason, so a poll that finds the same one says nothing,
+ *  and a release blocked again after it was installable (or for another reason) says it again. */
+function blockedLogLine(lastReason, blocked) {
+  const reason = blocked ? blocked.reason : null;
+  return { line: reason && reason !== lastReason ? `[update] not offered: ${reason}` : null, lastReason: reason };
 }
 
 /** Why an Update must not start, or null if it may. `manifest` is the last VERIFIED manifest (null if none), `current`
  *  the running version, `skipVersion` the auto-apply skip (it never blocks a manual Update; it only marks a running
  *  version whose update failed), `imageOwner` the install's IMAGE_OWNER: a newer release must also pin its images by
- *  digest under that owner (imagePins). The version guard matters beyond the banner: re-applying the running (or an older)
- *  version would overwrite /backups/latest with a dump of the post-update database, leaving nothing to roll back to. */
-function applyRefusal({ manifest, current, skipVersion, imageOwner }) {
+ *  digest under that owner, for `platform` (default: this host's; imagePins). The version guard matters beyond the
+ *  banner: re-applying the running (or an older) version would overwrite /backups/latest with a dump of the post-update database, leaving nothing to roll back to. */
+function applyRefusal({ manifest, current, skipVersion, imageOwner, platform }) {
   if (!manifest) return 'no verified update available';
   const to = manifest.version;
   if (!to) return 'the verified manifest has no version';
   if (!parseSemver(to)) return `the verified release version "${to}" is not a release version (X.Y.Z), so it cannot be applied`;
   if (!parseSemver(current)) return `the running version "${current}" is not a release version (X.Y.Z), so it cannot be compared: update by hand`;
-  if (semverGt(to, current)) return imagePins(manifest, imageOwner).error || null;
+  if (semverGt(to, current)) return imagePins(manifest, imageOwner, platform).error || null;
   if (to === current || !semverGt(current, to)) {
     return current === skipVersion
       ? `already running ${current}, whose update failed: if it is not healthy, use Roll back (/recovery) to return to the previous version`
@@ -81,32 +135,48 @@ function applyRefusal({ manifest, current, skipVersion, imageOwner }) {
 const DIGEST_REF = /^([a-z0-9][a-z0-9._-]*(?:\/[a-z0-9][a-z0-9._-]*)+)@(sha256:[0-9a-f]{64})$/;
 const PINNED_IMAGES = ['server', 'web', 'supervisor'];
 
+/** The platform this supervisor runs on, as docker names it (linux/amd64, linux/arm64): docker pulled it from the same
+ *  release's multi-platform index as the server and web images, so it is the platform they are pulled for too. */
+function hostPlatform() {
+  return `linux/${{ x64: 'amd64' }[process.arch] || process.arch}`;
+}
+
 /** The images a verified manifest deploys, pinned by digest, for an install that pulls from ghcr.io/<imageOwner>
  *  (IMAGE_OWNER in .env; compose's default is mdmesh-app). The manifest's components.images holds, from 0.5.0 on,
  *  `ghcr.io/<owner>/mdmesh-<name>@sha256:…` for server, web and supervisor (release/build-manifest.sh). Returns
- *  { server, web, supervisor } (the three refs) or { error } saying why the release cannot be applied: a manifest
+ *  { server, web, supervisor } (the three refs) or { error, code } saying why (code: 'digests', 'owner', 'platform') the release cannot be applied: a manifest
  *  from release tooling without digests, a malformed ref, or images published under another owner than the one this
- *  install pulls from (a fork's install following upstream releases, or the reverse). apply.sh checks the same again. */
-function imagePins(manifest, imageOwner) {
+ *  install pulls from (a fork's install following upstream releases, or the reverse), or no images for `platform` (this
+ *  host's: components.platforms, comma-separated; an older manifest without it is linux/amd64 only).
+ *  apply.sh checks the refs again, and docker refuses to pull an index without the host's platform. */
+function imagePins(manifest, imageOwner, platform = hostPlatform()) {
   const v = (manifest && manifest.version) || '(unknown)';
   const im = manifest && manifest.components && manifest.components.images;
   if (!im || typeof im !== 'object' || Array.isArray(im)) {
     return { error: `the signed release ${v} names its images by tag only, without digests (its release workflow predates `
       + 'digest pinning), so this supervisor will not apply it. Publish it with the current release workflow, or update by '
-      + 'hand (docs/UPGRADING.md)' };
+      + 'hand (docs/UPGRADING.md)', code: 'digests' };
   }
   const owner = imageOwner || 'mdmesh-app';
   const pins = {};
   for (const name of PINNED_IMAGES) {
     const m = DIGEST_REF.exec(typeof im[name] === 'string' ? im[name] : '');
-    if (!m) return { error: `the signed release ${v} has no valid digest for its ${name} image, so it cannot be applied` };
+    if (!m) {
+      return { error: `the signed release ${v} has no valid digest for its ${name} image, so it cannot be applied`, code: 'digests' };
+    }
     const want = `ghcr.io/${owner}/mdmesh-${name}`;
     if (m[1] !== want) {
       return { error: `the signed release ${v} pins its ${name} image at ${m[1]}, but this install pulls ${want} `
         + `(IMAGE_OWNER=${owner} in .env). Set GITHUB_REPO to the repository that publishes ${owner}'s images, or IMAGE_OWNER `
-        + 'to the owner this release names, then run docker compose up -d' };
+        + 'to the owner this release names, then run docker compose up -d', code: 'owner' };
     }
     pins[name] = im[name];
+  }
+  const platforms = manifest.components.platforms === undefined ? 'linux/amd64' : manifest.components.platforms;
+  if (typeof platforms !== 'string' || !platforms.split(',').includes(platform)) {
+    const has = typeof platforms === 'string' && platforms ? platforms.split(',').join(', ') : 'no platform';
+    return { error: `the signed release ${v} has no images for this host (${platform}), only for ${has}, `
+      + 'so it cannot be applied', code: 'platform' };
   }
   return pins;
 }
@@ -161,7 +231,7 @@ function assetRequest(asset, token) {
  *  is dropped as soon as a redirect changes origin, and never re-added. (Node's fetch strips it too on a cross-origin
  *  redirect, but that is an implementation detail; this makes the rule explicit and testable.) `fetchImpl` is
  *  injected so tests can script the responses. Returns the final Response; the caller checks `ok`. */
-async function fetchAsset(asset, token, fetchImpl = globalThis.fetch, maxRedirects = 5) {
+async function fetchAsset(asset, token, fetchImpl = globalThis.fetch, maxRedirects = 5, signal = undefined) {
   const req = assetRequest(asset, token);
   if (!req.url) throw new Error('asset has no download URL');
   const httpsOnly = (u) => {
@@ -172,7 +242,7 @@ async function fetchAsset(asset, token, fetchImpl = globalThis.fetch, maxRedirec
   let cur = httpsOnly(req.url);
   let headers = req.headers;
   for (let hop = 0; hop <= maxRedirects; hop++) {
-    const r = await fetchImpl(cur.href, { headers, redirect: 'manual' });
+    const r = await fetchImpl(cur.href, { headers, redirect: 'manual', ...(signal ? { signal } : {}) });
     const loc = r.status >= 300 && r.status < 400 && r.headers.get('location');
     if (!loc) return r;
     try { await (r.body && r.body.cancel()); } catch { /* already consumed or closed */ } // free the connection
@@ -283,7 +353,7 @@ function legacyDeploymentAdmin(body) {
 }
 
 module.exports = {
-  parseSemver, semverGt, pickRelease, shapeStatus, missedSecurity,
+  parseSemver, semverGt, isReleaseVersion, agentOffer, pickRelease, shapeStatus, updateBlocked, blockedLogLine, hostPlatform, missedSecurity,
   imageTags, imagePins, nextPhase, isTerminal, APPLY_PHASES, APPLY_TERMINAL,
   apkAsset, sha256Matches, recoveryPage, isPublishTemp, assetRequest, fetchAsset, envValue, applyLine, applyRefusal,
   deploymentAdminVerdict, legacyDeploymentAdmin,

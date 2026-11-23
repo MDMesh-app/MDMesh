@@ -258,7 +258,7 @@ public class AgentCheckInLimitsTest {
 
     @Test
     public void storesAWholeOfflineBufferFromAnOlderAgent() {
-        // Agents before 0.5.2 send their whole buffer, up to 500 events, in one check-in and count all of it delivered.
+        // Agents before 0.6.0 send their whole buffer, up to 500 events, in one check-in and count all of it delivered.
         AgentCheckInRequest req = new AgentCheckInRequest();
         req.setEvents(events(500));
 

@@ -42,7 +42,8 @@ jobs:
           filters: |
             # CHANGELOG.md and proto/VERSIONING.md are read by AgentProtocolVersionTest: the advertised protocol version is
             # VERSIONING.md's highest row, and a held bump must still be under Unreleased (so a release PR runs it).
-            server: pom.xml, common/**, jwt/**, notification/**, plugins/**, server/**, CHANGELOG.md, proto/VERSIONING.md
+            # ConfigSectionsLedgerTest checks proto/config-sections.json against VERSIONING.md and the config.apply schema.
+            server: pom.xml, common/**, jwt/**, notification/**, plugins/**, server/**, CHANGELOG.md, proto/VERSIONING.md, proto/config-sections.json, proto/payloads/config-apply.schema.json
             # CHANGELOG.md is built into the console (What's new) and its tests read every release's section, checked
             # against release/changelog-section.sh, and its Security labels against release/security-releases.py.
             web: web/**, CHANGELOG.md, release/changelog-section.sh, release/security-releases.py

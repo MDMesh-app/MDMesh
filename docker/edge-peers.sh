@@ -76,7 +76,7 @@ edge_site_d() {
       EDGE_SITE_SKIPPED=$((EDGE_SITE_SKIPPED + 1)); continue
     fi
     # An import would load a file nobody checked.
-    if grep -Eq '^[[:space:]]*import([[:space:]]|$)' "$_f"; then
+    if grep -Eq '^[[:space:]]*["`]?import["`]?([[:space:]]|$)' "$_f"; then
       edge_site_log "site.d/$_n is not loaded: it imports another file, which is not checked"
       EDGE_SITE_SKIPPED=$((EDGE_SITE_SKIPPED + 1)); continue
     fi

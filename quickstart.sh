@@ -966,15 +966,16 @@ mode_problem() {
       echo "TRUSTED_PROXIES in .env still says host (left from the proxy mode), which ${v}'s edge can't read: it would not start. Set TRUSTED_PROXIES= in .env (docs/UPGRADING.md, Changing the hosting mode), then try again. Nothing was changed." ;;
   esac
 }
-# _mode_env KEY: KEY's value in .env as compose reads it: quoted, the text between the quotes; else up to a " # comment".
+# _mode_env KEY: KEY's value in .env as compose reads it: the last KEY= line (an "export " before it allowed); quoted,
+# the text between the quotes; else up to a " # comment", trailing blanks trimmed.
 _mode_env() {
   local f=${ENV_FILE:-/project/.env} v
   [ -f "$f" ] && [ -r "$f" ] || return 0
-  v=$(grep -E "^$1=" "$f" | head -1 | cut -d= -f2- | tr -d '\r')
+  v=$(sed -n -E "s/^[[:space:]]*(export[[:space:]]+)?$1=//p" "$f" | tail -1 | tr -d '\r')
   case "$v" in
     \"*) v=${v#\"}; v=${v%%\"*} ;;
     \'*) v=${v#\'}; v=${v%%\'*} ;;
-    *) v=${v%%[[:space:]]#*} ;;
+    *) v=${v%%[[:space:]]#*}; v=${v%"${v##*[![:space:]]}"} ;;
   esac
   printf '%s\n' "$v"
 }
@@ -1008,7 +1009,8 @@ _resume=0; [ ! -f "${MDMESH_DIR:-mdmesh}/.quickstart-unfinished" ] || _resume=1
 if [ "$_resume" = 0 ]; then
   mdm_mode_check_answers
   # Behind your own proxy needs a release from 0.6.0 on: one named in advance is refused now.
-  if mdm_given mode && [ "$MODE" = 3 ] && [ -n "$(ENV_FILE=/nonexistent COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml mode_problem "${MDMESH_VERSION#v}")" ]; then
+  _ver=${MDMESH_VERSION:-}
+  if mdm_given mode && [ "$MODE" = 3 ] && [ -n "$(ENV_FILE=/nonexistent COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml mode_problem "${_ver#v}")" ]; then
     _mdm_answer_fail "MDMESH_VERSION=${MDMESH_VERSION}: behind your own proxy came in 0.6.0, so install 0.6.0 or later, or pick another mode."
   fi
   mdm_need mode; mdm_need host
@@ -1213,7 +1215,7 @@ resume_install() {
   say "== MDMesh quick start: finishing the install in $(pwd) with its .env =="
   mdm_any_answered && warn "The MDMESH_* answers are not used: this install's .env is."
   _mdm_private_file "$(pwd)/.env" || { err "$(pwd)/.env must belong to you (or root) and be private to you (chmod 600). Nothing was changed."; exit 1; }
-  envval() { sed -n "s/^$1=//p" .env | head -1 | sed 's/^"\(.*\)"$/\1/'; }
+  envval() { ENV_FILE=.env _mode_env "$1"; }   # as compose reads .env (supervisor/mode-guard.sh)
   RELEASE=$(envval CURRENT_VERSION); GH_REPO=$(envval GITHUB_REPO); IMAGE_OWNER=$(envval IMAGE_OWNER); BASE_URL=$(envval BASE_URL)
   [[ "$RELEASE" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.+-]+)?$ ]] || { err ".env: CURRENT_VERSION is not a release version. Nothing was changed."; exit 1; }
   for v in "GITHUB_REPO|$GH_REPO|github-repo" "IMAGE_OWNER|$IMAGE_OWNER|image-owner"; do

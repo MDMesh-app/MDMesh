@@ -992,7 +992,8 @@ exit 0
 `, { mode: 0o755 });
   // STUB_CURL_OK_TIMES=N: the first N calls succeed, then it fails (a server that stops answering).
   fs.writeFileSync(path.join(bin, 'curl'), '#!/usr/bin/env bash\n[ "${STUB_CURL_FAIL:-0}" = 1 ] && exit 7\n'
-    + 'if [ -n "${STUB_CURL_OK_TIMES:-}" ]; then n=0; [ ! -f "$STUB_LOG.curl" ] || n=$(cat "$STUB_LOG.curl"); n=$((n + 1)); echo "$n" > "$STUB_LOG.curl"; [ "$n" -le "$STUB_CURL_OK_TIMES" ] || exit 7; fi\nexit 0\n', { mode: 0o755 });
+    + 'if [ -n "${STUB_CURL_OK_TIMES:-}${STUB_CURL_FAIL_AT:-}" ]; then n=0; [ ! -f "$STUB_LOG.curl" ] || n=$(cat "$STUB_LOG.curl"); n=$((n + 1)); echo "$n" > "$STUB_LOG.curl"; '
+    + '[ -z "${STUB_CURL_OK_TIMES:-}" ] || [ "$n" -le "$STUB_CURL_OK_TIMES" ] || exit 7; [ "$n" != "${STUB_CURL_FAIL_AT:-}" ] || exit 7; fi\nexit 0\n', { mode: 0o755 });
   return bin;
 }
 /** A deploy dir (project/.env) + backups dir + stubs under a fresh temp dir. HEALTH_TIMEOUT is 5, not 1: healthy()
@@ -1109,7 +1110,10 @@ t.test('behind your own proxy, apply.sh and rollback.sh refuse a release before 
   } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
   // The overlay named as a hand edit might (./, a path ending in it, with a comment after it, or quoted) counts the same.
   for (const cf of ['docker-compose.yml:./docker-compose.proxy.yml', '/srv/mdmesh/docker-compose.yml:/srv/mdmesh/docker-compose.proxy.yml',
-    'docker-compose.yml:docker-compose.proxy.yml # behind our nginx', '"docker-compose.yml:docker-compose.proxy.yml" # ok']) {
+    'docker-compose.yml:docker-compose.proxy.yml # behind our nginx', '"docker-compose.yml:docker-compose.proxy.yml" # ok',
+    'docker-compose.yml:docker-compose.proxy.yml   ', 'docker-compose.yml:docker-compose.domain.yml\nCOMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml',
+    'docker-compose.yml:docker-compose.domain.yml\nexport COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml']) {
+    // (trailing blanks; a later line wins, as compose reads .env; and an "export " before it)
     d = makeDeploy(`SERVER_VERSION=0.6.0\nWEB_VERSION=0.6.0\nCURRENT_VERSION=0.6.0\nCOMPOSE_FILE=${cf}\n`);
     try {
       const r = runScript('apply.sh', applyArgs('0.5.9'), d.env);
@@ -1451,11 +1455,18 @@ t.test('apply.sh: healthy means the server still answers after the edge settles'
   const fs = require('fs');
   const d = makeDeploy('SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n');
   try {
-    const r = runScript('apply.sh', applyArgs('0.0.2'), { ...d.env, STUB_CURL_OK_TIMES: '1', HEALTH_TIMEOUT: '5' });
+    const r = runScript('apply.sh', applyArgs('0.0.2'), { ...d.env, STUB_CURL_OK_TIMES: '1', HEALTH_TIMEOUT: '5', HEALTH_RETRY_WAIT: '0' });
     a.notEqual(r.code, 0, r.all);
     a.match(r.err, /^ERR the server stopped answering /m);
     a.match(r.out, /PHASE rollback/);
   } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+  // One slow answer in that recheck (the next one fine) is no failure: the update is done.
+  const d2 = makeDeploy('SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n');
+  try {
+    const r = runScript('apply.sh', applyArgs('0.0.2'), { ...d2.env, STUB_CURL_FAIL_AT: '2', HEALTH_TIMEOUT: '5', HEALTH_RETRY_WAIT: '0' });
+    a.equal(r.code, 0, r.all);
+    a.match(r.out, /PHASE done/);
+  } finally { fs.rmSync(d2.dir, { recursive: true, force: true }); }
 });
 
 t.test('apply.sh: a failed pull changed no container, so it resets .env only: no stop, no restore, no downtime', () => {

@@ -854,6 +854,9 @@ dry quickstart.sh MDMESH_MODE=proxy MDMESH_HOST=mdm.example.com MDMESH_VERSION=0
 { [ "$RC" != 0 ] && grep -qF 'behind your own proxy came in 0.6.0' "$WORK/out/e"; } || { fail "proxy mode with MDMESH_VERSION=0.5.1 is not refused"; show; }
 dry quickstart.sh MDMESH_MODE=proxy MDMESH_HOST=mdm.example.com MDMESH_VERSION=0.6.0
 [ "$RC" = 0 ] || { fail "proxy mode with MDMESH_VERSION=0.6.0 is refused"; show; }
+# And with no release named (the latest one), the check doesn't trip on the unset MDMESH_VERSION.
+dry quickstart.sh MDMESH_MODE=proxy MDMESH_HOST=mdm.example.com
+! grep -qF 'unbound variable' "$WORK/out/e" || { fail "proxy mode without MDMESH_VERSION stops on an unbound variable"; show; }
 ok
 
 # setup.sh asked at the terminal, behind a proxy on another machine: the address in use is refused and asked again
@@ -964,6 +967,11 @@ qs_dir; qs_env COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml MDMESH_B
   "MDMESH_SITE_DIR=$WORK/qs7/mdmesh/site.d" > "$WORK/qs7/mdmesh/.env"; chmod 600 "$WORK/qs7/mdmesh/.env"
 qs_run
 grep -q '/docker compose pull$' "$WORK/docker.log" || { fail "quickstart.sh does not resume a sound proxy-mode install"; show; }
+ok
+# Its .env read as compose reads it: a " # note" after a value isn't part of it.
+qs_dir; qs_env 'CURRENT_VERSION=0.6.0 # pinned' 'GITHUB_REPO=me/fork   # ours' > "$WORK/qs7/mdmesh/.env"; chmod 600 "$WORK/qs7/mdmesh/.env"
+qs_run
+grep -q '/docker compose pull$' "$WORK/docker.log" || { fail "quickstart.sh does not resume an install whose .env has a comment after a value"; show; }
 ok
 # Resumed after its earlier run had seeded the database (it stopped between the seed and the report): the seed doesn't
 # run again, the repairs do, and the admin gets a new temporary password unless they had set their own. A docker stub
@@ -1215,5 +1223,5 @@ if [ -e "$WORK/stubs.called" ]; then fail "a dry run ran a command that changes 
 TREE=$(git -c safe.directory='*' -C "$REPO" describe --always --dirty 2>&1) || TREE='?'
 TREE="$REPO at $TREE"
 if [ "$FAILS" != 0 ]; then echo "installer answers: $FAILS failure(s) ($TREE)" >&2; exit 1; fi
-if [ "$CHECKS" -lt 647 ]; then echo "installer answers: only $CHECKS checks ran, expected at least 647 ($TREE)" >&2; exit 1; fi
+if [ "$CHECKS" -lt 648 ]; then echo "installer answers: only $CHECKS checks ran, expected at least 648 ($TREE)" >&2; exit 1; fi
 echo "installer answers: all $CHECKS checks passed ($TREE)"

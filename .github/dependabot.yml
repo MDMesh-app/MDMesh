@@ -87,6 +87,8 @@ updates:
           # detekt 1.23.x is built against Kotlin 2.0 and its Gradle plugin refuses a newer Kotlin, so it has to move
           # with Kotlin (in the migration: detekt 2.x, whose plugin id is dev.detekt) or T0's agent step breaks.
           - "io.gitlab.arturbosch.detekt*"
+          # Licensee: 1.14.x is its last line for Gradle 8; the next one needs Gradle 9.
+          - "app.cash.licensee*"
       agent-libs: { patterns: ["*"] }
     open-pull-requests-limit: 5
   - package-ecosystem: github-actions

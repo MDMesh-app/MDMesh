@@ -20,6 +20,10 @@ RUN npm ci
 COPY web/ ./
 # The What's new dialog's notes, read at build time from the repository's CHANGELOG.md (web/vite.changelog.ts); the build fails without it.
 COPY CHANGELOG.md /CHANGELOG.md
+# LICENSE and NOTICE, served at /licenses/ with the bundle's third-party list, and the allowlist the build checks that
+# list against (web/vite.licences.ts).
+COPY LICENSE NOTICE /
+COPY docs/licenses/allowed.txt /docs/licenses/allowed.txt
 RUN npm run build
 
 # An exact Caddy release, not caddy:2-alpine: a Caddy release can change how docker/Caddyfile parses (v0.3.1's

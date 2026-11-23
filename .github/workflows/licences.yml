@@ -1,0 +1,85 @@
+# Licences (docs/licenses/policy.md). The server, console and agent builds check their own third-party components
+# against docs/licenses/allowed.txt wherever CI is set, so T0's entries already refuse a component under another
+# licence. This workflow checks what no single build sees, path-filtered:
+#   images     every image and package docker/*.Dockerfile uses is named in docs/licenses/images.md (fails)
+#   inventory  builds the WAR, the console and the debug APK; each must carry LICENSE, NOTICE and its third-party list,
+#              and the WAR's list every jar it holds (fails); then compares the lists with docs/licenses/inventory/
+#              (warns only: a new component is for review, not a red build)
+name: licences
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  paths:
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    outputs:
+      matched: ${{ steps.cp.outputs.matched }}
+      all: ${{ steps.cp.outputs.all }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - id: cp
+        uses: ./.github/actions/ci-kit/changed-paths
+        with:
+          filters: |
+            images: docker/**, docs/licenses/images.md, scripts/licenses/**
+            # What decides the three builds' third-party components and the licence files they ship.
+            inventory: LICENSE, NOTICE, docs/licenses/**, scripts/licenses/**, **/pom.xml, server/src/license/**, web/package.json, web/package-lock.json, web/vite.config.ts, web/vite.licences.ts, agent-android/**/*.gradle.kts, agent-android/gradle/**
+
+  images:
+    needs: paths
+    if: needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).images
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: The images' base images and packages are in docs/licenses/images.md
+        run: scripts/licenses/check-images.sh
+
+  inventory:
+    needs: paths
+    if: needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).inventory
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78  # v6.2.0
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+      - name: Build the WAR
+        run: |
+          cp server/build.properties.example server/build.properties
+          mvn -B -DskipTests package
+      - uses: ./.github/actions/ci-kit/setup-npm
+        with:
+          working-directory: web
+      - name: Build the console
+        working-directory: web
+        run: npm run build
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd  # v4.0.4
+        with:
+          # As t0-fast.yml: the default "tools" package is gone from the SDK repository.
+          packages: platform-tools
+      - uses: ./.github/actions/ci-kit/setup-gradle
+        with:
+          java-version: "17"
+      - name: Build the debug APK
+        working-directory: agent-android
+        run: ./gradlew --no-daemon :app:assembleDebug
+      - name: Licence files and lists in the artifacts, and the inventory
+        run: |
+          scripts/licenses/inventory.py --war server/target/launcher.war --web web/dist \
+            --apk agent-android/app/build/outputs/apk/debug/app-debug.apk

@@ -250,6 +250,13 @@
                     <groupId>org.slf4j</groupId>
                     <artifactId>jcl-over-slf4j</artifactId>
                 </exclusion>
+                <!-- SpotBugs' annotations (LGPL-2.1) are a compile-time dependency of mybatis-guice that its POM
+                     doesn't mark optional: nothing loads them at runtime, so they stay out of the WAR
+                     (docs/licenses/policy.md). -->
+                <exclusion>
+                    <groupId>com.github.spotbugs</groupId>
+                    <artifactId>spotbugs-annotations</artifactId>
+                </exclusion>
             </exclusions>
         </dependency>
 

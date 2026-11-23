@@ -11,6 +11,8 @@ RUN apk add --no-cache minisign docker-cli docker-cli-compose postgresql-client 
 WORKDIR /app
 COPY supervisor/ /app/
 COPY release/minisign.pub /app/minisign.pub
+# MDMesh's licence and NOTICE (with the source offer for the image's GPL software).
+COPY LICENSE NOTICE /usr/share/doc/mdmesh/
 RUN chmod +x /app/apply.sh /app/rollback.sh
 EXPOSE 9000
 # Absolute on purpose (#27): older compose files (<= v0.3.0) set working_dir /project, and a relative path

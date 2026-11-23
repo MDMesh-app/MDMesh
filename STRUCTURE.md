@@ -2,12 +2,12 @@
 
 <sub>[← README](README.md) · [Deploy](DEPLOY.md) · [Upgrading](docs/UPGRADING.md) · [Operations](docs/OPERATIONS.md) · **Structure** · [Contributing](CONTRIBUTING.md) · [Releasing](RELEASING.md) · [ADRs](docs/adr)</sub>
 
-This is a **monorepo** for an MDM product forked from Headwind MDM. It contains four
+This is a **monorepo** for an MDM product derived from an upstream open-source MDM ([NOTICE](NOTICE)). It contains four
 cooperating planes plus shared protocol and docs.
 
 ```
 .
-├── server/  common/  jwt/  notification/  plugins/   # PLANE 1 — Control plane (forked Headwind, Java/Jersey/PostgreSQL)
+├── server/  common/  jwt/  notification/  plugins/   # PLANE 1 — Control plane (forked upstream, Java/Jersey/PostgreSQL)
 │   pom.xml                                            #   (existing Maven multi-module project, builds launcher.war)
 ├── web/                                               # PLANE 2 — Admin frontend (new, React + Vite + TypeScript)
 ├── agent-android/                                     # PLANE 3 — Device agent (new, Kotlin Device-Owner app)
@@ -31,9 +31,9 @@ cooperating planes plus shared protocol and docs.
 
 | Plane | Path | Tech | Status |
 |-------|------|------|--------|
-| 1. Control plane | `server/` + `common/ jwt/ notification/ plugins/` | JDK 17, Jersey/JAX-RS, Guice, MyBatis, PostgreSQL, Liquibase | Forked from Headwind + extended; REST-only (legacy AngularJS UI removed) |
+| 1. Control plane | `server/` + `common/ jwt/ notification/ plugins/` | JDK 17, Jersey/JAX-RS, Guice, MyBatis, PostgreSQL, Liquibase | Forked from upstream + extended; REST-only (legacy AngularJS UI removed) |
 | 2. Admin frontend | `web/` | React 19, Vite, TypeScript | New, from scratch — the console |
-| 3. Device agent | `agent-android/` | Kotlin, coroutines, Hilt, Room, WorkManager, kotlinx.serialization | New, with parts ported from the Headwind agent (see [NOTICE](NOTICE)) |
+| 3. Device agent | `agent-android/` | Kotlin, coroutines, Hilt, Room, WorkManager, kotlinx.serialization | New, with parts ported from the upstream agent (see [NOTICE](NOTICE)) |
 | 4. Remote control | `agent-android/remote/` + server signaling | MediaProjection + AccessibilityService, WebRTC, coturn | Stubbed |
 
 ## Two load-bearing architecture patterns
@@ -47,7 +47,7 @@ cooperating planes plus shared protocol and docs.
 
 ## Why the existing server stays at repo root
 
-The Headwind Maven project (root `pom.xml` + `common/ jwt/ notification/ plugins/ server/`) is
+The inherited Maven project (root `pom.xml` + `common/ jwt/ notification/ plugins/ server/`) is
 mature and its build/install scripts assume these paths. Nesting it under `server/` is a
 deferred, optional cleanup — not worth the churn during foundation. New components get their
 own top-level directories.

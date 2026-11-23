@@ -160,7 +160,7 @@ again without `BASE_URL` and `HTTP_PORT`, which it must keep.
 After every install the same checks run: the services are active, `/rest/public/name` answers 200, admin signs in,
 and that version's `scripts/agent-v1-e2e.sh` passes.
 
-**Always set `T2_FROM_REF`** to the release to upgrade from. The clone also carries upstream Headwind tags (`v5.x`),
+**Always set `T2_FROM_REF`** to the release to upgrade from. The clone also carries the upstream project's tags (`v5.x`),
 so "the newest tag" is not the last MDMesh release.
 
 | Setting | Effect |

@@ -323,17 +323,42 @@ public class AgentEventIngestPgTest {
     }
 
     @Test
-    public void incompatibleTelemetryDoesNotFailTheCheckinOrPersistUnsafeText() throws Exception {
+    public void aSnapshotJsonbCannotHoldIsStoredWholeAndItsImeisSearchable() throws Exception {
+        // Telemetry is stored as the text the agent sent. A value JSONB can't hold (an SSID is any bytes, so an
+        // escaped NUL is real) must not cost the device its snapshot, nor its IMEIs in the search.
         JsonNodeFactory nodes = JsonNodeFactory.instance;
-        List<JsonNode> incompatible = Arrays.asList(
-                nodes.objectNode().put("model", "a\0b"),
+        List<ObjectNode> incompatible = Arrays.asList(
+                nodes.objectNode().put("ssid", "a\0b"),
                 nodes.objectNode().put("bad\0key", "model"),
                 nodes.objectNode().put("value", new BigDecimal("1e1000000")));
-        for (JsonNode telemetry : incompatible) {
-            // Exercise both the first INSERT and replacement of an existing valid snapshot.
-            assertNull(storedTelemetry(telemetry));
-            assertTrue(storedTelemetry(nodes.objectNode().put("model", "valid")).contains("valid"));
-            assertNull(storedTelemetry(telemetry));
+        for (ObjectNode telemetry : incompatible) {
+            telemetry.putObject("identity").putArray("imei").add("359881234567890").add("359889876543210");
+            String stored = storedTelemetry(telemetry);
+            assertEquals(telemetry.toString(), stored);
+            assertEquals(Arrays.asList("359881234567890", "359889876543210"), storedImeis());
+        }
+    }
+
+    @Test
+    public void eachCheckInReplacesTheReportedImeis() throws Exception {
+        ObjectNode telemetry = JsonNodeFactory.instance.objectNode();
+        telemetry.putObject("identity").putArray("imei").add("359881234567890");
+        storedTelemetry(telemetry);
+        assertEquals(Collections.singletonList("359881234567890"), storedImeis());
+        telemetry.putObject("identity").putArray("imei").add("359889876543210");
+        storedTelemetry(telemetry);
+        assertEquals(Collections.singletonList("359889876543210"), storedImeis());
+        storedTelemetry(JsonNodeFactory.instance.objectNode());
+        assertNull(storedImeis());
+    }
+
+    /** device_state.reportedImeis of the test device. */
+    private static List<String> storedImeis() throws Exception {
+        try (Connection c = connect(); Statement s = c.createStatement(); ResultSet rs = s.executeQuery(
+                "SELECT reportedImeis FROM " + schema + ".device_state")) {
+            assertTrue(rs.next());
+            java.sql.Array imeis = rs.getArray(1);
+            return imeis == null ? null : Arrays.asList((String[]) imeis.getArray());
         }
     }
 

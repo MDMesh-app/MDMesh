@@ -201,6 +201,11 @@ public class DeviceView {
         return device.getHardwareId();
     }
 
+    @ApiModelProperty("IMEIs the current agent reported in its last check-in, one per SIM slot")
+    public String[] getReportedImeis() {
+        return device.getReportedImeis();
+    }
+
     @ApiModelProperty("An info on device state submitted by device to MDM server")
     public DeviceInfoView getInfo() {
         return deviceInfo;

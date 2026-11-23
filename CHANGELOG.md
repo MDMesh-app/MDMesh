@@ -37,8 +37,9 @@ New
   `onSelect` moves focus itself, so the menu leaves focus there rather than returning it to its trigger.
 
 Fixes
-- Devices search finds IMEIs reported by current agents, including either SIM slot and partial IMEIs. Incompatible
-  telemetry is ignored so a device's snapshot cannot interrupt searches or check-ins.
+- Devices search finds IMEIs reported by current agents, in either SIM slot and by part of the number, also for devices
+  that haven't checked in since the update. A reported IMEI ranks like one set by an administrator, and when a search
+  matches more devices than fit on a page, the first page now holds the best matches rather than the weakest.
 - Enrollment keeps its agent through a restart with GitHub down: the updater keeps the signed manifest and agent of
   each release it has run, and checks both again before it serves them. When it has no agent to give new devices
   (GitHub didn't answer yet, or the release's manifest doesn't verify), the Enroll page says so on Docker installs

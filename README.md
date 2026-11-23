@@ -173,8 +173,8 @@ privately, as [SECURITY.md](SECURITY.md) describes.
 
 ## ■ License & credits
 
-MDMesh is licensed under the **[Apache License 2.0](LICENSE)**. It is a fork of **[Headwind MDM](https://h-mdm.com)**
-by Headwind Solutions LLC, also Apache-2.0 ([why and how: ADR-0008](docs/adr/0008-licensing-and-rebrand.md)).
+MDMesh is licensed under the **[Apache License 2.0](LICENSE)**. [NOTICE](NOTICE) credits the open-source project it
+is derived from and lists the third-party licences ([why and how: ADR-0008](docs/adr/0008-licensing-and-rebrand.md)).
 Trademarks and brand names belong to their owners.
 
 <div align="center"><sub><a href="DEPLOY.md">Install</a> · <a href="docs/UPGRADING.md">Upgrading</a> · <a href="docs/OPERATIONS.md">Operations</a> · <a href="docs/USER_MANAGEMENT.md">Users and roles</a> · <a href="docs/CONFIGURATIONS.md">Configurations</a> · <a href="docs/KIOSK.md">Kiosk mode</a> · <a href="STRUCTURE.md">Structure</a> · <a href="docs/DEV.md">Development</a> · <a href="docs/agent-architecture.md">Agent internals</a> · <a href="RELEASING.md">Releasing</a></sub></div>

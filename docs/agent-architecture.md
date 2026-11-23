@@ -1,10 +1,10 @@
 # Agent architecture — bakeoff conclusions (MDMesh device agent)
 
-Synthesis of the Headwind teardown (`reference/hmdm-android/`, Apache-2.0) + current Android docs.
+Synthesis of the upstream agent teardown (`reference/hmdm-android/`, Apache-2.0) + current Android docs.
 Verdict per area: **take** (port the pattern), **modernize** (keep idea, new impl), **build-new**.
 
-## App installation — MODERNIZE Headwind's design
-Headwind's serialized PackageInstaller pump (queue → commit one → result broadcast pumps the
+## App installation — MODERNIZE the upstream design
+The upstream agent's serialized PackageInstaller pump (queue → commit one → result broadcast pumps the
 next) is the *correct* shape and the fix for the classic "only first app installs then stalls"
 bug. We keep the design, drop the implementation:
 - **Take:** version policy (prefer `versionCode`; `"0"` = any), downgrade-requires-explicit-remove,
@@ -15,17 +15,17 @@ bug. We keep the design, drop the implementation:
   explicit-intent, `FLAG_IMMUTABLE`, `RECEIVER_NOT_EXPORTED`; add `setInstallReason(POLICY)` and
   `setRequireUserAction(NOT_REQUIRED)` (API 31+).
 
-## Kiosk / COSU — BUILD-NEW (Headwind's real kiosk is closed "Pro")
+## Kiosk / COSU — BUILD-NEW (the upstream open-source agent has no real kiosk)
 OSS only has an overlay hack; the COSU engine is stubbed in `ProUtils`. We build it the native way:
 - `setLockTaskPackages` + `setLockTaskFeatures(HOME | OVERVIEW | NOTIFICATIONS | …)`,
   `android:lockTaskMode="if_whitelisted"` on the kiosk activity, `addPersistentPreferredActivity`
   for HOME, and `DISALLOW_CREATE_WINDOWS` in `onLockTaskModeEntering`/clear on exit.
-- **Take from Headwind:** the default-launcher claim pattern (`addPersistentPreferredActivity` +
+- **Take from upstream:** the default-launcher claim pattern (`addPersistentPreferredActivity` +
   HOME/LEANBACK manifest filters) and the **crash-loop protection** algorithm (SharedPreferences
   counter; >N crashes/60s → stop self-restart, offer a launcher chooser so a broken DPC can't brick
   the device). Keep the overlay lock screen only as a secondary "remote lock" UI, not for app-blocking.
 
-## Policy — TAKE Headwind's catalog (highest-value artifact)
+## Policy — TAKE the upstream catalog (highest-value artifact)
 Use `Utils.java`'s DevicePolicyManager catalog as a checklist for a typed Kotlin policy layer behind the
 existing capability-abstraction (`:policy`), porting some calls and adding others: user restrictions (`DISALLOW_*`), `setCameraDisabled`,
 `setScreenCaptureDisabled`, `setStatusBarDisabled`, `setKeyguardDisabled`, wifi/bluetooth/usb,
@@ -167,7 +167,7 @@ alone: a new URL for the same file (a server that moved) causes no re-download a
   kiosk has it before its launcher next shows; the old image stays until the new one is verified.
 
 With an `http://` server address devices keep the color. Older agents ignore the key (their
-kiosk is re-applied once when the image changes the revision). `backgroundImageUrl` is also the Headwind launcher's
+kiosk is re-applied once when the image changes the revision). `backgroundImageUrl` is also the legacy launcher's
 wallpaper: a save that sends another URL there stores it as that wallpaper and drops the managed image. The
 console's device page names the image the device's configuration sets (`configStatus.kioskBackgroundImage`); what the
 device shows isn't reported yet.

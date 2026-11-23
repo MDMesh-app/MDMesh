@@ -654,7 +654,7 @@ export default function GalleryPage() {
             <CardHeader title="Configuration didn’t fully apply" subtitle="Alert tone" />
           </Card>
           <Card tone="dashed">
-            <CardHeader title="Headwind launcher only" subtitle="Dashed tone" actions={<Button size="lg">Show settings</Button>} />
+            <CardHeader title="Legacy launcher only" subtitle="Dashed tone" actions={<Button size="lg">Show settings</Button>} />
           </Card>
           <Card tone="selected">
             <CardHeader title="Selected card" subtitle="1.5px ink outline" />

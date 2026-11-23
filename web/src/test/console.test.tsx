@@ -4,6 +4,7 @@ import { render, screen } from '@testing-library/react';
 import { useEffect, useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { settled, stubApi } from './console';
+import { pendingCalls } from './pending';
 
 /** Loads /first, and once its answer is state, /second (as a row's own detail follows its list). */
 function Chained() {
@@ -60,5 +61,35 @@ describe('settled', () => {
     // Answered after all, so nothing is left pending past the test.
     answer(new Response(''));
     await call;
+  });
+});
+
+/** Shows 'loading', then what GET /x answers. */
+function Loads() {
+  const [text, setText] = useState('loading');
+  useEffect(() => {
+    void fetch('/x')
+      .then((r) => r.json())
+      .then((b: { data: string }) => setText(b.data));
+  }, []);
+  return <p>{text}</p>;
+}
+
+// The guard in test/setup.ts fails a test that ends with a call still pending. Vitest runs it once the test's own
+// promise chain has run out, so an answer that arrived within those microtasks would pass for loaded.
+describe('a test that ends before its page has loaded', () => {
+  const microtasks = async () => {
+    for (let i = 0; i < 50; i++) await Promise.resolve();
+  };
+
+  it('still has its call pending once its microtasks have run, for the guard to see', async () => {
+    stubApi(() => 'done');
+    render(<Loads />);
+    expect(screen.getByText('loading')).toBeTruthy();
+    await microtasks();
+    expect(pendingCalls()).toBe(1);
+    // This test then waits, so the guard passes it.
+    await settled();
+    expect(screen.getByText('done')).toBeTruthy();
   });
 });

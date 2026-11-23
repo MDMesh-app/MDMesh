@@ -2,7 +2,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { AuthProvider } from '../auth/AuthContext';
-import { ROLES, registryOf, stubApi } from '../test/console';
+import { ROLES, registryOf, settled, stubApi } from '../test/console';
 import { can, evaluate, hasPermission, useActivePlugins, usePermission } from './permissions';
 import type { AuthUser } from '../api/auth';
 
@@ -99,10 +99,13 @@ describe('useActivePlugins / usePermission', () => {
   const pluginCalls = (fetch: ReturnType<typeof stubApi>) =>
     fetch.mock.calls.filter(([input]) => String(input).endsWith('/plugin/main/private/available'));
 
-  it('makes no request when nothing needs the plugins', () => {
+  it('makes no request when nothing needs the plugins', async () => {
     const fetch = stubApi();
     signIn(ROLES.admin);
     const { result } = renderHook(() => useActivePlugins(false), { wrapper });
+    expect(result.current).toBe('unknown');
+    // Once the sign-in's own role refresh is answered, still no plugin request.
+    await settled();
     expect(result.current).toBe('unknown');
     expect(pluginCalls(fetch)).toEqual([]);
   });

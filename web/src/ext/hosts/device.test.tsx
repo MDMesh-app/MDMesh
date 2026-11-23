@@ -6,7 +6,7 @@ import { useLocation, useNavigate, type NavigateFunction } from 'react-router';
 import { describe, expect, it, vi } from 'vitest';
 import { AppRoutes } from '../../App';
 import { LOCATION_HISTORY_LIMIT } from '../../api/deviceLocations';
-import { ROLES, registryOf, renderInConsole, stubApi } from '../../test/console';
+import { ROLES, registryOf, renderInConsole, settled, stubApi } from '../../test/console';
 import demo from '../__fixtures__/demo';
 import { CORE_EXTENSION } from '../core';
 import { ORDER } from '../core/order';
@@ -279,6 +279,7 @@ describe('core fills the slots like any extension', () => {
     openDevice({ registry });
     await waitFor(() => expect(tabNames()).toEqual(['Control', 'Telemetry', 'Apps', 'Activity1']));
     expect(railTitles()).toEqual(['Status', 'Hardware', 'Management']);
+    await settled();
   });
 });
 
@@ -289,6 +290,7 @@ describe('extension tabs and rail groups', () => {
     await waitFor(() => expect(tabNames()).toEqual(['Control', 'Telemetry', 'Demo', 'Apps', 'Activity1', 'Location', 'Demo admin']));
     expect(railTitles()).toEqual(['Status', 'Location', 'Hardware', 'Demo', 'Management']);
     expect(within(rail()).getByText('Demo agent').closest('div, li, dl')?.textContent).toContain('0.3.7');
+    await settled();
   });
 
   it('hides a tab the role may not use', async () => {
@@ -328,6 +330,7 @@ describe('extension tabs and rail groups', () => {
     await waitFor(() => expect(tabNames()).toEqual(['Control', 'Telemetry', 'Apps', 'Activity1', 'Location', 'Iconic']));
     expect(screen.getByRole('tab', { name: 'Iconic' }).querySelector('svg')).toBeNull();
     expect(railTitles()).toEqual(['Status', 'Location', 'Hardware', 'Management']);
+    await settled();
   });
 
   it('leaves out a count or a rail group whose function throws, and shows a bad rail value as a callout there', async () => {
@@ -356,6 +359,7 @@ describe('extension tabs and rail groups', () => {
     await waitFor(() => expect(tabNames()).toEqual(['Control', 'Telemetry', 'Apps', 'Activity1', 'Location', 'Counted', 'Odd']));
     expect(railTitles()).toEqual(['Status', 'Location', 'Hardware', 'Management']);
     expect(within(rail()).getByRole('alert').textContent).toMatch(/The “Broken” extension ran into a problem/);
+    await settled();
   });
 });
 
@@ -428,6 +432,7 @@ describe('the open tab lives in the URL', () => {
     fireEvent.click(screen.getByRole('button', { name: 'View all activity' }));
     expect(here).toBe('/devices/WH-1?tab=activity');
     expect(selectedTab()).toBe('Activity1');
+    await settled();
   });
 
   it('keeps the rest of the query and the hash when the tab changes', async () => {
@@ -452,6 +457,7 @@ describe('the open tab lives in the URL', () => {
     openDevice({ path: `/devices/${DEVICE.id}?tab=telemetry#x` });
     await waitFor(() => expect(here).toBe('/devices/WH-1?tab=telemetry#x'));
     expect(await within(await screen.findByRole('tabpanel')).findByText('TC52')).toBeTruthy();
+    await settled();
   });
 
   it('waits for the active server plugins before deciding on a plugin tab', async () => {
@@ -518,6 +524,7 @@ describe('useDevice()', () => {
     expect(Reflect.ownKeys(seen).sort()).toEqual([
       'configStatus', 'configuration', 'device', 'now', 'refresh', 'sendCommand', 'state', 'telemetry', 'telemetryLoaded',
     ]);
+    await settled();
   });
 
   it('refresh() polls again now', async () => {
@@ -593,6 +600,7 @@ describe('useDevice()', () => {
     await waitFor(() => expect(within(panel()).getByRole('radio', { name: 'Accurate' }).hasAttribute('disabled')).toBe(false));
     fireEvent.click(within(panel()).getByRole('radio', { name: 'Accurate' }));
     expect(await within(panel()).findByText('Sent')).toBeTruthy();
+    await settled();
   });
 
   it('sendCommand() sends the request of a command whose build is left undefined', async () => {
@@ -644,6 +652,7 @@ describe('useDevice()', () => {
     openDevice({ registry: registryOf(ext('stable', [tab('stable', Stable, { label: 'Stable' })])), path: '/devices/WH-1?tab=stable' });
     fireEvent.click(await within(await screen.findByRole('tabpanel')).findByRole('button', { name: 'Ring' }));
     expect(await screen.findByText('Ring queued')).toBeTruthy();
+    await settled();
     expect(seen.size).toBe(2);
   });
 

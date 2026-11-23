@@ -6,7 +6,7 @@ import { createElement } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { AuthUser } from '../../api/auth';
 import { AppRoutes } from '../../App';
-import { ROLES, registryOf, renderInConsole, stubApi } from '../../test/console';
+import { ROLES, registryOf, renderInConsole, settled, stubApi } from '../../test/console';
 import demo from '../__fixtures__/demo';
 import { CORE_EXTENSION } from '../core';
 import { ORDER } from '../core/order';
@@ -157,6 +157,7 @@ describe('overview.card', () => {
   it('lays out core’s cards in their rows and columns as before without extensions', async () => {
     open('/', { registry: registryOf() });
     await main().findByText('Configuration in sync');
+    await settled();
     expect(statLabels()).toEqual(['Configuration in sync']);
     expect(columns()).toEqual([[['v2-ov-main', ['v2-ov-att', 'v2-ov-act']], ['v2-ov-aside', ['v2-ov-cfg', 'v2-ov-srv']]]]);
   });
@@ -181,6 +182,7 @@ describe('overview.card', () => {
   it('drops a core card when it leaves the registry', async () => {
     open('/', { registry: coreWithout('overview.card:recent-activity') });
     await main().findByText('Configuration in sync');
+    await settled();
     expect(columns().flat().map(([, cards]) => cards).flat()).not.toContain('v2-ov-act');
   });
 
@@ -223,6 +225,7 @@ describe('overview.card', () => {
     ]);
     open('/', { registry: registryOf(gated), user: ROLES.user });
     await main().findByText('Configuration in sync');
+    await settled();
     expect(statLabels()).toEqual(['Configuration in sync']);
   });
 });
@@ -508,6 +511,7 @@ describe('list.column, list.rowAction, list.bulkAction on Devices', () => {
     expect(screen.queryByRole('region', { name: 'Selection' })).toBeNull();
     fireEvent.click(main().getByText('Back office'));
     expect(await screen.findByRole('tabpanel')).toBeTruthy(); // the device page
+    await settled();
   });
 
   it('leaves an Observer only the row action that writes nothing, and no selection once no bulk action is left', async () => {

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { AppRoutes } from './App';
 import demo from './ext/__fixtures__/demo';
 import { IconPulse } from './ui/icons';
-import { ROLES, registryOf, renderInConsole, stubApi } from './test/console';
+import { ROLES, registryOf, renderInConsole, settled, stubApi } from './test/console';
 import { defineExtension, lazyComponent } from './ext/types';
 
 const fleet = (path: string) => (path.endsWith('/private/devices/search') ? { devices: { totalItemsCount: 248, items: [] } } : null);
@@ -113,6 +113,7 @@ describe('permission gating: the console hides what the role cannot use', () => 
     // The check can see them: a role that may open the page loads its list.
     renderInConsole(<AppRoutes />, { user: ROLES.user, path: '/configurations' });
     await waitFor(() => expect(pageCalls()).toContain('/rest/private/configurations/search'));
+    await settled();
   });
 
   it('explains a page the role cannot use (extension page), and shows it to a role that can', async () => {

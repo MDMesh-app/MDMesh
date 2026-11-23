@@ -2,7 +2,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { AuthUser } from '../api/auth';
-import { ROLES, stubApi } from '../test/console';
+import { ROLES, settled, stubApi } from '../test/console';
 import { AuthProvider, useAuth } from './AuthContext';
 
 const KEY = 'hmdm.admin.user';
@@ -105,7 +105,7 @@ describe('AuthProvider: the role is refreshed from the server', () => {
   it('ignores an answer for another user (that sign-in reaches this tab through storage)', async () => {
     stubApi((path) => (isCurrentUser(path) ? ROLES.admin : null));
     const { result } = signedInAs(ROLES.observer);
-    await act(async () => {});
+    await settled();
     expect(result.current.user).toEqual(ROLES.observer);
   });
 
@@ -156,12 +156,16 @@ describe('AuthProvider: other tabs', () => {
     const { result } = signedInAs(ROLES.admin);
     act(() => otherTabWrites(null));
     expect(result.current.user).toBeNull();
+    await settled();
+    expect(result.current.user).toBeNull();
   });
 
   it('follows another tab signing in as someone else (they share the session cookie)', async () => {
     stubApi();
     const { result } = signedInAs(ROLES.admin);
     act(() => otherTabWrites(ROLES.observer));
+    expect(result.current.user).toEqual(ROLES.observer);
+    await settled();
     expect(result.current.user).toEqual(ROLES.observer);
   });
 
@@ -170,12 +174,16 @@ describe('AuthProvider: other tabs', () => {
     const { result } = signedInAs(ROLES.observer);
     act(() => otherTabWrites(promoted));
     expect(result.current.user?.userRole?.permissions).toContainEqual({ name: 'configurations' });
+    await settled();
+    expect(result.current.user?.userRole?.permissions).toContainEqual({ name: 'configurations' });
   });
 
   it('ignores other keys', async () => {
     stubApi();
     const { result } = signedInAs(ROLES.admin);
+    await settled();
     act(() => window.dispatchEvent(new StorageEvent('storage', { key: 'mdmesh-theme', newValue: 'dark' })));
+    await settled();
     expect(result.current.user).toEqual(ROLES.admin);
   });
 });
@@ -187,6 +195,7 @@ describe('AuthProvider: the stored copy holds no token', () => {
     );
     const { result } = renderHook(() => useAuth(), { wrapper });
     await act(() => result.current.signIn('admin', 'password'));
+    await settled();
     expect(localStorage.getItem(KEY)).not.toMatch(/secret-token|reset-token|authToken|passwordResetToken/);
     // Nor does this tab keep the authToken in memory: the console never needs it.
     expect(result.current.user).not.toHaveProperty('authToken');
@@ -194,12 +203,15 @@ describe('AuthProvider: the stored copy holds no token', () => {
     expect(result.current.user?.passwordResetToken).toBe('reset-token');
   });
 
-  it('rewrites a copy stored by an older console without its authToken', () => {
+  it('rewrites a copy stored by an older console without its authToken', async () => {
     localStorage.setItem(KEY, JSON.stringify({ ...ROLES.admin, authToken: 'secret-token' }));
     stubApi();
     const { result } = renderHook(() => useAuth(), { wrapper });
     expect(localStorage.getItem(KEY)).not.toContain('secret-token');
     expect(result.current.user).not.toHaveProperty('authToken');
+    // Nor does the role refresh it starts bring the token back.
+    await settled();
+    expect(localStorage.getItem(KEY)).not.toContain('secret-token');
   });
 });
 

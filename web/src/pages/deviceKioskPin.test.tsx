@@ -4,7 +4,7 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { AppRoutes } from '../App';
-import { ROLES, renderInConsole, stubApi } from '../test/console';
+import { ROLES, renderInConsole, settled, stubApi } from '../test/console';
 
 const DEVICE = { id: 7, number: 'WH-1', description: 'Front desk', configurationId: 3, lastUpdate: Date.now() };
 
@@ -56,11 +56,13 @@ describe('Clear PIN lockout', () => {
       type: 'kiosk.clearPinLockout',
       requiresCapability: 'device.kioskClearPinLockout',
     });
+    await settled();
   });
 
   it('is unavailable on an agent before 0.5.0, and says why', async () => {
     openControl({ agentVersion: '0.4.2' });
     await screen.findByText(/Clear PIN lockout needs agent 0\.5\.0 or later/);
+    await settled();
     expect((screen.getByRole('button', { name: 'Clear PIN lockout' }) as HTMLButtonElement).disabled).toBe(true);
   });
 });

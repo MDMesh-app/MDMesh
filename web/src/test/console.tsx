@@ -1,9 +1,9 @@
 // Test helpers: the seeded server roles as signed-in users, a stubbed API, and a render inside the console's
 // providers with a chosen registry.
-import { render, waitFor } from '@testing-library/react';
+import { act, render } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
-import { expect, vi } from 'vitest';
+import { vi } from 'vitest';
 import type { AuthUser } from '../api/auth';
 import { AuthProvider } from '../auth/AuthContext';
 import { CORE_EXTENSION } from '../ext/core';
@@ -13,6 +13,7 @@ import type { ExtensionDefinition } from '../ext/types';
 import { IntlRoot } from '../i18n/IntlRoot';
 import { ThemeProvider } from '../ui/theme';
 import { ToastProvider } from '../ui/toast';
+import { callsMade, newCallCount, pendingCalls } from './pending';
 
 function role(id: number, permissions: string[], superAdmin = false, deploymentAdmin = false): AuthUser {
   return {
@@ -51,9 +52,6 @@ export function registryOf(...extensions: ExtensionDefinition[]): Registry {
   return registry;
 }
 
-/** The API calls the current stub has not answered yet (settled() waits for none). */
-let inFlight = { count: 0 };
-
 /**
  * Answer every API call with an empty OK envelope, or with `data(path, init)` when it returns something. Returns
  * the fetch mock, to assert on the calls or to replace its implementation (held or failing answers); calls reach it
@@ -68,10 +66,10 @@ export function stubApi(data: (path: string, init?: RequestInit) => unknown = ()
     });
   });
   // A fresh count per stub: a call a previous test left unanswered can't hold this one's settled().
-  const counter = { count: 0 };
-  inFlight = counter;
+  const counter = newCallCount();
   vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => {
     counter.count++;
+    counter.made++;
     let counted = false;
     const done = () => {
       if (!counted) counter.count--;
@@ -79,12 +77,17 @@ export function stubApi(data: (path: string, init?: RequestInit) => unknown = ()
     };
     // An aborted call is over for the app, whatever a held mock does with it.
     init?.signal?.addEventListener('abort', done, { once: true });
-    const answer = fetch(input, init);
+    // As over a network, the answer arrives on a later task, not within the call's own microtasks: a test that ends
+    // right after its page asks still has the call pending, which test/setup.ts fails.
+    const answer = fetch(input, init).then((res) => new Promise<Response>((r) => laterTask(() => r(res), 0)));
     void answer.then((res) => answered(res, done), done);
     return answer;
   });
   return fetch;
 }
+
+/** The real setTimeout, kept from before a test's vi.useFakeTimers() (which would hold every answer). */
+const laterTask = globalThis.setTimeout.bind(globalThis);
 
 const BODY_READS = ['text', 'json', 'blob', 'arrayBuffer', 'formData'] as const;
 
@@ -121,7 +124,7 @@ function answered(res: unknown, done: () => void) {
  * Wait until the page has finished loading: every API call answered and no placeholder (skeleton) left. A test ends
  * with this, or with an assertion on the loaded page, so no load is still running when the next test starts.
  *
- * Needs real timers: it waits a macrotask between its checks, and an answer whose body the app never reads counts
+ * Needs real timers: it waits a timer tick between its checks, and an answer whose body the app never reads counts
  * only a macrotask later. Under vi.useFakeTimers() it throws at once rather than time out; switch back with
  * vi.useRealTimers() first.
  */
@@ -130,20 +133,21 @@ export async function settled(timeout = 10_000) {
     throw new Error('settled() needs real timers: call vi.useRealTimers() before it (fake timers never run its checks).');
   }
   const SKELETONS = '.v2-skel, .v2-skelrows';
-  // Twice, a macrotask apart: an answer's state commits and the effects it triggers (the next request: a row's own
-  // detail, a reload) run in between, so a quiet moment between two chained requests doesn't pass for the end.
-  const quiet = () => {
-    expect(inFlight.count, 'API calls not yet answered').toBe(0);
-    expect(document.querySelector(SKELETONS), 'a placeholder still shows').toBeNull();
-  };
-  await waitFor(
-    async () => {
-      quiet();
-      await new Promise((r) => setTimeout(r, 0));
-      quiet();
-    },
-    { timeout },
-  );
+  const problem = () =>
+    pendingCalls() > 0 ? 'API calls not yet answered' : document.querySelector(SKELETONS) ? 'a placeholder still shows' : null;
+  const deadline = Date.now() + timeout;
+  // Quiet twice, a timer tick apart, with no call made in between: an answer's state commits and the effects it
+  // triggers (the next request: a row's own detail, a reload) run in between, so a quiet moment between two chained
+  // requests doesn't pass for the end. The tick runs inside act(), which renders and runs those effects before it
+  // returns, so the next request has gone out by the second look however busy the machine is.
+  for (;;) {
+    const before = problem();
+    const made = callsMade();
+    await act(() => new Promise((r) => setTimeout(r, 0)));
+    const after = problem() ?? (callsMade() === made ? null : 'an API call went out meanwhile');
+    if (!before && !after) return;
+    if (Date.now() > deadline) throw new Error(`settled() timed out after ${timeout} ms: ${after ?? before}`);
+  }
 }
 
 /**

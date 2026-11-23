@@ -160,12 +160,18 @@ _mdm_ipv4() {
   done
   [ "$n" = 4 ]
 }
-# _mdm_ipv6 ADDR: ADDR (no brackets) looks like an IPv6 address: hex digits and ":", at least two ":", at most one "::".
-# IPv4-mapped addresses (::ffff:…, or with a dotted IPv4 part) are refused: written as IPv6 they don't match the IPv4
-# peers they mean, so use the IPv4 address. (Not checked further: whatever reads it next refuses a wrong one.)
+# _mdm_ipv6 ADDR: ADDR (no brackets) is an IPv6 address: 8 groups of 1-4 hex digits, or fewer with one "::". IPv4-mapped
+# ones (::ffff:…, or a dotted part) are refused: they don't match the IPv4 peers they mean.
 _mdm_ipv6() {
-  case "$1" in ''|*[!${_MDM_HEX}:]*|*:::*|*::*::*|::[Ff][Ff][Ff][Ff]:*|0:0:0:0:0:[Ff][Ff][Ff][Ff]:*) return 1 ;; *:*:*) return 0 ;; esac
-  return 1
+  local r=$1 p g=0 d=0
+  case "$1" in ''|*[!${_MDM_HEX}:]*|*:::*|*::*::*|:[!:]*|*[!:]:|::[Ff][Ff][Ff][Ff]:*|0:0:0:0:0:[Ff][Ff][Ff][Ff]:*) return 1 ;; *::*) d=1 ;; esac
+  while [ -n "$r" ]; do
+    p=${r%%:*}; if [ "$p" = "$r" ]; then r=''; else r=${r#*:}; fi
+    [ -n "$p" ] || continue
+    [ "${#p}" -le 4 ] || return 1
+    g=$((g + 1))
+  done
+  if [ "$d" = 1 ]; then [ "$g" -le 7 ]; else [ "$g" -eq 8 ]; fi
 }
 # _mdm_bind_ok IP:PORT: an address to listen on: an IPv4 address or an [IPv6] one, then :port (1-65535).
 _mdm_bind_ok() {

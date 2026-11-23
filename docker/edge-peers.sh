@@ -60,6 +60,10 @@ edge_site_d() {
     edge_site_log "could not read site.d (uid $(id -u): ${_ls##*: }): your own rules are not loaded"; EDGE_SITE_SKIPPED=1; return 0
   fi
   _owners="0 ${_st%% *}"
+  for _f in "$1"/.*.caddy; do
+    [ -e "$_f" ] || [ -L "$_f" ] || continue
+    edge_site_log "site.d/${_f##*/} is not loaded: a hidden file"; EDGE_SITE_SKIPPED=$((EDGE_SITE_SKIPPED + 1))
+  done
   for _f in "$1"/*.caddy; do
     [ -e "$_f" ] || [ -L "$_f" ] || continue
     _n=${_f##*/}
@@ -146,6 +150,19 @@ edge_gateways() {
   { ip -4 route show default; ip -6 route show default; } 2>/dev/null | awk '$1 == "default" && $2 == "via" { print $3 }'
 }
 
+# edge_ipv6 ADDR: ADDR is an IPv6 address, as install/lib/answers.sh's _mdm_ipv6 checks it (IPv4-mapped refused).
+edge_ipv6() {
+  _r=$1; _g=0; _d=0
+  case "$1" in ''|*[!0-9A-Fa-f:]*|*:::*|*::*::*|:[!:]*|*[!:]:|::[Ff][Ff][Ff][Ff]:*|0:0:0:0:0:[Ff][Ff][Ff][Ff]:*) return 1 ;; *::*) _d=1 ;; esac
+  while [ -n "$_r" ]; do
+    _p=${_r%%:*}; if [ "$_p" = "$_r" ]; then _r=''; else _r=${_r#*:}; fi
+    [ -n "$_p" ] || continue
+    [ "${#_p}" -le 4 ] || return 1
+    _g=$((_g + 1))
+  done
+  if [ "$_d" = 1 ]; then [ "$_g" -le 7 ]; else [ "$_g" -eq 8 ]; fi
+}
+
 # edge_proxy_list LIST [BIND]: LIST (addresses and ranges, separated by spaces or commas, and `host`), checked as the
 # installers check it (install/lib/answers.sh, rule proxies; install/lib/modes.sh, mdm_proxy_trust_problem), as Caddy's
 # static list: `host` only with a loopback BIND (MDMESH_BIND; unset: the default 127.0.0.1:8080), and no IPv4-mapped
@@ -173,8 +190,8 @@ edge_proxy_list() {
       _min=8; _max=32
     else
       case "$_a" in
-        *:*:*) case "$_a" in *[!0-9A-Fa-f:]*|*:::*|::[Ff][Ff][Ff][Ff]:*|0:0:0:0:0:[Ff][Ff][Ff][Ff]:*) edge_refuse "TRUSTED_PROXIES: \"$_t\" is not an address or range" ;; esac
-               _min=16; _max=128 ;;
+        *:*) edge_ipv6 "$_a" || edge_refuse "TRUSTED_PROXIES: \"$_t\" is not an address or range"
+             _min=16; _max=128 ;;
         *) edge_refuse "TRUSTED_PROXIES: \"$_t\" is not an address or range (no names, no private_ranges)" ;;
       esac
     fi

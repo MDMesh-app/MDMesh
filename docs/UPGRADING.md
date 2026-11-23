@@ -130,7 +130,7 @@ know the mode):
    ```bash
    docker compose exec -T supervisor sh -euc '
      V=$(sed -n "s/^CURRENT_VERSION=//p" /project/.env); G=$(sed -n "s/^GITHUB_REPO=//p" /project/.env)
-     G=${G:-MDMesh-app/MDMesh}; R=https://github.com/$G/releases/download/v$V; T=$(mktemp -d); cd "$T"
+     G=${G:-MDMesh-app/MDMesh}; R=https://github.com/$G/releases/download/v$V; T=$(mktemp -d); trap "rm -rf $T" EXIT; cd "$T"
      curl -fsSL -o manifest.json "$R/manifest.json"; curl -fsSL -o manifest.json.minisig "$R/manifest.json.minisig"
      minisign -Vq -m manifest.json -p /app/minisign.pub
      grep -qF "\"version\": \"$V\"" manifest.json

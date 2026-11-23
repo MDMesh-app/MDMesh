@@ -104,6 +104,7 @@ mk() { printf "header X-%s \"1\"\n" "$1" > "/sd/$1.caddy"; chown "$2" "/sd/$1.ca
 mkdir -p /sd && chmod 755 /sd && chown 1000:1000 /sd
 mk good 1000 644; mk root 0 644; mk open 1000 666; mk group 1000 664; mk stranger 12345 644
 ln -s /sd/good.caddy /sd/link.caddy
+cp /sd/good.caddy /sd/.hidden.caddy; chown 1000 /sd/.hidden.caddy
 loaded() { [ "$(ls "$EDGE_SITE_D" | tr "\n" " ")" = "$1" ]; }
 logged() { grep -qF "$1" /tmp/log; }
 adapted() { caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile > /tmp/adapted 2>&1 && grep -qi x-good /tmp/adapted && ! grep -qi x-open /tmp/adapted; }
@@ -113,6 +114,7 @@ EDGE_SITE_SRC=/sd; export EDGE_SITE_SRC
 t "only the files their owner alone can change are loaded (good, root)" loaded "good.caddy root.caddy "
 for n in open group stranger; do t "$n.caddy left out, saying why" logged "site.d/$n.caddy is not loaded: other users may change it"; done
 t "link.caddy left out, saying why" logged "site.d/link.caddy is not loaded: it is a link"
+t ".hidden.caddy left out, saying why" logged "site.d/.hidden.caddy is not loaded: a hidden file"
 t "the edge imports the loaded ones only" adapted
 t "the edge configuration is valid" valid
 chmod 777 /sd
@@ -274,6 +276,10 @@ PEER_CASES=(
   "host|EDGE_BIND=127.0.0.1:8080|172.19.0.1/32|:8080|off|"
   "host|EDGE_BIND=[::1]:8080|172.19.0.1/32|:8080|off|"
   "192.0.2.10|EDGE_BIND=0.0.0.0:8080|192.0.2.10/32|:8080|off|"
+  "fd00::1 2001:db8::/32,::1||fd00::1/128 2001:db8::/32 ::1/128|:8080|off|"
+  "2001:db8:1||refused"
+  "1::2::3||refused"
+  "12345::1||refused"
   "192.0.2.10|MDMESH_ORIGIN_TLS=1 BASE_URL=https://[2001:db8::5]|192.0.2.10/32|https://[2001:db8::5]:8080|internal|2001:db8::5"
   "host||refused"
   "host|EDGE_BIND=0.0.0.0:8080|refused"
@@ -361,15 +367,15 @@ ot() {  # ot NAME WANT-CA(right|wrong): run the front, then a request through it
     $conf >> "$OT_D/docker.log" 2>&1 || { echo "000 the proxy did not start"; return 0; }
   local ip _; ip="$(docker inspect -f "{{(index .NetworkSettings.Networks \"$OT_NET\").IPAddress}}" "$OT_FRONT")"
   for _ in $(seq 1 40); do
-    out="$(docker run --rm --network "$OT_NET" curlimages/curl:latest -sk -m 5 -o /tmp/body -w '%{http_code}' \
+    out="$(docker run --rm --network "$OT_NET" curlimages/curl:8.23.0 -sk -m 5 -o /tmp/body -w '%{http_code}' \
       --resolve "mdm.example.com:443:$ip" https://mdm.example.com/ 2>> "$OT_D/docker.log")" || true
     case "$out" in 000*|'') sleep 0.5 ;; *) break ;; esac
   done
   echo "$out"
 }
 # The images first: a pull's progress (docker run's, on stderr) must never mix into a probe's answer.
-OT_TRAEFIK=traefik:${E2E_TRAEFIK:-v3.3}
-for i in curlimages/curl:latest nginx:1.26-alpine httpd:2.4-alpine "$OT_TRAEFIK"; do
+OT_TRAEFIK=traefik:${E2E_TRAEFIK:-v3.3.7}
+for i in curlimages/curl:8.23.0 nginx:1.26-alpine httpd:2.4-alpine "$OT_TRAEFIK"; do
   docker image inspect "$i" >> "$OT_D/docker.log" 2>&1 || docker pull -q "$i" >> "$OT_D/docker.log" 2>&1 || true
 done
 docker network create --internal "$OT_NET" >> "$OT_D/docker.log" 2>&1

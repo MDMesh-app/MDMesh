@@ -31,7 +31,7 @@ umask 077
 ROOT="$(CDPATH='' cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 HERE="$ROOT/tests/proxy-e2e"
 NEW_TAG=${E2E_NEW_TAG:-px-e2e}
-TRAEFIK=traefik:${E2E_TRAEFIK:-v3.3}
+TRAEFIK=traefik:${E2E_TRAEFIK:-v3.3.7}
 CADDY_IMAGE="$(awk 'tolower($1) == "from" && $2 ~ /^caddy[:@]/ { print $2; exit }' "$ROOT/docker/web.Dockerfile")"
 P=${E2E_PREFIX:-px-e2e}
 NET=$P-net REG=$P-registry DIND=$P-dind CLIENT=$P-client WSCLIENT=$P-wsclient FRONT=$P-front
@@ -200,7 +200,7 @@ setup() {
   for _ in $(seq 1 30); do in_dind docker info >>"$LOG" 2>&1 && break; sleep 2; done
   DIND_IP="$(docker inspect -f "{{(index .NetworkSettings.Networks \"$NET\").IPAddress}}" "$DIND")"
   docker run -d --name "$CLIENT" --network "$NET" --add-host "$HOSTNAME_:$DIND_IP" -u 0 --entrypoint sh \
-    -v "$WORK/ca.pem:/ca.pem:ro" curlimages/curl:latest -c 'sleep 86400' >>"$LOG" || return 1
+    -v "$WORK/ca.pem:/ca.pem:ro" curlimages/curl:8.23.0 -c 'sleep 86400' >>"$LOG" || return 1
   CLIENT_IP="$(docker inspect -f "{{(index .NetworkSettings.Networks \"$NET\").IPAddress}}" "$CLIENT")"
   docker run -d --name "$WSCLIENT" --network "$NET" --add-host "$HOSTNAME_:$DIND_IP" -e NODE_EXTRA_CA_CERTS=/ca.pem \
     -v "$WORK/ca.pem:/ca.pem:ro" -v "$HERE/ws-probe.js:/probe/ws-probe.js:ro" --entrypoint sh node:24-alpine \

@@ -1,8 +1,8 @@
 # :kiosk
 
 COSU (Corporate-Owned Single-Use) lock-task / kiosk control, built independently on the
-native `DevicePolicyManager` lock-task APIs (Headwind's real COSU engine is closed
-"Pro"; OSS only ships an overlay hack).
+native `DevicePolicyManager` lock-task APIs (the upstream open-source agent only ships an
+overlay hack).
 
 This module does **not** depend on `:policy` — its result type (`KioskResult`) is
 defined locally.
@@ -16,7 +16,7 @@ defined locally.
 | `LockTaskKioskController` | real impl over `DevicePolicyManager` lock-task APIs |
 | `StubKioskController` | no-op fallback for non-Device-Owner / tests (all ops `Unsupported`) |
 | `KioskToggles` + `lockTaskFeatures()` | kiosk UI toggles → `LOCK_TASK_FEATURE_*` bitmask (`KioskFeatures.kt`) |
-| `CrashLoopGuard` | crash-loop protection (ported from Headwind `CrashLoopProtection`) |
+| `CrashLoopGuard` | crash-loop protection (ported from the upstream agent's `CrashLoopProtection`) |
 | `FaultStore` | counter persistence behind an interface |
 | `SharedPrefsFaultStore` | production store (SharedPreferences, synchronous `commit()`) |
 | `InMemoryFaultStore` | Android-free store for unit tests |

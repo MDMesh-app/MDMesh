@@ -106,7 +106,8 @@ export function parseReleaseEntries(
     .sort((a, b) => (a.version && b.version ? compareVersions(b.version, a.version) : 0));
 }
 
-function compareVersions(a: string, b: string): number {
+/** Orders two X.Y.Z versions: negative when a is older, 0 when equal, positive when newer. */
+export function compareVersions(a: string, b: string): number {
   const pa = a.split('.').map(Number);
   const pb = b.split('.').map(Number);
   for (let i = 0; i < 3; i++) if (pa[i] !== pb[i]) return (pa[i] ?? 0) - (pb[i] ?? 0);

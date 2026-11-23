@@ -498,6 +498,44 @@ mkdir -p "$WORK/qs3"; : > "$WORK/children3.log"
   && grep -qF '/refs/tags/v0.4.0/quickstart.sh' "$WORK/out/e" && ! grep -q 'curl' "$WORK/children3.log"; } \
   || { fail "quickstart.sh does not send MDMESH_VERSION=0.4.0 to that release's own quickstart.sh"; show; }
 ok
+# The images are linux/amd64, and linux/arm64 from the first release with Arm64 images: another architecture stops
+# before any question, and x86_64 and Arm64 go on to verify the release. (Whether that release has images for the host
+# is read from its signed manifest: scripts/release-manifest-check.sh. The docker stub fails `docker info`, so the
+# host's architecture comes from uname, stubbed here.)
+mkdir -p "$WORK/stubs-arch"
+# shellcheck disable=SC2016  # the stub's own variables
+printf '#!/bin/sh\n[ "$1" = -m ] && { echo "$STUB_ARCH"; exit 0; }\nexec /bin/uname "$@"\n' > "$WORK/stubs-arch/uname"
+chmod +x "$WORK/stubs-arch/uname"
+qs_arch() {   # ARCH [VAR=value...]: a quick start run in a new directory, answering mode 1 and the defaults
+  local arch="$1"; shift; rm -rf -- "$WORK/qs4"; mkdir -p "$WORK/qs4"; : > "$WORK/children4.log"
+  (cd "$WORK/qs4" && printf '%s\n' 1 '' '' | env -i PATH="$WORK/stubs-arch:$WORK/stubs:$PATH" HOME="$WORK" STUB_ARCH="$arch" \
+    STUB_LOG="$WORK/children4.log" STUB_DOCKER_OK=1 "$@" bash "$REPO/quickstart.sh" > "$WORK/out/o" 2> "$WORK/out/e") || true
+}
+qs_arch riscv64
+{ grep -qF 'built for x86_64 and Arm64 (aarch64); this host is riscv64' "$WORK/out/e" && ! grep -q 'curl' "$WORK/children4.log" \
+  && ! grep -qF 'Hosting mode' "$WORK/out/o"; } || { fail "quickstart.sh does not stop on an unsupported architecture"; show; }
+ok
+qs_arch aarch64 MDMESH_VERSION=0.5.0
+{ grep -qF 'Verifying release v0.5.0' "$WORK/out/o" && ! grep -q 'no images for this host\|built for x86_64' "$WORK/out/e"; } \
+  || { fail "quickstart.sh does not go on to verify a release on Arm64"; show; }
+ok
+# A release before 0.5.0 on Arm64: not sent to that release's own quickstart.sh (its images are x86_64 only too).
+qs_arch aarch64 MDMESH_VERSION=0.4.0
+{ grep -qF 'Release v0.4.0 of MDMesh-app/MDMesh has no images for this host (linux/arm64), only for linux/amd64.' "$WORK/out/e" \
+  && grep -qF "MDMesh's releases have Arm64 images from 0.6.0" "$WORK/out/e" \
+  && ! grep -qF 'refs/tags/v0.4.0/quickstart.sh' "$WORK/out/e" && ! grep -q 'curl' "$WORK/children4.log"; } \
+  || { fail "quickstart.sh sends Arm64 to a release before 0.5.0"; show; }
+ok
+# A fork's releases: no advice about MDMesh's versions, which say nothing about the fork's images.
+qs_arch aarch64 MDMESH_VERSION=0.4.0 MDMESH_REPO=acme/mdm
+{ grep -qF 'Release v0.4.0 of acme/mdm has no images for this host (linux/arm64)' "$WORK/out/e" \
+  && grep -qF 'Use a release whose images include linux/arm64' "$WORK/out/e" && ! grep -qF '0.6.0' "$WORK/out/e"; } \
+  || { fail "quickstart.sh gives a fork's users MDMesh's version advice"; show; }
+ok
+qs_arch x86_64 MDMESH_VERSION=0.5.0
+{ grep -qF 'Verifying release v0.5.0' "$WORK/out/o" && ! grep -q 'no images for this host\|built for x86_64' "$WORK/out/e"; } \
+  || { fail "quickstart.sh does not go on to verify 0.5.0 on x86_64"; show; }
+ok
 
 # A re-run whose .env this user can't read says what to do, instead of a bare "Permission denied": its own .env (mode
 # 000) → chmod 600 .env; another user's (here a link to /proc/1/environ: root's, mode 400) → run as them.

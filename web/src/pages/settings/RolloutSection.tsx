@@ -10,6 +10,7 @@ import {
   type RolloutTargetSummary,
 } from '../../api/rollout';
 import type { UpdateStatus } from '../../api/updates';
+import { agentAfterServerUpdate, rolloutAheadOfServer, serverFirstText } from '../../data/updateStatus';
 import {
   Button,
   Callout,
@@ -292,6 +293,8 @@ export function RolloutSection({
   const { rollout, loaded, loadError } = ro;
   const active = rolloutActive(rollout) ? rollout : null;
   const apk = status?.apk ?? null;
+  const nextAgent = agentAfterServerUpdate(status);
+  const stalledOn = active ? rolloutAheadOfServer(active.targetVersion, status) : null;
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<Confirm>(null);
@@ -444,6 +447,13 @@ export function RolloutSection({
         <CardHeader title="Agent rollout" titleId={titleId} />
       )}
 
+      {active && stalledOn ? (
+        <Callout tone="alert" role="status" icon={<IconAlert />}>
+          This rollout is stalled: agent <span className="v2-num">{active.targetVersion}</span> is newer than the server
+          (<span className="v2-num">{stalledOn}</span>), so the updater won&rsquo;t give it to devices. Cancel the rollout,
+          or update the server to <span className="v2-num">{active.targetVersion}</span>.
+        </Callout>
+      ) : null}
       {loadError ? (
         <Callout tone="warn" icon={<IconAlert />}>
           Couldn’t refresh the rollout: {rolloutError({ message: loadError })}
@@ -493,6 +503,7 @@ export function RolloutSection({
       ) : apk?.available && summary?.complete ? (
         <p className="v2-settings-muted">
           Agent <span className="v2-num">{apk.version}</span> is current on every device that can update itself.
+          {nextAgent ? <> {serverFirstText(nextAgent)}</> : null}
         </p>
       ) : apk?.available ? (
         <div className="v2-settings-start">
@@ -502,6 +513,7 @@ export function RolloutSection({
             </span>
             <span className="v2-settings-start__help">
               Pick a few canary devices to update first. Once they&rsquo;ve updated, promote it to everyone else.
+              {nextAgent ? <> {serverFirstText(nextAgent)}</> : null}
             </span>
           </div>
           {canEdit ? (
@@ -519,8 +531,9 @@ export function RolloutSection({
         </div>
       ) : (
         <p className="v2-settings-muted">
-          No rollout is running. Each verified server release brings a new agent; once the updater has downloaded it,
-          you can roll it out to devices here.
+          {nextAgent
+            ? `No rollout is running. ${serverFirstText(nextAgent)}`
+            : 'No rollout is running. Each verified server release brings a new agent; once the server runs that release and the updater has downloaded its agent, you can roll it out to devices here.'}
         </p>
       )}
 

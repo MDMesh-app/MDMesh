@@ -1,0 +1,8 @@
+# The release agent APK's signing-certificate checksum: PROVISIONING_DEVICE_ADMIN_SIGNATURE_CHECKSUM, the base64url
+# (no padding) SHA-256 of the certificate, as release/apk-checksum.sh prints it for a signed APK. Every release since
+# 0.4.0 is signed with this certificate (components.apk.signatureChecksum in their signed manifests).
+#
+# The release workflow bakes it into the web image's enrollment QR and refuses a release whose signed APK has another
+# one, so a swapped signing key fails the release instead of shipping. It changes only when the release signing key
+# is rotated: change it here in a reviewed PR first, then tag the release (RELEASING.md, One-time setup, step 1).
+P0s1coXolfDwvZD-X6DNHVMM2tVaSM9oiAl9UIMCxfw

@@ -23,8 +23,9 @@ mdm_version_core() {
   printf '%s\n' "$1" | sed -nE 's/^v?([0-9]+)\.([0-9]+)\.([0-9]+).*$/\1 \2 \3/p'
 }
 
-# mdm_version_gt A B: succeeds when A is newer than B, compared on major.minor.patch as numbers — the supervisor's
-# semverGt rule (supervisor/lib.js). Equal, older, or either side without a core → fails.
+# mdm_version_gt A B: succeeds when A is newer than B, compared on major.minor.patch as numbers (pre-release suffixes
+# ignored; the supervisor's semverGt also orders those, and no pre-release is published). Equal, older, or either side
+# without a core → fails.
 mdm_version_gt() {
   local a b i
   read -r -a a <<< "$(mdm_version_core "$1")"

@@ -72,6 +72,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 in_dind() { docker exec -i "$DIND" "$@"; }
+in_dind_reg() { docker exec -i -e SSL_CERT_FILE=/etc/docker/certs.d/ghcr.io/ca.crt "$DIND" "$@"; }
 in_dir()  { local d=$1; shift; docker exec -i -w "$d" "$DIND" "$@"; }
 dc()      { local d=$1; shift; in_dir "$d" docker compose "$@"; }
 q()       { dc "$1" exec -T postgres psql -X -U mdmesh -d mdmesh -tAc "$2" 2>>"$LOG" | tr -d '\r'; }
@@ -121,7 +122,9 @@ wait_healthy() {  # wait_healthy DIR: /rest/public/name answers 200 through cadd
   return 1
 }
 
-# push VERSION SRC_IMAGE_PREFIX SRC_TAG [relabel]: ghcr.io/$OWNER/mdmesh-<name>:VERSION in the registry; records REF_<v>_<name>.
+# push VERSION SRC_IMAGE_PREFIX SRC_TAG [relabel]: ghcr.io/$OWNER/mdmesh-<name>:VERSION in the registry, as an image
+# index holding the one image (as release.yml publishes them, one image per platform); records REF_<v>_<name>, the
+# index's digest, which apply.sh pins and checks against the pulled image's RepoDigests.
 push() {
   local v=$1 src=$2 tag=$3 relabel=${4:-} n img ref var
   for n in server web supervisor; do
@@ -139,6 +142,11 @@ push() {
     in_dind docker push -q "$img" >>"$LOG" 2>&1 || { echo "push of $img failed"; return 1; }
     ref="$(in_dind docker image inspect -f '{{range .RepoDigests}}{{println .}}{{end}}' "$img" | grep -m1 "^ghcr.io/$OWNER/mdmesh-$n@sha256:")"
     [ -n "$ref" ] || return 1
+    # buildx resolves the registry itself: it trusts the system's CAs, not the daemon's certs.d.
+    in_dind_reg docker buildx imagetools create --tag "$img" "$ref" >>"$LOG" 2>&1 || { echo "index for $img failed"; return 1; }
+    ref="ghcr.io/$OWNER/mdmesh-$n@$(in_dind_reg docker buildx imagetools inspect --format '{{json .Manifest}}' "$img" 2>>"$LOG" \
+      | grep -m1 -oE '"digest": *"sha256:[0-9a-f]{64}"' | grep -oE 'sha256:[0-9a-f]{64}')"
+    [[ "$ref" == *@sha256:* ]] || { echo "no index digest for $img"; return 1; }
     var="REF_${v//./_}_$n"; printf -v "$var" '%s' "$ref"
     in_dind docker rmi "$img" >>"$LOG" 2>&1
     echo "    $v $n: $ref"

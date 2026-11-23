@@ -3,6 +3,7 @@ import { ApiError } from '../api/client';
 import { getConfigurations, type Configuration } from '../api/configurations';
 import { mintEnrollToken, revokeAllEnrollTokens } from '../api/enroll';
 import { getUpdateStatus, type UpdateStatus } from '../api/updates';
+import { agentUnavailable } from '../data/updateStatus';
 import { Link } from 'react-router';
 import { ARRIVAL_LABEL, arrivalNews, useArrivals, type Arrival } from '../enroll/arrivals';
 import { addressProblem, wifiProblem } from '../enroll/checks';
@@ -483,6 +484,8 @@ export function EnrollPage() {
   ];
 
   const agentVersion = RELEASE_BUILD && update?.apk?.available ? update.apk.version : null;
+  // No agent to download: a QR code would fail on the device, so the page says why instead of showing one.
+  const noAgent = RELEASE_BUILD && agentUnavailable(update);
 
   const configHelp = configsFailed ? (
     <>
@@ -614,8 +617,13 @@ export function EnrollPage() {
     </Card>
   );
 
-  const qrPanel =
-    payload && !expired ? (
+  const qrPanel = noAgent ? (
+    <div className="v2-qr">
+      <div className="v2-qr__frame v2-enroll__qrwait" role="status">
+        No QR code: there is no agent to install yet.
+      </div>
+    </div>
+  ) : payload && !expired ? (
       <QrPanel
         value={payload}
         label={`Enrollment QR code for ${givesName}`}
@@ -668,6 +676,15 @@ export function EnrollPage() {
           />
         }
       />
+      {noAgent ? (
+        <Callout tone="alert" icon={<IconAlert />} role="status">
+          This server has no agent app to give new devices, so a device that scans a code can&rsquo;t install it. The
+          updater hasn&rsquo;t verified an agent for this server: GitHub didn&rsquo;t answer (it tries again every few
+          minutes), the release this server runs has a signed manifest that doesn&rsquo;t check out, or no release with
+          an agent was found (is <span className="v2-mono">GITHUB_REPO</span> set?). See Settings &rarr; Updates and the
+          updater&rsquo;s log. Devices that already run the agent can still use a token.
+        </Callout>
+      ) : null}
       {/* Pre-flight problems, not failures: amber (nothing has gone wrong yet; the admin can still fix it here). */}
       {address ? (
         <Callout tone="warn" icon={<IconWarning size={16} />} role="status">

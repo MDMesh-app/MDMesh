@@ -4,14 +4,18 @@ name: release
 #   n=$(release/changelog-section.sh 1.2.3) && git tag -a v1.2.3 --cleanup=whitespace -m "$n" SHA
 #   release/changelog-section.sh --check v1.2.3 SHA && git push origin v1.2.3
 # Produces a tested, signed GitHub Release: the release APK, quickstart.sh, the server, web and supervisor images on
-# GHCR, and a minisign-signed manifest the fleet updater and the quick start consume. Requires these `release`
-# environment secrets (see RELEASING.md): MDM_RELEASE_STORE_B64, MDM_RELEASE_STORE_PASSWORD, MDM_RELEASE_KEY_ALIAS,
-# MDM_RELEASE_KEY_PASSWORD, MINISIGN_SECRET_KEY, MINISIGN_PASSWORD.
+# GHCR (linux/amd64 + linux/arm64), and a minisign-signed manifest the fleet updater and the quick start consume.
+# Requires these `release` environment secrets (see RELEASING.md): MDM_RELEASE_STORE_B64, MDM_RELEASE_STORE_PASSWORD,
+# MDM_RELEASE_KEY_ALIAS, MDM_RELEASE_KEY_PASSWORD, MINISIGN_SECRET_KEY, MINISIGN_PASSWORD.
 #
-# Who may release: the `gate` job (no secrets, read-only token) refuses a tag whose commit is not on main, and the
-# `release` job, which alone holds the signing secrets and write tokens, runs in the `release` environment: it waits
-# for a required reviewer, and the secrets live there as environment secrets, so a workflow edited on an unmerged
-# commit can't reach them without that approval. Repo settings this relies on are listed in RELEASING.md.
+# Jobs: gate → images (each image on each platform, pushed by digest, untagged) → release (signed APK, held to the
+# recorded signing checksum; :VERSION tags, signed manifest, GitHub Release, :latest).
+# Who may release: the `gate` job (no secrets, read-only token) refuses a tag whose commit is not on main. The `release`
+# job, which alone holds the signing secrets, runs in the `release` environment: it waits for a required reviewer, and
+# the secrets live there as environment secrets, so a workflow edited on an unmerged commit can't reach them without
+# that approval. `images` (a package write token, no secrets) runs before it, but only pushes untagged builds, which
+# nothing pulls: every tag, the manifest and the Release come from the approved job. Repo settings this relies on are
+# listed in RELEASING.md.
 
 on:
   push:
@@ -23,6 +27,8 @@ permissions:
 jobs:
   gate:
     runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -43,6 +49,7 @@ jobs:
           fi
           echo "${REF_NAME} -> ${commit} is on main"
       - name: Version is newer than every earlier release
+        id: ver
         env:
           REF_NAME: ${{ github.ref_name }}
         run: |
@@ -53,6 +60,7 @@ jobs:
             exit 1
           fi
           echo "${REF_NAME} is newer than ${latest:-(no earlier release)}"
+          echo "version=${REF_NAME#v}" >> "$GITHUB_OUTPUT"
       # The annotation becomes the release notes (release job), so it must be this version's CHANGELOG.md section as
       # `release/changelog-section.sh X.Y.Z` prints it from the tagged commit (RELEASING.md), and the tag must still
       # point at the commit this run checked out. Checkout can leave the tag lightweight, so fetch the annotated tag
@@ -65,20 +73,108 @@ jobs:
           release/changelog-section.sh --check "$REF_NAME" "$GITHUB_SHA" \
             || { echo "::error::${REF_NAME} is not its CHANGELOG.md section on ${GITHUB_SHA} (details above; RELEASING.md)"; exit 1; }
 
-  release:
+  # --- The server, web and supervisor images, for linux/amd64 and linux/arm64 ---
+  # Each platform is built on its own GitHub runner (x86_64, and the native Arm64 one: no emulation) and pushed by
+  # digest only, untagged; nothing pulls an untagged image. The release job joins each image's two digests into one
+  # multi-platform index under :VERSION, and only once every build here passed. No secrets and no approval: the
+  # release job asks for its one approval once these are done.
+  images:
     needs: gate
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        image: [server, web, supervisor]
+        arch: [amd64, arm64]   # the release job's PLATFORMS, as linux/<arch>
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    # An image build takes minutes; a stuck build must not hold the release for the 6 h default. This counts from when
+    # a runner picks the job up: a job waiting for a runner (an Arm one a private fork doesn't have) waits until GitHub
+    # gives up on it, after 24 h (UPGRADING, v0.6.0 for forks).
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550  # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # A docker-container builder: the runner's default (docker) builder can't push by digest. BuildKit pinned for the
+      # same reason as runs-on. No provenance or SBOM attestations: they would add "unknown/unknown" entries to the index.
+      # The web image bakes the release APK's package and recorded signing checksum (release/agent-signature-checksum,
+      # which the release job holds the signed APK to) into its enrollment QR, and its version.
+      - name: Build + push ${{ matrix.image }} for linux/${{ matrix.arch }} by digest
+        id: push
+        env:
+          OWNER: ${{ github.repository_owner }}
+          IMAGE: ${{ matrix.image }}
+          ARCH: ${{ matrix.arch }}
+          VERSION: ${{ needs.gate.outputs.version }}
+        run: |
+          O=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')   # GHCR repo names must be lowercase
+          REPO="ghcr.io/${O}/mdmesh-${IMAGE}"
+          args=()
+          if [ "$IMAGE" = web ]; then
+            CK=$(release/apk-checksum.sh --recorded)
+            args=(--build-arg VITE_AGENT_PACKAGE=com.mdmesh.agent --build-arg VITE_AGENT_CHECKSUM="$CK"
+                  --build-arg VITE_AGENT_APK_URL=/files/agent.apk --build-arg VITE_APP_VERSION="$VERSION")
+          fi
+          docker buildx create --use --driver docker-container \
+            --driver-opt image=moby/buildkit:v0.34.2@sha256:c5f8862f52499773af85bc07695b2379ef08e8002352b0df2c4864c91d78dabe
+          docker buildx build -f "docker/${IMAGE}.Dockerfile" --platform "linux/${ARCH}" "${args[@]}" \
+            --provenance=false --sbom=false --metadata-file "$RUNNER_TEMP/build.json" \
+            --output "type=image,name=${REPO},push-by-digest=true,name-canonical=true,push=true" .
+          D=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("containerimage.digest", ""))' "$RUNNER_TEMP/build.json")
+          echo "$D" | grep -Eqx 'sha256:[0-9a-f]{64}' || { echo "::error::no digest for ${IMAGE} linux/${ARCH} (got '${D}')"; exit 1; }
+          echo "ref=${REPO}@${D}" >> "$GITHUB_OUTPUT"
+          mkdir -p "$RUNNER_TEMP/digest" && printf '%s\n' "$D" > "$RUNNER_TEMP/digest/${IMAGE}-${ARCH}"
+      # The server's JVM on each platform, started from exactly the pushed image: a JDK without the CVE-2026-114938
+      # (OpenJDK) Base64 bug, or -XX:-UseBASE64Intrinsics in effect (install/tomcat-setenv.sh). The bug is x86_64-only,
+      # but the image sets the flag on both, so both must show it (the arm64 base may lag the amd64 one's JDK). A
+      # failure here stops the run before the release job tags anything.
+      - if: matrix.image == 'server'
+        name: Server JVM check, linux/${{ matrix.arch }}
+        env:
+          REF: ${{ steps.push.outputs.ref }}
+        run: |
+          docker pull --quiet "$REF"
+          scripts/server-jvm-check.sh --image "$REF"
+      # Supervisor smoke on each platform, against exactly the pushed image (#27): a supervisor that can't start the way
+      # compose runs it must never get a tag. A failure here stops the run before the release job tags anything.
+      - if: matrix.image == 'supervisor'
+        name: Supervisor smoke (compose-shaped), linux/${{ matrix.arch }}
+        env:
+          REF: ${{ steps.push.outputs.ref }}
+        run: |
+          docker pull --quiet "$REF"
+          docker run --rm -w /app "$REF" node --test test.js
+          scripts/supervisor-smoke.sh "$REF"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: digest-${{ matrix.image }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digest/${{ matrix.image }}-${{ matrix.arch }}
+          if-no-files-found: error
+
+  # The release itself, only once every image build passed: the signed APK (held to the recorded signing checksum),
+  # then the :VERSION tags, the signed manifest, the GitHub Release and :latest.
+  release:
+    needs: [gate, images]
     # Required reviewers + the signing secrets live on this environment (RELEASING.md).
     environment: release
+    # Pinned, not ubuntu-latest: a tag push must not silently change OS (ubuntu-latest moves to 26.04 on
+    # 2026-10-19). T0 stays on ubuntu-latest and is the canary; bump this (and the images job's) after T0 is green on
+    # the new image.
+    runs-on: ubuntu-24.04
+    # Counted from the approval: the APK build and tests, then tagging, signing and publishing.
+    timeout-minutes: 90
     permissions:
       contents: write
       packages: write
-    # Pinned, not ubuntu-latest: a tag push must not silently change OS (ubuntu-latest moves to 26.04 on
-    # 2026-10-19). T0 stays on ubuntu-latest and is the canary; bump this after T0 is green on the new image.
-    runs-on: ubuntu-24.04
     env:
-      # Per-run local tag for the smoked supervisor build (never pushed under this name): unique so a shared
-      # daemon can't swap in another run's image between the smoke and the push that retags it.
-      SUP_IMG: mdmesh-supervisor:smoke-${{ github.run_id }}-${{ github.run_attempt }}
+      # The platforms every image's index must hold (one image each, the images job's matrix), recorded in the signed
+      # manifest as components.platforms: the quick start refuses a host whose platform is not listed.
+      # Keep it the images job's matrix.arch list (linux/<arch> each): the step that joins them reads one digest per entry.
+      PLATFORMS: linux/amd64,linux/arm64
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
@@ -104,15 +200,6 @@ jobs:
           git fetch --force --quiet origin "refs/tags/${REF_NAME}:refs/tags/${REF_NAME}"
           release/changelog-section.sh --check "$REF_NAME" "$GITHUB_SHA" \
             || { echo "::error::${REF_NAME} is not its CHANGELOG.md section on ${GITHUB_SHA} (details above; RELEASING.md)"; exit 1; }
-
-      # Supervisor smoke BEFORE anything is built or pushed (#27): a supervisor that can't start the way
-      # compose runs it must never reach GHCR. The Supervisor image step below pushes this very $SUP_IMG
-      # build. (No step before the final "Move :latest" step touches :latest.)
-      - name: Supervisor image smoke (compose-shaped)
-        run: |
-          docker build -f docker/supervisor.Dockerfile -t "$SUP_IMG" .
-          docker run --rm -w /app "$SUP_IMG" node --test test.js
-          scripts/supervisor-smoke.sh "$SUP_IMG"
 
       # --- Build + sign the release APK (gated by unit tests + R8 lintVital) ---
       - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd  # v4.0.4
@@ -142,63 +229,72 @@ jobs:
           ./gradlew --no-daemon :proto:test :core:test :app:assembleRelease \
             -PmdmBaseUrl=https://mdm.example.com/ \
             -PversionName="$VERSION" -PversionCode="$CODE"
-      - name: Stage APK + compute checksum
+      # The web image's enrollment QR carries the recorded checksum, so the signed APK must have exactly it: another
+      # (a swapped or wrong signing key) fails the release here, before anything is tagged. A real key rotation changes
+      # release/agent-signature-checksum in a reviewed PR first (RELEASING.md).
+      - name: Stage APK + check its signing checksum against the recorded one
         run: |
           cp agent-android/app/build/outputs/apk/release/app-release.apk mdmesh-agent.apk
           CK=$(release/apk-checksum.sh mdmesh-agent.apk)
           [ -n "$CK" ] || { echo "APK signature checksum came out empty — aborting the release"; exit 1; }
+          want=$(release/apk-checksum.sh --recorded)
+          [ "$CK" = "$want" ] || { echo "::error::the signed APK's signing checksum is ${CK}, but release/agent-signature-checksum records ${want}; nothing was published (RELEASING.md)"; exit 1; }
           echo "CK=$CK" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          pattern: digest-*
+          path: ${{ runner.temp }}/digest
+          merge-multiple: true
 
-      # --- Build + push images to GHCR (:VERSION only; :latest moves in the last step) ---
+      # The gate's check again, right before anything is tagged: "Re-run failed jobs" on an older release's run, after a
+      # newer release, must not re-tag its images or move :latest back to them. Reads the tags from origin, not the
+      # shallow checkout.
+      - name: Version is still newer than every earlier release
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          latest=$(git ls-remote --tags --refs origin 'v*' | sed 's#.*refs/tags/##' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            | grep -vx "$REF_NAME" | sort -V | tail -n 1 || true)
+          if [ -n "$latest" ] && [ "$(printf '%s\n%s\n' "$latest" "$REF_NAME" | sort -V | tail -n 1)" != "$REF_NAME" ]; then
+            echo "::error::${REF_NAME} is not newer than the latest release tag ${latest}; nothing was tagged (RELEASING.md)."
+            exit 1
+          fi
+          echo "${REF_NAME} is newer than ${latest:-(no earlier release)}"
+
+      # --- Tag the images on GHCR as :VERSION (:latest moves in the last step) ---
       - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550  # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Server image
-        env:
-          OWNER: ${{ github.repository_owner }}
-          VERSION: ${{ steps.ver.outputs.version }}
-        run: |
-          O=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')   # GHCR repo names must be lowercase
-          IMG="ghcr.io/${O}/mdmesh-server"
-          docker build -f docker/server.Dockerfile -t "$IMG:$VERSION" .
-          # Before the push: the server's JVM, started from this image, runs a JDK without the CVE-2026-114938
-          # (OpenJDK) Base64 bug, or has -XX:-UseBASE64Intrinsics in effect (install/tomcat-setenv.sh).
-          scripts/server-jvm-check.sh --image "$IMG:$VERSION"
-          docker push "$IMG:$VERSION"
-          echo "SERVER_IMG=$IMG:$VERSION" >> "$GITHUB_ENV"
-          D=$(release/image-digest.sh "$IMG:$VERSION")   # its own line, so a failed lookup fails the step
-          echo "SERVER_REF=$IMG@$D" >> "$GITHUB_ENV"
-      - name: Web image (bake release QR checksum/package)
+      # One index per image, holding its linux/amd64 and linux/arm64 builds; docker pulls the host's platform from it.
+      # The manifest pins each index by the digest read back from GHCR (image-digest.sh, which also refuses an index
+      # that isn't exactly the tested builds, one per platform).
+      - name: Join each image's platforms under :VERSION
         env:
           OWNER: ${{ github.repository_owner }}
           VERSION: ${{ steps.ver.outputs.version }}
         run: |
           O=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
-          IMG="ghcr.io/${O}/mdmesh-web"
-          docker build -f docker/web.Dockerfile \
-            --build-arg VITE_AGENT_PACKAGE=com.mdmesh.agent \
-            --build-arg VITE_AGENT_CHECKSUM="$CK" \
-            --build-arg VITE_AGENT_APK_URL=/files/agent.apk \
-            --build-arg VITE_APP_VERSION="$VERSION" \
-            -t "$IMG:$VERSION" .
-          docker push "$IMG:$VERSION"
-          echo "WEB_IMG=$IMG:$VERSION" >> "$GITHUB_ENV"
-          D=$(release/image-digest.sh "$IMG:$VERSION")
-          echo "WEB_REF=$IMG@$D" >> "$GITHUB_ENV"
-      - name: Supervisor image
-        env:
-          OWNER: ${{ github.repository_owner }}
-          VERSION: ${{ steps.ver.outputs.version }}
-        run: |
-          O=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
-          IMG="ghcr.io/${O}/mdmesh-supervisor"
-          # Publish exactly the image the smoke step tested (no rebuild).
-          docker tag "$SUP_IMG" "$IMG:$VERSION"
-          docker push "$IMG:$VERSION"
-          D=$(release/image-digest.sh "$IMG:$VERSION")
-          echo "SUPERVISOR_REF=$IMG@$D" >> "$GITHUB_ENV"
+          IFS=, read -ra plats <<< "$PLATFORMS"
+          for img in server web supervisor; do
+            REPO="ghcr.io/${O}/mdmesh-${img}"
+            srcs=(); tested=()
+            for plat in "${plats[@]}"; do
+              arch=${plat#linux/}
+              f="$RUNNER_TEMP/digest/${img}-${arch}"
+              [ -s "$f" ] || { echo "::error::no ${img} build for ${plat}: keep PLATFORMS and the images job's matrix.arch in step"; exit 1; }
+              d=$(cat "$f")
+              echo "$d" | grep -Eqx 'sha256:[0-9a-f]{64}' || { echo "::error::no digest for ${img} ${plat}"; exit 1; }
+              srcs+=("${REPO}@${d}"); tested+=("${plat}=${d}")
+            done
+            docker buildx imagetools create --tag "${REPO}:${VERSION}" "${srcs[@]}"
+            # The index :VERSION now names must hold exactly the builds the images job tested, one per platform.
+            D=$(release/image-digest.sh "${REPO}:${VERSION}" "${tested[@]}")   # its own line: a failure fails the step
+            echo "${img^^}_REF=${REPO}@${D}" >> "$GITHUB_ENV"
+          done
+          echo "SERVER_IMG=ghcr.io/${O}/mdmesh-server:${VERSION}" >> "$GITHUB_ENV"
+          echo "WEB_IMG=ghcr.io/${O}/mdmesh-web:${VERSION}" >> "$GITHUB_ENV"
       - name: Verify images are publicly pullable (guards against private GHCR packages, #3)
         env:
           OWNER: ${{ github.repository_owner }}
@@ -222,9 +318,9 @@ jobs:
           fi
 
       # --- Manifest: build + sign ---
-      # The manifest pins the three images by the digests read back from GHCR right after each push (*_REF above), and
-      # the quick start's downloads by SHA-256 (release/build-manifest.sh). A 0.5.0+ supervisor and the quick start run
-      # exactly those digests; the :VERSION tags stay in it for older supervisors.
+      # The manifest pins the three images by the index digests read back from GHCR right after each was tagged (*_REF
+      # above), and the quick start's downloads by SHA-256 (release/build-manifest.sh). A 0.5.0+ supervisor and the quick
+      # start run exactly those digests; the :VERSION tags stay in it for older supervisors.
       - name: Build + sign manifest
         env:
           MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
@@ -236,7 +332,7 @@ jobs:
           sudo apt-get update -y && sudo apt-get install -y minisign
           release/build-manifest.sh "$VERSION" stable \
             "$SERVER_IMG" "$WEB_IMG" mdmesh-agent.apk "$CODE" "$CK" "$PROTO" \
-            "$SERVER_REF" "$WEB_REF" "$SUPERVISOR_REF"
+            "$SERVER_REF" "$WEB_REF" "$SUPERVISOR_REF" "$PLATFORMS"
           release/sign-manifest.sh manifest.json
       # The signed manifest's securityReleases (a supervisor reads them to warn an admin who would skip a security
       # release) must be exactly CHANGELOG.md's: every version up to this one with a Security section (RELEASING.md).
@@ -293,9 +389,9 @@ jobs:
       # --- Move :latest LAST, only once the release is pullable, signed and published ---
       # Quick-start installs (*_VERSION=latest, `docker compose pull`) follow :latest, so it must never point
       # at an image whose release failed. Retag registry-side from the already-pushed :VERSION (no rebuild, no
-      # local state). --prefer-index=false is required: buildx defaults to wrapping a single image manifest in a
-      # NEW index, which would give :latest a different digest from :VERSION. With it, the source manifest is
-      # re-pushed as-is, so both tags share one digest — asserted below. Phased to keep a failure as early and
+      # local state). --prefer-index=false re-pushes the source manifest as-is, so both tags share one digest — asserted
+      # below. :VERSION is an index, which buildx copies as-is anyway; without the flag it would wrap a single-image
+      # manifest (a :VERSION tagged by hand) in a NEW index with a different digest. Phased to keep a failure as early and
       # as all-or-nothing as possible: resolve all three :VERSION first, then move all three, then verify all.
       # A red job here leaves the Release published; recover by hand (RELEASING.md), don't re-run the job.
       - name: Move :latest to this release

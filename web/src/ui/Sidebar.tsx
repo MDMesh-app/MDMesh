@@ -5,7 +5,7 @@ import { useMayManageDeployment } from '../auth/useMayManageDeployment';
 import { useTheme } from './theme';
 import { isApplyTerminal, type UpdateStatus } from '../api/updates';
 import { useSupervisor } from '../data/useSupervisor';
-import { applyPhaseLabel, missedSecurity, missedSecurityShort } from '../data/updateStatus';
+import { applyPhaseLabel, blockedShort, missedSecurityShort, updateOffer } from '../data/updateStatus';
 import { ExtensionBoundary } from '../ext/ExtensionBoundary';
 import { useContributions } from '../ext/useContributions';
 import { paths, UPDATES_HREF } from '../routes';
@@ -66,7 +66,21 @@ function UpdateCard({ status, onNavigate }: { status: UpdateStatus | null; onNav
       </a>
     );
   }
-  if (!status.updateAvailable || !status.latest) return null;
+  const offer = updateOffer(status);
+  if (!offer) return null;
+  // Found but not installable here: quiet, unless it leaves security fixes missing (amber, and it says so).
+  if (offer.kind === 'blocked') {
+    return (
+      <Link to={UPDATES_HREF} className="v2-updcard" onClick={onNavigate}>
+        <span className="v2-updcard__title">
+          <span className={cx('v2-updcard__dot', offer.missed.length > 0 ? 'is-warn' : 'is-idle')} aria-hidden="true" />
+          {offer.latest} can&rsquo;t be installed
+        </span>
+        <span className="v2-updcard__text">{blockedShort(status, offer.missed)}</span>
+        <span className="v2-updcard__action">See why</span>
+      </Link>
+    );
+  }
   const how =
     status.applySupported === false
       ? 'Update from the server shell.'
@@ -75,7 +89,7 @@ function UpdateCard({ status, onNavigate }: { status: UpdateStatus | null; onNav
         : 'An admin can apply it.';
   // The update skips over security releases (verified manifest only): amber, and the card says which. Who can apply
   // it, or how, still shows where it isn't this admin's one click.
-  const missed = missedSecurity(status);
+  const missed = offer.missed;
   if (missed.length > 0) {
     return (
       <Link to={UPDATES_HREF} className="v2-updcard" onClick={onNavigate}>

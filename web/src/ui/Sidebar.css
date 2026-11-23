@@ -158,6 +158,10 @@
 .v2 .v2-updcard__dot.is-warn {
   background: var(--warn);
 }
+/* Nothing to act on, nothing healthy to report: a release this server can't install, with no fixes at stake. */
+.v2 .v2-updcard__dot.is-idle {
+  background: var(--muted);
+}
 .v2 .v2-updcard__dot.is-alert {
   background: var(--alert);
 }

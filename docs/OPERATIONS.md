@@ -101,7 +101,9 @@ The hostname prompts take the host alone, with an optional port, such as `mdm.ex
 
 ## Agent APK trust chain
 
-`setup.sh` and the native installer trust the release's agent APK only after three checks pass:
+`setup.sh` and the native installer trust a release's agent APK only after three checks pass (the native installer
+fetches the checkout's own release, or the latest when that isn't published; the updater does the same and keeps
+serving it):
 
 - its `manifest.json` verifies with `minisign` against `release/minisign.pub`;
 - the manifest names that same release;

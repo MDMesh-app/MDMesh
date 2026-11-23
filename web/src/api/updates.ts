@@ -17,6 +17,15 @@ export interface UpdateStatus {
   current: string;
   latest: string | null;
   updateAvailable: boolean;
+  /** Why the newer verified release (`latest`) can't be installed by this updater, which then doesn't offer it, in
+   *  the supervisor's words; `blockedCode` names the cause. Absent from a supervisor before 0.6.0. */
+  blocked?: string | null;
+  blockedCode?: 'platform' | 'owner' | 'digests' | null;
+  /** This updater serves /files/agent.apk (Docker installs); false where a published copy is served (native).
+   *  Absent from a supervisor before 0.6.0. */
+  apkServed?: boolean;
+  /** The platform this updater pulls images for (linux/amd64, linux/arm64). Absent from a supervisor before 0.6.0. */
+  platform?: string;
   verified: boolean;
   channel: string | null;
   checkedAt: number | null;
@@ -29,10 +38,18 @@ export interface UpdateStatus {
   /** False on deployments that can't self-apply (native installs) — hide apply/auto controls.
    *  Absent (older supervisor) means supported. */
   applySupported?: boolean;
-  /** The mirrored agent APK for the latest verified release (for device rollouts), or null. */
-  apk: { version: string; versionCode: number; sha256: string; available: boolean } | null;
-  /** The security releases the offered update skips over (newer than `current`, older than `latest`), oldest first,
-   *  from the verified manifest's securityReleases. Empty when nothing is skipped or the manifest isn't verified;
+  /** The agent APK the updater offers for enrollment and rollouts (see `of`), or null. */
+  apk: {
+    version: string;
+    versionCode: number;
+    sha256: string;
+    available: boolean;
+    /** Whose agent: the running release's, or the latest release's when the running version is unknown (a
+     *  development build). An agent is never offered ahead of a server whose release is known (0.6.0+). */
+    of?: 'latest' | 'running';
+  } | null;
+  /** The security releases the offered update skips over (newer than `current`, older than `latest`; `latest` too
+   *  when it is `blocked`), oldest first, from the verified manifest's securityReleases. Empty when nothing is skipped or the manifest isn't verified;
    *  absent from a supervisor before 0.5.0. */
   missedSecurity?: string[];
   /** Release notes / link / date for the picked release, or null when there's no release. */

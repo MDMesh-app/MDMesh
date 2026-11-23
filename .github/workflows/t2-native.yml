@@ -109,6 +109,11 @@ jobs:
       T2_FROM_REF: ${{ matrix.from-ref || needs.plan.outputs.from-ref }}
       DISTRO: ${{ matrix.distro }}
       SCENARIO: ${{ matrix.scenario }}
+      M2_BUILD: >-
+        ${{ (matrix.scenario == 'fresh' || matrix.scenario == 'update') && 'head'
+            || format('from-{0}', needs.plan.outputs.from-ref) }}
+      # The one cell that installs without the Maven cache (see "Restore the guest's Maven repository").
+      M2_COLD: ${{ github.event_name == 'schedule' && matrix.distro == 'debian-13' && matrix.scenario == 'fresh' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -117,10 +122,42 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
+      # The guest's Maven repository (T2_M2_REPO in tests/native/run.sh): Maven Central rate-limits the runners' shared
+      # IPs (HTTP 429) for longer than Maven's own back-off waits, so the rig seeds the guest from this cache and saves
+      # the guest's repository after a converged install. One entry per distro (their Maven versions differ) and build:
+      # fresh and update build the change only ("head"), upgrade and killed also build the release ("from-<release>").
+      # A new key (a pom change, a release) starts from the closest earlier entry, and is uploaded only when the rig
+      # saved (the marker <dir>.t2-saved). Pull requests start from main's entries, which the nightly run and manual
+      # runs on main write: after a pom change or a release, a manual run on main primes them. The nightly
+      # debian-13 / fresh cell installs cold, as a new VPS does, to catch a dependency gone from its repository.
+      - name: Restore the guest's Maven repository
+        id: m2
+        if: env.M2_COLD != 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/t2-m2
+          key: t2-m2-${{ matrix.distro }}-${{ env.M2_BUILD }}-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            t2-m2-${{ matrix.distro }}-${{ env.M2_BUILD }}-
+            t2-m2-${{ matrix.distro }}-
+
       - name: Run the rig
+        id: rig
         env:
           T2_OUT: ${{ runner.temp }}/t2-out
-        run: tests/native/run.sh "$DISTRO" "$SCENARIO"
+          T2_M2_REPO: ${{ env.M2_COLD != 'true' && format('{0}/t2-m2', runner.temp) || '' }}
+          # An exact hit holds what this build needs already: skip the copy-out.
+          T2_M2_SAVE: ${{ steps.m2.outputs.cache-hit == 'true' && '0' || '1' }}
+        run: |
+          tests/native/run.sh "$DISTRO" "$SCENARIO"
+          if [ -n "$T2_M2_REPO" ] && [ -e "$T2_M2_REPO.t2-saved" ]; then echo "m2-saved=true" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Save the guest's Maven repository
+        if: steps.rig.outputs.m2-saved == 'true' && steps.m2.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/t2-m2
+          key: ${{ steps.m2.outputs.cache-primary-key }}
 
       - name: Summary
         if: always()

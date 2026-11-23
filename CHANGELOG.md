@@ -37,6 +37,9 @@ New
   `onSelect` moves focus itself, so the menu leaves focus there rather than returning it to its trigger.
 
 Fixes
+- Password-recovery and customer-status emails name the product MDMesh when no `rebranding.name` is set, as does the
+  API's own title; they named the upstream product. `/rest/public/logo` answers 404 when no `rebranding.logo` is set, instead
+  of redirecting to an upstream logo.
 - Enrollment keeps its agent through a restart with GitHub down: the updater keeps the signed manifest and agent of
   each release it has run, and checks both again before it serves them. When it has no agent to give new devices
   (GitHub didn't answer yet, or the release's manifest doesn't verify), the Enroll page says so on Docker installs
@@ -87,6 +90,8 @@ Under the hood
   Caddy base by digest. CI refuses a component under a licence outside `docs/licenses/allowed.txt`, or one offered
   under several with no recorded choice ([policy](https://github.com/MDMesh-app/MDMesh/blob/main/docs/licenses/policy.md)).
   The server no longer ships SpotBugs' annotations (LGPL-2.1), which nothing used at runtime.
+- Every file kept from the upstream project that MDMesh changed now says so, and CI checks it
+  ([policy](https://github.com/MDMesh-app/MDMesh/blob/main/docs/licenses/policy.md#files-kept-from-upstream)).
 - Agent protocol 1.12 (additive): the check-in response's `eventsAccepted`, the check-in request's `protocolVersion`
   (now always sent), and the `eventsDropped` event
   ([VERSIONING](https://github.com/MDMesh-app/MDMesh/blob/main/proto/VERSIONING.md)).

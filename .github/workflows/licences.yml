@@ -2,7 +2,9 @@
 # against docs/licenses/allowed.txt wherever CI is set, and T0's server, web and agent entries run
 # scripts/licenses/inventory.py on what they built, so a dependency change is checked there. This workflow checks what
 # no single build sees:
-#   tools      the licence scripts' own tests, on every change (fails)
+#   tools      every file kept from Headwind MDM that MDMesh changed says so, and keeps the upstream header
+#              (scripts/licenses/headers.py, docs/licenses/upstream-files.tsv); and the licence scripts' own tests;
+#              on every change (fails)
 # and, path-filtered:
 #   images     every image and package docker/*.Dockerfile uses is named in docs/licenses/images.md (fails)
 #   inventory  only when the licence policy itself changes (T0 doesn't run for that): builds the WAR, the console and
@@ -50,8 +52,12 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - name: inventory.py's own tests
-        run: tests/licenses/inventory-test.sh
+      - name: Change notices on the files kept from upstream
+        run: scripts/licenses/headers.py check
+      - name: The licence scripts' own tests
+        run: |
+          tests/licenses/headers-test.sh
+          tests/licenses/inventory-test.sh
 
   images:
     needs: paths

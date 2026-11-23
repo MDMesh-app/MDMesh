@@ -78,8 +78,9 @@ edge_site_d() {
     # An import would load a file nobody checked. Caddy's lexer takes any Unicode blank or BOM before it and ends a
     # quoted token at its closing quote: so any non-printable-ASCII bytes before an (optionally quoted) import, and
     # after it a quote, a blank of any kind or the line's end. A heredoc line starting with "import" is refused too.
+    # LC_ALL=C: the range is bytes, whatever the locale (in UTF-8 one a character could be several bytes, or none).
     # shellcheck disable=SC2016  # a literal backtick
-    if grep -Eq '^[^!-~]*["`]?import(["`]|[^!-~]|$)' "$_f"; then
+    if LC_ALL=C grep -Eq '^[^!-~]*["`]?import(["`]|[^!-~]|$)' "$_f"; then
       edge_site_log "site.d/$_n is not loaded: it imports another file, which is not checked"
       EDGE_SITE_SKIPPED=$((EDGE_SITE_SKIPPED + 1)); continue
     fi

@@ -737,7 +737,8 @@ for e in restarting running; do
   : > "$WORK/full.log"; RC=0
   (cd "$WORK/src10" && env -i PATH="$WORK/stubs-full:$PATH" HOME="$WORK" STUB_LOG="$WORK/full.log" STUB_EDGE=$e MDM_EDGE_SETTLE=0 \
     bash ./setup.sh < /dev/null > "$WORK/out/o" 2> "$WORK/out/e") || RC=$?
-  repairs=$(grep -n 'createnewdevices AND' "$WORK/full.log" | head -1 | cut -d: -f1); edge=$(grep -n '^docker inspect ' "$WORK/full.log" | head -1 | cut -d: -f1)
+  repairs=$(grep -n 'createnewdevices AND' "$WORK/full.log" | head -1 | cut -d: -f1 || true)
+  edge=$(grep -n '^docker inspect ' "$WORK/full.log" | head -1 | cut -d: -f1 || true)
   if [ "$e" = running ]; then
     { [ "$RC" = 0 ] && grep -qF '== MDMesh is up ==' "$WORK/out/o"; } || { fail "setup.sh to the end with its edge up does not succeed"; show; }
   else
@@ -844,8 +845,11 @@ D1=$(printf 'a%.0s' {1..64}); D2=$(printf 'b%.0s' {1..64}); D3=$(printf 'c%.0s' 
 } > "$FIX/rel/manifest.json"
 minisign -G -W -p "$FIX/k.pub" -s "$FIX/k.key" > /dev/null
 minisign -S -s "$FIX/k.key" -m "$FIX/rel/manifest.json" -x "$FIX/rel/manifest.json.minisig" > /dev/null
+# The same release as one from before 0.6.0 publishes it: no docker-compose.proxy.yml (STUB_REL=rel-noproxy).
+mkdir -p "$FIX/rel-noproxy"; grep -v '"docker-compose.proxy.yml"' "$FIX/rel/manifest.json" > "$FIX/rel-noproxy/manifest.json"
+minisign -S -s "$FIX/k.key" -m "$FIX/rel-noproxy/manifest.json" -x "$FIX/rel-noproxy/manifest.json.minisig" > /dev/null
 # shellcheck disable=SC2016  # the stub's own variables
-printf '#!/bin/sh\nout=; url=\nwhile [ $# -gt 0 ]; do case "$1" in -o) out=$2; shift ;; https://*) url=$1 ;; esac; shift; done\ncase "$url" in\n  https://github.com/me/fork/releases/download/v0.6.0/*) f="%s/rel/${url##*/}" ;;\n  https://raw.githubusercontent.com/me/fork/v0.6.0/*) f="%s/raw/${url#https://raw.githubusercontent.com/me/fork/v0.6.0/}" ;;\n  *) exit 22 ;;\nesac\n[ -f "$f" ] && cp "$f" "$out"\n' "$FIX" "$FIX" > "$WORK/stubs-rel/curl"
+printf '#!/bin/sh\nout=; url=\nwhile [ $# -gt 0 ]; do case "$1" in -o) out=$2; shift ;; https://*) url=$1 ;; esac; shift; done\ncase "$url" in\n  https://github.com/me/fork/releases/download/v0.6.0/*) f="%s/${STUB_REL:-rel}/${url##*/}" ;;\n  https://raw.githubusercontent.com/me/fork/v0.6.0/*) f="%s/raw/${url#https://raw.githubusercontent.com/me/fork/v0.6.0/}" ;;\n  *) exit 22 ;;\nesac\n[ -f "$f" ] && cp "$f" "$out"\n' "$FIX" "$FIX" > "$WORK/stubs-rel/curl"
 chmod +x "$WORK/stubs-rel/curl"
 qs_env() {  # the .env lines of an unfinished quick start of v0.6.0 of me/fork in domain mode, then any NAME=VALUE overrides
   local l k
@@ -909,18 +913,20 @@ grep -q '/docker compose pull$' "$WORK/docker.log" || { fail "quickstart.sh does
 ok
 # Resumed after its earlier run had seeded the database (it stopped between the seed and the report): the seed doesn't
 # run again, the repairs do, and the admin gets a new temporary password unless they had set their own. A docker stub
-# that answers like a running stack, the database seeded; STUB_ADMIN is what the admin-account query says.
+# that answers like a running stack, the database seeded; STUB_ADMIN is what the admin-account query says (other knobs:
+# STUB_STATE the database's settings/devices count, STUB_REPAIRS the repairs' postcondition, STUB_EDGE the edge).
 mkdir -p "$WORK/stubs-qsfull"
 # shellcheck disable=SC2016  # the stub's own variables
 printf '%s\n' '#!/bin/sh' 'echo "docker $*" >> "$STUB_LOG"' 'case "$*" in' \
   '  ps\ *|"volume ls"*) ;;' \
   '  *"exec -T -u mdmesh server cat"*) echo OK ;;' \
-  '  *psql*"FROM settings)||"*) echo 1/0 ;;' \
-  '  *psql*"passwordreset OR password"*) echo "$STUB_ADMIN" ;;' \
-  '  *psql*"createnewdevices AND"*) echo 1 ;;' \
+  '  *psql*"FROM settings)||"*) echo "${STUB_STATE:-1/0}" ;;' \
+  '  *psql*"SELECT passwordreset FROM users"*) echo "$STUB_ADMIN" ;;' \
+  '  *psql*"createnewdevices AND"*) echo "${STUB_REPAIRS:-1}" ;;' \
   '  *psql*) cat >> "$STUB_LOG.stdin" ;;' \
+  '  "compose up -d") echo "up env MDMESH_BIND=${MDMESH_BIND-unset}" >> "$STUB_LOG" ;;' \
   '  "compose ps -a -q caddy") echo edge1 ;;' \
-  '  "inspect "*) echo "running t0" ;;' \
+  '  "inspect "*) echo "${STUB_EDGE:-running} t0" ;;' \
   'esac' 'exit 0' > "$WORK/stubs-qsfull/docker"
 chmod +x "$WORK/stubs-qsfull/docker"
 for a in t f; do
@@ -941,6 +947,58 @@ for a in t f; do
   fi
   ok
 done
+qs_full() {  # qs_full [NAME=VALUE...]: quickstart.sh in $WORK/qs7 against the running-stack stub
+  : > "$WORK/docker.log.stdin"; : > "$WORK/docker.log"; rm -f -- "$WORK/PWNED"
+  (cd "$WORK/qs7" && env -i PATH="$WORK/stubs-rel:$WORK/stubs-qsfull:$PATH" HOME="$WORK" STUB_LOG="$WORK/docker.log" \
+    STUB_ADMIN=t MDM_EDGE_SETTLE=0 MDMESH_RELEASE_PUBKEY="$(sed -n 2p "$FIX/k.pub")" "$@" bash "$REPO/quickstart.sh" \
+    < /dev/null > "$WORK/out/o" 2> "$WORK/out/e") || true
+}
+qs_unfinished() { qs_dir; qs_env "$@" > "$WORK/qs7/mdmesh/.env"; chmod 600 "$WORK/qs7/mdmesh/.env"; }
+# Stopped in the repairs: not reported up, the marker kept (removed only at the very end), the way back said.
+qs_unfinished; qs_full STUB_REPAIRS=0
+{ ! grep -qF '== MDMesh is up ==' "$WORK/out/o" && [ -e "$WORK/qs7/mdmesh/.quickstart-unfinished" ] && grep -qF 'MDMESH_DIR=' "$WORK/out/e"; } \
+  || { fail "a resume whose repairs fail is reported up, or loses its marker"; show; }
+ok
+# An edge that doesn't stay up: not reported up, the marker kept, and nothing seeded or set before it.
+qs_unfinished; qs_full STUB_EDGE=restarting STUB_STATE=0/0
+{ ! grep -qF '== MDMesh is up ==' "$WORK/out/o" && [ -e "$WORK/qs7/mdmesh/.quickstart-unfinished" ] \
+  && grep -qF 'The edge (caddy) did not stay up' "$WORK/out/e" && ! grep -q 'INSERT INTO\|UPDATE users' "$WORK/docker.log.stdin"; } \
+  || { fail "a quick start whose edge doesn't stay up is reported up, loses its marker, or seeds"; show; }
+ok
+# .env wins over an exported answer that compose also reads (a first run's MDMESH_BIND, fixed in .env since).
+qs_unfinished COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml MDMESH_BIND=127.0.0.1:8082 'TRUSTED_PROXIES="host"' \
+  "MDMESH_SITE_DIR=$WORK/qs7/mdmesh/site.d"
+# Also not stopped by the rules across answers, which a resume doesn't use (0.0.0.0 with the default host).
+qs_full MDMESH_MODE=proxy MDMESH_BIND=0.0.0.0:8081
+{ grep -qxF 'up env MDMESH_BIND=unset' "$WORK/docker.log" && grep -qF '== MDMesh is up ==' "$WORK/out/o"; } \
+  || { fail "an exported MDMESH_BIND reaches compose over .env's, or stops a resume"; show; }
+ok
+# Two at once in one directory (a resume after a hang-up, run twice): the second is refused while the first runs.
+qs_unfinished; flock "$WORK/qs7/mdmesh/.quickstart.lock" sleep 30 & held=$!
+for _ in $(seq 1 50); do ! flock -n "$WORK/qs7/mdmesh/.quickstart.lock" true || { sleep 0.1; continue; }; break; done
+qs_full
+kill "$held" > "$WORK/kill.log" 2>&1 || true; wait "$held" > "$WORK/kill.log" 2>&1 || true
+{ grep -qF 'Another quick start is running in' "$WORK/out/e" && ! grep -q 'compose pull\|compose up' "$WORK/docker.log"; } \
+  || { fail "a second quick start in the same directory is not refused while the first runs"; show; }
+ok
+# A new install over a seeded database is refused, also with RESUMING=1 in the environment (only a resume finishes one).
+mkdir -p "$WORK/qs10"; rm -rf -- "$WORK/qs10/mdmesh"; : > "$WORK/docker.log"; : > "$WORK/docker.log.stdin"
+(cd "$WORK/qs10" && env -i PATH="$WORK/stubs-rel:$WORK/stubs-qsfull:$PATH" HOME="$WORK" STUB_LOG="$WORK/docker.log" STUB_ADMIN=t \
+  MDM_EDGE_SETTLE=0 MDMESH_RELEASE_PUBKEY="$(sed -n 2p "$FIX/k.pub")" RESUMING=1 MDMESH_NONINTERACTIVE=1 MDMESH_MODE=domain \
+  MDMESH_HOST=mdm.example.com MDMESH_REPO=me/fork MDMESH_IMAGE_OWNER=me MDMESH_VERSION=0.6.0 bash "$REPO/quickstart.sh" \
+  < /dev/null > "$WORK/out/o" 2> "$WORK/out/e") || true
+{ grep -qF 'This database is already seeded' "$WORK/out/e" && ! grep -q 'UPDATE users' "$WORK/docker.log.stdin"; } \
+  || { fail "a new quick start over a seeded database is not refused"; show; }
+ok
+# Behind your own proxy with a release that has no proxy mode (its manifest lists no docker-compose.proxy.yml):
+# refused before anything is written.
+rm -rf -- "$WORK/qs10/mdmesh"; : > "$WORK/docker.log"
+(cd "$WORK/qs10" && env -i PATH="$WORK/stubs-rel:$WORK/stubs-qsfull:$PATH" HOME="$WORK" STUB_LOG="$WORK/docker.log" STUB_REL=rel-noproxy \
+  MDMESH_RELEASE_PUBKEY="$(sed -n 2p "$FIX/k.pub")" MDMESH_NONINTERACTIVE=1 MDMESH_MODE=proxy MDMESH_HOST=mdm.example.com \
+  MDMESH_REPO=me/fork MDMESH_IMAGE_OWNER=me MDMESH_VERSION=0.6.0 bash "$REPO/quickstart.sh" < /dev/null > "$WORK/out/o" 2> "$WORK/out/e") || true
+{ grep -qF 'has no proxy mode' "$WORK/out/e" && [ ! -e "$WORK/qs10/mdmesh/.env" ] && [ ! -e "$WORK/qs10/mdmesh/.quickstart-unfinished" ]; } \
+  || { fail "proxy mode with a release that has none is not refused before .env"; show; }
+ok
 # A login umask of 0002 (Debian and Ubuntu's default for a regular user): a new quick start still makes its directory
 # writable by this user only. A path that already exists and others may write (an install directory made by hand under
 # that umask, a file in it, its .env) is refused with the chmod to run, never made private and then trusted.
@@ -1062,5 +1120,5 @@ if [ -e "$WORK/stubs.called" ]; then fail "a dry run ran a command that changes 
 TREE=$(git -c safe.directory='*' -C "$REPO" describe --always --dirty 2>&1) || TREE='?'
 TREE="$REPO at $TREE"
 if [ "$FAILS" != 0 ]; then echo "installer answers: $FAILS failure(s) ($TREE)" >&2; exit 1; fi
-if [ "$CHECKS" -lt 597 ]; then echo "installer answers: only $CHECKS checks ran, expected at least 597 ($TREE)" >&2; exit 1; fi
+if [ "$CHECKS" -lt 627 ]; then echo "installer answers: only $CHECKS checks ran, expected at least 627 ($TREE)" >&2; exit 1; fi
 echo "installer answers: all $CHECKS checks passed ($TREE)"

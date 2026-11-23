@@ -366,12 +366,18 @@ _mdm_ipv4() {
   done
   [ "$n" = 4 ]
 }
-# _mdm_ipv6 ADDR: ADDR (no brackets) looks like an IPv6 address: hex digits and ":", at least two ":", at most one "::".
-# IPv4-mapped addresses (::ffff:…, or with a dotted IPv4 part) are refused: written as IPv6 they don't match the IPv4
-# peers they mean, so use the IPv4 address. (Not checked further: whatever reads it next refuses a wrong one.)
+# _mdm_ipv6 ADDR: ADDR (no brackets) is an IPv6 address: 8 groups of 1-4 hex digits, or fewer with one "::". IPv4-mapped
+# ones (::ffff:…, or a dotted part) are refused: they don't match the IPv4 peers they mean.
 _mdm_ipv6() {
-  case "$1" in ''|*[!${_MDM_HEX}:]*|*:::*|*::*::*|::[Ff][Ff][Ff][Ff]:*|0:0:0:0:0:[Ff][Ff][Ff][Ff]:*) return 1 ;; *:*:*) return 0 ;; esac
-  return 1
+  local r=$1 p g=0 d=0
+  case "$1" in ''|*[!${_MDM_HEX}:]*|*:::*|*::*::*|:[!:]*|*[!:]:|::[Ff][Ff][Ff][Ff]:*|0:0:0:0:0:[Ff][Ff][Ff][Ff]:*) return 1 ;; *::*) d=1 ;; esac
+  while [ -n "$r" ]; do
+    p=${r%%:*}; if [ "$p" = "$r" ]; then r=''; else r=${r#*:}; fi
+    [ -n "$p" ] || continue
+    [ "${#p}" -le 4 ] || return 1
+    g=$((g + 1))
+  done
+  if [ "$d" = 1 ]; then [ "$g" -le 7 ]; else [ "$g" -eq 8 ]; fi
 }
 # _mdm_bind_ok IP:PORT: an address to listen on: an IPv4 address or an [IPv6] one, then :port (1-65535).
 _mdm_bind_ok() {
@@ -943,7 +949,7 @@ _mode_env() { grep -E "^$1=" "${ENV_FILE:-/project/.env}" 2>/dev/null | head -1 
 
 # The only arguments: one hosting mode, which answers the first question. Nothing else runs before the answers are
 # loaded (the tunnel token would be in its environment), so this only takes note.
-MODE_FLAG=''
+MODE_FLAG=''; RESUMING=0
 for a in "$@"; do
   case "$a" in
     --tunnel|--domain|--proxy)
@@ -964,7 +970,8 @@ mdm_answer tunnel-token TUNNEL_TOKEN tunnel-token MDMESH_TUNNEL_TOKEN
 mdm_answer acme-email ACME_EMAIL email MDMESH_ACME_EMAIL
 mdm_answer bind PROXY_BIND bind MDMESH_BIND
 mdm_answer trusted-proxies PROXY_TRUSTED proxies MDMESH_TRUSTED_PROXIES
-mdm_mode_check_answers
+# The rules across answers, for a new install: a resume ignores the answers (it uses its .env).
+[ -f "${MDMESH_DIR:-mdmesh}/.quickstart-unfinished" ] || mdm_mode_check_answers
 # Behind your own proxy needs a release from 0.6.0 on: one named in advance is refused now, before anything happens.
 if mdm_given mode && [ "$MODE" = 3 ] && [ -n "$(ENV_FILE=/nonexistent COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml mode_problem "${MDMESH_VERSION#v}")" ]; then
   _mdm_answer_fail "MDMESH_VERSION=${MDMESH_VERSION}: behind your own proxy came in 0.6.0, so install 0.6.0 or later, or pick another mode."
@@ -1012,7 +1019,7 @@ if { [ -e .env ] || [ -L .env ]; } && [ ! -e .quickstart-unfinished ]; then qs_l
 # /tmp, say) is refused, so they can't plant a .env, a compose file or db.sh, or swap a verified file before it runs.
 # A path that already exists and others may write is refused too, never made private and then trusted: someone may
 # have changed it while it was open. (What this run creates is private from the start: umask 022 above.)
-for _p in . install install/lib install/sql .env .quickstart-unfinished $MDM_QUICKSTART_FILES docker-compose.yml site.d; do
+for _p in . install install/lib install/sql .env .quickstart-unfinished .quickstart.lock $MDM_QUICKSTART_FILES docker-compose.yml site.d; do
   [ -e "$_p" ] || [ -L "$_p" ] || continue
   _open=$(find "$_p" -prune \( -perm -020 -o -perm -002 \) -print 2>/dev/null)
   if [ -L "$_p" ] || [ -z "$(find "$_p" -prune \( -user "$EUID" -o -user 0 \) -print 2>/dev/null)" ] || { [ -n "$_open" ] && [ ! -O "$_p" ]; }; then
@@ -1026,6 +1033,17 @@ for _p in . install install/lib install/sql .env .quickstart-unfinished $MDM_QUI
     exit 1
   fi
 done
+# One quick start at a time here: two resumes would each set, and show, an admin password.
+if [ -n "$(command -v flock || true)" ]; then
+  exec 9>> .quickstart.lock
+  flock -n 9 || { err "Another quick start is running in $(pwd): let it finish. Nothing was changed."; exit 1; }
+else   # no flock (macOS): the running one's PID, refused while it lives
+  _pid=$(cat .quickstart.lock 2>&1) || _pid=''
+  case "$_pid" in ''|*[!0-9]*) ;; *)
+    if _k=$(kill -0 "$_pid" 2>&1); then err "Another quick start is running in $(pwd): let it finish. Nothing was changed."; exit 1; fi ;;
+  esac
+  echo "$$" > .quickstart.lock
+fi
 RESUME_HINT="Fix it, then run the quick start again with MDMESH_DIR=$(pwd): it finishes this install with the same .env. Keep .env: the database has its password."
 # verify_release: RELEASE of GH_REPO, checked against its signed manifest (see "What the quick start trusts" above):
 # the signature, the version, and the image digests under IMAGE_OWNER. Sets MANIFEST, SERVER_TAG, WEB_TAG,
@@ -1176,13 +1194,12 @@ resume_install() {
   finish_install
 }
 
-# qs_admin_after_seed: a resumed install whose earlier run seeded the database and then stopped (between the seed and
-# its admin password, in the repairs, or before it reported): that run's password was never shown. So unless the admin
-# has since set one of their own (no first-login change pending, and not Headwind's default md5('admin')), it gets a
-# new temporary one, which a first login must change (as a fresh seed's). Shown with ADMIN_SHOWN=1; else 0.
+# qs_admin_after_seed: a resumed install whose earlier run seeded the database and then stopped: that run's password
+# was never shown. Unless the admin has set their own since (the seed's first-login change is no longer pending), it
+# gets a new temporary one, as a fresh seed's. Shown with ADMIN_SHOWN=1; else 0.
 qs_admin_after_seed() {
   local st vars
-  st=$(mdm_psql -c "SELECT passwordreset OR password = '21232f297a57a5a743894a0e4a801fc3' FROM users WHERE login='admin'") \
+  st=$(mdm_psql -c "SELECT passwordreset FROM users WHERE login='admin'") \
     || { err "Could not read the admin account."; return 1; }
   case "$st" in
     f) ADMIN_SHOWN=0; return 0 ;;
@@ -1198,6 +1215,11 @@ qs_admin_after_seed() {
 # written; a run that stopped after that (.quickstart-unfinished is still there) is resumed with it, keeping .env:
 # the database volume already has its password.
 finish_install() {
+  # docker compose prefers the environment to .env: the keys .env sets reach it from .env only (an exported
+  # MDMESH_BIND from the first run must not override the one fixed in .env since).
+  local k
+  # shellcheck disable=SC2163  # unexporting the variable named k
+  while IFS= read -r k; do export -n "$k"; done < <(sed -n 's/^\([A-Z][A-Z0-9_]*\)=.*/\1/p' .env)
   say "Pulling images…"
   docker compose pull || { err "Could not pull the v${RELEASE} images from ghcr.io/${IMAGE_OWNER} (pinned by digest in .env). Has a release been published? (to cut one, see RELEASING.md)"; err "$RESUME_HINT"; exit 1; }
   # The init marker the wait below reads is on the server's data volume, and the server writes it only when it is absent.

@@ -1,0 +1,15 @@
+{
+  "app.notFound.empty": {
+    "defaultMessage": "No page here"
+  },
+  "app.notFound.home": {
+    "defaultMessage": "Go to the Overview",
+    "description": "Button back to the Overview page"
+  },
+  "app.notFound.subtitle": {
+    "defaultMessage": "There is nothing at this address. Check the link, or start from the Overview."
+  },
+  "app.notFound.title": {
+    "defaultMessage": "Page not found"
+  }
+}

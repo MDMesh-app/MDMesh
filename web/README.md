@@ -53,6 +53,33 @@ A fork adds to the console in `src/extensions/<id>/` and to the server in `plugi
 `npm run dev` also serves a component gallery at `/_gallery`, behind sign-in like every console page (production
 builds include it only with `VITE_GALLERY=1`).
 
+## Translatable text
+
+Console text is written as [react-intl](https://formatjs.github.io/docs/react-intl) messages, with an explicit id and
+the English beside it in the code:
+
+```tsx
+const messages = defineMessages({
+  title: { id: 'devices.list.title', defaultMessage: 'Devices' },
+});
+<PageHeader title={intl.formatMessage(messages.title)} />            // a string prop (useIntl())
+<FormattedMessage id="devices.list.empty" defaultMessage="No devices yet" />   // JSX text
+```
+
+Ids are `area.topic.purpose` and never change with the wording. Plurals and variables use ICU
+(`{count, plural, one {# device} other {# devices}}`), not string concatenation. A destructive action's message gets a
+`description` starting `DESTRUCTIVE:`, so translators and reviewers see it.
+
+- `npm run i18n:extract` writes `src/i18n/locales/en.json`, the source for translators. Commit it with the change;
+  `npm test` fails while it is out of date, on a message without an id, and on a translation that adds ids or changes
+  a message's placeholders. A translation with messages missing passes: the locale is `partial` and shows those in
+  English.
+- `npm test` also counts the English written straight into the UI, per file (`src/i18n/literals.test.ts`). A file may
+  not gain any. When a change turns text into messages, `npm run i18n:baseline` lowers the counts in
+  `src/i18n/literals-baseline.json`; commit that too.
+- `npm run i18n:pseudo`, then `localStorage.setItem('mdmesh-locale', 'en-XA')` in the dev console's browser, shows
+  every message accented and padded; text that stays plain English isn't a message yet. Remove the key to go back.
+
 ## How the dev server reaches the API
 
 Sign-in is session-cookie based (`JSESSIONID`), so the console has to be same-origin with the API. The Vite dev

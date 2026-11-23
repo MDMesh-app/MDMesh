@@ -192,6 +192,7 @@ export interface DeviceView {
     info?: {
         imei?: string;
     };
+    reportedImeis?: string[];
     phone?: string;
     publicIp?: string;
     serial?: string;

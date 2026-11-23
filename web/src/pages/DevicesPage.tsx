@@ -302,7 +302,7 @@ export function DevicesPage() {
         if (type !== 'all' && kind(d) !== type) return false;
         if (dupOnly && dupOf(d) <= 1) return false;
         if (textFilter) {
-          const hay = [d.number, d.description, d.serial, d.imei, d.info?.imei, d.phone, configName(d), ...(d.groups ?? []).map((g) => g.name)]
+          const hay = [d.number, d.description, d.serial, d.imei, d.info?.imei, ...(d.reportedImeis ?? []), d.phone, configName(d), ...(d.groups ?? []).map((g) => g.name)]
             .filter(Boolean)
             .join(' ')
             .toLowerCase();

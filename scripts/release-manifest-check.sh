@@ -168,7 +168,7 @@ if len(checked) != 1 or len(shortcut) != 1:
     sys.exit(f"DEPLOY.md: expected one install block and one shortcut, found {len(checked)} and {len(shortcut)}")
 keys = re.findall(r"-P (\S+)", checked[0])
 if keys != [key]: sys.exit(f"install block key {keys} is not release/minisign.pub's {key}")
-one_liner = "bash <(curl -fsSL https://github.com/MDMesh-app/MDMesh/releases/latest/download/quickstart.sh)\n"
+one_liner = "bash <(curl -fsSL https://github.com/Keidevk/MDMesh/releases/latest/download/quickstart.sh)\n"
 readme = [b for b in bash_blocks("README.md") if "quickstart.sh" in b]
 if readme != [one_liner]:
     sys.exit(f"README.md: expected one quick-start block, exactly {one_liner.strip()!r}; found {readme}")

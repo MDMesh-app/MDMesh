@@ -35,7 +35,7 @@ only then runs the script with `MDMESH_VERSION` set to that release, so it insta
   for f in quickstart.sh manifest.json manifest.json.minisig; do
     [ -n "$V" ] && curl -fsSL -o "$d/$f" "$R/download/v$V/$f" || V=
   done
-  [ -n "$V" ] && minisign -V -m "$d/manifest.json" -P RWQbf0pIhddaWnDsFknIG4X325wHR05pUxEQJmuuQRdBlQm3zi8/Eqcd &&
+  [ -n "$V" ] && minisign -V -m "$d/manifest.json" -P RWTFlaRrcyyC46YDQ0UT/APfBdgCCLYH1Rwsj80UYTDIwXDxfEIpuIn5 &&
     grep -qxF "  \"version\": \"$V\"," "$d/manifest.json" &&
     grep -qF "\"quickstart.sh\": \"$(sha256sum "$d/quickstart.sh" | cut -d' ' -f1)\"" "$d/manifest.json" ||
     { echo "Not running quickstart.sh: a download or check failed (see above). Nothing was installed." >&2; exit 1; }

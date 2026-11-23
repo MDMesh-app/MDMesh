@@ -27,7 +27,7 @@ services:
       retries: 20
 
   server:
-    image: ghcr.io/${IMAGE_OWNER:-mdmesh-app}/mdmesh-server:${SERVER_VERSION:-latest}
+    image: ghcr.io/${IMAGE_OWNER:-keidevk}/mdmesh-server:${SERVER_VERSION:-latest}
     restart: unless-stopped
     depends_on:
       postgres:
@@ -59,7 +59,7 @@ services:
       - mdmeshdata:/opt/mdmesh
 
   caddy:
-    image: ghcr.io/${IMAGE_OWNER:-mdmesh-app}/mdmesh-web:${WEB_VERSION:-latest}
+    image: ghcr.io/${IMAGE_OWNER:-keidevk}/mdmesh-web:${WEB_VERSION:-latest}
     restart: unless-stopped
     depends_on:
       - server
@@ -78,7 +78,7 @@ services:
       - caddy_config:/config
 
   supervisor:
-    image: ghcr.io/${IMAGE_OWNER:-mdmesh-app}/mdmesh-supervisor:${SUPERVISOR_VERSION:-latest}
+    image: ghcr.io/${IMAGE_OWNER:-keidevk}/mdmesh-supervisor:${SUPERVISOR_VERSION:-latest}
     restart: unless-stopped
     environment:
       GITHUB_REPO: ${GITHUB_REPO:-}

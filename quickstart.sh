@@ -19,8 +19,8 @@ set -euo pipefail
 # it for this script and its children.
 unset CDPATH
 
-REPO="MDMesh-app/MDMesh"
-IMAGE_OWNER_DEFAULT="mdmesh-app"
+REPO="Keidevk/MDMesh"
+IMAGE_OWNER_DEFAULT="keidevk"
 
 say()  { printf '\033[1;36m%s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33m%s\033[0m\n' "$*"; }
@@ -46,7 +46,7 @@ latest_release() {
 # copy could change the key too. Its SHA-256 is in its release's signed manifest (files), so an operator can check it
 # before running it (DEPLOY.md). A fork with its own signing key sets MDMESH_RELEASE_PUBKEY to the key line (line 2) of
 # its release/minisign.pub.
-MDM_RELEASE_PUBKEY_DEFAULT="RWQbf0pIhddaWnDsFknIG4X325wHR05pUxEQJmuuQRdBlQm3zi8/Eqcd"
+MDM_RELEASE_PUBKEY_DEFAULT="RWTFlaRrcyyC46YDQ0UT/APfBdgCCLYH1Rwsj80UYTDIwXDxfEIpuIn5"
 
 # mdm_openssl_can_verify: succeeds when this host's openssl can check a minisign signature: `pkeyutl -rawin` (Ed25519
 # over raw data, OpenSSL 3.0+; 1.1.1 has no -rawin) and BLAKE2b-512.

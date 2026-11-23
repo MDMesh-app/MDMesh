@@ -7,7 +7,7 @@ security issue has a Security section, and only such a release has one. Feature 
 weeks; patch releases (0.x.y) only for a security fix or something broken in the field. Each PR adds its line under
 Unreleased.
 
-## Unreleased
+## v0.6.0 — 2026-11-23
 
 Upgrading
 - On its first start the server deletes the commands, state, events and locations of devices deleted before this

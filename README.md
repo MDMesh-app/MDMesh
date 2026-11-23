@@ -91,7 +91,7 @@ On an x86_64 Linux host with Docker, Docker Compose v2, `curl`, `openssl` 3.0+ (
 and 443 open:
 
 ```bash
-bash <(curl -fsSL https://github.com/MDMesh-app/MDMesh/releases/latest/download/quickstart.sh)
+bash <(curl -fsSL https://github.com/Keidevk/MDMesh/releases/latest/download/quickstart.sh)
 ```
 
 To check `quickstart.sh` against the signed release before it runs, use the

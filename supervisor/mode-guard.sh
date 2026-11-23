@@ -26,6 +26,16 @@ mode_problem() {
       echo "TRUSTED_PROXIES in .env still says host (left from the proxy mode), which ${v}'s edge can't read: it would not start. Set TRUSTED_PROXIES= in .env (docs/UPGRADING.md, Changing the hosting mode), then try again. Nothing was changed." ;;
   esac
 }
-# _mode_env KEY: KEY's value in .env, without quotes.
-_mode_env() { grep -E "^$1=" "${ENV_FILE:-/project/.env}" 2>/dev/null | head -1 | cut -d= -f2- | tr -d "\"'\r"; }
+# _mode_env KEY: KEY's value in .env as compose reads it: quoted, the text between the quotes; else up to a " # comment".
+_mode_env() {
+  local f=${ENV_FILE:-/project/.env} v
+  [ -f "$f" ] && [ -r "$f" ] || return 0
+  v=$(grep -E "^$1=" "$f" | head -1 | cut -d= -f2- | tr -d '\r')
+  case "$v" in
+    \"*) v=${v#\"}; v=${v%%\"*} ;;
+    \'*) v=${v#\'}; v=${v%%\'*} ;;
+    *) v=${v%%[[:space:]]#*} ;;
+  esac
+  printf '%s\n' "$v"
+}
 # <<< mode-guard.sh functions <<<

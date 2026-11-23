@@ -12,7 +12,10 @@ healthy() {
     sleep 5
   done
   [ "$up" = 1 ] || return 1
-  edge_steady
+  edge_steady || return 1
+  # And the server still answers, after the edge's settle time.
+  local out
+  out=$(curl -fsS -m 5 "$HEALTH_URL" 2>&1) || { errln "the server stopped answering $HEALTH_URL (${out:0:200})"; return 1; }
 }
 
 # edge_steady: the edge container is running, and still the same run EDGE_SETTLE seconds later (default 5; Docker

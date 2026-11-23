@@ -159,7 +159,9 @@ one address, `127.0.0.1:8080` by default. It asks:
   your own `INPUT` rules. For example, with eth0 the public interface:
   `iptables -I DOCKER-USER -i eth0 -p tcp -m conntrack --ctorigdstport 8080 ! -s <your proxy's IP> -j DROP`, with
   your `MDMESH_BIND` port in place of 8080, and the same with `ip6tables` for an IPv6 `MDMESH_BIND`
-  ([Docker and iptables](https://docs.docker.com/engine/network/packet-filtering-firewalls/)).
+  ([Docker and iptables](https://docs.docker.com/engine/network/packet-filtering-firewalls/)). With Docker's nftables
+  firewall backend there is no `DOCKER-USER` chain: filter in your own nftables table, and check from another machine
+  that only your proxy reaches the port.
 - **Your proxy's address, as MDMesh sees it** (`TRUSTED_PROXIES`, default `host`). MDMesh believes `X-Forwarded-For`
   (the client's address, for sign-in limits, the audit log and a device's public IP) and `X-Forwarded-Proto` from
   these addresses only. `host` means a proxy on this machine: Docker delivers its connections from the stack
@@ -249,15 +251,16 @@ example.
 
 What anyone else could change is never loaded, since your rules reach every visitor:
 
-- `site.d` must be a real directory (not a link), yours or root's, that nobody else may write. Otherwise the
-  installers leave it unconnected, saying why, and connect it on a later run once it is.
+- `site.d` must be a real directory (not a link), yours or root's, that nobody else may write. Otherwise the quick
+  start stops, saying so (as for any path in its install directory), and `./setup.sh` leaves it unconnected, saying
+  why, and connects it on a later run once it is.
 - Each `*.caddy` file in it must be a regular file (not a link), owned by `site.d`'s owner or root, and writable by its
   owner only: `chmod 644`. The edge checks every file when it starts and leaves out any other, saying why in
   `docker compose logs caddy`; it starts without it (and without all of them if `site.d` itself is open to others).
   Under rootless Docker or userns-remap, a file of the host's root shows up as uid 65534 and is left out: make the
   files yours.
 - Each file stands alone: it is pasted into MDMesh's site, inside its route, so it can't define a snippet
-  (`(name) { … }`) or `import` another file (only the `*.caddy` files are loaded, from the checked copy). Repeat a
+  (`(name) { … }`), and one with an `import` line is left out (the file it imports wouldn't be checked). Repeat a
   shared directive in each file, or put one that applies to every request in a file of its own.
 - On Windows (WSL2, Docker Desktop), keep the install directory inside the Linux filesystem (`~/…`), not on a Windows
   drive (`/mnt/c/…`): files there show as writable by everyone, so every rule would be left out.

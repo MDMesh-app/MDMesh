@@ -209,6 +209,10 @@ setup() {
   local imgs=()
   for n in server web supervisor; do imgs+=("ghcr.io/local/mdmesh-$n:$NEW_TAG"); done
   imgs+=(postgres:14 nginx:1.26-alpine httpd:2.4-alpine "$CADDY_IMAGE" "$TRAEFIK")
+  # Each one here first (a clean host has pulled none of the public ones yet).
+  for img in "${imgs[@]}"; do
+    docker image inspect "$img" >>"$LOG" 2>&1 || docker pull -q "$img" >>"$LOG" 2>&1 || { echo "could not pull $img"; return 1; }
+  done
   docker save "${imgs[@]}" | docker exec -i "$DIND" docker load >>"$LOG" 2>&1 || return 1
   echo "-- releases 0.6.0 and 0.6.1 (this branch's images, each its own digest) in the registry"
   push 0.6.0 || return 1

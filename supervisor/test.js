@@ -990,7 +990,9 @@ case "$*" in
 esac
 exit 0
 `, { mode: 0o755 });
-  fs.writeFileSync(path.join(bin, 'curl'), '#!/usr/bin/env bash\n[ "${STUB_CURL_FAIL:-0}" = 1 ] && exit 7\nexit 0\n', { mode: 0o755 });
+  // STUB_CURL_OK_TIMES=N: the first N calls succeed, then it fails (a server that stops answering).
+  fs.writeFileSync(path.join(bin, 'curl'), '#!/usr/bin/env bash\n[ "${STUB_CURL_FAIL:-0}" = 1 ] && exit 7\n'
+    + 'if [ -n "${STUB_CURL_OK_TIMES:-}" ]; then n=0; [ ! -f "$STUB_LOG.curl" ] || n=$(cat "$STUB_LOG.curl"); n=$((n + 1)); echo "$n" > "$STUB_LOG.curl"; [ "$n" -le "$STUB_CURL_OK_TIMES" ] || exit 7; fi\nexit 0\n', { mode: 0o755 });
   return bin;
 }
 /** A deploy dir (project/.env) + backups dir + stubs under a fresh temp dir. HEALTH_TIMEOUT is 5, not 1: healthy()
@@ -1105,8 +1107,9 @@ t.test('behind your own proxy, apply.sh and rollback.sh refuse a release before 
     // Its own mode allows 0.6.1, and the same .env without the overlay allows 0.5.9.
     a.equal(runScript('apply.sh', applyArgs('0.6.1'), d.env).code, 0);
   } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
-  // The overlay named as a hand edit might (./, or a path ending in it) counts the same.
-  for (const cf of ['docker-compose.yml:./docker-compose.proxy.yml', '/srv/mdmesh/docker-compose.yml:/srv/mdmesh/docker-compose.proxy.yml']) {
+  // The overlay named as a hand edit might (./, a path ending in it, with a comment after it, or quoted) counts the same.
+  for (const cf of ['docker-compose.yml:./docker-compose.proxy.yml', '/srv/mdmesh/docker-compose.yml:/srv/mdmesh/docker-compose.proxy.yml',
+    'docker-compose.yml:docker-compose.proxy.yml # behind our nginx', '"docker-compose.yml:docker-compose.proxy.yml" # ok']) {
     d = makeDeploy(`SERVER_VERSION=0.6.0\nWEB_VERSION=0.6.0\nCURRENT_VERSION=0.6.0\nCOMPOSE_FILE=${cf}\n`);
     try {
       const r = runScript('apply.sh', applyArgs('0.5.9'), d.env);
@@ -1441,6 +1444,17 @@ t.test('apply.sh and rollback.sh: healthy means the edge stays up too; an edge t
     a.notEqual(r.code, 0, r.all);
     a.match(r.err, /^ERR the edge \(caddy\) did not stay up/m);
     a.match(r.out, /PHASE failed/);
+  } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+});
+
+t.test('apply.sh: healthy means the server still answers after the edge settles', () => {
+  const fs = require('fs');
+  const d = makeDeploy('SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n');
+  try {
+    const r = runScript('apply.sh', applyArgs('0.0.2'), { ...d.env, STUB_CURL_OK_TIMES: '1', HEALTH_TIMEOUT: '5' });
+    a.notEqual(r.code, 0, r.all);
+    a.match(r.err, /^ERR the server stopped answering /m);
+    a.match(r.out, /PHASE rollback/);
   } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
 });
 

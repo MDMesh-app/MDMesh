@@ -246,12 +246,16 @@ setup_dind() {
     docker:28.5.2-dind dockerd --host=unix:///var/run/docker.sock >>"$LOG" || return 1
   for _ in $(seq 1 30); do in_dind docker info >>"$LOG" 2>&1 && break; sleep 2; done
   echo "-- loading images"
-  local imgs=() n t
+  local imgs=() n t img
   for n in server web supervisor; do
     for t in "$NEW_TAG" "$OLD_TAG"; do imgs+=("ghcr.io/local/mdmesh-$n:$t"); done
     imgs+=("ghcr.io/mdmesh-app/mdmesh-$n:0.4.0")
   done
   imgs+=(postgres:14)
+  # Each one here first (a clean host has pulled none of the public ones yet).
+  for img in "${imgs[@]}"; do
+    docker image inspect "$img" >>"$LOG" 2>&1 || docker pull -q "$img" >>"$LOG" 2>&1 || { echo "could not pull $img"; return 1; }
+  done
   docker save "${imgs[@]}" | docker exec -i "$DIND" docker load >>"$LOG" 2>&1 || return 1
   echo "-- releases in the registry"
   push 0.4.0 ghcr.io/mdmesh-app/mdmesh 0.4.0 || return 1

@@ -75,6 +75,11 @@ edge_site_d() {
       edge_site_log "site.d/$_n is not loaded: other users may change it (it must be site.d's owner's or root's, chmod 644; under rootless Docker or userns-remap a file of the host's root shows as uid 65534: make it yours)"
       EDGE_SITE_SKIPPED=$((EDGE_SITE_SKIPPED + 1)); continue
     fi
+    # An import would load a file nobody checked.
+    if grep -Eq '^[[:space:]]*import([[:space:]]|$)' "$_f"; then
+      edge_site_log "site.d/$_n is not loaded: it imports another file, which is not checked"
+      EDGE_SITE_SKIPPED=$((EDGE_SITE_SKIPPED + 1)); continue
+    fi
     if cat "$_f" > "$2/$_n" && chmod 644 "$2/$_n"; then :; else
       rm -f "$2/$_n" || true
       edge_site_log "site.d/$_n is not loaded: it can't be read"; EDGE_SITE_SKIPPED=$((EDGE_SITE_SKIPPED + 1))

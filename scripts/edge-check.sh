@@ -105,9 +105,11 @@ mkdir -p /sd && chmod 755 /sd && chown 1000:1000 /sd
 mk good 1000 644; mk root 0 644; mk open 1000 666; mk group 1000 664; mk stranger 12345 644
 ln -s /sd/good.caddy /sd/link.caddy
 cp /sd/good.caddy /sd/.hidden.caddy; chown 1000 /sd/.hidden.caddy
+printf "header X-Shared \"1\"\n" > /sd/shared.conf; chmod 666 /sd/shared.conf
+printf "import /etc/caddy/site.d/shared.conf\n" > /sd/imports.caddy; chown 1000 /sd/imports.caddy; chmod 644 /sd/imports.caddy
 loaded() { [ "$(ls "$EDGE_SITE_D" | tr "\n" " ")" = "$1" ]; }
 logged() { grep -qF "$1" /tmp/log; }
-adapted() { caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile > /tmp/adapted 2>&1 && grep -qi x-good /tmp/adapted && ! grep -qi x-open /tmp/adapted; }
+adapted() { caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile > /tmp/adapted 2>&1 && grep -qi x-good /tmp/adapted && ! grep -qi x-open /tmp/adapted && ! grep -qi x-shared /tmp/adapted; }
 valid() { caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile > /tmp/valid 2>&1; }
 EDGE_SITE_SRC=/sd; export EDGE_SITE_SRC
 . /edge-peers.sh 2> /tmp/log
@@ -115,6 +117,7 @@ t "only the files their owner alone can change are loaded (good, root)" loaded "
 for n in open group stranger; do t "$n.caddy left out, saying why" logged "site.d/$n.caddy is not loaded: other users may change it"; done
 t "link.caddy left out, saying why" logged "site.d/link.caddy is not loaded: it is a link"
 t ".hidden.caddy left out, saying why" logged "site.d/.hidden.caddy is not loaded: a hidden file"
+t "imports.caddy left out, saying why" logged "site.d/imports.caddy is not loaded: it imports another file"
 t "the edge imports the loaded ones only" adapted
 t "the edge configuration is valid" valid
 chmod 777 /sd
@@ -156,8 +159,8 @@ mk new 644
 bare env MDMESH_RAW_SITE_D=1 caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile > /tmp/raw 2>&1
 t "MDMESH_RAW_SITE_D=1 adapt checks a file added since the start" grep -qi x-new /tmp/raw
 t "  through the same check as the start (the open file stays out)" sh -c "! grep -qi x-open /tmp/raw"
-bare env MDMESH_RAW_SITE_D=1 caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile > /tmp/reload 2>&1; cfg
-t "MDMESH_RAW_SITE_D=1 reload still loads the copy checked at start only" sh -c "! grep -qi x-open /tmp/cfg && ! grep -qi x-new /tmp/cfg"
+bare env MDMESH_RAW_SITE_D=1 caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile > /tmp/reload 2>&1; rrc=$?; cfg
+t "MDMESH_RAW_SITE_D=1 reload still loads the copy checked at start only" sh -c "[ $rrc = 0 ] && grep -qi x-good /tmp/cfg && ! grep -qi x-open /tmp/cfg && ! grep -qi x-new /tmp/cfg"
 caddy stop > /dev/null 2>&1
 mv /run/mdmesh-edge.env /run/saved.env
 bare caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile > /tmp/nosave 2>&1
@@ -246,6 +249,8 @@ t 198.51.100.7 /rest/private/users/current 403 "outside the office: the console 
 t 203.0.113.7 /rest/private/users/current 200 "inside the office: the console API reaches the server"
 t 198.51.100.7 /rest/public/name 200 "outside the office: other paths are untouched"
 t 203.0.113.7 /rest/x/a 200 "a handle of your own with a path answers its paths"
+got=$(curl -s -m 5 --interface 203.0.113.7 http://127.0.0.1/rest/x/a)
+if [ "$got" = own ]; then echo "  ok   DEPLOY.md site.d example: the answer is that handle'"'"'s (own)"; else echo "  FAIL DEPLOY.md site.d example: /rest/x/a answered \"$got\", not the handle'"'"'s own"; F=$((F + 1)); fi
 t 203.0.113.7 "/rest/x/a;jsessionid=1" 400 "a handle of your own with a path does not get ahead of the path check"
 t 203.0.113.7 "/rest/x/a%2fb" 400 "an encoded / under your own handle is refused too"
 exit "$F"'
@@ -369,13 +374,16 @@ ot() {  # ot NAME WANT-CA(right|wrong): run the front, then a request through it
   docker run -d --name "$OT_FRONT" --network "$OT_NET" -v "$OT_D/front/certs:/etc/letsencrypt/live/mdm.example.com:ro" \
     $conf >> "$OT_D/docker.log" 2>&1 || { echo "000 the proxy did not start"; return 0; }
   local ip _; ip="$(docker inspect -f "{{(index .NetworkSettings.Networks \"$OT_NET\").IPAddress}}" "$OT_FRONT")"
+  # Prints "CODE BODY" (the body's first line): the console's stand-in page says "spa".
+  local code
   for _ in $(seq 1 40); do
-    out="$(docker run --rm --network "$OT_NET" curlimages/curl:8.23.0 -sk -m 5 -o /tmp/body -w '%{http_code}' \
+    out="$(docker run --rm --network "$OT_NET" curlimages/curl:8.23.0 -sk -m 5 -w '\n%{http_code}' \
       --resolve "mdm.example.com:443:$ip" https://mdm.example.com/ 2>> "$OT_D/docker.log")" || true
+    code=${out##*$'\n'}
     # 404: Traefik answers it until its file provider has loaded the route.
-    case "$out" in 000*|404|'') sleep 0.5 ;; *) break ;; esac
+    case "$code" in 000*|404|'') sleep 0.5 ;; *) break ;; esac
   done
-  echo "$out"
+  echo "$code $(printf '%s\n' "${out%$'\n'*}" | head -1)"
 }
 # The images first: a pull's progress (docker run's, on stderr) must never mix into a probe's answer.
 OT_TRAEFIK=traefik:${E2E_TRAEFIK:-v3.3.7}
@@ -417,12 +425,13 @@ sed -i -E '/^        servers:$/,/^          - url: http:\/\/127/d; s#^( +)\# (se
 chmod -R a+rX "$OT_D/front"
 for name in nginx apache caddy traefik; do
   r="$(ot "$name" right)"
-  if [ "$r" = 200 ]; then pass "docs/proxies $name, HTTPS origin with MDMesh's CA: the console answers ($r)"
-  else fail "docs/proxies $name, HTTPS origin with MDMesh's CA: the console answers (got $r)"
+  if [ "$r" = "200 spa" ]; then pass "docs/proxies $name, HTTPS origin with MDMesh's CA: the console answers ($r)"
+  else fail "docs/proxies $name, HTTPS origin with MDMesh's CA: the console answers (got $r, want 200 spa)"
     docker logs --tail 5 "$OT_FRONT" 2>&1 | sed 's/^/         /'; fi
+  # Refused means the proxy's own error for the edge (5xx); a proxy that never started proves nothing.
   r="$(ot "$name" wrong)"
-  case "$r" in 200) fail "docs/proxies $name, HTTPS origin with another CA: the edge's certificate is not checked (200)" ;;
-    *) pass "docs/proxies $name, HTTPS origin with another CA: refused ($r)" ;; esac
+  case "$r" in 5[0-9][0-9]*) pass "docs/proxies $name, HTTPS origin with another CA: refused ($r)" ;;
+    *) fail "docs/proxies $name, HTTPS origin with another CA: not refused by the proxy (got $r)" ;; esac
 done
 cleanup_ot
 

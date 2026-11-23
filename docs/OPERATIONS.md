@@ -562,7 +562,9 @@ It never touches apt packages, your proxy or the git checkout.
 ## Security notes
 
 - Each install generates its own secrets. `.env` is mode 600.
-- Traffic uses TLS: on Docker through Cloudflare, Caddy or your own proxy, on native through your own proxy. Docker never publishes
+- Traffic uses TLS: on Docker through Cloudflare, Caddy or your own proxy, on native through your own proxy. Behind
+  your own proxy, the hop from it to MDMesh's edge is plain HTTP unless `MDMESH_ORIGIN_TLS=1`
+  ([DEPLOY](../DEPLOY.md#3-behind-your-own-proxy)). Docker never publishes
   the database and server ports. The agent speaks HTTPS only.
 - The admin must set a new password at first sign-in. A database the server created without an installer run has an
   admin no password works for, until an installer (or `scripts/dev-seed.sh`) sets one.

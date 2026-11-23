@@ -29,7 +29,7 @@
     <artifactId>root</artifactId>
     <packaging>pom</packaging>
     <version>0.1.0</version>
-    <name>Headwind MDM</name>
+    <name>MDMesh</name>
 
     <modules>
         <module>common</module>

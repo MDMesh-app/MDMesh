@@ -2,7 +2,7 @@
   "breadcrumb.plugin.push.main": "Push",
   "plugin.push.localization.key.name": "Push",
   "plugin.push.tab.title": "Cấu hình Push",
-  "plugin.push.notice": "Plugin này yêu cầu cài đặt mobile agent (Push được cập nhật bởi Headwind MDM)",
+  "plugin.push.notice": "Plugin này yêu cầu cài đặt mobile agent (Push được cập nhật bởi MDMesh)",
   "plugin.push.configuration": "Cấu hình",
   "plugin.push.configuration.choice": "Vui lòng chọn cấu hình để bắt đầu thiết lập Push",
   "plugin.push.remove": "Xóa Push khác",

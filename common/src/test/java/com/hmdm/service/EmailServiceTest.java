@@ -3,8 +3,13 @@
  */
 package com.hmdm.service;
 
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 
+import java.io.File;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.Properties;
 
 import static org.junit.Assert.assertEquals;
@@ -13,6 +18,9 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 public class EmailServiceTest {
+
+    @Rule
+    public TemporaryFolder tmp = new TemporaryFolder();
 
     private static EmailService service() {
         return new EmailService("smtp.example.com", 587, false, true, "", "", "mdm", "pw", "mdm@example.com",
@@ -74,5 +82,18 @@ public class EmailServiceTest {
     public void aPlainTextMailToAnAddressListIsRefused() {
         // Refused before any connection is tried, so this needs no mail server.
         assertFalse(service().sendPlainTextEmail("a@example.com, b@example.com", "s", "b"));
+    }
+
+    @Test
+    public void mailsNameTheProductMDMeshWhenNoRebrandingNameIsSet() throws Exception {
+        File subj = tmp.newFile("recovery_subj_en.txt");
+        Files.write(subj.toPath(), "${appName} password recovery".getBytes(StandardCharsets.UTF_8));
+        String template = subj.getPath().replace("_en.txt", "_LANGUAGE_.txt");
+        EmailService unbranded = new EmailService("smtp.example.com", 587, false, true, "", "", "mdm", "pw",
+                "mdm@example.com", "", "https://mdm.example.com", template, "");
+        assertEquals("MDMesh password recovery", unbranded.getRecoveryEmailSubj("en"));
+        EmailService branded = new EmailService("smtp.example.com", 587, false, true, "", "", "mdm", "pw",
+                "mdm@example.com", "Acme Devices", "https://mdm.example.com", template, "");
+        assertEquals("Acme Devices password recovery", branded.getRecoveryEmailSubj("en"));
     }
 }

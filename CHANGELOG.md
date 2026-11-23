@@ -82,8 +82,10 @@ Fixes
   finish the update.
 - An organization whose settings had two-factor sign-in turned on (possible only in a database carried over from
   Headwind MDM, or edited by hand) couldn't sign in at all, in the console or through the API. MDMesh has no second
-  sign-in step yet, so the unused setting is removed and those accounts sign in with their password. The settings and
-  user answers no longer include `twoFactor`; a request that still sends it is accepted, and the field ignored.
+  sign-in step yet, so the unused setting is removed. Those accounts now sign in with their password alone (no
+  authenticator code is asked for) and get API tokens again, which v0.3.3 had stopped. Two-factor sign-in for each
+  user is planned for a later release. The settings and user answers no longer include `twoFactor`; a request that
+  still sends it is accepted, and the field ignored.
 
 Under the hood
 - CI builds the agent's instrumented tests (they still run only by hand, on an emulator).

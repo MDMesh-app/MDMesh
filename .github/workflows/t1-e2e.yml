@@ -96,11 +96,17 @@ jobs:
           DC=(docker compose --env-file docker/dev.env)
           PSQL=("${DC[@]}" exec -T postgres psql -U mdmesh -d mdmesh -v ON_ERROR_STOP=1 -tA)
           "${PSQL[@]}" -c "ALTER TABLE settings ADD COLUMN twoFactor BOOLEAN NOT NULL DEFAULT false" \
-            -c "UPDATE settings SET twoFactor = true" \
             -c "DELETE FROM databasechangelog WHERE id = '26.11.23-settings-twoFactor-drop'"
+          set_rows=$("${PSQL[@]}" -c "WITH s AS (UPDATE settings SET twoFactor = true RETURNING 1) SELECT count(*) FROM s")
+          [ "$set_rows" -gt 0 ] || { echo "::error::no settings row to set twoFactor on"; exit 1; }
           "${DC[@]}" restart server
           API="http://$("${DC[@]}" port server 8080)"
-          for _ in $(seq 1 60); do curl -fs -o "$RUNNER_TEMP/options" -m 5 "$API/rest/public/auth/options" && break; sleep 5; done
+          up=
+          for _ in $(seq 1 36); do
+            curl -fs -o "$RUNNER_TEMP/options" -m 5 "$API/rest/public/auth/options" && { up=1; break; }
+            sleep 5
+          done
+          [ -n "$up" ] || { echo "::error::the server didn't come back within 3 minutes of its restart"; exit 1; }
           test "$("${PSQL[@]}" -c "SELECT count(*) FROM information_schema.columns
             WHERE table_name = 'settings' AND column_name = 'twofactor'")" = 0
           MD5=$(printf '%s' "$ADMIN_PW" | md5sum | awk '{print toupper($1)}')

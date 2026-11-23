@@ -228,7 +228,9 @@ exited or credentials cleared while the older agent ran.
   itself, with its 180-second limit.
 - **The unused two-factor setting is removed.** MDMesh has no second sign-in step, so an organization whose settings
   had two-factor sign-in on (a database carried over from Headwind MDM, or edited by hand) couldn't sign in at all.
-  On its first start the server drops the setting, and those accounts sign in with their password. **Roll back**
+  On its first start the server drops the setting. Those accounts then sign in with their password alone (no
+  authenticator code is asked for), and get API tokens again. Two-factor sign-in for each user is planned for a later
+  release. **Roll back**
   restores the old database, setting included, so such an organization can't sign in again until it updates again.
 - **Going back to 0.5.1 without a restore** (`--allow-downgrade`, or a native install's WAR swapped back) works: 0.5.1
   starts on the new database unchanged. It keeps the links, so in 0.5.1 too, deleting a device deletes its history and

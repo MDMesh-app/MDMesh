@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Spacing for the status screen and the kiosk launcher: v2's 4/8/12/16/20/24/32 scale (web/src/tokens.css). -->
+<resources>
+    <!-- Screen side margin: 16dp on phones, 24dp from 600dp wide (values-sw600dp). -->
+    <dimen name="mdm_gutter">16dp</dimen>
+    <dimen name="mdm_space_4">4dp</dimen>
+    <dimen name="mdm_space_8">8dp</dimen>
+    <dimen name="mdm_space_12">12dp</dimen>
+    <dimen name="mdm_space_16">16dp</dimen>
+    <dimen name="mdm_space_24">24dp</dimen>
+    <!-- Card padding on phones (v2 20x24 card, one step tighter): vertical, horizontal. -->
+    <dimen name="mdm_card_padding_v">16dp</dimen>
+    <dimen name="mdm_card_padding_h">20dp</dimen>
+    <dimen name="mdm_callout_icon">16dp</dimen>
+    <!-- The status screen's column stops growing here (tablets, landscape). -->
+    <dimen name="mdm_content_max_width">560dp</dimen>
+</resources>

@@ -1,8 +1,15 @@
 #!/usr/bin/env bash
-# MDMesh quick start — deploy from PUBLISHED images, no clone and no build. Needs only Docker.
-# Run from anywhere (the `bash <(...)` form keeps the prompts interactive):
+# MDMesh quick start — deploy from PUBLISHED images, no clone and no build. Needs Docker, curl and
+# OpenSSL 3.0+ (or older OpenSSL plus minisign) to check the release signature.
+# Run from anywhere (the `bash <(...)` form keeps the prompts interactive). The README runs the latest release's copy
+# (a release asset); DEPLOY.md, Option A, checks that copy against the signed manifest before running it, and its
+# unchecked shortcut runs the copy at the latest release's tag:
 #
-#   bash <(curl -fsSL https://raw.githubusercontent.com/MDMesh-app/MDMesh/main/quickstart.sh)
+#   bash <(curl -fsSL https://github.com/MDMesh-app/MDMesh/releases/latest/download/quickstart.sh)
+#
+# Each question can be answered in advance with an environment variable (MDMESH_MODE, MDMESH_HOST, …) or an answers
+# file (MDMESH_ANSWERS); MDMESH_NONINTERACTIVE=1 never asks, MDMESH_DRY_RUN=1 only checks the answers and prints the
+# plan. The variables are listed in install/options.json and DEPLOY.md.
 #
 # It creates ./mdmesh, downloads the pull-only compose + seed, generates secrets, brings the stack
 # up, and prints the console URL + a temporary admin password (you set your own on first login).
@@ -13,7 +20,6 @@ set -euo pipefail
 unset CDPATH
 
 REPO="MDMesh-app/MDMesh"
-BRANCH="main"   # where the compose + seed come from only when the release can't be resolved (see below)
 IMAGE_OWNER_DEFAULT="mdmesh-app"
 
 say()  { printf '\033[1;36m%s\033[0m\n' "$*"; }
@@ -31,9 +37,103 @@ latest_release() {
   if [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.+-]+)?$ ]]; then printf '%s\n' "${tag#v}"; fi
 }
 
+# >>> release verification >>>
+# What the quick start trusts, and why. It installs only a published release whose manifest.json carries a valid minisign
+# signature by the release key below, a copy of release/minisign.pub's key line (CI fails if the two differ). The signed
+# manifest pins the server, web and supervisor images by digest and every file downloaded below by SHA-256, so a release
+# asset, a tag or a raw file changed by anyone without the private signing key is refused. The trust root is this script
+# itself, with the key in it, served over HTTPS as a release asset or from a release tag: whoever can change that
+# copy could change the key too. Its SHA-256 is in its release's signed manifest (files), so an operator can check it
+# before running it (DEPLOY.md). A fork with its own signing key sets MDMESH_RELEASE_PUBKEY to the key line (line 2) of
+# its release/minisign.pub.
+MDM_RELEASE_PUBKEY_DEFAULT="RWQbf0pIhddaWnDsFknIG4X325wHR05pUxEQJmuuQRdBlQm3zi8/Eqcd"
+
+# mdm_openssl_can_verify: succeeds when this host's openssl can check a minisign signature: `pkeyutl -rawin` (Ed25519
+# over raw data, OpenSSL 3.0+; 1.1.1 has no -rawin) and BLAKE2b-512.
+mdm_openssl_can_verify() {
+  case "$(openssl pkeyutl -help 2>&1)" in *-rawin*) ;; *) return 1 ;; esac
+  openssl dgst -blake2b512 < /dev/null > /dev/null 2>&1
+}
+
+# mdm_verify_manifest PUBKEY FILE SIG: checks SIG against FILE and PUBKEY (see mdm_minisign_verify) with openssl when it
+# can (mdm_openssl_can_verify), else with minisign when it is installed. Returns 0 when the signature is valid, 1 when it
+# is not (why on stderr), 2 when this host has neither tool, so nothing was checked.
+mdm_verify_manifest() {
+  local pk=$1 file=$2 sig=$3 d rc
+  if mdm_openssl_can_verify; then mdm_minisign_verify "$pk" "$file" "$sig"; return; fi
+  command -v minisign > /dev/null 2>&1 || return 2
+  d=$(mktemp -d) || return 1
+  printf 'untrusted comment: MDMesh release key\n%s\n' "$pk" > "$d/k.pub"
+  minisign -V -q -p "$d/k.pub" -m "$file" -x "$sig" > /dev/null 2>&1; rc=$?
+  [ "$rc" = 0 ] || echo "minisign: the signature does not verify with the release key" >&2
+  rm -f -- "$d/k.pub"; rmdir -- "$d" 2>/dev/null || true
+  [ "$rc" = 0 ]
+}
+
+# mdm_minisign_verify PUBKEY FILE SIG: succeeds when SIG (a .minisig file) is a valid minisign signature of FILE by the
+# public key PUBKEY (the base64 key line of a minisign .pub file), its trusted comment included. Needs only openssl
+# 3.0+ (Ed25519 with -rawin, and BLAKE2b-512), so no minisign binary on the host; mdm_verify_manifest probes for that
+# first. Only the prehashed format ("ED", the default since minisign 0.10 and what the release workflow makes) is
+# accepted. Prints why to stderr when it fails.
+mdm_minisign_verify() {
+  local pk=$1 file=$2 sig=$3 d tc ok=1
+  d=$(mktemp -d) || return 1
+  # Ed25519 public key as DER (SubjectPublicKeyInfo): the fixed 12-byte prefix, then the 32 key bytes.
+  if ! printf '%s' "$pk" | openssl base64 -d -A > "$d/pk" 2>/dev/null || [ "$(wc -c < "$d/pk")" -ne 42 ] \
+     || [ "$(head -c 2 "$d/pk")" != Ed ]; then
+    echo "the release public key is not a minisign Ed25519 key" >&2
+  elif ! sed -n 2p "$sig" | openssl base64 -d -A > "$d/sig" 2>/dev/null || [ "$(wc -c < "$d/sig")" -ne 74 ]; then
+    echo "the signature file is not a minisign signature" >&2
+  elif [ "$(head -c 2 "$d/sig")" != ED ]; then
+    echo "the signature is not in minisign's prehashed format (ED)" >&2
+  elif ! { head -c 10 "$d/pk" | tail -c 8 > "$d/kid.pk"; head -c 10 "$d/sig" | tail -c 8 > "$d/kid.sig"; cmp -s "$d/kid.pk" "$d/kid.sig"; }; then
+    echo "the manifest is signed by another key than the release key" >&2
+  else
+    printf '\x30\x2a\x30\x05\x06\x03\x2b\x65\x70\x03\x21\x00' > "$d/pk.der"; tail -c 32 "$d/pk" >> "$d/pk.der"
+    tail -c 64 "$d/sig" > "$d/sig.bin"
+    tc=$(sed -n 3p "$sig")
+    # The file's BLAKE2b-512 is what is signed; the global signature covers the signature + the trusted comment.
+    if ! openssl dgst -blake2b512 -binary "$file" > "$d/hash" 2>/dev/null \
+       || ! openssl pkeyutl -verify -pubin -keyform DER -inkey "$d/pk.der" -rawin -in "$d/hash" -sigfile "$d/sig.bin" >/dev/null 2>&1; then
+      echo "the signature does not verify" >&2
+    elif case "$tc" in 'trusted comment: '*) false ;; *) true ;; esac; then
+      echo "the signature has no trusted comment" >&2
+    elif ! { cat "$d/sig.bin"; printf '%s' "${tc#trusted comment: }"; } > "$d/global" \
+       || ! sed -n 4p "$sig" | openssl base64 -d -A > "$d/global.sig" 2>/dev/null \
+       || ! openssl pkeyutl -verify -pubin -keyform DER -inkey "$d/pk.der" -rawin -in "$d/global" -sigfile "$d/global.sig" >/dev/null 2>&1; then
+      echo "the signature's trusted comment does not verify" >&2
+    else
+      ok=0
+    fi
+  fi
+  rm -f -- "$d/pk" "$d/pk.der" "$d/sig" "$d/sig.bin" "$d/kid.pk" "$d/kid.sig" "$d/hash" "$d/global" "$d/global.sig"
+  rmdir -- "$d" 2>/dev/null || true
+  return "$ok"
+}
+
+# mdm_manifest_field FILE KEY VALUE_ERE: the value of the one line `"KEY": "VALUE"` in the manifest FILE (written by
+# release/build-manifest.sh with one key per line) whose value matches VALUE_ERE in full. Fails, printing nothing, when no
+# line or more than one matches. Read only from a manifest whose signature verified.
+mdm_manifest_field() {
+  local hits
+  hits=$(LC_ALL=C grep -E "^[[:space:]]*\"${2//./\\.}\": \"(${3})\",?\$" "$1" || true)
+  [ -n "$hits" ] && [ "$(printf '%s\n' "$hits" | wc -l)" -eq 1 ] || return 1
+  printf '%s\n' "$hits" | sed -E 's/^[[:space:]]*"[^"]*": "([^"]*)",?$/\1/'
+}
+MDM_SHA256_ERE='[0123456789abcdef]{64}'
+MDM_IMAGE_REF_ERE='[abcdefghijklmnopqrstuvwxyz0123456789._/-]+@sha256:[0123456789abcdef]{64}'
+
+# The files downloaded from the release's tag, as named in the manifest's "files" (release/build-manifest.sh).
+MDM_QUICKSTART_FILES="docker-compose.release.yml docker-compose.domain.yml install/sql/hmdm_init.en.sql install/sql/post_seed.sql install/lib/db.sh"
+
+# mdm_sha256 FILE: its SHA-256 in lowercase hex.
+mdm_sha256() { openssl dgst -sha256 -r "$1" | cut -d' ' -f1; }
+# <<< release verification <<<
+
 # The BASE_URL rule of install/lib/url.sh (see there for what it accepts and why it is an allowlist). A verbatim copy
-# of the functions between the markers, not a download: this script runs from main but fetches install/lib from the
-# release it installs, which may predate url.sh (see db.sh below). CI (t0-fast, edge entry) fails if the copies differ.
+# of the functions between the markers, not a download: this script may be newer than the release it installs
+# (MDMESH_VERSION, or a copy from main) and fetches install/lib from that release, which may predate url.sh (see db.sh
+# below). CI (t0-fast, edge entry) fails if the copies differ.
 # >>> url.sh functions (quickstart.sh keeps a verbatim copy) >>>
 # The character sets, spelled out: a range such as [A-Za-z0-9] follows the locale's collation, and under en_US.UTF-8
 # bash matches thousands of non-ASCII letters with it (https://ｅxample.com would pass).
@@ -122,6 +222,285 @@ mdm_check_host() {
 }
 # <<< url.sh functions <<<
 
+# Answers given in advance (see install/lib/answers.sh and install/options.json): a verbatim copy of the functions
+# between the markers, for the same reason as url.sh's above. CI (t0-fast, edge entry) fails if the copies differ.
+# >>> answers.sh functions (quickstart.sh keeps a verbatim copy) >>>
+# The keys an answers file may set: every answer and setting in install/options.json (CI checks the two match).
+_MDM_ANSWER_KEYS=" MDMESH_MODE MDMESH_REPO MDMESH_IMAGE_OWNER MDMESH_HOST MDMESH_TUNNEL_TOKEN MDMESH_ACME_EMAIL MDMESH_BASE_URL MDMESH_HTTP_PORT MDMESH_REPLACE_DATA MDMESH_ASSUME_YES MDMESH_DIR MDMESH_VERSION MDMESH_RELEASE_PUBKEY MDMESH_NONINTERACTIVE MDMESH_DRY_RUN "
+_MDM_SECRET_KEYS=" MDMESH_TUNNEL_TOKEN "
+_MDM_ANS_GIVEN=" "       # ids of the questions answered in advance
+_MDM_ANS_FROM_FILE=" "   # keys set from the answers file
+_mdm_answer_fail() { printf 'MDMesh installer: %s\n' "$*" >&2; exit 1; }
+
+# mdm_answers_load: reads the answers file MDMESH_ANSWERS names, if any (keys already in the environment are left
+# alone), then checks MDMESH_NONINTERACTIVE and MDMESH_DRY_RUN. Stops the installer on any error. xtrace stays off
+# while it runs (the file may hold a secret).
+mdm_answers_load() { local _mdm_x=$-; set +x; _mdm_answers_load; case "$_mdm_x" in *x*) set -x ;; esac; }
+# _mdm_private_file FILE: FILE belongs to this user (or root) and nobody else may read, write or run it. Fails closed:
+# without find, or when it fails, the file does not count as private.
+_mdm_private_file() {
+  local r
+  command -v find >/dev/null 2>&1 || return 1
+  r=$(find "$1" -prune \( -user "$EUID" -o -user 0 \) ! -perm -040 ! -perm -020 ! -perm -010 ! -perm -004 \
+        ! -perm -002 ! -perm -001 -print 2>/dev/null) || return 1
+  [ "$r" = "$1" ]
+}
+_mdm_answers_load() {
+  local f=${MDMESH_ANSWERS-} line key val n=0 seen=" " v
+  # Secrets leave the environment first, before this starts any program (find, wc): they stay shell variables, so
+  # mdm_answer still reads them, but no child sees them.
+  # shellcheck disable=SC2163  # the variable named by $key
+  for key in $_MDM_SECRET_KEYS; do [ -z "${!key+x}" ] || export -n "$key"; done
+  if [ -n "$f" ]; then
+    case "$f" in /*) ;; *) _mdm_answer_fail "MDMESH_ANSWERS must be an absolute path (e.g. \$PWD/answers.env)." ;; esac
+    { [ -f "$f" ] && [ -r "$f" ]; } || _mdm_answer_fail "MDMESH_ANSWERS: $f is not a readable file."
+    [ "$(wc -c < "$f")" -le 65536 ] || _mdm_answer_fail "MDMESH_ANSWERS: $f is larger than 64 KiB."
+    # Read only when private (before any line of it is read).
+    _mdm_private_file "$f" || _mdm_answer_fail "MDMESH_ANSWERS: $f must belong to you (or root) and be private to you: chmod 600 $f (under sudo, also chown root $f). It was not read."
+    while IFS= read -r line || [ -n "$line" ]; do
+      n=$((n + 1)); line=${line%$'\r'}
+      case "$line" in ''|'#'*) continue ;; *=*) ;; *) _mdm_answer_fail "$f, line $n: expected KEY=VALUE." ;; esac
+      key=${line%%=*}; val=${line#*=}
+      case "$_MDM_ANSWER_KEYS" in
+        *" $key "*) ;;
+        *) # Named only when it looks like a variable name: a line holding a bare token (abc…=) must not be echoed.
+           case "$key" in
+             ''|*[!ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_]*) key='' ;;
+             *) [ "${#key}" -le 64 ] || key='' ;;
+           esac
+           _mdm_answer_fail "$f, line $n: unknown key${key:+ $key} (the keys are in install/options.json)." ;;
+      esac
+      case "$seen" in *" $key "*) _mdm_answer_fail "$f, line $n: $key is set twice." ;; esac
+      seen="$seen$key "
+      case "$val" in \"*\"|\'*\') val=${val#?}; val=${val%?} ;; esac
+      if [ -z "${!key+x}" ]; then printf -v "$key" '%s' "$val"; _MDM_ANS_FROM_FILE="$_MDM_ANS_FROM_FILE$key "; fi
+    done < "$f"
+  fi
+  for key in MDMESH_NONINTERACTIVE MDMESH_DRY_RUN; do
+    v=${!key-}
+    case "$v" in ''|0|1) ;; *) _mdm_answer_fail "$key must be 1 or 0." ;; esac
+  done
+}
+
+# _mdm_answer_check RULE: checks the value in _MDM_V by RULE. On success it may normalise _MDM_V (the value used) and
+# sets _MDM_SHOW (the value shown); otherwise it sets _MDM_WHY (empty when url.sh has already said why on stderr).
+_mdm_answer_check() {
+  local v=$_MDM_V u l d
+  _MDM_WHY=''; _MDM_SHOW=$v
+  case "$1" in
+    mode)
+      case "$v" in tunnel|1) _MDM_V=1; _MDM_SHOW=tunnel ;; domain|2) _MDM_V=2; _MDM_SHOW=domain ;;
+        *) _MDM_WHY='must be tunnel or domain' ;; esac ;;
+    hostname)
+      u="https://$v"
+      { mdm_check_host _MDM_V && mdm_check_base_url u; } || _MDM_WHY=' ' ;;
+    base-url)
+      mdm_check_base_url _MDM_V || _MDM_WHY=' '
+      _MDM_SHOW=$_MDM_V ;;
+    tunnel-token)
+      _MDM_SHOW='(hidden)'
+      case "$v" in
+        '') _MDM_WHY='is empty' ;;
+        *[!${_MDM_ALNUM}._=+/-]*) _MDM_WHY='is not a Cloudflare Tunnel token (only letters, digits and . _ = + / -)' ;;
+      esac ;;
+    email)
+      l=${v%%@*}; d=${v#*@}
+      case "$v" in
+        '') ;;
+        *@*@*|*[!${_MDM_ALNUM}._%+@-]*) _MDM_WHY='is not an email address (name@example.com)' ;;
+        *@*) case "$l" in '') _MDM_WHY='is not an email address (name@example.com)' ;; esac
+             case "$d" in *[!${_MDM_ALNUM}.-]*|.*|*.|*..*|'') _MDM_WHY='is not an email address (name@example.com)' ;;
+               *.*) ;; *) _MDM_WHY='is not an email address (name@example.com)' ;; esac ;;
+        *) _MDM_WHY='is not an email address (name@example.com)' ;;
+      esac ;;
+    github-repo)
+      case "$v" in
+        '') ;;
+        */*/*|*[!${_MDM_ALNUM}._/-]*) _MDM_WHY='must be owner/name (e.g. MDMesh-app/MDMesh)' ;;
+        */*) case "${v%%/*}" in ''|.|..) _MDM_WHY='must be owner/name (e.g. MDMesh-app/MDMesh)' ;; esac
+             case "${v#*/}" in ''|.|..) _MDM_WHY='must be owner/name (e.g. MDMesh-app/MDMesh)' ;; esac ;;
+        *) _MDM_WHY='must be owner/name (e.g. MDMesh-app/MDMesh)' ;;
+      esac ;;
+    image-owner)
+      case "$v" in
+        '') ;;
+        [!abcdefghijklmnopqrstuvwxyz0123456789]*|*[!abcdefghijklmnopqrstuvwxyz0123456789._-]*)
+          _MDM_WHY='must be a GHCR owner in lowercase (letters, digits and . _ -, starting with a letter or digit)' ;;
+      esac ;;
+    port)
+      u=$v
+      while case "$u" in 0?*) true ;; *) false ;; esac; do u=${u#0}; done   # leading zeros, as the port question takes them
+      case "$u" in
+        '') ;;
+        *[!${_MDM_DIGITS}]*) _MDM_WHY='must be a number' ;;
+        *) { [ "${#u}" -le 5 ] && [ "$u" -ge 1 ] && [ "$u" -le 65535 ]; } || _MDM_WHY='must be 1-65535' ;;
+      esac ;;
+    yes-no)
+      case "$v" in yes|no) ;; *) _MDM_WHY='must be yes or no' ;; esac ;;
+    flag)
+      case "$v" in 0|1) ;; *) _MDM_WHY='must be 1 or 0' ;; esac ;;
+    *) _mdm_answer_fail "internal: unknown answer rule $1" ;;
+  esac
+}
+
+# _mdm_answer_rule_has_default RULE: an empty or missing answer means the question's default (Enter at the prompt).
+_mdm_answer_rule_has_default() { case "$1" in github-repo|image-owner|port|email|yes-no) return 0 ;; esac; return 1; }
+
+# mdm_answer ID VAR RULE ENV [ALIAS]: if ENV (or ALIAS, the installer's older name for it) is set, in the environment or
+# the answers file, checks its value by RULE and stores it in VAR: question ID is then answered. Stops the installer when
+# the value is invalid, or when ENV and ALIAS are both set to different values. An empty value answers the GitHub repo,
+# image owner and Let's Encrypt email questions (the default, as Enter at the prompt); for a base URL, the HTTP port,
+# Keep/Erase and the confirmation it counts as not set, as it always did for the native installer.
+# For a secret, xtrace is off throughout, ENV (and ALIAS) is then unset, and VAR is not exported: no child process sees it.
+mdm_answer() { local _mdm_x=$-; set +x; _mdm_answer "$@"; case "$_mdm_x" in *x*) set -x ;; esac; }
+_mdm_answer() {
+  local id=$1 var=$2 rule=$3 env=$4 alias=${5-} k src=''
+  k=${1//-/_}
+  printf -v "_MDM_ANS_ENV_$k" '%s' "$env"; printf -v "_MDM_ANS_RULE_$k" '%s' "$rule"; printf -v "_MDM_ANS_VAR_$k" '%s' "$var"
+  if [ -n "$alias" ] && [ -n "${!env-}" ] && [ -n "${!alias-}" ] && [ "${!env}" != "${!alias}" ]; then
+    _mdm_answer_fail "$env and $alias are both set, to different values: set only $env."
+  fi
+  if [ -n "${!env+x}" ] && { [ -n "${!env}" ] || [ -z "$alias" ] || [ -z "${!alias-}" ]; }; then
+    _MDM_V=${!env}; src=$env
+    case "$_MDM_ANS_FROM_FILE" in *" $env "*) src="$env (from $MDMESH_ANSWERS)" ;; esac
+  elif [ -n "$alias" ] && [ -n "${!alias+x}" ]; then
+    _MDM_V=${!alias}; src=$alias
+  else
+    return 0
+  fi
+  if [ -z "$_MDM_V" ]; then
+    case "$rule" in base-url|port|yes-no|flag) return 0 ;; esac
+  fi
+  _mdm_answer_check "$rule"
+  if [ -n "$_MDM_WHY" ]; then
+    case "$_MDM_WHY" in ' ') _mdm_answer_fail "$src is invalid (why above)." ;; esac
+    _mdm_answer_fail "$src $_MDM_WHY."
+  fi
+  printf -v "$var" '%s' "$_MDM_V"
+  _MDM_V=''
+  # shellcheck disable=SC2163  # $var names the variable to un-export
+  case "$_MDM_SECRET_KEYS" in
+    *" $env "*) unset "$env"; [ -z "$alias" ] || unset "$alias"; export -n "$var" ;;
+  esac
+  printf -v "_MDM_ANS_SHOW_$k" '%s' "$_MDM_SHOW"; printf -v "_MDM_ANS_SRC_$k" '%s' "$src"
+  _MDM_ANS_GIVEN="$_MDM_ANS_GIVEN$id "
+}
+
+# mdm_prompt_ok ID VAR: checks the answer just typed at question ID (in VAR) with the rule a pre-set answer gets. Fails,
+# saying why (never the value of a secret), so the caller asks again. xtrace is off while it holds the value.
+mdm_prompt_ok() { local _mdm_x=$- _mdm_rc=0; set +x; _mdm_prompt_ok "$@" || _mdm_rc=1; case "$_mdm_x" in *x*) set -x ;; esac; return "$_mdm_rc"; }
+_mdm_prompt_ok() {
+  local r="_MDM_ANS_RULE_${1//-/_}"
+  _MDM_V=${!2-}
+  _mdm_answer_check "${!r}"
+  _MDM_V=''
+  [ -n "$_MDM_WHY" ] || return 0
+  case "$_MDM_WHY" in ' ') printf 'Enter it again.\n' >&2 ;; *) printf 'That answer %s. Enter it again.\n' "$_MDM_WHY" >&2 ;; esac
+  return 1
+}
+
+# mdm_any_answered: succeeds when at least one question was answered in advance. mdm_given ID: when question ID was.
+mdm_any_answered() { [ "$_MDM_ANS_GIVEN" != " " ]; }
+mdm_given() { case "$_MDM_ANS_GIVEN" in *" $1 "*) return 0 ;; esac; return 1; }
+
+# mdm_unused ID WHY: question ID is not asked in this run (WHY, e.g. "in domain mode"): an answer given for it is
+# ignored, with a warning on stderr.
+mdm_unused() {
+  local e="_MDM_ANS_ENV_${1//-/_}"
+  mdm_given "$1" || return 0
+  printf 'MDMesh installer: %s is not used %s: ignoring it.\n' "${!e}" "$2" >&2
+  _MDM_ANS_GIVEN=${_MDM_ANS_GIVEN/ $1 / }
+}
+
+# mdm_ask ID: called just before question ID is asked. With MDMESH_NONINTERACTIVE=1 it stops the installer instead,
+# naming the variable that answers it.
+mdm_ask() {
+  local e="_MDM_ANS_ENV_${1//-/_}"
+  [ "${MDMESH_NONINTERACTIVE:-0}" = 1 ] || return 0
+  _mdm_answer_fail "MDMESH_NONINTERACTIVE=1, and the question \"$1\" has no answer: set ${!e-its variable} (see install/options.json)."
+}
+
+# mdm_need ID: with MDMESH_NONINTERACTIVE=1, stops the installer now when question ID, which this run will ask, has no
+# answer and no default: before the run downloads or changes anything, rather than when it gets to the question.
+mdm_need() {
+  local r="_MDM_ANS_RULE_${1//-/_}"
+  mdm_given "$1" || _mdm_answer_rule_has_default "${!r-}" || mdm_ask "$1"
+}
+
+# mdm_answered ID: succeeds when question ID needs no asking: it was answered in advance (says so, the value hidden when
+# secret), or MDMESH_NONINTERACTIVE=1 and it has a default (the caller then applies it). Otherwise fails, so the caller
+# asks it; with MDMESH_NONINTERACTIVE=1 and no default it stops the installer (mdm_ask).
+mdm_answered() {
+  local k=${1//-/_} e s r
+  e="_MDM_ANS_ENV_$k"; s="_MDM_ANS_SHOW_$k"; r="_MDM_ANS_RULE_$k"
+  case "$_MDM_ANS_GIVEN" in
+    *" $1 "*) e="_MDM_ANS_SRC_$k"
+              case "${!r-}" in tunnel-token) printf 'Using %s: (hidden)\n' "${!e}" ;; *) printf 'Using %s: %s\n' "${!e}" "${!s}" ;; esac
+              return 0 ;;
+  esac
+  if [ "${MDMESH_NONINTERACTIVE:-0}" = 1 ] && _mdm_answer_rule_has_default "${!r-}"; then
+    s="_MDM_ANS_VAR_$k"; printf -v "${!s}" '%s' ''   # the caller applies the default to an empty answer, as to Enter
+    printf 'Using the default for %s\n' "${!e}"; return 0
+  fi
+  mdm_ask "$1"
+  return 1
+}
+
+# mdm_plan_line ID DEFAULT [TAKES_DEFAULT]: the dry-run plan's line for question ID: "  <id> <value> [<source>]", where
+# source is the variable that answered it, "default" (MDMESH_NONINTERACTIVE=1 and the question has a default, or
+# TAKES_DEFAULT=1, as with -y), or "ask" (the question would be asked; value "?"). An empty value shows as "".
+# With MDMESH_NONINTERACTIVE=1 a question that would be asked stops the installer instead (mdm_ask).
+mdm_plan_line() {
+  local id=$1 def=$2 k=${1//-/_} v s r
+  r="_MDM_ANS_RULE_$k"
+  case "$_MDM_ANS_GIVEN" in
+    *" $id "*) v="_MDM_ANS_SHOW_$k"; v=${!v}; s="_MDM_ANS_SRC_$k"; s=${!s%% *}
+               [ -n "$v" ] || v=$def ;;
+    *) if [ "${3:-0}" = 1 ] || { [ "${MDMESH_NONINTERACTIVE:-0}" = 1 ] && _mdm_answer_rule_has_default "${!r-}"; }; then
+         v=$def; s=default
+       else
+         mdm_ask "$id"; v='?'; s=ask
+       fi ;;
+  esac
+  [ -n "$v" ] || v='""'
+  mdm_plan_row "$id" "$v" "$s"
+}
+# mdm_plan_row ID VALUE SOURCE: one line of the dry-run plan, in mdm_plan_line's format.
+mdm_plan_row() { printf '  %-13s %-32s [%s]\n' "$1" "$2" "$3"; }
+# <<< answers.sh functions <<<
+
+# Every answer is checked here, before anything else happens.
+mdm_answers_load
+mdm_answer mode MODE mode MDMESH_MODE
+mdm_answer repo GH_REPO github-repo MDMESH_REPO
+mdm_answer image-owner IMAGE_OWNER image-owner MDMESH_IMAGE_OWNER
+mdm_answer host HOST hostname MDMESH_HOST
+mdm_answer tunnel-token TUNNEL_TOKEN tunnel-token MDMESH_TUNNEL_TOKEN
+mdm_answer acme-email ACME_EMAIL email MDMESH_ACME_EMAIL
+if mdm_given mode; then
+  if [ "$MODE" = 1 ]; then mdm_unused acme-email "in tunnel mode"; else mdm_unused tunnel-token "in domain mode"; fi
+fi
+mdm_need mode; mdm_need host
+if mdm_given mode && [ "$MODE" = 1 ]; then mdm_need tunnel-token; fi
+if [ "${MDMESH_DRY_RUN:-0}" = 1 ]; then
+  say "== MDMesh quick start: dry run (MDMESH_DRY_RUN=1) =="
+  echo "The answers check out. Nothing on this host was checked or changed. What a run would do:"
+  mdm_plan_line mode ''
+  mdm_plan_line repo "$REPO"
+  mdm_plan_line image-owner "$IMAGE_OWNER_DEFAULT"
+  mdm_plan_line host ''
+  if ! mdm_given mode; then mdm_plan_line tunnel-token ''; mdm_plan_line acme-email ''
+  elif [ "$MODE" = 1 ]; then mdm_plan_line tunnel-token ''; mdm_plan_row acme-email - unused
+  else mdm_plan_row tunnel-token - unused; mdm_plan_line acme-email ''; fi
+  [ -z "${MDMESH_RELEASE_PUBKEY:-}" ] || mdm_plan_row release-pubkey '(custom)' MDMESH_RELEASE_PUBKEY
+  _dir=${MDMESH_DIR:-mdmesh}; case "$_dir" in /*) ;; *) _dir="$PWD/$_dir" ;; esac
+  _repo=$REPO; if mdm_given repo && [ -n "$GH_REPO" ]; then _repo=$GH_REPO; fi
+  _rel="the latest release of ${_repo}"; [ -z "${MDMESH_VERSION:-}" ] || _rel="release v${MDMESH_VERSION#v} of ${_repo}"
+  echo "Then: download ${_rel}, check it against its signed manifest, and run it with Docker in ${_dir}."
+  if mdm_given host; then echo "Its base URL: https://${HOST}"; fi
+  exit 0
+fi
+
 command -v docker >/dev/null || { err "Docker is required."; exit 1; }
 docker compose version >/dev/null 2>&1 || { err "Docker Compose v2 is required ('docker compose')."; exit 1; }
 command -v curl    >/dev/null || { err "curl is required."; exit 1; }
@@ -132,56 +511,135 @@ DIR="${MDMESH_DIR:-mdmesh}"
 # through and the rest would run in the wrong directory.
 mkdir -p -- "$DIR"
 cd -P -- "$DIR"
-[ -f .env ] && { err "An .env already exists in $(pwd) — refusing to overwrite. Remove it to re-run."; exit 1; }
+{ [ -e .env ] || [ -L .env ]; } && { err "An .env already exists in $(pwd) — refusing to overwrite. Remove it to re-run."; exit 1; }
 
 say "== MDMesh quick start (published images) =="
 echo "Installing into: $(pwd)"
 echo
-echo "Hosting mode:"
-echo "  1) Cloudflare Tunnel   (no open ports; Cloudflare manages TLS — needs a domain in Cloudflare)"
-echo "  2) Your own domain     (open 80/443; Caddy auto-provisions a Let's Encrypt cert)"
-MODE=""
-while [ "$MODE" != "1" ] && [ "$MODE" != "2" ]; do
-  read -rp "Choose [1/2]: " MODE || { err "No selection (non-interactive run?). Aborting."; exit 1; }
-  case "$MODE" in 1|2) ;; *) warn "Please enter 1 or 2." ;; esac
-done
-
-read -rp "Pull releases from GitHub repo [${REPO}]: " GH_REPO;       GH_REPO="${GH_REPO:-$REPO}"
-read -rp "Image owner (GHCR, lowercase) [${IMAGE_OWNER_DEFAULT}]: " IMAGE_OWNER; IMAGE_OWNER="${IMAGE_OWNER:-$IMAGE_OWNER_DEFAULT}"
-
-# Pin the release being installed: server + web images and CURRENT_VERSION name the same version, so the console
-# doesn't report the running release as an update (it would with CURRENT_VERSION=0.0.0), a rollback has a real tag to
-# return to, and a `:latest` tag that moves mid-release can't hand us a mismatched server/web pair. The supervisor
-# stays on `:latest`: apply never bumps it, so `docker compose pull` is how it gets its own fixes. If the release
-# can't be resolved, fall back to `:latest` + CURRENT_VERSION=0.0.0 (the old behaviour): the stack still comes up, the
-# console shows "Update available" until the first apply pins the versions. The compose file + seed come from the same
-# release's tag in the repo it was resolved from, so they match the pinned images; `main` only in the fallback.
-RELEASE=$(latest_release "$GH_REPO")
-if [ -n "$RELEASE" ]; then
-  IMAGE_TAG="$RELEASE"; CURRENT_VERSION="$RELEASE"
-  RAW="https://raw.githubusercontent.com/${GH_REPO}/v${RELEASE}"
-  say "Installing release v${RELEASE} of ${GH_REPO}."
-else
-  IMAGE_TAG="latest"; CURRENT_VERSION="0.0.0"
-  RAW="https://raw.githubusercontent.com/${REPO}/${BRANCH}"
-  warn "Could not resolve the latest release of ${GH_REPO} (GitHub API unreachable or rate-limited?) — using the :latest"
-  warn "images and the ${BRANCH} compose. The console will show \"Update available\" until the first update pins the"
-  warn "version (see DEPLOY.md)."
+if ! mdm_answered mode; then
+  echo "Hosting mode:"
+  echo "  1) Cloudflare Tunnel   (no open ports; Cloudflare manages TLS — needs a domain in Cloudflare)"
+  echo "  2) Your own domain     (open 80/443; Caddy auto-provisions a Let's Encrypt cert)"
+  MODE=""
+  while [ "$MODE" != "1" ] && [ "$MODE" != "2" ]; do
+    read -rp "Choose [1/2]: " MODE || { err "No selection (non-interactive run?). Aborting."; exit 1; }   # answer: mode
+    case "$MODE" in 1|2) ;; *) warn "Please enter 1 or 2." ;; esac
+  done
 fi
+
+while :; do
+  mdm_answered repo || read -rp "Pull releases from GitHub repo [${REPO}]: " GH_REPO   # answer: repo
+  mdm_prompt_ok repo GH_REPO && break
+done
+GH_REPO="${GH_REPO:-$REPO}"
+while :; do
+  mdm_answered image-owner || read -rp "Image owner (GHCR, lowercase) [${IMAGE_OWNER_DEFAULT}]: " IMAGE_OWNER   # answer: image-owner
+  mdm_prompt_ok image-owner IMAGE_OWNER && break
+done
+IMAGE_OWNER="${IMAGE_OWNER:-$IMAGE_OWNER_DEFAULT}"
+
+# Install exactly one published release, verified before anything is downloaded from it: its signed manifest (see "What
+# the quick start trusts" above) names the image digests and the SHA-256 of each file fetched from its tag. The server,
+# web and supervisor images are pinned by digest (SERVER_VERSION=<version>@sha256:…: compose runs repo:tag@digest, which
+# docker pulls by digest), and CURRENT_VERSION names the same release, so the console doesn't report it as an update, a
+# rollback has a real version to return to, and a tag moved later can't change what runs. Each update the supervisor
+# applies moves the pins to the next signed release. Nothing falls back to main or :latest: if the release can't be
+# resolved or doesn't verify, the quick start stops.
+if [ -n "${MDMESH_VERSION:-}" ]; then
+  RELEASE=${MDMESH_VERSION#v}
+  [[ "$RELEASE" =~ ^([0-9]+)\.([0-9]+)\.[0-9]+([-+][0-9A-Za-z.+-]+)?$ ]] || { err "MDMESH_VERSION=${MDMESH_VERSION} is not a release version (X.Y.Z)."; exit 1; }
+  if [ "$((10#${BASH_REMATCH[1]}))" -eq 0 ] && [ "$((10#${BASH_REMATCH[2]}))" -lt 5 ]; then
+    err "Releases before 0.5.0 can't be installed with this quick start: it pins the images and verifies each download"
+    err "against the signed release, which those releases don't record. Run the quickstart.sh from that release's tag instead:"
+    err "  bash <(curl -fsSL https://raw.githubusercontent.com/${REPO}/refs/tags/v${RELEASE}/quickstart.sh)"
+    exit 1
+  fi
+else
+  RELEASE=$(latest_release "$GH_REPO")
+fi
+if [ -z "$RELEASE" ]; then
+  err "Could not resolve the latest release of ${GH_REPO} (GitHub API unreachable or rate-limited, or no release yet)."
+  err "The quick start installs only a published, signed release. Try again in a few minutes, or name the release:"
+  err "  MDMESH_VERSION=X.Y.Z bash <(curl -fsSL https://raw.githubusercontent.com/${REPO}/refs/tags/vX.Y.Z/quickstart.sh)"
+  exit 1
+fi
+[ -z "${MDMESH_RELEASE_PUBKEY:-}" ] || warn "Using MDMESH_RELEASE_PUBKEY: a custom release signing key, not MDMesh's."
+say "Verifying release v${RELEASE} of ${GH_REPO}…"
+VERIFY_DIR=$(mktemp -d)
+ENV_TMP=''
+cleanup_verify() {
+  [ -z "$ENV_TMP" ] || rm -f -- "$ENV_TMP"   # a .env write that failed or was interrupted: it holds the new secrets
+  rm -f -- "$VERIFY_DIR/manifest.json" "$VERIFY_DIR/manifest.json.minisig" "$VERIFY_DIR"/dl.*
+  rmdir -- "$VERIFY_DIR" 2>/dev/null || true
+}
+trap cleanup_verify EXIT
+MANIFEST="$VERIFY_DIR/manifest.json"
+REL_URL="https://github.com/${GH_REPO}/releases/download/v${RELEASE}"
+if ! curl -fsSL -m 60 "${REL_URL}/manifest.json" -o "$MANIFEST" \
+   || ! curl -fsSL -m 60 "${REL_URL}/manifest.json.minisig" -o "$VERIFY_DIR/manifest.json.minisig"; then
+  err "Could not download manifest.json and manifest.json.minisig from ${REL_URL} (is v${RELEASE} a published release with a signed manifest?)."
+  exit 1
+fi
+VERIFY_RC=0
+mdm_verify_manifest "${MDMESH_RELEASE_PUBKEY:-$MDM_RELEASE_PUBKEY_DEFAULT}" "$MANIFEST" "$VERIFY_DIR/manifest.json.minisig" || VERIFY_RC=$?
+if [ "$VERIFY_RC" = 2 ]; then
+  err "Checking the release signature needs OpenSSL 3.0+ or minisign (this host: $(openssl version 2>/dev/null || echo 'no openssl'))."
+  err "Install minisign (your distribution's package, or https://github.com/jedisct1/minisign/releases) and re-run. Nothing was installed."
+  exit 1
+fi
+if [ "$VERIFY_RC" != 0 ]; then
+  err "The manifest of release v${RELEASE} of ${GH_REPO} is not signed by the release key (reason above). Nothing was installed."
+  if [ "$GH_REPO" != "$REPO" ] && [ -z "${MDMESH_RELEASE_PUBKEY:-}" ]; then
+    err "A fork signs with its own key: run that repository's quickstart.sh, or set MDMESH_RELEASE_PUBKEY to the key line of its release/minisign.pub."
+  fi
+  exit 1
+fi
+# Bind the signed manifest to this release: an older release's manifest is signed too.
+MANIFEST_VERSION=$(mdm_manifest_field "$MANIFEST" version '[0-9A-Za-z.+-]+' || true)
+if [ "$MANIFEST_VERSION" != "$RELEASE" ]; then
+  err "The signed manifest is for version ${MANIFEST_VERSION:-(none)}, not v${RELEASE}. Nothing was installed."; exit 1
+fi
+# The image digests: all three, under the owner chosen above.
+SERVER_REF=$(mdm_manifest_field "$MANIFEST" server "$MDM_IMAGE_REF_ERE" || true)
+WEB_REF=$(mdm_manifest_field "$MANIFEST" web "$MDM_IMAGE_REF_ERE" || true)
+SUPERVISOR_REF=$(mdm_manifest_field "$MANIFEST" supervisor "$MDM_IMAGE_REF_ERE" || true)
+if [ -n "$SERVER_REF" ] && [ -n "$WEB_REF" ] && [ -n "$SUPERVISOR_REF" ]; then
+  # Each ref must be exactly its own image under this owner (as supervisor/lib.js imagePins and apply.sh require).
+  for _pair in "server $SERVER_REF" "web $WEB_REF" "supervisor $SUPERVISOR_REF"; do
+    _name=${_pair%% *}; _ref=${_pair#* }
+    if [ "${_ref%@*}" != "ghcr.io/${IMAGE_OWNER}/mdmesh-${_name}" ]; then
+      err "Release v${RELEASE} of ${GH_REPO} publishes its ${_name} image as ${_ref%@*}, not ghcr.io/${IMAGE_OWNER}/mdmesh-${_name}. Re-run and enter the image owner it names."
+      exit 1
+    fi
+  done
+  SERVER_TAG="${RELEASE}@${SERVER_REF#*@}"; WEB_TAG="${RELEASE}@${WEB_REF#*@}"; SUPERVISOR_TAG="${RELEASE}@${SUPERVISOR_REF#*@}"
+else
+  err "The signed manifest of v${RELEASE} does not pin the server, web and supervisor images by digest, so the quick start can't install it."
+  err "(A fork publishing with an older release workflow: update its release/ scripts and .github/workflows/release.yml.)"
+  exit 1
+fi
+RAW="https://raw.githubusercontent.com/${GH_REPO}/v${RELEASE}"
+say "Installing release v${RELEASE} of ${GH_REPO}."
 
 DB_PASSWORD=$(rand); HASH_SECRET=$(rand); ADMIN_PASSWORD=$(rand); RESET_TOKEN=$(openssl rand -hex 16)
 
 if [ "$MODE" = "1" ]; then
-  read -rp "Public hostname devices will use (e.g. mdm.example.com): " HOST
+  mdm_answered host || read -rp "Public hostname devices will use (e.g. mdm.example.com): " HOST   # answer: host
   mdm_check_host HOST || { err "Enter the hostname only, e.g. mdm.example.com, then re-run."; exit 1; }
-  read -rp "Cloudflare Tunnel token (Zero Trust → Tunnels → your tunnel): " TUNNEL_TOKEN
+  while :; do
+    mdm_answered tunnel-token || read -rp "Cloudflare Tunnel token (Zero Trust → Tunnels → your tunnel): " TUNNEL_TOKEN   # answer: tunnel-token
+    mdm_prompt_ok tunnel-token TUNNEL_TOKEN && break
+  done
   BASE_URL="https://${HOST}"; SITE_ADDRESS=":80"; ACME_EMAIL=""
   COMPOSE_FILE="docker-compose.yml"; COMPOSE_PROFILES="cloudflare"
   EXTRA_NOTE="In Cloudflare, route the tunnel's public hostname ($HOST) to http://caddy:80."
 else
-  read -rp "Your domain (DNS already pointing here, e.g. mdm.example.com): " HOST
+  mdm_answered host || read -rp "Your domain (DNS already pointing here, e.g. mdm.example.com): " HOST   # answer: host
   mdm_check_host HOST || { err "Enter the hostname only, e.g. mdm.example.com, then re-run."; exit 1; }
-  read -rp "Email for Let's Encrypt: " ACME_EMAIL
+  while :; do
+    mdm_answered acme-email || read -rp "Email for Let's Encrypt: " ACME_EMAIL   # answer: acme-email
+    mdm_prompt_ok acme-email ACME_EMAIL && break
+  done
   BASE_URL="https://${HOST}"; SITE_ADDRESS="${HOST}"; TUNNEL_TOKEN=""
   COMPOSE_FILE="docker-compose.yml:docker-compose.domain.yml"; COMPOSE_PROFILES=""
   EXTRA_NOTE="Make sure ${HOST} resolves to this server and ports 80/443 are open."
@@ -189,22 +647,39 @@ fi
 mdm_check_base_url BASE_URL || { err "Check the hostname you entered (the name only, e.g. mdm.example.com), then re-run."; exit 1; }
 
 say "Downloading the pull-only compose + seed…"
-curl -fsSL "${RAW}/docker-compose.release.yml" -o docker-compose.yml
-curl -fsSL "${RAW}/docker-compose.domain.yml"  -o docker-compose.domain.yml
-mkdir -p install/sql
-curl -fsSL "${RAW}/install/sql/hmdm_init.en.sql" -o install/sql/hmdm_init.en.sql
-curl -fsSL "${RAW}/install/sql/post_seed.sql"    -o install/sql/post_seed.sql
-mkdir -p install/lib
-curl -fsSL "${RAW}/install/lib/db.sh"             -o install/lib/db.sh
+# Every file is downloaded to a temporary name and checked against its SHA-256 in the signed manifest; only when all of
+# them match are they moved into place. db.sh is sourced below, so nothing unverified ever runs.
+n=0
+for f in $MDM_QUICKSTART_FILES; do
+  n=$((n + 1))
+  want=$(mdm_manifest_field "$MANIFEST" "$f" "$MDM_SHA256_ERE" || true)
+  [ -n "$want" ] || { err "The signed manifest of v${RELEASE} has no SHA-256 for ${f}, so it can't be verified. Nothing was installed."; exit 1; }
+  curl -fsSL -m 120 "${RAW}/${f}" -o "$VERIFY_DIR/dl.$n" || { err "Could not download ${RAW}/${f}. Nothing was installed."; exit 1; }
+  got=$(mdm_sha256 "$VERIFY_DIR/dl.$n")
+  if [ "$got" != "$want" ]; then
+    err "${f} from ${RAW} does not match the signed release (SHA-256 ${got}, expected ${want}). Nothing was installed."; exit 1
+  fi
+done
+n=0
+for f in $MDM_QUICKSTART_FILES; do
+  n=$((n + 1))
+  dest=$f; [ "$f" = docker-compose.release.yml ] && dest=docker-compose.yml
+  mkdir -p -- "$(dirname -- "$dest")"
+  mv -f -- "$VERIFY_DIR/dl.$n" "$dest"
+done
 # Shared seed rules with setup.sh / the native installer (seed gate, verified seed, post-seed repairs).
-# Version coupling: this script runs from main, but db.sh (like the compose file and the seed) comes from the release
-# tag being installed, so it matches the images (from ${BRANCH} only when the release can't be resolved; see RAW).
-# Call only db.sh functions, with only the arguments and output, that the latest published release already has; a
-# db.sh change becomes usable here once a release ships it. (install/lib/db.sh states the same rule for its side.)
+# Version coupling: this script may be newer than the release it installs (MDMESH_VERSION, or a copy from main), but
+# db.sh (like the compose file and the seed) comes from the release tag being installed, so it matches the images. Call only db.sh functions, with only the arguments and output, that the
+# latest published release already has; a db.sh change becomes usable here once a release ships it. (install/lib/db.sh
+# states the same rule for its side.)
 # shellcheck source=install/lib/db.sh
 . ./install/lib/db.sh
 
-cat > .env <<EOF
+# Owner-only from the start: written to a new mode-600 file (mktemp), then renamed to .env, so no other user can read
+# the secrets at any moment.
+trap 'exit 130' INT; trap 'exit 143' TERM   # so an interrupt runs cleanup_verify too
+ENV_TMP=$(mktemp .env.new.XXXXXX)
+cat > "$ENV_TMP" <<EOF
 DB_NAME=mdmesh
 DB_USER=mdmesh
 DB_PASSWORD=${DB_PASSWORD}
@@ -215,13 +690,13 @@ SITE_ADDRESS=${SITE_ADDRESS}
 ACME_EMAIL=${ACME_EMAIL}
 TUNNEL_TOKEN=${TUNNEL_TOKEN}
 IMAGE_OWNER=${IMAGE_OWNER}
-SERVER_VERSION=${IMAGE_TAG}
-WEB_VERSION=${IMAGE_TAG}
-SUPERVISOR_VERSION=latest
+SERVER_VERSION=${SERVER_TAG}
+WEB_VERSION=${WEB_TAG}
+SUPERVISOR_VERSION=${SUPERVISOR_TAG}
 GITHUB_REPO=${GH_REPO}
 UPDATE_CHANNEL=stable
 POLL_INTERVAL_HOURS=6
-CURRENT_VERSION=${CURRENT_VERSION}
+CURRENT_VERSION=${RELEASE}
 GITHUB_TOKEN=
 AUTO_UPDATE=0
 COMPOSE_PROJECT_NAME=mdmesh
@@ -231,14 +706,18 @@ SMTP_HOST=
 SMTP_PORT=25
 SMTP_FROM=mdm@${HOST}
 EOF
-chmod 600 .env
+# No -T (GNU only): so check again, just before, that nothing named .env has appeared since the start (a directory or a
+# link to one would get the file inside it).
+if [ -e .env ] || [ -L .env ]; then err "Something named .env appeared in $(pwd) during the install: not overwriting it. Remove it and re-run."; exit 1; fi
+mv -f -- "$ENV_TMP" .env
+ENV_TMP=''; trap - INT TERM
 say "Wrote .env (secrets generated). docker compose reads COMPOSE_FILE/PROFILES from it."
 
 say "Pulling images…"
-docker compose pull || { err "Could not pull the :${IMAGE_TAG} images from ghcr.io/${IMAGE_OWNER}. Has a release been published? (to cut one, see RELEASING.md)"; exit 1; }
+docker compose pull || { err "Could not pull the v${RELEASE} images from ghcr.io/${IMAGE_OWNER} (pinned by digest in .env). Has a release been published? (to cut one, see RELEASING.md)"; exit 1; }
 # The init marker the wait below reads is on the server's data volume, and the server writes it only when it is absent.
-# The entrypoint removes the previous start's marker only in images after v0.3.1, and this script (served from main) may
-# be installing v0.3.1 or older, so a re-run over an existing volume would read the last run's result. Remove it here:
+# The entrypoint removes the previous start's marker only in images after v0.3.1, and this script (the latest
+# release's, or main's) may be installing v0.3.1 or older, so a re-run over an existing volume would read the last run's result. Remove it here:
 # the old server stopped first (so it cannot write it again in between), then a one-off container of the server image
 # that runs rm as the server's own user (never as root on the volume; rm -f removes a planted link, not its target).
 # On a fresh install there is no container to stop and no marker to remove, and the one-off only creates the volume

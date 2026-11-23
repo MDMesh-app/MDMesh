@@ -1,4 +1,4 @@
-import { apiClient } from './client';
+import { ApiError, apiClient } from './client';
 
 // Configurations list — see com.hmdm.rest.resource.ConfigurationResource#getAllConfigurations
 //   GET /rest/private/configurations/search  ->  ConfigurationView[]
@@ -19,6 +19,15 @@ export async function listConfigurations(): Promise<ConfigurationSummary[]> {
   return apiClient.get<ConfigurationSummary[]>('/private/configurations/search');
 }
 
+/**
+ * Each configuration's id and name: ConfigurationResource GET /list, which checks no permission. It lists what
+ * /search lists (the same DAO call: the customer's configurations the user may access), so a role without
+ * `configurations` can still pick one.
+ */
+export async function listConfigurationNames(): Promise<Pick<ConfigurationSummary, 'id' | 'name'>[]> {
+  return apiClient.get<Pick<ConfigurationSummary, 'id' | 'name'>[]>('/private/configurations/list');
+}
+
 // An app assigned to a configuration (Configuration.applications entry). action:
 // 0 = hide, 1 = install, 2 = remove.
 export interface ConfigApp {
@@ -34,6 +43,15 @@ export interface ConfigApp {
   /** The version this config is pinned to; preserved across a save so the
    *  server doesn't silently bump the app to its latest version. */
   usedVersionId?: number;
+  /** Comma-separated Android permissions parsed from this selected version's locally hosted APK; absent for system
+   *  apps and remote APKs until the device permission-inventory follow-up exists. */
+  requestedPermissions?: string | null;
+  // Headwind launcher layout for the app (configurationApplications columns). The console doesn't edit them, but
+  // a save re-inserts every row from what it sends, so they must go back exactly as loaded.
+  screenOrder?: number | null;
+  keyCode?: number | null;
+  bottom?: boolean | null;
+  longTap?: boolean | null;
 }
 
 // Full configuration. Field access is by key (the editor is schema-driven), so we
@@ -49,12 +67,18 @@ export interface Configuration {
   /** Enhanced FRP unlock allow-list: comma/newline separated Google account ids. */
   factoryResetProtectionAccounts?: string | null;
   applications?: ConfigApp[];
+  /**
+   * Server plugins' and extensions' data by namespace (an extension id, or `<id>.<name>`), each a JSON object. The
+   * server keeps what is stored when a save leaves it out, and replaces it whole when a save carries it. Only
+   * getConfiguration has it: list rows leave it out.
+   */
+  extensions?: Record<string, unknown>;
   [key: string]: unknown;
 }
 
 /**
  * Every configuration's columns — same endpoint as the list. A row has no `files`, `applicationSettings`,
- * `applicationUsageParameters` or assigned `applications`, so never save one: edit from getConfiguration.
+ * `applicationUsageParameters`, `extensions` or assigned `applications`, so never save one: edit from getConfiguration.
  */
 export async function getConfigurations(): Promise<Configuration[]> {
   return apiClient.get<Configuration[]>('/private/configurations/search');
@@ -68,6 +92,63 @@ export async function getServerBaseUrl(): Promise<string | null> {
   const list = await getConfigurations();
   const u = list.map((c) => c.baseUrl).find((v): v is string => typeof v === 'string' && v.trim() !== '');
   return u ?? null;
+}
+
+/** A kiosk background image as devices get it once a configuration is saved with it (KioskBackgroundImageInfo). */
+export interface KioskBackgroundImageInfo {
+  fileId: number;
+  /** Where devices download it (from the server's current base URL). */
+  url: string;
+  /** The file name, without the `kiosk-<hex>-` prefix it is hosted under. */
+  name: string;
+  format: 'PNG' | 'JPEG' | 'WebP';
+  /** As displayed (after the EXIF orientation). */
+  width: number;
+  height: number;
+  orientation: number;
+  /** Bytes, without metadata. */
+  size: number;
+  sha256: string;
+  uploadTime?: number | null;
+  /** The uploaded file still carries metadata (location, camera), which saving removes. */
+  hasMetadata?: boolean;
+  /**
+   * Another account's file that this configuration uses (one copied from the main account's template): devices get it
+   * as it is hosted there. Absent for the account's own files.
+   */
+  fromAnotherAccount?: boolean;
+}
+
+/** Describes an uploaded background image file; refused (ApiError with a readable message) as a save would. */
+export async function getKioskBackgroundImage(fileId: number): Promise<KioskBackgroundImageInfo> {
+  return apiClient.get<KioskBackgroundImageInfo>(`/private/configurations/backgroundImage/${fileId}`);
+}
+
+/** A gallery entry: one per image content, the file to use, and the configurations using it. */
+export interface KioskGalleryItem extends KioskBackgroundImageInfo {
+  /** Every uploaded file with these bytes. */
+  fileIds: number[];
+  /** The configurations using it that this user may see. */
+  usedBy: { id: number; name: string }[];
+  /** All configurations using it. */
+  usedByCount: number;
+}
+
+export interface KioskGalleryPage {
+  items: KioskGalleryItem[];
+  total: number;
+  page: number;
+  size: number;
+}
+
+/** The customer's kiosk background images, newest first. */
+export async function listKioskBackgroundImages(page = 0, size = 20): Promise<KioskGalleryPage> {
+  return apiClient.get<KioskGalleryPage>(`/private/configurations/backgroundImages?page=${page}&size=${size}`);
+}
+
+/** Deletes an uploaded kiosk image nothing uses; refused (ApiError with a readable message) otherwise. */
+export async function deleteKioskBackgroundImage(fileId: number): Promise<void> {
+  await apiClient.post<void>(`/private/configurations/backgroundImages/${fileId}/delete`);
 }
 
 /** One full configuration: every column plus its files, app settings and usage parameters (not its apps). */
@@ -90,25 +171,59 @@ export async function getConfigurationApps(configId: number): Promise<ConfigApp[
   const rows = await apiClient.get<ConfigAppRow[]>(
     `/private/configurations/applications/${configId}`,
   );
-  return rows
-    .filter((a) => a.selected)
-    .map((a) => ({
-      id: a.id,
-      applicationId: a.applicationId,
-      name: a.name,
-      pkg: a.pkg,
-      version: a.version,
-      action: a.action,
-      showIcon: a.showIcon,
-      remove: a.remove,
-      system: a.system,
-      usedVersionId: a.usedVersionId,
-    }));
+  // The whole row minus the matrix's `selected` flag: the server re-inserts each assigned app from the saved
+  // body, so any column dropped here (the launcher layout, or one a newer server adds) would be wiped on save.
+  return rows.filter((a) => a.selected).map(({ selected: _selected, ...app }) => app);
 }
 
-/** Create (id null) or update (id set). Returns the saved configuration. */
-export async function saveConfiguration(config: Configuration): Promise<Configuration> {
-  return apiClient.put<Configuration>('/private/configurations', config);
+/**
+ * Create (id null) or update (id set). Returns the saved configuration.
+ *
+ * `config.extensions` is the extensions data as loaded (the server's GET, or a template's), and `changed` the
+ * namespaces the editor changed. The server replaces all of `extensions` when a save carries it, so a save with changes
+ * sends the loaded object with the changed namespaces on top: every other namespace, including those of extensions
+ * this build lacks, goes back as stored. An update without changes leaves `extensions` out, so the server keeps what is
+ * stored; a new configuration keeps the one it carries, so one made from a template takes the template's, as a copy
+ * does.
+ */
+export async function saveConfiguration(config: Configuration, changed?: Readonly<Record<string, unknown>>): Promise<Configuration> {
+  const { extensions: loaded, ...body } = config;
+  const changes = changed && Object.keys(changed).length > 0;
+  // The server replaces the whole object: changes without what they go on top of would wipe the rest.
+  if (changes && config.id != null && loaded == null) {
+    throw new Error('The configuration’s extensions data did not load, so it cannot be saved without losing it.');
+  }
+  const extensions = changes ? { ...loaded, ...changed } : config.id == null ? loaded : undefined;
+  return apiClient.put<Configuration>('/private/configurations', extensions === undefined ? body : { ...body, extensions });
+}
+
+/** One reason the server refused a save's `extensions` (com.hmdm.extension.ExtensionError). */
+export interface ExtensionError {
+  /** The namespace it is about; null when it is about all of them (their total size). */
+  namespace: string | null;
+  /** A message key: `error.extensions.<code>` for core's checks, `error.extension.<namespace>.<code>` for a plugin's. */
+  key: string;
+  /** A sentence for people. */
+  message: string;
+}
+
+/**
+ * The problems of a save the server refused for its `extensions` (an ERROR whose message is the first one's key and
+ * whose data lists them all), or null for any other failure.
+ */
+export function extensionErrorsOf(error: unknown): ExtensionError[] | null {
+  if (!(error instanceof ApiError) || !Array.isArray(error.data) || error.data.length === 0) return null;
+  const rows: ExtensionError[] = [];
+  for (const e of error.data as unknown[]) {
+    if (typeof e !== 'object' || e === null) continue;
+    const { namespace, key, message } = e as Record<string, unknown>;
+    if (typeof key !== 'string') continue;
+    if (!key.startsWith('error.extension')) return null;
+    // A plugin's Problem may come without a sentence: its key is better than nothing.
+    const sentence = typeof message === 'string' && message ? message : key;
+    rows.push({ namespace: typeof namespace === 'string' ? namespace : null, key, message: sentence });
+  }
+  return rows.length ? rows : null;
 }
 
 export async function deleteConfiguration(id: number): Promise<void> {

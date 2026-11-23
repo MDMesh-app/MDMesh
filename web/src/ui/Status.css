@@ -1,0 +1,134 @@
+/* ---- status mark: circle / diamond / square / hollow ring (shape keeps status readable without colour) ---- */
+.v2 .v2-sdot {
+  display: inline-block;
+  flex: 0 0 auto;
+  border: var(--dot-ring) solid currentColor;
+}
+.v2 .v2-sdot--s6 {
+  width: var(--dot-sm);
+  height: var(--dot-sm);
+  border-width: 0;
+}
+.v2 .v2-sdot--s7 {
+  width: var(--dot);
+  height: var(--dot);
+}
+.v2 .v2-sdot--s8 {
+  width: var(--dot-lg);
+  height: var(--dot-lg);
+}
+.v2 .v2-sdot--circle {
+  border-radius: var(--radius-full);
+}
+.v2 .v2-sdot--ring {
+  border-radius: var(--radius-full);
+}
+.v2 .v2-sdot--square {
+  border-radius: var(--hairline);
+}
+.v2 .v2-sdot--diamond {
+  border-radius: var(--hairline);
+  transform: rotate(45deg);
+}
+.v2 .v2-sdot--ok {
+  color: var(--online);
+  background: var(--online);
+}
+.v2 .v2-sdot--warn {
+  color: var(--warn);
+  background: var(--warn);
+}
+.v2 .v2-sdot--alert {
+  color: var(--alert);
+  background: var(--alert);
+}
+.v2 .v2-sdot--idle {
+  color: var(--muted);
+  background: var(--offline);
+}
+.v2 .v2-sdot.v2-sdot--ring {
+  background: transparent;
+}
+/* A 6px sync dot has no ring, so the idle fill carries it alone. */
+.v2 .v2-sdot--idle.v2-sdot--s6 {
+  background: var(--offline);
+}
+
+/* ---- pill ---- */
+.v2 .v2-spill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--control-xs);
+  padding: 0 var(--space-2);
+  border: var(--hairline) solid;
+  border-radius: var(--radius-full);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+}
+.v2 .v2-spill--ok {
+  background: var(--ok-soft);
+  border-color: var(--ok-line);
+  color: var(--ok-ink);
+}
+.v2 .v2-spill--warn {
+  background: var(--warn-soft);
+  border-color: var(--warn-line);
+  color: var(--warn-ink);
+}
+.v2 .v2-spill--alert {
+  background: var(--alert-soft);
+  border-color: var(--alert-line);
+  color: var(--alert-ink);
+}
+.v2 .v2-spill--idle {
+  background: var(--idle-soft);
+  border-color: var(--idle-line);
+  color: var(--idle-ink);
+}
+
+/* ---- inline status text ---- */
+.v2 .v2-stext {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  white-space: nowrap;
+}
+.v2 .v2-stext--sync {
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
+}
+.v2 .v2-stext--reason {
+  font-size: var(--text-ui);
+  line-height: var(--lh-ui);
+}
+.v2 .v2-stext--meta {
+  font-size: var(--text-ui);
+  line-height: var(--lh-ui);
+  font-weight: var(--weight-medium);
+}
+.v2 .v2-stext--ok {
+  color: var(--ok-ink);
+}
+.v2 .v2-stext--warn {
+  color: var(--warn-ink);
+}
+.v2 .v2-stext--alert {
+  color: var(--alert-ink);
+}
+.v2 .v2-stext--idle {
+  color: var(--idle-ink);
+}
+
+@media (forced-colors: active) {
+  .v2 .v2-sdot {
+    forced-color-adjust: none;
+    color: CanvasText;
+    background: CanvasText;
+  }
+  .v2 .v2-sdot.v2-sdot--ring {
+    background: transparent;
+  }
+}

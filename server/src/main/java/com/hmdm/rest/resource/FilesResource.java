@@ -28,6 +28,7 @@ import javax.inject.Named;
 import com.hmdm.notification.PushService;
 import com.hmdm.persistence.*;
 import com.hmdm.persistence.domain.*;
+import com.hmdm.rest.resource.support.KioskImageMetadata;
 import com.hmdm.rest.json.*;
 import com.hmdm.rest.json.view.FileView;
 import com.hmdm.util.APKFileAnalyzer;
@@ -109,6 +110,24 @@ public class FilesResource {
                          APKFileAnalyzer apkFileAnalyzer,
                          ConfigurationFileDAO configurationFileDAO,
                          IconDAO iconDAO,
+                         PushService pushService,
+                         com.hmdm.rest.resource.support.KioskBackgroundImageAssets kioskImages) {
+        this(filesDirectory, baseUrl, customerDAO, unsecureDAO, applicationDAO, configurationDAO, uploadedFileDAO,
+                apkFileAnalyzer, configurationFileDAO, iconDAO, pushService);
+        this.kioskImages = kioskImages;
+    }
+
+    /** Tests that don't involve kiosk background images. */
+    public FilesResource(String filesDirectory,
+                         String baseUrl,
+                         CustomerDAO customerDAO,
+                         UnsecureDAO unsecureDAO,
+                         ApplicationDAO applicationDAO,
+                         ConfigurationDAO configurationDAO,
+                         UploadedFileDAO uploadedFileDAO,
+                         APKFileAnalyzer apkFileAnalyzer,
+                         ConfigurationFileDAO configurationFileDAO,
+                         IconDAO iconDAO,
                          PushService pushService) {
         this.filesDirectory = filesDirectory;
         this.baseDirectory = new File(filesDirectory);
@@ -165,37 +184,72 @@ public class FilesResource {
             return Response.PERMISSION_DENIED();
         }
 
-        return SecurityContext.get().getCurrentUser().map(u -> {
-            Customer customer = customerDAO.findById(u.getCustomerId());
+        // Only a file of this account, checked before anything below looks at the file's state.
+        if (file.getId() == null || !isOwnFile(file.getId())) {
+            return Response.PERMISSION_DENIED();
+        }
 
-            // Check if file is not used
-            if (this.configurationFileDAO.isFileUsed(file.getId())) {
-                return Response.FILE_USED();
-            } else if (this.iconDAO.isFileUsed(file.getId())) {
-                return Response.FILE_USED();
-            }
+        return SecurityContext.get().getCurrentUser().map(u -> kioskImages == null
+                ? removeUnlessUsed(u, file)
+                // Under the lock a configuration save takes hold of its background image with: never a file a save
+                // is about to commit, or one a Files → edit is changing.
+                : kioskImages.unlessHeld(file.getId(), () -> removeUnlessUsed(u, file), Response.FILE_USED(),
+                        Response.ERROR(com.hmdm.rest.resource.support.KioskBackgroundImageAssets.BEING_EDITED))
+        ).orElse(Response.PERMISSION_DENIED());
+    }
 
-            if (!file.isExternal()) {
-                // Delete the file the record points at, never a path taken from the request.
-                UploadedFile dbFile = uploadedFileDAO.getById(file.getId());
-                if (dbFile == null) {
-                    return Response.PERMISSION_DENIED();
-                }
-                String recordedPath = dbFile.getFilePath();
-                logger.info("File {} is removed by user {}", recordedPath, SecurityContext.get().getCurrentUserName());
-                uploadedFileDAO.remove(file.getId());
-                if (recordedPath != null && !recordedPath.isEmpty()
-                        && uploadedFileDAO.getByPath(customer.getId(), recordedPath) == null) {
-                    FileUtil.deleteFile(customer, filesDirectory, recordedPath);
-                }
-                return Response.OK();
-            } else {
-                logger.info("External file {} ({}) is removed by user {}",
-                        file.getDescription(), file.getUrl(), SecurityContext.get().getCurrentUserName());
-                uploadedFileDAO.remove(file.getId());
-                return Response.OK();
+    /** The file is a row of the current account (the DAO refuses another account's row). */
+    private boolean isOwnFile(int fileId) {
+        try {
+            return uploadedFileDAO.getById(fileId) != null;
+        } catch (SecurityException e) {
+            logger.warn("Refused file {}: not a file of this customer", fileId);
+            return false;
+        }
+    }
+
+    /** The kiosk background images, whose saves hold their file until written (see removeFile). */
+    private com.hmdm.rest.resource.support.KioskBackgroundImageAssets kioskImages;
+
+    /** Tests: the kiosk background images (the injected constructor sets them in the server). */
+    void setKioskImages(com.hmdm.rest.resource.support.KioskBackgroundImageAssets kioskImages) {
+        this.kioskImages = kioskImages;
+    }
+
+    private Response removeUnlessUsed(User u, FileView file) {
+        Customer customer = customerDAO.findById(u.getCustomerId());
+
+        // Check if file is not used
+        if (this.configurationFileDAO.isFileUsed(file.getId())) {
+            return Response.FILE_USED();
+        } else if (this.iconDAO.isFileUsed(file.getId())) {
+            return Response.FILE_USED();
+        } else if (this.configurationDAO != null && this.configurationDAO.isBackgroundImageFileUsed(file.getId())) {
+            // A kiosk image is hash-pinned in desired state. It must be explicitly replaced from the
+            // configuration editor, never deleted behind an active configuration's back.
+            return Response.FILE_USED();
+        }
+
+        if (!file.isExternal()) {
+            // Delete the file the record points at, never a path taken from the request.
+            UploadedFile dbFile = uploadedFileDAO.getById(file.getId());
+            if (dbFile == null) {
+                return Response.PERMISSION_DENIED();
             }
-        }).orElse(Response.PERMISSION_DENIED());
+            String recordedPath = dbFile.getFilePath();
+            logger.info("File {} is removed by user {}", recordedPath, SecurityContext.get().getCurrentUserName());
+            uploadedFileDAO.remove(file.getId());
+            if (recordedPath != null && !recordedPath.isEmpty()
+                    && uploadedFileDAO.getByPath(customer.getId(), recordedPath) == null) {
+                FileUtil.deleteFile(customer, filesDirectory, recordedPath);
+            }
+            return Response.OK();
+        } else {
+            logger.info("External file {} ({}) is removed by user {}",
+                    file.getDescription(), file.getUrl(), SecurityContext.get().getCurrentUserName());
+            uploadedFileDAO.remove(file.getId());
+            return Response.OK();
+        }
     }
 
     // =================================================================================================================
@@ -219,6 +273,22 @@ public class FilesResource {
                 return createFileInternal(uploadedFile);
             } else {
                 return createExternalFileInternal(uploadedFile);
+            }
+        } else if (kioskImages != null && uploadedFile.getId() != null) {
+            // Not while a configuration save holds the file: it has hashed these bytes. While the edit runs (its file
+            // I/O outside the lock), no save can take hold of it. A file a configuration already uses as its
+            // background is refused below in any case (its digest is pinned).
+            // Only a file of this account, checked before the edit looks at or marks the file's state.
+            if (!isOwnFile(uploadedFile.getId())) return Response.PERMISSION_DENIED();
+            switch (kioskImages.beginEdit(uploadedFile.getId())) {
+                case HELD: return Response.FILE_USED();
+                case EDITING: return Response.ERROR(com.hmdm.rest.resource.support.KioskBackgroundImageAssets.BEING_EDITED);
+                default: break;
+            }
+            try {
+                return updateFileInternal(uploadedFile);
+            } finally {
+                kioskImages.endEdit(uploadedFile.getId());
             }
         } else {
             return updateFileInternal(uploadedFile);
@@ -254,6 +324,15 @@ public class FilesResource {
         return SecurityContext.get().getCurrentUser().map(u -> {
             Customer customer = customerDAO.findById(u.getCustomerId());
             try {
+                try {
+                    // A kiosk background is served publicly: its location and camera data go before it is hosted.
+                    if (KioskImageMetadata.stripUpload(new File(uploadedFile.getTmpPath()), fileName)) {
+                        logger.info("Removed the metadata of kiosk image {}", fileName);
+                    }
+                } catch (IOException e) {
+                    // Hosted as uploaded; saving it as a background then hosts a cleaned copy instead.
+                    logger.warn("Could not remove the metadata of kiosk image {}: {}", fileName, e.getMessage());
+                }
                 File movedFile = FileUtil.moveFile(customer, filesDirectory, uploadedFile.getSubdir(), uploadedFile.getTmpPath(), fileName);
                 if (movedFile != null) {
                     List<FileView> result = new LinkedList<>();
@@ -270,6 +349,10 @@ public class FilesResource {
                     return Response.ERROR("error.file.save");
                 }
             } catch (FileExistsException e) {
+                Response existing = reuseIdenticalHostedFile(customer, uploadedFile);
+                if (existing != null) {
+                    return existing;
+                }
                 logger.warn("File {} already exists", uploadedFile.getFilePath());
                 return Response.FILE_EXISTS();
             } catch (UnsafePathException e) {
@@ -281,6 +364,34 @@ public class FilesResource {
                 return Response.INTERNAL_ERROR();
             }
         }).orElse(Response.PERMISSION_DENIED());
+    }
+
+    /**
+     * A retry of an interrupted client flow can reach commit after the same bytes were already hosted. Reuse that
+     * customer-owned record only when the content is exactly identical; matching a filename alone would risk binding
+     * a configuration to an older, different image.
+     */
+    private Response reuseIdenticalHostedFile(Customer customer, UploadedFile attempted) {
+        UploadedFile existing = uploadedFileDAO.getByPath(customer.getId(), attempted.getFilePath());
+        if (existing == null || existing.isExternal()) {
+            return null;
+        }
+        try {
+            File hosted = FileUtil.resolveFile(customer, filesDirectory, null, existing.getFilePath());
+            File upload = new File(attempted.getTmpPath());
+            if (!hosted.isFile() || !upload.isFile() || !FileUtils.contentEquals(hosted, upload)) {
+                return null;
+            }
+            if (!upload.delete()) {
+                logger.warn("Could not remove duplicate temporary upload {}", upload);
+            }
+            existing.setUrl(existing.getUrl(baseUrl, customer));
+            logger.info("Reused identical hosted file {} (id={})", existing.getFilePath(), existing.getId());
+            return Response.OK(existing);
+        } catch (IOException | UnsafePathException e) {
+            logger.warn("Could not compare existing file {} with upload: {}", attempted.getFilePath(), e.getMessage());
+            return null;
+        }
     }
 
     /** Shown when a file path would leave the customer's files directory. */
@@ -328,6 +439,11 @@ public class FilesResource {
             if (dbFile == null) {
                 logger.warn("Refused to update file {}: no such file", uploadedFile.getId());
                 return Response.PERMISSION_DENIED();
+            }
+            if (configurationDAO != null && configurationDAO.isBackgroundImageFileUsed(dbFile.getId())) {
+                // The configuration stores the digest of these exact bytes. Replacing or renaming it would make an
+                // already-issued desired-state descriptor stale; create a new image and select it instead.
+                return Response.FILE_USED();
             }
             if (uploadedFile.isExternal() != dbFile.isExternal()) {
                 logger.warn("Refused to update file {}: the external flag cannot change", uploadedFile.getId());
@@ -737,6 +853,9 @@ public class FilesResource {
             logger.info("Bundle {} unpacked: {} parts for {} ({})", fileName, parts.size(), meta.getPkg(),
                     meta.getVersionCode());
             return Response.OK(out);
+        } catch (BundleTooLargeException e) {
+            logger.warn("Bundle upload refused: {}", e.getMessage());
+            return Response.ERROR("error.bundle.tooLarge");
         } catch (Exception e) {
             logger.error("Unexpected error unpacking bundle", e);
             return Response.ERROR("error.bundle.unpack");
@@ -746,26 +865,55 @@ public class FilesResource {
         }
     }
 
+    /** The most a bundle's APK entries may unpack to in total: 4 GiB, Google Play's limit for an app's whole download.
+     *  Each entry is also held to its declared size (copyEntry), so a bundle can't write more than this. */
+    static final long MAX_BUNDLE_UNPACKED_BYTES = 4L * 1024 * 1024 * 1024;
+
+    /** A bundle whose APK entries declare more than the total unpacked limit. */
+    static final class BundleTooLargeException extends IOException {
+        BundleTooLargeException(String message) { super(message); }
+    }
+
     /** Extract every {@code *.apk} entry of a zip container to temp files. If a {@code universal.apk}
      *  is present (bundletool .apks), return ONLY it — it's a self-contained single install. */
-    private List<File> extractApkParts(File zip, Customer customer) throws IOException {
+    List<File> extractApkParts(File zip, Customer customer) throws IOException {
+        return extractApkParts(zip, customer, MAX_BUNDLE_UNPACKED_BYTES);
+    }
+
+    /** As above, refusing (before anything is written) a bundle whose APK entries declare more than [maxTotal] bytes. */
+    List<File> extractApkParts(File zip, Customer customer, long maxTotal) throws IOException {
+        java.util.zip.ZipFile opened;
+        try {
+            opened = new java.util.zip.ZipFile(zip);
+        } catch (java.util.zip.ZipException notAZip) {
+            // Not a zip at all (an encrypted .apkm, say): no APKs, the clearer error.bundle.noApks.
+            return new LinkedList<>();
+        }
         List<File> parts = new LinkedList<>();
         File universal = null;
-        try (java.util.zip.ZipInputStream zin =
-                     new java.util.zip.ZipInputStream(new java.io.BufferedInputStream(new FileInputStream(zip)))) {
-            java.util.zip.ZipEntry entry;
-            while ((entry = zin.getNextEntry()) != null) {
-                if (entry.isDirectory()) continue;
+        boolean extracted = false;
+        try (java.util.zip.ZipFile zipFile = opened) {
+            checkUnpackedSize(java.util.Collections.list(zipFile.entries()), maxTotal);
+            java.util.Enumeration<? extends java.util.zip.ZipEntry> entries = zipFile.entries();
+            while (entries.hasMoreElements()) {
+                java.util.zip.ZipEntry entry = entries.nextElement();
+                if (!isApkEntry(entry)) continue;
                 String base = new File(entry.getName()).getName().toLowerCase();
-                if (!base.endsWith(".apk")) continue;
                 // Output name is generated (not the entry name), so a malicious entry path can't escape.
                 File out = FileUtil.createUploadFile(customer, "bundlepart");
-                try (java.io.OutputStream os = new java.io.BufferedOutputStream(new java.io.FileOutputStream(out))) {
-                    byte[] buf = new byte[64 * 1024];
-                    int n;
-                    while ((n = zin.read(buf)) >= 0) os.write(buf, 0, n);
+                if (base.equals("universal.apk")) {
+                    if (universal != null) universal.delete(); // a later universal.apk replaces an earlier one
+                    universal = out;
+                } else {
+                    parts.add(out);
                 }
-                if (base.equals("universal.apk")) universal = out; else parts.add(out);
+                copyEntry(zipFile, entry, out);
+            }
+            extracted = true;
+        } finally {
+            if (!extracted) { // any failure, checked or not: leave no temp file behind
+                if (universal != null) universal.delete();
+                for (File part : parts) part.delete();
             }
         }
         if (universal != null) {
@@ -775,6 +923,49 @@ public class FilesResource {
             return only;
         }
         return parts;
+    }
+
+    /** Throws when the APK entries declare more than [maxTotal] bytes in all. Compares before adding, so a ZIP64 entry
+     *  declaring a size near Long.MAX_VALUE can't wrap the total negative and slip past. */
+    static void checkUnpackedSize(Iterable<? extends java.util.zip.ZipEntry> entries, long maxTotal)
+            throws BundleTooLargeException {
+        long total = 0;
+        for (java.util.zip.ZipEntry entry : entries) {
+            if (!isApkEntry(entry)) continue;
+            long size = Math.max(0, entry.getSize()); // unknown (-1) fails copyEntry anyway
+            if (size > maxTotal - total) {
+                throw new BundleTooLargeException("APK entries unpack to more than " + maxTotal + " bytes");
+            }
+            total += size;
+        }
+    }
+
+    private static boolean isApkEntry(java.util.zip.ZipEntry entry) {
+        return !entry.isDirectory() && new File(entry.getName()).getName().toLowerCase().endsWith(".apk");
+    }
+
+    /** Copy one zip entry to [out], checking its size and CRC: ZipFile, unlike ZipInputStream, checks neither.
+     *  Stops as soon as the entry inflates past the size the archive declares, so a lying entry can't fill the disk. */
+    private static void copyEntry(java.util.zip.ZipFile zipFile, java.util.zip.ZipEntry entry, File out)
+            throws IOException {
+        java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+        long size = 0;
+        try (InputStream is = zipFile.getInputStream(entry);
+             java.io.OutputStream os = new java.io.BufferedOutputStream(new java.io.FileOutputStream(out))) {
+            byte[] buf = new byte[64 * 1024];
+            int n;
+            while ((n = is.read(buf)) >= 0) {
+                if (size + n > entry.getSize()) {
+                    throw new IOException("Zip entry " + entry.getName() + " is larger than its declared size");
+                }
+                os.write(buf, 0, n);
+                crc.update(buf, 0, n);
+                size += n;
+            }
+        }
+        if (size != entry.getSize() || crc.getValue() != entry.getCrc()) {
+            throw new IOException("Invalid size or CRC for zip entry " + entry.getName());
+        }
     }
 
     /**

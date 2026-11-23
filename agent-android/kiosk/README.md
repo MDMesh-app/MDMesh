@@ -1,6 +1,6 @@
 # :kiosk
 
-COSU (Corporate-Owned Single-Use) lock-task / kiosk control, built clean-room on the
+COSU (Corporate-Owned Single-Use) lock-task / kiosk control, built independently on the
 native `DevicePolicyManager` lock-task APIs (Headwind's real COSU engine is closed
 "Pro"; OSS only ships an overlay hack).
 

@@ -29,7 +29,7 @@ import lombok.Setter;
 import java.util.List;
 
 /**
- * Enhanced Factory Reset Protection (EFRP) section of {@link DesiredConfig} (protocol 1.5): whether a wiped
+ * Enhanced Factory Reset Protection (EFRP) section of {@link DesiredConfig} (protocol 1.13): whether a wiped
  * device demands an authorized Google account, and the account allow-list permitted to unlock it. Applied by
  * the agent through {@code DevicePolicyManager.setFactoryResetProtectionPolicy} (API 30+, Device Owner).
  */

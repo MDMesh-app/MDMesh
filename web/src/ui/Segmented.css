@@ -1,0 +1,109 @@
+/* Segmented control (filters, view modes): a sunken track, the selected option raised. Track 28 (sm) or 32 (md). */
+.v2 .v2-seg {
+  display: inline-flex;
+  gap: var(--space-1);
+  height: var(--control-md);
+  max-width: 100%;
+  padding: calc(var(--space-1) - var(--hairline));
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-2);
+}
+.v2 .v2-seg--sm {
+  height: var(--control-sm);
+}
+.v2 .v2-seg--wrap {
+  flex-wrap: wrap;
+  height: auto;
+  min-height: var(--control-md);
+}
+.v2 .v2-seg--wrap.v2-seg--sm {
+  min-height: var(--control-sm);
+}
+.v2 .v2-seg__opt {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: calc(var(--control-md) - var(--space-2));
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-chip);
+  background: transparent;
+  color: var(--text-2);
+  font-size: var(--text-ui);
+  line-height: var(--lh-ui);
+  font-weight: var(--weight-regular);
+  white-space: nowrap;
+  cursor: pointer;
+  transition-property: background-color, color, box-shadow;
+  transition-duration: var(--dur-micro);
+  transition-timing-function: var(--ease);
+}
+.v2 .v2-seg--sm .v2-seg__opt {
+  min-height: calc(var(--control-sm) - var(--space-2));
+  padding-inline: var(--space-2);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
+}
+.v2 .v2-seg__opt:not(.is-selected, :disabled):hover {
+  color: var(--ink);
+}
+.v2 .v2-seg__opt.is-selected {
+  background: var(--seg-selected);
+  box-shadow: var(--elev-1);
+  color: var(--ink);
+  font-weight: var(--weight-medium);
+}
+.v2 .v2-seg__opt:disabled {
+  opacity: var(--disabled-opacity);
+  cursor: default;
+}
+.v2 .v2-seg__icon {
+  display: inline-flex;
+}
+.v2 .v2-seg__icon > svg {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+.v2 .v2-seg__count {
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--weight-regular);
+  color: var(--secondary);
+}
+
+/* Phones: every option is a 44px target, and a long filter scrolls sideways in its track instead of wrapping. */
+@media (max-width: 860px) {
+  .v2 .v2-seg,
+  .v2 .v2-seg--wrap {
+    flex-wrap: nowrap;
+    height: auto;
+    min-height: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .v2 .v2-seg__opt,
+  .v2 .v2-seg--sm .v2-seg__opt {
+    min-width: var(--touch);
+    min-height: var(--touch);
+  }
+}
+
+/* A track past the edge (phones) fades only where there is more (useOverflowFade). */
+.v2 .v2-seg[data-overflow='end'] {
+  mask-image: var(--fade-end);
+}
+.v2 .v2-seg[data-overflow='start'] {
+  mask-image: var(--fade-start);
+}
+.v2 .v2-seg[data-overflow='both'] {
+  mask-image: var(--fade-both);
+}
+
+@media (forced-colors: active) {
+  .v2 .v2-seg__opt.is-selected {
+    outline: var(--indicator) solid Highlight;
+    outline-offset: calc(var(--indicator) * -1);
+  }
+}

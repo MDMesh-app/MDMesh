@@ -14,7 +14,7 @@ commit, reproduction steps, and the impact you believe it has. You will get an a
 
 ## Supported versions
 
-Only the latest release line receives security fixes. Upgrading is a `git pull` + re-run of the installer, or a
+Only the latest release line receives security fixes. Upgrading is `./setup.sh --update` (from source or native), or a
 supervisor apply on quick-start (registry-image) Docker installs; the agent ↔ server wire contract is additive-only, so older agents keep
 working against a patched server (see `docs/adr/0009-agent-v1-contract-stability.md`).
 

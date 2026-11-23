@@ -26,6 +26,22 @@ class KioskLauncherExitTest {
             .replace(Regex("\"(?:\\\\.|[^\"\\\\\n])*\""), blank)
     }
 
+    private fun backgroundStoreSource(): String {
+        val root = generateSequence(File("").absoluteFile) { it.parentFile }
+            .first { File(it, "settings.gradle.kts").isFile }
+        val file = File(root, "core/src/main/kotlin/com/mdmesh/core/kiosk/KioskBackgroundImageStore.kt")
+        assertTrue("missing $file", file.isFile)
+        return file.readText()
+    }
+
+    private fun checkInWorkerSource(): String {
+        val root = generateSequence(File("").absoluteFile) { it.parentFile }
+            .first { File(it, "settings.gradle.kts").isFile }
+        val file = File(root, "core/src/main/kotlin/com/mdmesh/core/sync/CheckInWorker.kt")
+        assertTrue("missing $file", file.isFile)
+        return file.readText()
+    }
+
     /** The text of `fun name(...) { ... }`, by brace matching. */
     private fun body(src: String, name: String): IntRange {
         val start = Regex("\\bfun\\s+$name\\s*\\(").find(src)?.range?.first ?: error("no fun $name")
@@ -59,16 +75,28 @@ class KioskLauncherExitTest {
     fun `only the PIN check calls doExit, and it goes through ExitPinGate`() {
         val src = launcherSource()
         val check = body(src, "onPinEntered")
-        val calls = Regex("(?<!fun )\\bdoExit\\s*\\(\\s*\\)").findAll(src).map { it.range.first }.toList()
+        // doExit takes the kiosk the PIN was checked against (PR #192 S5).
+        val calls = Regex("(?<!fun )\\bdoExit\\s*\\(").findAll(src).map { it.range.first }.toList()
         assertTrue("onPinEntered no longer calls doExit; update this guard", calls.any { it in check })
         val outside = calls.filter { it !in check }.map { lineOf(src, it) }
         assertEquals("KioskLauncherActivity.kt lines calling doExit outside onPinEntered", emptyList<Int>(), outside)
         val checksWithGate = Regex("\\bpinGate\\.attempt\\s*\\(").containsMatchIn(src.substring(check))
         assertTrue("onPinEntered must check the PIN with ExitPinGate", checksWithGate)
         // And only on the right-PIN branch.
-        val onOpen = Regex("Outcome\\.Open\\s*->\\s*doExit\\s*\\(\\s*\\)").findAll(src.substring(check)).count()
+        val onOpen = Regex("Outcome\\.Open\\s*->\\s*doExit\\s*\\(").findAll(src.substring(check)).count()
         assertEquals("doExit must be the Outcome.Open branch, and only that", 1, onOpen)
         assertEquals(1, calls.count { it in check })
+    }
+
+    @Test
+    fun `PIN results show in the dialog, not in toasts`() {
+        // A Toast vanishes after two seconds and can't be read by everyone; the dialog keeps the error under the
+        // field (ExitPinUiState).
+        val src = launcherSource()
+        val toasts = Regex("\\bToast\\b").findAll(src).map { lineOf(src, it.range.first) }.toList()
+        assertEquals("KioskLauncherActivity.kt lines using Toast", emptyList<Int>(), toasts)
+        val check = src.substring(body(src, "onPinEntered"))
+        assertTrue("onPinEntered must render the outcome", "dialog.render(ExitPinUiState.of(outcome))" in check)
     }
 
     @Test
@@ -90,5 +118,36 @@ class KioskLauncherExitTest {
         assertEquals("stopLockTask outside doExit/stopLockTaskSafely", emptyList<Int>(), stops)
         // One definition + the no-kiosk branch of applyState.
         assertEquals("stopLockTaskSafely callers changed; check none is a crash path", 2, callers)
+    }
+
+    @Test
+    fun `overlapping image downloads use distinct temporary files`() {
+        val src = backgroundStoreSource()
+        assertTrue("background staging must use a unique temporary file", "File.createTempFile" in src)
+        assertTrue(
+            "background staging must not use one hash-named shared download",
+            ".\${request.hash}.download" !in src,
+        )
+    }
+
+    @Test
+    fun `on-device exit requests an immediate check-in after releasing kiosk policy`() {
+        val src = launcherSource()
+        val exit = body(src, "doExit")
+        val text = src.substring(exit)
+        val release = text.indexOf("applier.exit(")
+        val checkIn = text.indexOf("CheckInWorker.scheduleAfterCurrent(applicationContext)")
+        assertTrue("doExit must release kiosk policy", release >= 0)
+        assertTrue("doExit must request an immediate check-in", checkIn >= 0)
+        assertTrue("doExit must request check-in after releasing kiosk policy", checkIn > release)
+    }
+
+    @Test
+    fun `exit check-in follows rather than discards an in-flight check-in`() {
+        val src = checkInWorkerSource()
+        val queued = body(src, "scheduleAfterCurrent")
+        val text = src.substring(queued)
+        assertTrue("follow-up check-in must append after active work", "ExistingWorkPolicy.APPEND_OR_REPLACE" in text)
+        assertTrue("follow-up check-in must share the immediate check-in chain", "\"\$UNIQUE_NAME-now\"" in text)
     }
 }

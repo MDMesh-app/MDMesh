@@ -1,0 +1,253 @@
+/* Buttons: three heights (28 / 32 / 36) set by `height`, 13px/500 labels, r6, one hover, one pressed and one
+   disabled language for every variant. See Button.tsx for the size and variant map. */
+.v2 .v2-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  height: var(--control-md);
+  padding: 0 var(--space-3);
+  border: var(--hairline) solid transparent;
+  border-radius: var(--radius-control);
+  font-size: var(--text-ui);
+  line-height: var(--lh-ui);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+  user-select: none;
+  transition-property: background-color, border-color, color, opacity;
+  transition-duration: var(--dur-micro);
+  transition-timing-function: var(--ease);
+}
+.v2 .v2-btn__icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  margin-inline-start: calc(var(--space-1) * -1);
+}
+.v2 .v2-btn__icon--end {
+  margin-inline: 0 calc(var(--space-1) * -1);
+}
+.v2 .v2-btn__icon > svg {
+  width: var(--icon-md);
+  height: var(--icon-md);
+}
+
+/* ---- sizes ---- */
+.v2 .v2-btn--sm {
+  height: var(--control-sm);
+  padding-inline: var(--space-2);
+  gap: var(--space-1);
+}
+.v2 .v2-btn--sm .v2-btn__icon {
+  margin-inline-start: 0;
+}
+.v2 .v2-btn--sm .v2-btn__icon > svg {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+.v2 .v2-btn--lg {
+  height: var(--control-lg);
+  padding-inline: var(--space-4);
+}
+.v2 .v2-btn--block {
+  display: flex;
+  width: 100%;
+}
+
+/* ---- variants ---- */
+.v2 .v2-btn--primary,
+.v2 .v2-btn--primary:hover {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--on-ink);
+}
+.v2 .v2-btn--primary:not(:disabled, [aria-disabled='true']):hover {
+  background: var(--ink-hover);
+  border-color: var(--ink-hover);
+}
+.v2 .v2-btn--primary:not(:disabled, [aria-disabled='true']):active {
+  background: var(--ink-pressed);
+  border-color: var(--ink-pressed);
+}
+
+.v2 .v2-btn--danger-primary,
+.v2 .v2-btn--danger-primary:hover {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--on-danger);
+}
+.v2 .v2-btn--danger-primary:not(:disabled, [aria-disabled='true']):hover,
+.v2 .v2-btn--danger-primary:not(:disabled, [aria-disabled='true']):active {
+  background: var(--danger-hover);
+  border-color: var(--danger-hover);
+}
+
+/* Text buttons keep a soft edge: the visible label identifies them (1.4.11 asks no 3:1 edge of a labelled button). */
+.v2 .v2-btn--secondary,
+.v2 .v2-btn--secondary:hover,
+.v2 .v2-btn--subtle,
+.v2 .v2-btn--subtle:hover {
+  background: var(--surface);
+  border-color: var(--border-strong);
+  color: var(--ink);
+}
+.v2 .v2-btn--subtle,
+.v2 .v2-btn--subtle:hover {
+  border-color: var(--border);
+}
+.v2 .v2-btn--secondary .v2-btn__icon,
+.v2 .v2-btn--subtle .v2-btn__icon,
+.v2 .v2-btn--ghost .v2-btn__icon {
+  color: var(--text-2);
+}
+
+.v2 .v2-btn--danger,
+.v2 .v2-btn--danger:hover {
+  background: var(--surface);
+  border-color: var(--border-strong);
+  color: var(--alert-ink);
+}
+
+.v2 .v2-btn--ghost {
+  /* Quiet, but still a button at rest: a soft fill, no edge. */
+  background: var(--surface-2);
+  border-color: transparent;
+  color: var(--text);
+  padding-inline: var(--space-3);
+}
+/* Hover changes colour only, never layout (it outranks the global link hover). */
+.v2 .v2-btn--ghost:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.v2 .v2-btn--secondary:not(:disabled, [aria-disabled='true']):hover,
+.v2 .v2-btn--subtle:not(:disabled, [aria-disabled='true']):hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+.v2 .v2-btn--ghost:not(:disabled, [aria-disabled='true']):hover {
+  background: var(--pressed);
+  color: var(--ink);
+}
+.v2 .v2-btn--danger:not(:disabled, [aria-disabled='true']):hover {
+  background: var(--alert-soft);
+  border-color: var(--alert-line);
+}
+.v2 .v2-btn--secondary:not(:disabled, [aria-disabled='true']):active,
+.v2 .v2-btn--subtle:not(:disabled, [aria-disabled='true']):active,
+.v2 .v2-btn--ghost:not(:disabled, [aria-disabled='true']):active {
+  background: var(--pressed);
+  border-color: var(--border-strong);
+}
+
+/* ---- disabled: the same variant, faded ---- */
+.v2 .v2-btn:disabled,
+.v2 .v2-btn[aria-disabled='true'] {
+  cursor: default;
+  opacity: var(--disabled-opacity);
+}
+
+/* ---- icon buttons: squares at the control heights. At rest a hairline edge on the surface (it reads as a button,
+   not a bare icon); hovered, a fill and a stronger edge. ---- */
+.v2 .v2-iconbtn {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-md);
+  height: var(--control-md);
+  padding: 0;
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--text-2);
+  cursor: pointer;
+  transition-property: background-color, border-color, color, opacity;
+  transition-duration: var(--dur-micro);
+  transition-timing-function: var(--ease);
+}
+.v2 .v2-iconbtn--xs {
+  width: var(--control-xs);
+  height: var(--control-xs);
+  border-radius: var(--radius-chip);
+}
+.v2 .v2-iconbtn--sm {
+  width: var(--control-sm);
+  height: var(--control-sm);
+}
+.v2 .v2-iconbtn--lg {
+  width: var(--control-lg);
+  height: var(--control-lg);
+}
+.v2 .v2-iconbtn:not(:disabled):hover,
+.v2 .v2-iconbtn[aria-expanded='true'] {
+  border-color: var(--border-strong);
+  background: var(--hover);
+  color: var(--ink);
+}
+.v2 .v2-iconbtn:not(:disabled):active {
+  background: var(--pressed);
+}
+.v2 .v2-iconbtn:disabled {
+  opacity: var(--disabled-opacity);
+  cursor: default;
+}
+
+/* Phone layout: every control reaches the 44px touch target (2.5.8 asks 24; 44 is the console's aim on touch). */
+@media (max-width: 860px) {
+  .v2 .v2-iconbtn,
+  .v2 .v2-btn {
+    min-height: var(--touch);
+  }
+  .v2 .v2-linkbtn--strong,
+  .v2 .v2-linkbtn--quiet {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--touch);
+  }
+  .v2 .v2-iconbtn {
+    min-width: var(--touch);
+  }
+}
+
+@media (forced-colors: active) {
+  .v2 .v2-btn,
+  .v2 .v2-iconbtn {
+    border: var(--hairline) solid ButtonText;
+  }
+}
+
+/* ---- LinkButton: an in-page action styled as a quiet text link ---- */
+.v2 .v2-linkbtn {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+  border-radius: var(--radius-chip);
+}
+.v2 .v2-linkbtn--strong,
+.v2 .v2-linkbtn--quiet {
+  /* A link at rest: ink, medium, a soft underline that firms up on hover. */
+  font-size: var(--text-ui);
+  font-weight: var(--weight-medium);
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 0.2em;
+}
+.v2 .v2-linkbtn--strong:hover,
+.v2 .v2-linkbtn--quiet:hover {
+  text-decoration-color: currentColor;
+}
+.v2 .v2-linkbtn--inline {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+.v2 .v2-linkbtn:disabled {
+  cursor: default;
+  opacity: var(--disabled-opacity);
+}

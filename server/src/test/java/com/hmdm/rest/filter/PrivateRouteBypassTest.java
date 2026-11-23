@@ -2,8 +2,11 @@ package com.hmdm.rest.filter;
 
 import com.google.inject.servlet.UriPatternType;
 import com.hmdm.persistence.domain.User;
+import com.hmdm.plugin.PluginList;
 import com.hmdm.persistence.domain.UserRole;
 import com.hmdm.security.SecurityContext;
+import com.mdmesh.fixture.FixturePrivateResource;
+import com.mdmesh.fixture.FixturePublicResource;
 import org.glassfish.jersey.internal.MapPropertiesDelegate;
 import org.glassfish.jersey.server.ApplicationHandler;
 import org.glassfish.jersey.server.ContainerRequest;
@@ -65,8 +68,50 @@ public class PrivateRouteBypassTest {
 
     @Test
     public void theAppRegistersTheGuard() {
-        // HMDMApplication registers providers by scanning com.hmdm: the tests below add the guard by hand.
-        assertTrue(new ResourceConfig().packages("com.hmdm").getClasses().contains(PrivateRouteGuard.class));
+        // HMDMApplication registers providers by scanning PluginList.PACKAGES (com.hmdm, and com.mdmesh for a fork's
+        // plugins): the tests below add the guard by hand.
+        assertTrue(PluginList.PACKAGES.contains("com.hmdm") && PluginList.PACKAGES.contains("com.mdmesh"));
+        assertTrue(new ResourceConfig().packages(PluginList.PACKAGES.toArray(new String[0])).getClasses()
+                .contains(PrivateRouteGuard.class));
+    }
+
+    @Test
+    public void aForkPluginsPrivatePatternIsRefusedInEveryAmbiguousSpelling() throws Exception {
+        // A fork plugin (com.mdmesh, plugins/fork/) puts its private routes behind AuthFilter the same way: the test
+        // fixture's module, which the source scan above (src/main/java only) doesn't read.
+        String pattern = "/rest/plugins/fixture/private/*";
+        List<String> saved = protectedPatterns;
+        protectedPatterns = new ArrayList<>(saved);
+        protectedPatterns.add(pattern);
+        try {
+            String plain = concrete(pattern);
+            Outcome ok = throughWebXmlOrder(plain);
+            assertEquals(0, ok.status);
+            assertEquals(Collections.singletonList(pattern), ok.filtered);
+            for (String variant : variants(plain)) {
+                Outcome o = throughWebXmlOrder(variant);
+                assertEquals(variant, 400, o.status);
+                assertFalse(variant + ": never reaches the REST layer", o.reachedRest);
+            }
+        } finally {
+            protectedPatterns = saved;
+        }
+    }
+
+    @Test
+    public void theGuardRefusesAForkPluginsPrivateResourceWithNoSignedInUser() throws Exception {
+        ApplicationHandler app = new ApplicationHandler(new ResourceConfig(FixturePrivateResource.class,
+                FixturePublicResource.class, PrivateRouteGuard.class));
+        for (String path : new String[]{"plugins/fixture/private/ping", "plugins/fixture/private;x=y/ping",
+                "plugins;x/fixture/private/ping", "plugins/fixture;x/private/ping"}) {
+            assertEquals(path, 403, get(app, path).getStatus());
+        }
+        SecurityContext.init(user());
+        try {
+            assertEquals(200, get(app, "plugins/fixture/private/ping").getStatus());
+        } finally {
+            SecurityContext.release();
+        }
     }
 
     @Test
@@ -334,7 +379,10 @@ public class PrivateRouteBypassTest {
         return new ArrayList<>(out);
     }
 
-    /** Every JAX-RS route under com.hmdm (core and plugins) with a {@code private} segment, as /rest/... paths. */
+    /**
+     * Every JAX-RS route in the tree's main sources (core, plugins, and a fork's com.mdmesh plugins under plugins/fork/)
+     * with a {@code private} segment, as /rest/... paths.
+     */
     private static List<String> privateRoutes() throws Exception {
         List<String> out = new ArrayList<>();
         Pattern pkg = Pattern.compile("^package\\s+([\\w.]+)\\s*;", Pattern.MULTILINE);

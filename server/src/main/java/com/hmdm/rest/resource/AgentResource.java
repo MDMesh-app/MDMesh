@@ -24,12 +24,15 @@ package com.hmdm.rest.resource;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hmdm.persistence.AgentCommandDAO;
+import com.hmdm.persistence.AgentEnrollmentDAO;
+import com.hmdm.persistence.DeviceGoneException;
 import com.hmdm.persistence.AgentEnrollmentTokenDAO;
 import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.AgentCommand;
 import com.hmdm.persistence.domain.AgentEnrollmentToken;
 import com.hmdm.persistence.domain.Configuration;
 import com.hmdm.persistence.domain.Device;
+import com.hmdm.persistence.domain.DeviceEvent;
 import com.hmdm.persistence.domain.DeviceState;
 import com.hmdm.rest.json.agent.AgentDeviceState;
 import com.hmdm.rest.json.Response;
@@ -40,12 +43,16 @@ import com.hmdm.rest.json.agent.AgentCommandResult;
 import com.hmdm.rest.json.agent.AgentEnrollRequest;
 import com.hmdm.rest.json.agent.AgentEnrollResponse;
 import com.hmdm.rest.json.agent.AgentProtocol;
+import com.hmdm.rest.json.agent.AgentTelemetryEvent;
 import com.hmdm.util.AgentCapabilityTokens;
 import com.hmdm.util.CryptoUtil;
+import com.hmdm.util.WindowLimiter;
 import com.hmdm.util.DesiredConfigBuilder;
 import com.hmdm.util.InstallIntegrity;
+import com.hmdm.util.RolloutProgress;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
+import org.apache.ibatis.exceptions.PersistenceException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -63,6 +70,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 /**
  * <p>Public-facing resource for the from-scratch Android agent v1 protocol. Mirrors
@@ -84,15 +92,61 @@ public class AgentResource {
     private static final Set<String> ALLOWED_RESULT_STATUS = new HashSet<>(Arrays.asList(
             "accepted", "done", "failed", "unsupported", "expired"));
 
+    /** The factory reset. Delivering it marks the device wiped: it erases itself before it can report. */
+    static final String WIPE_COMMAND = "device.wipe";
+    // A wiped device never checks in again under its old identity, so one that does, this long after its wipe was
+    // delivered, didn't erase itself. The grace covers a check-in the agent may still make before the reset starts.
+    static final long WIPE_GRACE_MS = 5L * 60L * 1000L;
+
     // Ingestion caps: an authenticated device is still untrusted input. These bound what a single
     // check-in (potentially every 5s in foreground mode) can write into the database.
-    private static final int MAX_EVENTS_PER_CHECKIN = 100;
+    // Past this count the server stops and reports how many events it took (eventsAccepted, protocol 1.12), so the
+    // agent resends the rest. Older agents ignore that and count their whole batch delivered: they send up to 500,
+    // their whole buffer, so this cap takes all of it.
+    static final int MAX_EVENTS_PER_CHECKIN = 500;
     private static final int MAX_EVENT_DETAIL_CHARS = 4000;
+    /** device_event.type is VARCHAR(64); the agent's types are short names. */
+    private static final Pattern EVENT_TYPE = Pattern.compile("^[A-Za-z0-9._-]{1,64}$");
+    /** devices.hardwareid is VARCHAR(128). */
+    private static final int MAX_HARDWARE_ID_CHARS = 128;
+    /** device_state's androidRelease, agentVersion and powerMode columns. */
+    private static final int MAX_ANDROID_RELEASE_CHARS = 32;
+    private static final int MAX_AGENT_VERSION_CHARS = 64;
+    private static final int MAX_POWER_MODE_CHARS = 16;
     private static final int MAX_TELEMETRY_CHARS = 256 * 1024;
-    // Each result is one UPDATE. Current agents send at most 100 per check-in; the rest of a backlog follows on the
+    // Each result is one UPDATE. Current agents send at most 1000 per check-in; the rest of a backlog follows on the
     // next ones. Past this count the server stops and reports how many it took (resultsAccepted), so the agent
     // resends the remainder rather than losing it. Older agents that send everything at once never get near it.
     static final int MAX_RESULTS_PER_CHECKIN = 1000;
+    /**
+     * The enroll failed on the server; its transaction rolled back, so nothing was kept and the code's use is not spent.
+     * Agents retry it (it matches none of their final markers: token.used/invalid/expired, enrollment.disabled).
+     */
+    static final String ENROLLMENT_FAILED = "error.agent.enrollment.failed";
+    /**
+     * The enrollment couldn't get its locks in time (its code's, held by another enrollment with it, often the request
+     * this one retries; the customer's, held by another device being added; or a row a console transaction held), or
+     * too many enrollments with its code are running. Retryable like {@link #ENROLLMENT_FAILED}: nothing was kept, and
+     * the next retry resumes or goes through.
+     */
+    static final String ENROLLMENT_IN_PROGRESS = "error.agent.enrollment.inProgress";
+    /**
+     * The token's customer has as many devices as its limit allows (installs with several customers). Agents retry it
+     * (no final marker), so the device enrolls once there is room.
+     */
+    static final String DEVICE_LIMIT = "error.agent.enrollment.deviceLimit";
+    /**
+     * A resume-only request (the agent's credential recovery) found no device of its attempt to resume: deleted,
+     * checked in, or past the retry window. Final for the recovery; nothing was created and no use taken.
+     */
+    static final String NOT_RESUMABLE = "error.agent.enrollment.notResumable";
+    /**
+     * Enrollments of one code allowed at once (waiting on its lock), per server instance (the count lives in this JVM);
+     * more get ENROLLMENT_IN_PROGRESS at once. It bounds one code's burst, not the pool: see PerKeyLimit.
+     */
+    static final int MAX_ENROLLS_PER_CODE = 8;
+    private static final com.hmdm.rest.resource.support.PerKeyLimit<Integer> enrollsPerCode =
+            new com.hmdm.rest.resource.support.PerKeyLimit<>(MAX_ENROLLS_PER_CODE);
     // Details are short diagnostics, except apps.scan / apps.icons, which return JSON: the console asks for icons in
     // batches of 24 (96 px PNG, base64), well under 1 MiB even for incompressible icons. A larger detail is not
     // stored (cut JSON would be useless); the command is marked failed with a short note instead.
@@ -105,9 +159,11 @@ public class AgentResource {
     private AgentCommandDAO commandDAO;
     private com.hmdm.rest.resource.support.ConfigAppInstaller configAppInstaller;
     private com.hmdm.rest.resource.support.ConfigReconciler configReconciler;
+    private com.hmdm.rest.resource.support.AppReconciler appReconciler;
     private com.hmdm.rest.resource.support.RolloutRequeuer rolloutRequeuer;
     private com.hmdm.rest.resource.support.InstallHashes installHashes;
     private com.hmdm.rest.resource.support.KioskLockoutAlert kioskLockoutAlert;
+    private AgentEnrollmentDAO enrollments;
 
     /**
      * <p>A constructor required by Swagger.</p>
@@ -121,21 +177,25 @@ public class AgentResource {
                          AgentCommandDAO commandDAO,
                          com.hmdm.rest.resource.support.ConfigAppInstaller configAppInstaller,
                          com.hmdm.rest.resource.support.ConfigReconciler configReconciler,
+                         com.hmdm.rest.resource.support.AppReconciler appReconciler,
                          com.hmdm.rest.resource.support.RolloutRequeuer rolloutRequeuer,
                          com.hmdm.rest.resource.support.InstallHashes installHashes,
-                         com.hmdm.rest.resource.support.KioskLockoutAlert kioskLockoutAlert) {
+                         com.hmdm.rest.resource.support.KioskLockoutAlert kioskLockoutAlert,
+                         AgentEnrollmentDAO enrollments) {
         this.unsecureDAO = unsecureDAO;
         this.tokenDAO = tokenDAO;
         this.commandDAO = commandDAO;
         this.configAppInstaller = configAppInstaller;
         this.configReconciler = configReconciler;
+        this.appReconciler = appReconciler;
         this.rolloutRequeuer = rolloutRequeuer;
         this.installHashes = installHashes;
         this.kioskLockoutAlert = kioskLockoutAlert;
+        this.enrollments = enrollments;
     }
 
     // =================================================================================================================
-    @ApiOperation(value = "Enroll an agent", notes = "Validates a single-use token and registers the device.")
+    @ApiOperation(value = "Enroll an agent", notes = "Validates an enrollment token, uses one of its uses, and registers the device.")
     @POST
     @Path("/enroll")
     @Consumes(MediaType.APPLICATION_JSON)
@@ -147,71 +207,144 @@ public class AgentResource {
 
         AgentEnrollmentToken token = tokenDAO.findByToken(request.getEnrollToken());
         if (token == null) {
+            // A code that was never made, was made on another server, or mistyped. DEBUG: scanners would fill the log.
+            logger.debug("Agent enroll refused: unknown code");
             return Response.ERROR("error.agent.token.invalid");
         }
-        // Friendly pre-checks for good error messages; the CLAIM below is the actual guard.
-        if (token.isUsed()) {
-            return Response.ERROR("error.agent.token.used");
-        }
-        if (token.getExpiresAt() != null && token.getExpiresAt() < System.currentTimeMillis()) {
-            return Response.ERROR("error.agent.token.expired");
-        }
-        // Atomically consume the token BEFORE creating anything: with N concurrent enrolls
-        // (freshly-provisioned agents fire several racing check-in engines) exactly one wins;
-        // the blind mark-used-after-create used here before let every racer mint its own
-        // device row, leaving permanent ghost devices.
-        if (!tokenDAO.claim(token.getId())) {
+        if (token.getRevokedAt() != null) {
+            // Stopped by an admin, and not resumed either. Answered as used up: every agent, older ones too, stops
+            // retrying on that (an unknown error would be retried forever), and it says what matters, that this code
+            // enrolls nothing more. Every refusal is logged with its reason, never the code.
+            logger.info("Agent enroll refused: token {} was stopped", token.getId());
             return Response.ERROR("error.agent.token.used");
         }
 
-        String deviceId = UUID.randomUUID().toString();
-        Device device = null;
+        String hardwareId = storable("Enroll with token " + token.getId(), "hardware id", request.getHardwareId(),
+                MAX_HARDWARE_ID_CHARS);
+        // Enrolls of one code wait on its lock one after another, each holding a pooled connection: past a few, turn
+        // the rest away now (retryable) instead of letting one code's burst take the pool.
+        if (!enrollsPerCode.tryEnter(token.getId())) {
+            logger.info("Agent enroll with token {}: {} already running, asked to retry", token.getId(),
+                    MAX_ENROLLS_PER_CODE);
+            return Response.ERROR(ENROLLMENT_IN_PROGRESS);
+        }
+        AgentEnrollmentDAO.Outcome outcome;
         try {
-            // The device lands in the token's customer, and in the token's configuration when the
-            // admin bound one at mint time (else the customer's settings default).
-            device = unsecureDAO.createNewDeviceForToken(
-                    deviceId, token.getCustomerId(), token.getConfigurationId());
-            if (device == null) {
-                // Named error (not a generic internal one) — this exact failure cost a debugging
-                // session: valid token, reachable server, no device row.
-                logger.warn("Agent enroll: on-demand device creation is disabled by settings (token {})", token.getId());
-                return Response.ERROR("error.agent.enrollment.disabled");
+            // One transaction (AgentEnrollmentDAO): all of it or nothing, enrolls of this token one after another.
+            // The device's secret is the DAO's: returned once, below, and only its hash is stored.
+            outcome = enrollments.enroll(token.getId(), token.getCustomerId(), token.getConfigurationId(),
+                    UUID.randomUUID().toString(), capabilitiesJson(request.getCapabilities()), hardwareId,
+                    request.getEnrollAttempt(), Boolean.TRUE.equals(request.getResumeOnly()));
+        } catch (AgentEnrollmentDAO.CreationRefusedException e) {
+            // Named error (not a generic internal one) — this exact failure cost a debugging
+            // session: valid token, reachable server, no device row.
+            logger.warn("Agent enroll: on-demand device creation is disabled by settings (token {})", token.getId());
+            return Response.ERROR("error.agent.enrollment.disabled");
+        } catch (AgentEnrollmentDAO.DeviceLimitException e) {
+            // Retryable for the agent: once an admin raises the limit or removes a device, the device enrolls.
+            logger.warn("Agent enroll refused: customer {} has reached its device limit ({}) (token {})",
+                    token.getCustomerId(), e.limit, token.getId());
+            return Response.ERROR(DEVICE_LIMIT);
+        } catch (RuntimeException e) {
+            if (isLockTimeout(e)) {
+                logger.info("Agent enroll with token {}: the enrollment couldn't get its locks in time; asked to retry",
+                        token.getId());
+                return Response.ERROR(ENROLLMENT_IN_PROGRESS);
             }
-
-            // Mint a per-device secret; persist only its SHA-256 hash. The plaintext is
-            // returned exactly once (below) and is required as a bearer token on /checkin.
-            String deviceSecret = UUID.randomUUID().toString().replace("-", "")
-                    + UUID.randomUUID().toString().replace("-", "");
-            commandDAO.updateDeviceSecretHash(deviceId, CryptoUtil.getSHA256String(deviceSecret));
-            commandDAO.updateDeviceCapabilities(deviceId, capabilitiesJson(request.getCapabilities()));
-            // Record the agent's stable hardware id so duplicate enrollments of the same physical
-            // device can be detected/flagged in the admin UI (we still create a fresh row per enroll).
-            if (request.getHardwareId() != null && !request.getHardwareId().trim().isEmpty()) {
-                commandDAO.updateHardwareId(deviceId, request.getHardwareId().trim());
-            }
-            commandDAO.touchLastUpdate(deviceId);
-
-            String configurationName = null;
-            if (device.getConfigurationId() != null) {
-                Configuration configuration = unsecureDAO.getConfigurationById(device.getConfigurationId());
-                if (configuration != null) {
-                    configurationName = configuration.getName();
-                }
-            }
-
-            // Best-effort: queue the configuration's action=install apps so a config acts as a
-            // golden image. Failures are logged inside; enrollment itself must not fail on this.
-            int queuedApps = configAppInstaller.enqueueConfigApps(device);
-
-            logger.info("Agent enrolled device {} (configuration {}, {} config apps queued)",
-                    deviceId, device.getConfigurationId(), queuedApps);
-            return Response.OK(new AgentEnrollResponse(deviceId, configurationName, deviceSecret));
+            // Rolled back: nothing kept, the use not spent; the agent retries. The class and SQL state only (a driver
+            // message can echo values).
+            logger.error("Agent enroll with token {} failed and was rolled back: {}{}", token.getId(),
+                    e.getClass().getSimpleName(), sqlState(e).map(st -> " (SQL state " + st + ")").orElse(""));
+            return Response.ERROR(ENROLLMENT_FAILED);
         } finally {
-            // A server-side failure (settings rejection, SQL error) must not burn the single-use
-            // token — the agent retries and succeeds once the operator fixes the condition.
-            if (device == null) {
-                tokenDAO.release(token.getId());
+            enrollsPerCode.exit(token.getId());
+        }
+
+        switch (outcome.kind) {
+            case NOT_RESUMABLE:
+                // The agent's recovery found nothing of its own to resume: final for the recovery, no use taken.
+                logger.info("Agent enroll refused: nothing to resume for this attempt (token {})", token.getId());
+                return Response.ERROR(NOT_RESUMABLE);
+            case NO_USE:
+                if (token.getExpiresAt() != null && token.getExpiresAt() <= System.currentTimeMillis()
+                        && !token.isUsed()) {
+                    logger.info("Agent enroll refused: token {} expired at {}", token.getId(),
+                            java.time.Instant.ofEpochMilli(token.getExpiresAt()));
+                    return Response.ERROR("error.agent.token.expired");
+                }
+                logger.info("Agent enroll refused: token {} has no use left (all {} used, or stopped or expired since)",
+                        token.getId(), token.getMaxUses() == null ? 1 : token.getMaxUses());
+                return Response.ERROR("error.agent.token.used");
+            case RESUMED: {
+                logger.info("Agent enroll retried: device {} (token {}) gets its credentials again",
+                        outcome.deviceNumber, token.getId());
+                Device device = unsecureDAO.getDeviceByNumber(outcome.deviceNumber);
+                return Response.OK(resumable(new AgentEnrollResponse(outcome.deviceNumber,
+                        device == null ? null : configurationName(device), outcome.secret)));
             }
+            case CREATED:
+            default: {
+                Device device = outcome.device;
+                // After the commit, best effort: queue the configuration's action=install apps so a config acts as a
+                // golden image. Failures are logged inside; the enrollment stands either way.
+                int queuedApps = 0;
+                try {
+                    queuedApps = configAppInstaller.enqueueConfigApps(device);
+                } catch (RuntimeException e) {
+                    logger.warn("Agent enroll: config apps for device {} not queued: {}", device.getNumber(),
+                            e.getClass().getSimpleName());
+                }
+                // The token id says which code enrolled the device: with a code for a batch, what to look for when it
+                // leaked (the mint and revoke-all are in the audit log).
+                logger.info("Agent enrolled device {} with token {} (configuration {}, {} config apps queued)",
+                        device.getNumber(), token.getId(), device.getConfigurationId(), queuedApps);
+                return Response.OK(resumable(new AgentEnrollResponse(device.getNumber(), configurationName(device),
+                        outcome.secret)));
+            }
+        }
+    }
+
+    /** Tells the agent this server resumes enrollments (resumeOnly, protocol 1.9), so it may recover credentials. */
+    private static AgentEnrollResponse resumable(AgentEnrollResponse response) {
+        response.setResumeSupported(Boolean.TRUE);
+        return response;
+    }
+
+    /** A PostgreSQL lock_timeout (SQL state 55P03) anywhere in the cause chain. */
+    static boolean isLockTimeout(Throwable e) {
+        return sqlState(e).map("55P03"::equals).orElse(false);
+    }
+
+    private static java.util.Optional<String> sqlState(Throwable e) {
+        for (Throwable t = e; t != null && t.getCause() != t; t = t.getCause()) {
+            if (t instanceof java.sql.SQLException && ((java.sql.SQLException) t).getSQLState() != null) {
+                return java.util.Optional.of(((java.sql.SQLException) t).getSQLState());
+            }
+        }
+        return java.util.Optional.empty();
+    }
+
+    /**
+     * What identifies a retryable enrollment: the SHA-256 of the token id and the agent's attempt id, so the stored
+     * value reveals neither and an attempt id only resumes enrollments made with the same code.
+     *
+     * @return the hash, or null when the request carries no usable attempt id
+     */
+    static String enrollAttemptHash(Integer tokenId, String attempt) {
+        return AgentEnrollmentDAO.attemptHash(tokenId, attempt);
+    }
+
+    /** The device's configuration name for the enroll response; best effort (the response is still useful without). */
+    private String configurationName(Device device) {
+        if (device.getConfigurationId() == null) {
+            return null;
+        }
+        try {
+            Configuration configuration = unsecureDAO.getConfigurationById(device.getConfigurationId());
+            return configuration == null ? null : configuration.getName();
+        } catch (RuntimeException e) {
+            logger.warn("Agent enroll: configuration {} name not read: {}", device.getConfigurationId(), e.getClass().getSimpleName());
+            return null;
         }
     }
 
@@ -254,6 +387,21 @@ public class AgentResource {
             return Response.ERROR("error.agent.unauthorized");
         }
 
+        try {
+            return checkinAuthenticated(device, httpRequest, request);
+        } catch (DeviceGoneException e) {
+            // Deleted while this check-in ran: answered as a device that is unknown now (its history foreign keys
+            // refused the write, so nothing of it is left behind).
+            logger.warn("Agent check-in: device {} was deleted during its check-in", deviceNumber);
+            return Response.ERROR("error.agent.unauthorized");
+        }
+    }
+
+    /** {@link #checkin} once the device is authenticated. */
+    private Response checkinAuthenticated(Device device, javax.servlet.http.HttpServletRequest httpRequest,
+                                          AgentCheckInRequest request) {
+        String deviceNumber = device.getNumber();
+
         // Before any result is recorded: a config.apply delivered before this moment and still open afterwards is
         // one the agent is not running (ConfigReconciler).
         long receivedAt = System.currentTimeMillis();
@@ -261,10 +409,16 @@ public class AgentResource {
         // Stamp last-seen so the admin UI shows the device online.
         commandDAO.touchLastUpdate(deviceNumber);
 
+        if (device.getWipedAt() != null && receivedAt - device.getWipedAt() > WIPE_GRACE_MS
+                && commandDAO.clearWipedBefore(deviceNumber, receivedAt - WIPE_GRACE_MS)) {
+            logger.info("Device {} checked in after its wipe was delivered, so it wasn't wiped: unmarked", deviceNumber);
+        }
+
         // Backfill the stable hardware id for already-enrolled devices (set once / when it changes).
-        if (request.getHardwareId() != null && !request.getHardwareId().trim().isEmpty()
-                && !request.getHardwareId().trim().equals(device.getHardwareId())) {
-            commandDAO.updateHardwareId(deviceNumber, request.getHardwareId().trim());
+        String hardwareId = storable("Device " + deviceNumber, "hardware id", request.getHardwareId(),
+                MAX_HARDWARE_ID_CHARS);
+        if (hardwareId != null && !hardwareId.equals(device.getHardwareId())) {
+            commandDAO.updateHardwareId(deviceNumber, hardwareId);
         }
 
         // Refresh the stored capability matrix (kept fresh every check-in). Computed once here and
@@ -283,18 +437,23 @@ public class AgentResource {
         // Persist the latest device-state snapshot (powers the admin console).
         String appliedRevision = validRevision(deviceNumber,
                 request.getState() == null ? null : request.getState().getAppliedConfigRevision());
+        // A state value the database can't store would fail its write, and with it every check-in from the device.
+        String agentVersion = request.getState() == null ? null : storable("Device " + deviceNumber, "agentVersion",
+                request.getState().getAgentVersion(), MAX_AGENT_VERSION_CHARS);
         if (request.getState() != null) {
             AgentDeviceState s = request.getState();
+            String androidRelease = storable("Device " + deviceNumber, "androidRelease", s.getAndroidRelease(),
+                    MAX_ANDROID_RELEASE_CHARS);
             DeviceState row = new DeviceState();
             row.setDeviceNumber(deviceNumber);
             row.setBattery(s.getBattery());
             row.setCharging(s.getCharging());
             row.setLocked(s.getLocked());
             row.setKioskActive(s.getKioskActive());
-            row.setAndroidRelease(s.getAndroidRelease());
+            row.setAndroidRelease(androidRelease);
             row.setLastBootAt(s.getLastBootAt());
-            row.setAgentVersion(s.getAgentVersion());
-            row.setPowerMode(s.getPowerMode());
+            row.setAgentVersion(agentVersion);
+            row.setPowerMode(storable("Device " + deviceNumber, "powerMode", s.getPowerMode(), MAX_POWER_MODE_CHARS));
             row.setAppliedConfigRevision(appliedRevision);
             row.setAppliedConfigAt(null);
             // The server (not the device) knows the public IP — inject it into the census JSON.
@@ -316,36 +475,15 @@ public class AgentResource {
             commandDAO.upsertState(row);
             // Mirror the Android version into the device row (infojson) so the device LIST — which
             // reads infojson->>'androidVersion', not the state table — shows it.
-            String androidRelease = s.getAndroidRelease();
-            if (androidRelease != null && !androidRelease.trim().isEmpty()) {
-                commandDAO.updateAndroidVersion(deviceNumber, androidRelease.trim());
+            if (androidRelease != null && !androidRelease.isEmpty()) {
+                commandDAO.updateAndroidVersion(deviceNumber, androidRelease);
             }
             // Append the reported location (dynamic.location) to the device's breadcrumb trail.
             recordLocation(deviceNumber, tel);
         }
 
-        // Ingest buffered lifecycle events into the timeline — capped, so one check-in can't
-        // flood device_event (each entry is an INSERT with unbounded TEXT detail otherwise).
-        if (request.getEvents() != null) {
-            int ingested = 0;
-            for (com.hmdm.rest.json.agent.AgentTelemetryEvent e : request.getEvents()) {
-                if (e == null || e.getType() == null) {
-                    continue;
-                }
-                if (++ingested > MAX_EVENTS_PER_CHECKIN) {
-                    logger.warn("Device {} sent >{} events in one check-in — rest dropped",
-                            deviceNumber, MAX_EVENTS_PER_CHECKIN);
-                    break;
-                }
-                long ts = e.getTs() == null ? System.currentTimeMillis() : e.getTs();
-                String detail = e.getDetail();
-                if (detail != null && detail.length() > MAX_EVENT_DETAIL_CHARS) {
-                    detail = detail.substring(0, MAX_EVENT_DETAIL_CHARS);
-                }
-                commandDAO.insertEvent(deviceNumber, e.getType(), ts, detail);
-                kioskLockoutAlert.onEvent(device, e.getType(), detail);
-            }
-        }
+        int eventsAccepted = ingestEvents(device, request.getEvents(),
+                AgentProtocol.atLeast(request.getProtocolVersion(), 1, 12));
 
         // Ack results from previously-delivered commands.
         int resultsAccepted = 0;
@@ -372,7 +510,7 @@ public class AgentResource {
                 // Ownership is enforced inside the UPDATE's WHERE (id + deviceNumber) — no
                 // per-result pre-SELECT needed on the hot path.
                 String status = result.getStatus();
-                String detail = result.getDetail();
+                String detail = withoutNul(result.getDetail());
                 if (detail != null && detail.length() > MAX_RESULT_DETAIL_CHARS) {
                     logger.warn("Device {} result detail for command {} oversized ({} chars) — stored as failed",
                             deviceNumber, commandId, detail.length());
@@ -384,6 +522,10 @@ public class AgentResource {
                 if ("done".equals(status)) {
                     // A completed config.apply records which agent version applied it (config resync baseline).
                     commandDAO.recordConfigApplyDone(deviceNumber, commandId);
+                } else if (device.getWipedAt() != null && ("failed".equals(status) || "unsupported".equals(status))
+                        && commandDAO.clearWipedForCommand(deviceNumber, commandId)) {
+                    logger.info("Device {} reported its wipe (command {}) {}: no longer marked wiped",
+                            deviceNumber, commandId, status);
                 }
             }
         }
@@ -401,23 +543,30 @@ public class AgentResource {
                 capsJson != null ? capsJson : commandDAO.getDeviceCapabilities(deviceNumber));
         long now = System.currentTimeMillis();
 
-        String agentVersion = request.getState() == null ? null : request.getState().getAgentVersion();
         String configAgentVersion = null;
-        if (AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, deviceTokens)) {
-            // Only capable agents pay for this read: its values are consumed solely by reconcile, which ignores
+        String appsRevision = null;
+        boolean configCapable = AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, deviceTokens);
+        if (configCapable || AgentCapabilityTokens.isAllowed(RolloutProgress.INSTALL_CAPABILITY, deviceTokens)) {
+            // Only capable agents pay for this read: its values are consumed solely by the reconcilers, which ignore
             // the others. A check-in that omitted the revision (state block absent, or invalid value) falls back
             // to the last stored value so a missing field never masquerades as drift.
             com.hmdm.persistence.domain.DeviceState stored = commandDAO.getState(deviceNumber);
-            if (appliedRevision == null) {
-                appliedRevision = stored == null ? null : stored.getAppliedConfigRevision();
+            if (configCapable) {
+                if (appliedRevision == null) {
+                    appliedRevision = stored == null ? null : stored.getAppliedConfigRevision();
+                }
+                configAgentVersion = stored == null ? null : stored.getConfigAgentVersion();
             }
-            configAgentVersion = stored == null ? null : stored.getConfigAgentVersion();
+            appsRevision = stored == null ? null : stored.getAppsRevision();
         }
 
         // Desired-state reconciliation: queue config.apply when the device drifted from its configuration (or now
         // runs a different agent version), so the command rides THIS response instead of waiting for the next cycle.
         configReconciler.reconcile(device, deviceTokens, appliedRevision, agentVersion, configAgentVersion, now,
                 receivedAt);
+        // Configuration apps: queue app.install for the apps its configuration gained (an app added, a new version, a
+        // move to another configuration) that the device doesn't have yet, so they ride this response too.
+        appReconciler.reconcile(device, deviceTokens, appsRevision, now);
         // A staged agent update whose command expired (its result was lost) or was never queued: queue it again here.
         rolloutRequeuer.requeue(device, now);
 
@@ -440,14 +589,212 @@ public class AgentResource {
                 continue;
             }
             // Atomically claim it so a concurrent check-in can't deliver the same command twice.
-            if (commandDAO.claimForDelivery(stored.getId(), now)) {
+            if (commandDAO.claimForDelivery(stored, now)) {
                 commands.add(toWire(stored));
+                if (WIPE_COMMAND.equals(stored.getType())) {
+                    commandDAO.markWiped(deviceNumber, now);
+                    logger.info("Device {} received its wipe (command {}): marked wiped", deviceNumber, stored.getId());
+                }
             }
         }
 
         AgentCheckInResponse response = new AgentCheckInResponse(commands);
         response.setResultsAccepted(resultsAccepted);
+        response.setEventsAccepted(eventsAccepted);
         return Response.OK(response);
+    }
+
+    /**
+     * Stores the check-in's buffered lifecycle events in the timeline and returns how many of them, counted from the
+     * first, it consumed (protocol 1.12 {@code eventsAccepted}): the agent drops those and resends the rest. Capped, so
+     * one check-in can't flood device_event. An event with no valid type is skipped, and so is one whose data the
+     * database refuses (SQL state class 22 or 23): both count as consumed, so the agent doesn't resend them forever. Any
+     * other database error (a lost connection, a failover) is not the event's fault: the events stop there, uncounted,
+     * and the agent sends them again. The rest of the check-in goes on, so a short blip doesn't cost its results. Only
+     * when {@code countsAccepted}, though: an agent before protocol 1.12 ignores {@code eventsAccepted} and drops its
+     * whole batch on a successful check-in, so for it the error fails the check-in, as it did before 1.12, and the agent
+     * sends the batch again.
+     *
+     * <p>The events go in as one transaction ({@link AgentCommandDAO#insertEvents}): one commit, and on a lost
+     * connection nothing half-stored for the agent to send twice. Only when the database refuses that batch's data does
+     * it store them one by one, to skip just the refused ones. That fallback runs outside any transaction on purpose:
+     * each row commits on its own, so a refused row can't abort the rows after it. So this must not be called inside
+     * an enclosing transaction, where the first refused row would fail every later one (SQL state 25P02, read here as a
+     * lost database).</p>
+     */
+    private int ingestEvents(Device device, List<AgentTelemetryEvent> events, boolean countsAccepted) {
+        if (events == null) {
+            return 0;
+        }
+        String deviceNumber = device.getNumber();
+        List<DeviceEvent> batch = new ArrayList<>();
+        // Where each batch row is in the request: the prefix the agent may drop is counted in request positions.
+        List<Integer> positions = new ArrayList<>();
+        int consumable = events.size();
+        int invalid = 0;
+        String firstInvalid = null;
+        for (int i = 0; i < events.size(); i++) {
+            AgentTelemetryEvent e = events.get(i);
+            if (e == null || e.getType() == null || !EVENT_TYPE.matcher(e.getType()).matches()) {
+                if (invalid++ == 0) {
+                    firstInvalid = e == null ? null : e.getType();
+                }
+                continue;
+            }
+            if (batch.size() == MAX_EVENTS_PER_CHECKIN) {
+                logger.info("Device {} sent more than {} events in one check-in: the agent resends the rest",
+                        deviceNumber, MAX_EVENTS_PER_CHECKIN);
+                consumable = i;
+                break;
+            }
+            batch.add(eventRow(deviceNumber, e));
+            positions.add(i);
+        }
+        if (invalid > 0) {
+            logger.warn("Device {} sent {} events without a valid type, skipped (the first: {})", deviceNumber,
+                    invalid, firstInvalid == null ? "no type" : "\"" + loggable(firstInvalid, 40) + "\"");
+        }
+        if (batch.isEmpty()) {
+            return consumable;
+        }
+        try {
+            commandDAO.insertEvents(deviceNumber, batch);
+        } catch (PersistenceException ex) {
+            if (!isDataError(ex)) {
+                return eventsStopped(deviceNumber, ex, batch.get(0).getType(), positions.get(0), countsAccepted);
+            }
+            logger.info("Device {} events refused as a batch (SQL state {}): storing them one by one", deviceNumber,
+                    sqlState(ex).orElse(null));
+            return ingestOneByOne(device, batch, positions, consumable, countsAccepted);
+        }
+        for (DeviceEvent row : batch) {
+            kioskLockoutAlert.onEvent(device, row.getType(), row.getDetail());
+        }
+        return consumable;
+    }
+
+    /**
+     * {@link #ingestEvents}'s fallback once the database refused the batch's data: each row on its own, outside any
+     * transaction, skipping the refused ones. Returns what {@link #ingestEvents} returns.
+     */
+    private int ingestOneByOne(Device device, List<DeviceEvent> batch, List<Integer> positions, int consumable,
+                               boolean countsAccepted) {
+        String deviceNumber = device.getNumber();
+        for (int k = 0; k < batch.size(); k++) {
+            DeviceEvent row = batch.get(k);
+            try {
+                if (AgentCommandDAO.KIOSK_RETURN.equals(row.getType())) {
+                    // Timeline keeps the device timestamp. The durable proof is ordered by the server-owned kiosk
+                    // generation, so device clock skew cannot make it override a later kiosk command.
+                    commandDAO.recordKioskReturn(deviceNumber, row.getTs(), row.getDetail());
+                } else {
+                    commandDAO.insertEvent(deviceNumber, row.getType(), row.getTs(), row.getDetail());
+                }
+            } catch (PersistenceException ex) {
+                if (!isDataError(ex)) {
+                    return eventsStopped(deviceNumber, ex, row.getType(), positions.get(k), countsAccepted);
+                }
+                // Not in the timeline, so no alert either.
+                logger.warn("Device {} event {} refused by the database (SQL state {}): skipped", deviceNumber,
+                        row.getType(), sqlState(ex).orElse(null));
+                continue;
+            }
+            kioskLockoutAlert.onEvent(device, row.getType(), row.getDetail());
+        }
+        return consumable;
+    }
+
+    /** The row for a validated event: the device's timestamp (now if it sent none), the detail cut and NUL-free. */
+    private static DeviceEvent eventRow(String deviceNumber, AgentTelemetryEvent e) {
+        String detail = e.getDetail();
+        if (detail != null && detail.length() > MAX_EVENT_DETAIL_CHARS) {
+            detail = detail.substring(0, MAX_EVENT_DETAIL_CHARS);
+        }
+        DeviceEvent row = new DeviceEvent();
+        row.setDeviceNumber(deviceNumber);
+        row.setType(e.getType());
+        row.setTs(e.getTs() == null ? System.currentTimeMillis() : e.getTs());
+        row.setDetail(withoutNul(detail));
+        return row;
+    }
+
+    /** The database refused the data itself (SQL state class 22 or 23): retrying the same values fails the same way. */
+    private static boolean isDataError(PersistenceException ex) {
+        String state = sqlState(ex).orElse(null);
+        return state != null && (state.startsWith("22") || state.startsWith("23"));
+    }
+
+    /**
+     * A database error not caused by the events stopped them at request position {@code position}: that is how many
+     * were consumed. An agent that can't take a partial count gets the error instead, failing its check-in.
+     */
+    private static int eventsStopped(String deviceNumber, PersistenceException ex, String type, int position,
+                                     boolean countsAccepted) {
+        // The class and SQL state only: a driver message can echo values.
+        logger.warn("Device {} events not stored ({}, SQL state {}): the agent resends them from {}", deviceNumber,
+                ex.getClass().getSimpleName(), sqlState(ex).orElse(null), type);
+        if (!countsAccepted) {
+            throw ex;
+        }
+        return position;
+    }
+
+    /** PostgreSQL refuses a NUL character in text, so a value carrying one would fail its statement. */
+    private static String withoutNul(String s) {
+        return s == null || s.indexOf('\0') < 0 ? s : s.replace("\0", "");
+    }
+
+    /**
+     * A device-sent value safe to log on one line: at most {@code max} code points (a surrogate pair is never split),
+     * control characters and line or paragraph separators shown as "?".
+     */
+    static String loggable(String s, int max) {
+        StringBuilder out = new StringBuilder();
+        int count = 0;
+        for (int i = 0; i < s.length(); i += Character.charCount(s.codePointAt(i))) {
+            if (count++ == max) {
+                return out.append('…').toString();
+            }
+            int cp = s.codePointAt(i);
+            if (Character.isISOControl(cp) || cp == '\u2028' || cp == '\u2029') {
+                out.append('?');
+            } else {
+                out.appendCodePoint(cp);
+            }
+        }
+        return out.toString();
+    }
+
+    /**
+     * One WARN per sender and field an hour for a value {@link #storable} ignores, DEBUG for the repeats: a device
+     * keeps reporting the same value on every check-in (every 5 s in the foreground). Keyed by authenticated device
+     * or token, capped all the same.
+     */
+    private static final WindowLimiter IGNORED_VALUE_WARNINGS =
+            new WindowLimiter(WindowLimiter.MONOTONIC, 60L * 60L * 1000L, 1, 10_000, 20);
+
+    /**
+     * The trimmed {@code value} of {@code field} a device sent, or null when there is none, it carries a control
+     * character (PostgreSQL refuses a NUL) or it is longer than its column's {@code max}: such a value would fail its
+     * write, and with it every check-in (or enroll) from the device. {@code who} names the sender in the log: the
+     * device, or the enrollment's token.
+     */
+    static String storable(String who, String field, String value, int max) {
+        String v = value == null ? null : value.trim();
+        if (v == null || v.isEmpty()) {
+            return null;
+        }
+        if (v.chars().anyMatch(Character::isISOControl) || v.length() > max) {
+            String message = "{}: {} ignored, the server can't store it ({} characters, at most {}, no control "
+                    + "characters)";
+            if (IGNORED_VALUE_WARNINGS.tryAcquire(who + "/" + field)) {
+                logger.warn(message, who, field, v.length(), max);
+            } else {
+                logger.debug(message, who, field, v.length(), max);
+            }
+            return null;
+        }
+        return v;
     }
 
     /**
@@ -572,6 +919,8 @@ public class AgentResource {
             }
             row.setCapturedAt(loc.hasNonNull("capturedAt") ? loc.get("capturedAt").asLong() : System.currentTimeMillis());
             commandDAO.recordLocation(row);
+        } catch (DeviceGoneException e) {
+            throw e;
         } catch (Exception e) {
             logger.warn("Failed to record location for {}: {}", deviceNumber, e.getMessage());
         }

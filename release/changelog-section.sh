@@ -6,6 +6,7 @@
 #       is SHA. release.yml runs this in the gate job, at the start of the release job and before publishing.
 # Tag with (RELEASING.md): n=$(release/changelog-section.sh 1.2.3) && git tag -a v1.2.3 --cleanup=whitespace -m "$n" SHA
 # A released section may not contain HTML comments, so a leftover <!-- pending … --> marker fails here.
+# Printing a section warns on stderr when it runs past 120 lines (RELEASING.md, Writing the notes).
 # The comparison ignores CRs, trailing spaces and runs of blank lines.
 set -euo pipefail
 
@@ -24,9 +25,12 @@ section() {
   n=$(printf '%s\n' "$out" | grep -cE "$re" || true)
   [ "$n" -gt 0 ] || die "no '## v$v' section in CHANGELOG.md"
   [ "$n" -eq 1 ] || die "'## v$v' appears $n times in CHANGELOG.md"
-  out=$(printf '%s\n' "$out" | awk -v re="$re" '$0 ~ re { on = 1; next } on && /^## / { exit } on' | norm)
+  # awk reads to the end (no exit): stopping early would leave printf writing to a closed pipe, and with pipefail
+  # its SIGPIPE fails the script once CHANGELOG.md outgrows the pipe buffer.
+  out=$(printf '%s\n' "$out" \
+    | awk -v re="$re" '$0 ~ re { on = 1; next } on && /^## / { on = 0; done = 1 } on && !done' | norm)
   [ -n "$out" ] || die "the '## v$v' section in CHANGELOG.md is empty"
-  if printf '%s\n' "$out" | grep -q -- '<!--'; then
+  if [[ "$out" == *'<!--'* ]]; then
     die "the '## v$v' section has an HTML comment. Drop the lines of PRs that didn't make it and remove every marker."
   fi
   printf 'v%s\n\n%s\n' "$v" "$out"
@@ -60,4 +64,8 @@ fi
 v="${1:?usage: changelog-section.sh X.Y.Z | --check vX.Y.Z}"
 v="${v#v}"; valid "$v"
 root=$(cd "$(dirname "$0")/.." && pwd)
-section "$v" < "${CHANGELOG:-$root/CHANGELOG.md}"
+out=$(section "$v" < "${CHANGELOG:-$root/CHANGELOG.md}")
+printf '%s\n' "$out"
+# A warning on stderr only, so `n=$(release/changelog-section.sh X.Y.Z)` still tags with the section as it is.
+lines=$(printf '%s\n' "$out" | wc -l)
+[ "$lines" -le 120 ] || echo "changelog-section: v$v's notes are $lines lines; aim for about 100 (RELEASING.md, Writing the notes)" >&2

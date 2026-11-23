@@ -1,0 +1,29 @@
+.v2 .v2-glyph {
+  display: inline-block;
+  flex: 0 0 auto;
+  color: var(--ink);
+}
+.v2 .v2-glyph__body {
+  fill: var(--glyph-body);
+}
+.v2 .v2-glyph__screen {
+  fill: var(--glyph-screen);
+}
+
+/* A glyph on a quiet tile (device cards and the device page; table rows show the glyph alone). */
+.v2 .v2-devtile {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-lg);
+  height: var(--control-lg);
+  border-radius: var(--radius-control);
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+.v2 .v2-devtile--60 {
+  width: var(--space-12);
+  height: var(--space-12);
+  border-radius: var(--radius-card);
+}

@@ -41,8 +41,10 @@ public interface RolloutMapper {
             before = false, resultType = int.class)
     void insertRollout(AgentRollout rollout);
 
-    @Insert({"INSERT INTO agentRolloutCanary (rolloutId, deviceNumber) VALUES (#{rolloutId}, #{deviceNumber}) " +
-            "ON CONFLICT DO NOTHING"})
+    /** Skips a number no device has any more (deleted since the canary set was read): the row would break its
+     *  foreign key to devices. */
+    @Insert({"INSERT INTO agentRolloutCanary (rolloutId, deviceNumber) SELECT #{rolloutId}, #{deviceNumber} " +
+            "WHERE EXISTS (SELECT 1 FROM devices WHERE number = #{deviceNumber}) ON CONFLICT DO NOTHING"})
     void insertCanary(@Param("rolloutId") int rolloutId, @Param("deviceNumber") String deviceNumber);
 
     @Select({"SELECT * FROM agentRollout WHERE customerId = #{customerId} AND stage IN ('canary','fleet') ORDER BY id DESC LIMIT 1"})
@@ -51,14 +53,24 @@ public interface RolloutMapper {
     @Select({"SELECT * FROM agentRollout WHERE id = #{id}"})
     AgentRollout findById(@Param("id") int id);
 
-    @Update({"UPDATE agentRollout SET stage = #{stage}, updatedAt = #{updatedAt} WHERE id = #{id}"})
-    void updateStage(@Param("id") int id, @Param("stage") String stage, @Param("updatedAt") long updatedAt);
+    /** Moves the rollout to {@code to} only while it is still in {@code from}, so a concurrent promote, cancel or
+     *  completion that got there first is never overwritten. @return rows changed, 0 or 1. */
+    @Update({"UPDATE agentRollout SET stage = #{to}, updatedAt = #{updatedAt} WHERE id = #{id} AND stage = #{from}"})
+    int moveStage(@Param("id") int id, @Param("from") String from, @Param("to") String to,
+                  @Param("updatedAt") long updatedAt);
+
+    /** Cancels the rollout while it is still running; a done or cancelled one keeps its stage. @return rows changed. */
+    @Update({"UPDATE agentRollout SET stage = 'cancelled', updatedAt = #{updatedAt} " +
+            "WHERE id = #{id} AND stage IN ('canary','fleet')"})
+    int cancelActive(@Param("id") int id, @Param("updatedAt") long updatedAt);
 
     @Select({"SELECT deviceNumber FROM agentRolloutCanary WHERE rolloutId = #{rolloutId}"})
     List<String> listCanaryNumbers(@Param("rolloutId") int rolloutId);
 
+    /** The customer's devices a rollout counts. Not wiped ones: they never check in again, so they'd never finish. */
     @Select({"SELECT d.number AS deviceNumber, s.agentVersion AS agentVersion, d.agentCapabilities AS capabilitiesJson " +
-            "FROM devices d LEFT JOIN device_state s ON s.deviceNumber = d.number WHERE d.customerId = #{customerId}"})
+            "FROM devices d LEFT JOIN device_state s ON s.deviceNumber = d.number WHERE d.customerId = #{customerId} " +
+            "AND d.wipedAt IS NULL"})
     List<RolloutDeviceRow> listCustomerDevices(@Param("customerId") int customerId);
 
     @Select({"SELECT c.* FROM agentCommand c JOIN devices d ON d.number = c.deviceNumber " +

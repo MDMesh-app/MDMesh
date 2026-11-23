@@ -1,0 +1,130 @@
+/* Settings → Users & roles, and its user and role dialogs (pages/users). Every selector is scoped `.v2 .v2-users…`. */
+
+/* The card: header, toolbar and callouts on the card padding; the table runs edge to edge. */
+.v2 .v2-users {
+  padding-bottom: var(--space-2);
+}
+.v2 .v2-users-pad {
+  padding: 0 var(--card-pad) var(--space-3);
+}
+.v2 .v2-users-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-4);
+  padding: 0 var(--card-pad) var(--space-3);
+}
+.v2 .v2-users-search {
+  flex: 0 1 240px;
+  min-width: 0;
+  margin-left: auto;
+}
+.v2 .v2-users-panel {
+  min-width: 0;
+}
+.v2 .v2-users-panel:focus-visible {
+  outline-offset: calc(var(--indicator) * -1);
+}
+
+/* Identity cells keep to one line and end in "…": the columns share what is left after the actions. */
+.v2 .v2-users-table .v2-users-col {
+  max-width: 0;
+  width: 18%;
+}
+.v2 .v2-users-table .v2-users-col--wide {
+  width: 28%;
+}
+.v2 .v2-users-clip {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.v2 .v2-users-clip--sub {
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
+  color: var(--secondary);
+}
+.v2 .v2-users-who {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.v2 .v2-users-who__line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.v2 .v2-users-who__line > .v2-badge {
+  flex: 0 0 auto;
+}
+
+.v2 .v2-users-text {
+  margin: 0;
+  color: var(--text-2);
+}
+
+/* ---- the user and role dialogs ---- */
+.v2 .v2-users-form,
+.v2 .v2-users-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.v2 .v2-users-fields {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.v2 .v2-users-loading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.v2 .v2-users-loading__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Access and permission pickers: a bordered group of checkboxes that scrolls past a few rows. */
+.v2 .v2-users-scope {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-3);
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-control);
+}
+.v2 .v2-users-scope > legend {
+  padding: 0 var(--space-1);
+  font-weight: var(--weight-medium);
+}
+.v2 .v2-users-choices {
+  display: flex;
+  flex-direction: column;
+  max-height: 280px;
+  overflow: auto;
+}
+.v2 .v2-users-choice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-sm);
+}
+.v2 .v2-users-choice__code {
+  font-size: var(--text-meta);
+  color: var(--secondary);
+}
+.v2 .v2-users-help {
+  margin: 0;
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
+  color: var(--secondary);
+}

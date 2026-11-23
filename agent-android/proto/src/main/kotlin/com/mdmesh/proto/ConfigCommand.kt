@@ -8,12 +8,14 @@ import kotlinx.serialization.Serializable
  *
  * @property revision sha256 of the canonical document; reported back as `appliedConfigRevision` once applied.
  * @property policies only the keys the configuration manages (true = allowed/enabled).
- * @property factoryResetProtection Enhanced Factory Reset Protection (EFRP, 1.5): present = ensure the EFRP
+ * @property factoryResetProtection Enhanced Factory Reset Protection (EFRP, 1.13): present = ensure the EFRP
  *   policy with this shape; absent = the configuration does not manage it (release only if the previously
  *   applied document did — see ConfigApplier).
  * @property kiosk present = ensure kiosk with this payload; absent = the configuration does not assert kiosk
  *   (exit only if the previously applied configuration did — see ConfigApplier).
  * @property location capture cadence (`passive`, `active`, or `off` since 1.4), see [DeviceAction.LOCATION_MODE].
+ * @property connectivity (1.5) present = set the live-connection mode (`adaptive` or `alwaysOn`), the same modes as
+ *   [DeviceAction.POWER_MODE]; absent = not managed, the device keeps its mode.
  */
 @Serializable
 data class ConfigApplyPayload(
@@ -22,11 +24,14 @@ data class ConfigApplyPayload(
     val policies: Map<String, Boolean> = emptyMap(),
     val kiosk: KioskApplyPayload? = null,
     val location: ConfigLocation? = null,
+    val connectivity: ConfigConnectivity? = null,
+    /** Null = server does not manage app permissions; empty = deliberately release all earlier overrides. */
+    val appPermissions: List<ConfigAppPermissions>? = null,
     val factoryResetProtection: FactoryResetProtectionConfig? = null,
 )
 
 /**
- * Enhanced Factory Reset Protection (EFRP, protocol 1.5): whether a wiped device demands an authorized Google
+ * Enhanced Factory Reset Protection (EFRP, protocol 1.13): whether a wiped device demands an authorized Google
  * account, and the account allow-list permitted to unlock it. Applied through
  * `DevicePolicyManager.setFactoryResetProtectionPolicy` (API 30+, Device Owner).
  *
@@ -43,11 +48,22 @@ data class FactoryResetProtectionConfig(
 @Serializable
 data class ConfigLocation(val mode: String = DeviceAction.LOCATION_PASSIVE)
 
+@Serializable
+data class ConfigConnectivity(val mode: String = DeviceAction.POWER_ADAPTIVE)
+
+@Serializable
+data class ConfigAppPermissions(
+    val packageName: String,
+    /** Exact Android runtime permission names mapped to `grant` or `deny`. */
+    val permissions: Map<String, String> = emptyMap(),
+)
+
 /** JSON-encoded into `CommandResult.detail` (proto/payloads/config-apply-result.schema.json). */
 @Serializable
 data class ConfigApplyResult(
     val revision: String,
-    /** keys: `policies.<key>`, `kiosk`, `location`, `factoryResetProtection` → [ConfigOutcome] strings. */
+    /** keys: `policies.<key>`, `kiosk`, `location`, `connectivity`, `appPermissions.<package>.<permission>`,
+     *  `factoryResetProtection` → [ConfigOutcome] strings. */
     val outcomes: Map<String, String>,
 )
 

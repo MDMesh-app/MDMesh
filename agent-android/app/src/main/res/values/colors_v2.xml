@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    v2 colour tokens, light. Same values as the console's web/src/tokens.css (.v2); dark is in values-night/.
+    Every name here must exist in values-night/colors_v2.xml too (ThemeResourcesTest checks it). The whole
+    token set is kept even where no screen uses a colour yet (callout tones arrive with the screen redesigns).
+-->
+<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="UnusedResources">
+    <color name="mdm_app">#F6F7F9</color>              <!-- -app: screen background -->
+    <color name="mdm_surface">#FFFFFF</color>          <!-- -surface: cards, dialogs, inputs -->
+    <color name="mdm_surface_2">#F1F2F5</color>        <!-- -surface-2 -->
+    <color name="mdm_border">#E7E9EE</color>           <!-- -border: decorative (cards, dividers); exempt from 3:1 -->
+    <color name="mdm_border_strong">#D6DAE1</color>    <!-- -border-strong: outlined (labelled) button outline -->
+    <color name="mdm_control_border">#838B99</color>   <!-- -control-border: inputs, icon-only buttons (3:1) -->
+    <color name="mdm_ink">#15181D</color>              <!-- -ink: primary button, focus, cursor -->
+    <color name="mdm_on_ink">#FFFFFF</color>           <!-- -on-ink -->
+    <color name="mdm_text">#1B2230</color>             <!-- -text -->
+    <color name="mdm_text_2">#384152</color>           <!-- -text-2: labels, dialog message -->
+    <color name="mdm_secondary">#4A5163</color>        <!-- -secondary: help, meta, hint (7:1 on app, surface, surface-2) -->
+    <color name="mdm_disabled_bg">#E7E9EE</color>      <!-- -disabled-bg -->
+    <color name="mdm_disabled_ink">#4A5163</color>     <!-- -disabled-ink -->
+    <color name="mdm_ok_ink">#096139</color>
+    <color name="mdm_ok_soft">#E6F6EE</color>
+    <color name="mdm_ok_wash">#F7FCF9</color>         <!-- -ok-wash: ok callout fill -->
+    <color name="mdm_ok_line">#BFE8D2</color>
+    <color name="mdm_warn_ink">#77450C</color>
+    <color name="mdm_warn_soft">#FCF1E3</color>
+    <color name="mdm_warn_line">#F1D3AD</color>
+    <color name="mdm_alert_ink">#902626</color>
+    <color name="mdm_alert_soft">#FBE9E9</color>
+    <color name="mdm_alert_line">#F0D4D4</color>
+    <!-- Keyboard and D-pad focus ring (2dp): ink. -->
+    <color name="mdm_focus">#15181D</color>
+    <!-- Touch feedback: ink at 12% on surfaces, on-ink at 24% on the filled ink button. -->
+    <color name="mdm_ripple">#1F15181D</color>
+    <color name="mdm_ripple_on_ink">#3DFFFFFF</color>
+    <!-- Text selection highlight: ink at 25%. -->
+    <color name="mdm_selection">#4015181D</color>
+</resources>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- v2 Callout, alert (not managed, return failed): 10dp corners, soft fill, 1dp line (web/src/ui/Card.css .v2-callout alert tone). -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <corners android:radius="@dimen/mdm_radius_sm" />
+    <solid android:color="@color/mdm_alert_soft" />
+    <stroke android:width="1dp" android:color="@color/mdm_alert_line" />
+</shape>

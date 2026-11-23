@@ -6,6 +6,8 @@
 //   VITE_AGENT_CHECKSUM    PROVISIONING_DEVICE_ADMIN_SIGNATURE_CHECKSUM of the signing cert
 //   VITE_AGENT_APK_URL     where the APK is hosted (default <origin>/files/agent.apk)
 
+import { wifiProblem } from './checks';
+
 const env = import.meta.env as Record<string, string | undefined>;
 
 const AGENT_PACKAGE = env.VITE_AGENT_PACKAGE || 'com.mdmesh.agent.debug';
@@ -48,7 +50,9 @@ export function buildProvisioningPayload(token: string, wifi?: WifiConfig): stri
     'android.app.extra.PROVISIONING_LEAVE_ALL_SYSTEM_APPS_ENABLED': true,
   };
   const ssid = wifi?.ssid?.trim();
-  if (ssid) {
+  // A network the device can't join (no password, EAP) would stop setup at the Wi-Fi step: left out instead, the
+  // device asks for Wi-Fi on its screen. The Enroll page says why (enroll/checks.ts).
+  if (ssid && !wifiProblem(wifi)) {
     const security: WifiSecurity = wifi?.security ?? (wifi?.password ? 'WPA' : 'NONE');
     payload['android.app.extra.PROVISIONING_WIFI_SSID'] = ssid;
     payload['android.app.extra.PROVISIONING_WIFI_SECURITY_TYPE'] = security;

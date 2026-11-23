@@ -3,6 +3,10 @@
 # server on the host and assumes you terminate TLS yourself (your own reverse proxy / cert, or Caddy in
 # front). For the turnkey experience use ./setup.sh (Docker). Flags: -y/--yes (skip confirm), -v/--verbose
 # (stream all output instead of hiding it in the log). Best-effort + idempotent; review before prod use.
+# Each question can be answered in advance with an environment variable (MDMESH_ASSUME_YES, MDMESH_BASE_URL,
+# MDMESH_HTTP_PORT, MDMESH_REPLACE_DATA; the older BASE_URL, HTTP_PORT, REPLACE_DATA and ASSUME_YES still work) or an
+# answers file (MDMESH_ANSWERS). MDMESH_DRY_RUN=1 only checks the answers and prints the plan (no root needed). See
+# install/options.json and DEPLOY.md.
 # shellcheck source-path=SCRIPTDIR  # lets shellcheck -x follow lib/*.sh from any working directory
 set -euo pipefail
 # An exported CDPATH makes cd (here and in every child, e.g. `bash -c 'cd web && …'`) resolve a relative path against
@@ -16,7 +20,8 @@ unset CDPATH
 umask 077
 export PATH="/usr/sbin:/sbin:$PATH"   # useradd/userdel/pg tools live here; not every root shell has it
 # -P resolves symbolic links so REPO is the real checkout.
-cd -P -- "$(dirname -- "$0")/.."
+# (No dirname: no program may start before the answers are loaded, the tunnel token would be in its environment.)
+case "$0" in */*) cd -P -- "${0%/*}/.." ;; *) cd -P -- .. ;; esac
 REPO="$PWD"   # repo root — used for absolute paths inside subshells (e.g. exploding the WAR)
 # Shared DB provisioning rules (seed gate, verified seed, post-seed repairs) — same file setup.sh uses.
 # shellcheck source=lib/db.sh
@@ -31,12 +36,61 @@ REPO="$PWD"   # repo root — used for absolute paths inside subshells (e.g. exp
 . "$REPO/install/lib/runas.sh"
 # shellcheck source=lib/release.sh
 . "$REPO/install/lib/release.sh"
+# shellcheck source=lib/answers.sh
+. "$REPO/install/lib/answers.sh"
+# mdm_apt: apt-get, non-interactive, waiting for another apt run's lock.
+# shellcheck source=lib/apt.sh
+. "$REPO/install/lib/apt.sh"
+# mdm_jdk17_base64_affected: which JDK 17 builds have the Base64 decoder bug of CVE-2026-114938 (OpenJDK).
+# shellcheck source=lib/jdk.sh
+. "$REPO/install/lib/jdk.sh"
+
+# Answers given in advance (install/lib/answers.sh, install/options.json), all checked here, before anything else.
+mdm_answers_load
+mdm_answer assume-yes ASSUME_YES flag MDMESH_ASSUME_YES ASSUME_YES
+mdm_answer base-url BASE_URL base-url MDMESH_BASE_URL BASE_URL
+mdm_answer http-port HTTP_PORT port MDMESH_HTTP_PORT HTTP_PORT
+mdm_answer replace-data REPLACE_DATA yes-no MDMESH_REPLACE_DATA REPLACE_DATA
+
+ASSUME_YES="${ASSUME_YES:-0}"; VERBOSE="${VERBOSE:-0}"
+for a in "$@"; do
+  case "$a" in
+    -y|--yes) ASSUME_YES=1 ;;
+    -v|--verbose) VERBOSE=1 ;;
+    # Anything else stops it: an option meant for something else (setup.sh's --update, say) must not run an install.
+    *) echo "Unknown option: $a (the native installer takes -y and -v; from setup.sh: --update, --native)." >&2; exit 2 ;;
+  esac
+done
+# MDMESH_UPDATING=1 (and MDMESH_UPDATE_FROM, the release it leaves): `./setup.sh --update` hands over. Over an install
+# (its ROOT.xml) that is an update: nothing to confirm, and the base URL, the port and the data are kept, as with -y
+# (an answer given in advance still counts). On a host without one it is an install, with its questions.
+UPDATING=0
+if [ "${MDMESH_UPDATING:-0}" = 1 ] \
+   && { [ -e /opt/mdmesh-tc/conf/Catalina/localhost/ROOT.xml ] || [ -L /opt/mdmesh-tc/conf/Catalina/localhost/ROOT.xml ]; }; then
+  UPDATING=1; ASSUME_YES=1
+fi
+# Without -y the run starts with the confirmation, which MDMESH_NONINTERACTIVE=1 can't answer.
+[ "$ASSUME_YES" = 1 ] || mdm_ask assume-yes
+if [ "${MDMESH_DRY_RUN:-0}" = 1 ]; then
+  printf '\n  MDMesh · native install: dry run (MDMESH_DRY_RUN=1)\n\n'
+  echo "  The answers check out. Nothing on this host was checked or changed. What a run would do:"
+  if [ "$ASSUME_YES" != 1 ]; then mdm_plan_row assume-yes '?' ask
+  elif mdm_given assume-yes; then mdm_plan_line assume-yes ''
+  else mdm_plan_row assume-yes 1 -y; fi
+  _keep=0
+  if mdm_given base-url || [ "$ASSUME_YES" != 1 ]; then mdm_plan_line base-url ''
+  else mdm_plan_row base-url '(current)' keep; _keep=1; fi
+  mdm_plan_line http-port 8080 "$ASSUME_YES"
+  mdm_plan_line replace-data no "$ASSUME_YES"
+  [ "$_keep" = 0 ] || echo "  base-url: a re-run keeps the current one; a fresh install stops without one (set MDMESH_BASE_URL)."
+  echo "  A re-run keeps its HTTP port unless one is given. replace-data is asked only when the database holds data."
+  echo "  Then, as root: install the packages and runtimes, build the server and run it under systemd (the list a"
+  echo "  real run shows before it asks you to type yes)."
+  exit 0
+fi
 
 [ "$(id -u)" = "0" ] || { echo "Run as root (sudo)."; exit 1; }
 command -v apt-get >/dev/null || { echo "This script targets Debian/Ubuntu."; exit 1; }
-
-ASSUME_YES="${ASSUME_YES:-0}"; VERBOSE="${VERBOSE:-0}"
-for a in "$@"; do case "$a" in -y|--yes) ASSUME_YES=1 ;; -v|--verbose) VERBOSE=1 ;; esac; done
 
 # ------------------------------------------------------------------------------------------------------
 # Lightweight UI (zero deps): colored status lines, a spinner for long steps, and verbose command output
@@ -113,7 +167,14 @@ run() {
 }
 
 # ------------------------------------------------------------------------------------------------------
-printf '\n  %sMDMesh · native install%s\n' "$c_bold" "$c_reset"
+if [ "$UPDATING" = 1 ]; then
+  # Versions only (the setting comes from the environment): anything else shows as "?".
+  _from=${MDMESH_UPDATE_FROM:-}; [[ "$_from" =~ ^[0-9A-Za-z.+-]{1,40}$ ]] || _from='?'
+  _to=$(mdm_repo_version "$REPO"); [ -n "$_to" ] || _to='?'
+  printf '\n  %sMDMesh · native update, %s → %s%s\n' "$c_bold" "$_from" "$_to" "$c_reset"
+else
+  printf '\n  %sMDMesh · native install%s\n' "$c_bold" "$c_reset"
+fi
 cat <<WARN
 
   ${c_yel}⚠  This will modify THIS host:${c_reset}
@@ -130,8 +191,9 @@ cat <<WARN
 
 WARN
 if [ "$ASSUME_YES" != "1" ]; then
+  mdm_ask assume-yes
   printf '  Type "yes" to proceed: '
-  read -r _confirm
+  read -r _confirm   # answer: assume-yes
   [ "$_confirm" = "yes" ] || { echo "  Aborted — no changes made."; exit 1; }
 fi
 
@@ -176,12 +238,12 @@ TOMCAT_VER=9.0.89
 # to $SVC_USER, since root runs them during the install. NODE_VER moves with web/package.json "engines".
 RUNTIME_DIR=/opt/mdmesh-runtime
 NODE_VER=24.21.0
-JDK17_VER=17.0.20.1+1
+JDK17_VER=17.0.21.1+2
 case "$(uname -m)" in
   x86_64)  NODE_ARCH=x64   NODE_SHA=6e1db87ef58b8819e5d5402eff1536491b18edd8eb7bee5ef7897876e88dc5ff
-           JDK17_ARCH=x64     JDK17_SHA=3808d1d15e3ec6bd5b84057fb5d84c33d8a1536a258146bcea2e603fc726e08e ;;
+           JDK17_ARCH=x64     JDK17_SHA=0b0ac5eab6db6abaec68c9913bcddb31321e5da411c45073d520d9c125e6f7b4 ;;
   aarch64) NODE_ARCH=arm64 NODE_SHA=724282c3b43aec998aa9527380465b45d229e021b58035f5f4f63095eabfe5d5
-           JDK17_ARCH=aarch64 JDK17_SHA=457b57af8f9c93ec39080bb8c764f559dc8c89a6da1a39d718a400b7890d3e41 ;;
+           JDK17_ARCH=aarch64 JDK17_SHA=1d808f4b558e9de63d8ba3ead21ffc8b9de204894eff3c19d52c1480aa17cc58 ;;
   *)       NODE_ARCH="" JDK17_ARCH="" ;;
 esac
 # Tomcat lifecycle helpers. CATALINA_PID lets `catalina.sh stop -force` actually kill a JVM that ignores
@@ -435,14 +497,15 @@ if [ -z "$BASE_URL" ]; then
     info "That is the base URL in the existing ROOT.xml: ignoring it"; _cur_url=
   fi
   if [ -n "$_cur_url" ]; then
-    [ "$ASSUME_YES" = 1 ] || read -rp "  Public base URL [${_cur_url}]: " BASE_URL
+    [ "$ASSUME_YES" = 1 ] || { mdm_ask base-url; read -rp "  Public base URL [${_cur_url}]: " BASE_URL; }   # answer: base-url
     if [ -z "$BASE_URL" ]; then BASE_URL=$_cur_url; info "Keeping the base URL ${BASE_URL} (from ROOT.xml; set BASE_URL to change it)"; fi
   elif [ "$_old_root_deferred" = 1 ]; then
-    [ "$ASSUME_YES" = 1 ] || read -rp "  Public base URL [keep the current one]: " BASE_URL
+    [ "$ASSUME_YES" = 1 ] || { mdm_ask base-url; read -rp "  Public base URL [keep the current one]: " BASE_URL; }   # answer: base-url
     [ -n "$BASE_URL" ] || { _url_deferred=1; info "Keeping the base URL in ROOT.xml (read once this run has handed the tree back)"; }
   else
-    [ "$ASSUME_YES" = 1 ] && { echo "  BASE_URL must be set when running with -y (e.g. BASE_URL=https://mdm.example.com)."; exit 1; }
-    read -rp "  Public base URL (e.g. https://mdm.example.com): " BASE_URL
+    [ "$ASSUME_YES" = 1 ] && { echo "  BASE_URL must be set when running with -y or from --update, which ask nothing (e.g. BASE_URL=https://mdm.example.com)."; exit 1; }
+    mdm_ask base-url
+    read -rp "  Public base URL (e.g. https://mdm.example.com): " BASE_URL   # answer: base-url
   fi
 fi
 # install/lib/url.sh: http(s)://host[:port][/path]; lower-cases the scheme.
@@ -465,7 +528,9 @@ if [ -e "$CATALINA/conf/server.xml" ] || [ -L "$CATALINA/conf/server.xml" ]; the
 fi
 _port_hint=${_cur_port:-8080}; [ "$_port_deferred" = 0 ] || _port_hint="keep the current port"
 HTTP_PORT="${HTTP_PORT:-}"
-if [ -z "$HTTP_PORT" ] && [ "$ASSUME_YES" != 1 ]; then read -rp "  HTTP port [${_port_hint}]: " HTTP_PORT; fi
+if [ -z "$HTTP_PORT" ] && [ "$ASSUME_YES" != 1 ] && ! mdm_answered http-port; then
+  read -rp "  HTTP port [${_port_hint}]: " HTTP_PORT   # answer: http-port
+fi
 if [ -n "$HTTP_PORT" ]; then _port_deferred=0
 elif [ "$_port_deferred" = 0 ]; then HTTP_PORT=${_cur_port:-8080}; fi
 [ "$_port_deferred" = 1 ] || check_port
@@ -563,29 +628,75 @@ command -v mvn     >/dev/null || PKGS+=(maven)
 command -v curl    >/dev/null || PKGS+=(curl)
 command -v python3 >/dev/null || PKGS+=(python3)
 command -v aapt    >/dev/null || PKGS+=(aapt)
+# The apt steps below run under `run`, whose output goes to the log (or the spinner line): mdm_apt's lines saying it
+# waits for another apt run's lock go to fd 3, the terminal, instead. fd 3 is open only for these steps, so nothing
+# started later (Tomcat, say) holds the terminal.
+exec 3>&1
+mdm_apt_say() { if [ "$TTY" = 1 ]; then printf '\r\033[K' >&3; fi; info "$1" >&3; printf '%s\n' "$1" >> "$LOGFILE"; }
 APT_UPDATED=0
+# apt_refresh: apt-get update. Tolerates an unrelated broken third-party APT source (e.g. a Docker repo on a codename
+# Docker doesn't publish for → "does not have a Release file") — the native install only needs base Debian packages —
+# but not another apt run still holding apt's lock at the end of the wait.
+apt_refresh() {
+  local rc=0
+  mdm_apt update -y || rc=$?
+  [ "$rc" != "$MDM_APT_LOCKED" ] || return "$rc"
+  [ "$rc" = 0 ] || echo '(some apt sources failed to refresh — continuing)'
+}
 apt_update() {
   [ "$APT_UPDATED" = 1 ] && return 0
-  # Tolerate an unrelated broken third-party APT source (e.g. a Docker repo on a codename Docker doesn't
-  # publish for → "does not have a Release file") — the native install only needs base Debian packages.
-  run "Refreshing package lists" bash -c "apt-get update -y || echo '(some apt sources failed to refresh — continuing)'"
+  run "Refreshing package lists" apt_refresh
   APT_UPDATED=1
 }
 FETCH_JDK17=0
 if ! select_jdk17 >/dev/null; then
   apt_update
-  # A case, not `| grep -q`: grep's early exit would SIGPIPE apt-cache and fail the pipeline under pipefail.
-  case "$(apt-cache policy openjdk-17-jdk 2>/dev/null)" in *'Candidate: '[0-9]*) PKGS+=(openjdk-17-jdk) ;; *) FETCH_JDK17=1 ;; esac
+  # A case, not `| grep -q`: grep's early exit would SIGPIPE apt-cache and fail the pipeline under pipefail. LC_ALL=C:
+  # apt translates "Candidate:".
+  case "$(LC_ALL=C apt-cache policy openjdk-17-jdk 2>/dev/null)" in *'Candidate: '[0-9]*) PKGS+=(openjdk-17-jdk) ;; *) FETCH_JDK17=1 ;; esac
 fi
 if [ ${#PKGS[@]} -eq 0 ]; then
   ok "all packaged dependencies already present — nothing to install"
 else
   apt_update
-  run "$(IFS=,; echo "${PKGS[*]}" | sed 's/,/, /g')" bash -c "DEBIAN_FRONTEND=noninteractive apt-get install -y ${PKGS[*]}"
+  run "$(IFS=,; echo "${PKGS[*]}" | sed 's/,/, /g')" mdm_apt install -y "${PKGS[@]}"
 fi
+# On an update, a JDK 17 from the distribution's packages gets the upgrade apt has for it (OpenJDK security fixes); the
+# server restart below loads it. Only the openjdk-17 packages already installed, never a removal. Not fatal: the update
+# goes on with the JDK it has, and each apt call waits at most 2 minutes for another apt run's lock (not 5). apt's and
+# dpkg's output is read with LC_ALL=C: apt translates "Installed:" and "Candidate:".
+distro_jdk17_upgrade() {
+  local jdk pkg pol inst cand MDM_APT_LOCK_WAIT=120
+  local -a pkgs
+  jdk=$(select_jdk17) || return 0
+  pkg=$(LC_ALL=C dpkg-query -S "$jdk/bin/javac" 2>/dev/null | sed -n '1s/^\(openjdk-17-[a-z0-9-]*\)[:,].*/\1/p') || true
+  [ -n "$pkg" ] || return 0
+  info "checking for a newer JDK 17 package ($pkg)"
+  if [ "$APT_UPDATED" != 1 ]; then
+    printf '\n=== Refreshing package lists (JDK 17 updates) ===\n' >> "$LOGFILE"
+    apt_refresh >> "$LOGFILE" 2>&1 || { info "could not refresh the package lists: the JDK 17 packages are not updated"; return 0; }
+    APT_UPDATED=1
+  fi
+  pol=$(LC_ALL=C apt-cache policy "$pkg" 2>/dev/null) || return 0
+  inst=$(sed -n 's/^ *Installed: //p' <<< "$pol"); cand=$(sed -n 's/^ *Candidate: //p' <<< "$pol")
+  case "$cand" in ''|'(none)') return 0 ;; esac
+  dpkg --compare-versions "$cand" gt "$inst" || return 0
+  # shellcheck disable=SC2016  # a dpkg-query format, not shell
+  mapfile -t pkgs < <(LC_ALL=C dpkg-query -W -f='${db:Status-Abbrev} ${Package}\n' 'openjdk-17-*' 2>/dev/null | awk '$1 == "ii" { print $2 }')
+  [ "${#pkgs[@]}" -gt 0 ] || return 0
+  info "updating the JDK 17 packages ($inst → $cand)"
+  if mdm_apt install -y --only-upgrade --no-remove "${pkgs[@]}" >> "$LOGFILE" 2>&1; then
+    ok "JDK 17 updated: ${pkgs[*]} $inst → $cand"
+  else
+    printf '  %s!%s Could not update the JDK 17 packages (%s → %s; see %s). Continuing with the installed one\n' \
+      "$c_yel" "$c_reset" "$inst" "$cand" "$LOGFILE"
+  fi
+}
+[ "$UPDATING" != 1 ] || distro_jdk17_upgrade
 # minisign verifies release-manifest signatures for the updater supervisor. Best-effort: without it
 # the supervisor still runs but reports releases as unverified (and never mirrors an APK).
-DEBIAN_FRONTEND=noninteractive apt-get install -y minisign >> "$LOGFILE" 2>&1 || info "minisign unavailable — updater will report releases as unverified"
+mdm_apt install -y minisign >> "$LOGFILE" 2>&1 || info "minisign unavailable — updater will report releases as unverified"
+exec 3>&-
 if host_node_ok; then
   ok "Node $(node -v) from this host"
 else
@@ -611,6 +722,13 @@ JAVA_HOME=$(select_jdk17) || {
 export JAVA_HOME
 export PATH="$JAVA_HOME/bin:$PATH"
 ok "$(javac -version 2>&1) — $JAVA_HOME"
+# CVE-2026-114938 (OpenJDK): the server runs with -XX:-UseBASE64Intrinsics (below), which turns the affected code off,
+# but an affected JDK should still be updated.
+if [ "$(uname -m)" = x86_64 ] && mdm_jdk17_base64_affected "$(javac -version 2>&1 | sed -n 's/^javac //p')"; then
+  printf '  %s!%s This JDK is affected by CVE-2026-114938 (OpenJDK). The server runs with -XX:-UseBASE64Intrinsics as\n' \
+    "$c_yel" "$c_reset"
+  printf '    a mitigation; updating the JDK to 17.0.21.1 or later is still recommended.\n'
+fi
 
 step "Database"
 # Idempotent: every run generates a fresh DB_PASSWORD, so ALWAYS set the role's password to match — ALTER
@@ -629,6 +747,13 @@ role_password_sql() { printf '%s\n' "\\set pw $(_mdm_psql_arg "$DB_PASSWORD")" "
     as_postgres psql -X -c "CREATE DATABASE mdmesh OWNER mdmesh;"
 } >> "$LOGFILE" 2>&1
 ok "PostgreSQL role + database 'mdmesh' ready"
+# The restore command (mdm_restore_hint, docs/OPERATIONS.md) recreates the public schema as the mdmesh role, which
+# needs PostgreSQL 15+ (before 15, postgres owns that schema). Warn, don't refuse: the rest of the install works.
+_pg_ver=$(as_postgres psql -X -tAc 'SHOW server_version_num' 2>>"$LOGFILE" | tr -dc '0-9') || _pg_ver=
+if [ -n "$_pg_ver" ] && [ "$_pg_ver" -lt 150000 ]; then
+  printf '  %s!%s PostgreSQL %s is older than 15: restoring a backup with the documented command needs 15 or newer\n' \
+    "$c_yel" "$c_reset" "$(( _pg_ver / 10000 ))"
+fi
 
 # Data safety: the seed (hmdm_init.en.sql) is FRESH-DB-ONLY — it DELETEs configurations and re-inserts a
 # demo device. So decide now whether to seed. If the DB already holds data (an existing install), default
@@ -659,7 +784,7 @@ if [ "$DB_STATE" = seeded ]; then
   uc=$(n_or_q "$(q "SELECT count(*) FROM users")"); dc=$(n_or_q "$(q "SELECT count(*) FROM devices")")
   REPLACE_DATA="${REPLACE_DATA:-}"
   if [ -z "$REPLACE_DATA" ]; then
-    if [ "$ASSUME_YES" = 1 ]; then
+    if [ "$ASSUME_YES" = 1 ] || mdm_answered replace-data; then
       REPLACE_DATA=no   # never destroy data unprompted
     else
       printf '\n  %s%s⚠  Existing MDMesh data found: %s device(s), %s user(s).%s\n' "$c_red" "$c_bold" "$dc" "$uc" "$c_reset"
@@ -667,12 +792,12 @@ if [ "$DB_STATE" = seeded ]; then
       printf '    %s[K]eep%s  — deploy new code + run migrations; devices, users and configs untouched %s(default)%s\n' "$c_bold" "$c_reset" "$c_bold" "$c_reset"
       printf '    %s[E]rase%s — drop the database and start from an empty seed. %sThis cannot be undone.%s\n' "$c_bold" "$c_reset" "$c_red" "$c_reset"
       printf '  Choice %s[K/e]%s: ' "$c_bold" "$c_reset"
-      read -r _r
+      read -r _r   # answer: replace-data
       case "$_r" in
         e|E|erase|ERASE)
           # Destructive path needs a second, typed confirmation (same convention as `gh repo delete`).
           printf '  %sType ERASE to confirm dropping %s device(s) and %s user(s):%s ' "$c_red" "$dc" "$uc" "$c_reset"
-          read -r _c
+          read -r _c   # answer: replace-data
           if [ "$_c" = "ERASE" ]; then REPLACE_DATA=yes; else info "Not confirmed — keeping existing data."; REPLACE_DATA=no; fi ;;
         *) REPLACE_DATA=no ;;
       esac
@@ -897,6 +1022,20 @@ else _server_xml=$(svc_cat "$CATALINA/conf/server.xml" 2>>"$LOGFILE"); fi \
   || _fail "Could not read $CATALINA/conf/server.xml as $SVC_USER: if it is a symbolic link, remove it; if root owns it (a run that stopped before handing the tree over), run chown -R $SVC_USER:$SVC_USER $CATALINA. Then re-run."
 tc_write conf/server.xml sed -E "s#(<Connector port=\")[0-9]+(\" protocol=\"HTTP/1.1\")#\1${HTTP_PORT}\2#" <<< "$_server_xml"
 info "HTTP port set to ${HTTP_PORT}"
+# bin/setenv.sh, as in the Docker image: catalina.sh adds its JVM flags (-XX:-UseBASE64Intrinsics) however Tomcat is
+# started, the unit's CATALINA_OPTS or a catalina.sh run by hand. Written when there is none and rewritten when it is
+# ours (mdm_setenv_state: it has MDM_SETENV_MARKER); an operator's own is left alone. The unit's CATALINA_OPTS still
+# sets the flag then, unless that file replaces CATALINA_OPTS (catalina.sh sources it after reading the environment).
+case "$(mdm_setenv_state "$CATALINA/bin/setenv.sh" svc_cat)" in
+  absent|ours) tc_write bin/setenv.sh cat "$REPO/install/tomcat-setenv.sh" ;;
+  *)
+    printf '  %s!%s %s/bin/setenv.sh is your own, so it is left as it is. The server unit runs with\n' \
+      "$c_yel" "$c_reset" "$CATALINA"
+    printf '    -XX:-UseBASE64Intrinsics unless your file replaces CATALINA_OPTS, and a catalina.sh you start by hand\n'
+    printf '    does not have it at all. Add this line at the end of your file:\n'
+    printf '      %s\n' "$(tail -n 1 "$REPO/install/tomcat-setenv.sh")"
+    printf '    or move your options to a "systemctl edit %s" drop-in and remove the file.\n' "$SVC_UNIT" ;;
+esac
 tc_guard webapps   # the glob below would otherwise empty a linked directory's target as root
 rm -rf "$CATALINA"/webapps/*
 # Deploy the server as an EXPLODED webapp (not ROOT.war) and overlay the built SPA into it, so a single
@@ -1108,7 +1247,11 @@ fi
 
 step "Starting the server"
 # Runs on the same pinned JDK 17 (JAVA_HOME exported above), matching the Docker tomcat:9.0-jdk17 image.
-export CATALINA_OPTS="--add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.lang.reflect=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.text=ALL-UNNAMED --add-opens java.desktop/java.awt.font=ALL-UNNAMED"
+# -XX:-UseBASE64Intrinsics: CVE-2026-114938 (OpenJDK), the AVX-512 Base64 decoder of JDK 17.0.6 to 17.0.21 on x86_64.
+# bin/setenv.sh (install/tomcat-setenv.sh, written above) adds it as well, so it is on the java command line twice, which
+# is harmless. catalina.sh puts CATALINA_OPTS after JAVA_OPTS (an operator's drop-in), so it holds whatever that sets.
+# The unit is rewritten on every run, so an update applies it.
+export CATALINA_OPTS="-XX:-UseBASE64Intrinsics --add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.lang.reflect=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.text=ALL-UNNAMED --add-opens java.desktop/java.awt.font=ALL-UNNAMED"
 # Port check (the preflight above already rejected foreign holders; this catches anything that bound since).
 case "$(port_owner)" in
   unit)   info "port ${HTTP_PORT} is held by our own ${SVC_UNIT} unit — restarting it"; stop_tomcat ;;
@@ -1242,7 +1385,8 @@ done
 rm -rf "$RUNTIME_DIR"/.fetch.??????   # a failed download's leftovers
 
 trap - ERR
-printf '\n  %s%s✓ MDMesh installed (native)%s\n\n' "$c_grn" "$c_bold" "$c_reset"
+if [ "$UPDATING" = 1 ]; then printf '\n  %s%s✓ MDMesh updated (native)%s\n\n' "$c_grn" "$c_bold" "$c_reset"
+else printf '\n  %s%s✓ MDMesh installed (native)%s\n\n' "$c_grn" "$c_bold" "$c_reset"; fi
 printf '  %sConsole%s        %s\n' "$c_dim" "$c_reset" "${BASE_URL}"
 printf '  %sREST API%s       %s/rest\n' "$c_dim" "$c_reset" "${BASE_URL}"
 if [ "$SEED" = yes ]; then

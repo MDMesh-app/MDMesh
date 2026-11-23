@@ -26,7 +26,7 @@ class MdmApplication : Application(), Configuration.Provider {
     override fun onCreate() {
         super.onCreate()
         CheckInWorker.schedule(this)   // periodic reconcile (WorkManager floor)
-        CheckInWorker.scheduleNow(this) // prompt check-in on every cold start (post-install/reboot)
+        CheckInWorker.scheduleOnProcessStart(this) // prompt check-in on every cold start (install, reboot, kill)
         WakeKeepAlive.schedule(this)   // doze-proof reconcile heartbeat
     }
 }

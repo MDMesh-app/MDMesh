@@ -17,8 +17,10 @@ import com.mdmesh.policy.wifi.DpmHandle
  * Known limits, by design of the platform API:
  *  - It blocks the *user's* path through Settings only. A wipe from recovery mode
  *    (`adb reboot recovery`), `fastboot -w` and unlocking the bootloader are out of any DPC's reach.
- *  - It does not affect an administrator-initiated wipe (`wipeDevice`/`wipeData` are not subject
- *    to user restrictions), so the console's `device.wipe` keeps working on a blocked device.
+ *  - AOSP lets a Device Owner wipe past it (`wipeDevice`/`wipeData`), but some vendor recoveries
+ *    enforce it too and refuse to format (HyperOS, #222). So the console's `device.wipe` lifts it
+ *    first and puts it back only if the wipe call fails or no reboot follows (`DeviceWipeHandler`,
+ *    `FactoryResetWipeHold`).
  */
 internal class FactoryResetRestrictionPolicy(
     private val handle: DpmHandle,

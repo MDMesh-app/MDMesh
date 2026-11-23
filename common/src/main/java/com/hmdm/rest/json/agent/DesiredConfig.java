@@ -26,6 +26,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.Getter;
 import lombok.Setter;
 import java.util.Map;
+import java.util.List;
 
 /**
  * Desired-state document carried by the {@code config.apply} command (proto/payloads/config-apply.schema.json).
@@ -47,7 +48,14 @@ public class DesiredConfig {
     private DesiredKiosk kiosk;
     private DesiredLocation location;
     /**
-     * Present = ensure Enhanced Factory Reset Protection with this payload (protocol 1.5). Absent (null) = the
+     * Present (1.5) = the configuration sets the agent's connectivity mode. Absent (null) = not managed: each device
+     * keeps the mode it has, and documents without it keep their revision.
+     */
+    private DesiredConnectivity connectivity;
+    /** Null for a legacy configuration row; empty means release all managed app permission overrides. */
+    private List<DesiredAppPermissions> appPermissions;
+    /**
+     * Present = ensure Enhanced Factory Reset Protection with this payload (protocol 1.13). Absent (null) = the
      * configuration does not manage EFRP; the agent releases it only if the previously applied document had it.
      */
     private DesiredFactoryResetProtection factoryResetProtection;

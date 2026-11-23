@@ -107,6 +107,7 @@ public class APKFileAnalyzer {
             Long versionCode = apkMeta.getVersionCode();
             result.setVersionCode(versionCode != null ? versionCode.intValue() : 0);
             result.setArch(getArchByApkLibs(filePath));
+            result.setRequestedPermissions(apkMeta.getUsesPermissions());
             return result;
         } catch (IOException e) {
             log.error("Failed to analyze APK-file: {}", filePath, e);

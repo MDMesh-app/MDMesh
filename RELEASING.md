@@ -10,17 +10,46 @@
 - **Freeze about three days before a feature release.** Only fixes merge to `main` until the release PR lands.
 - **[CHANGELOG.md](CHANGELOG.md) is the release notes.** Each PR adds its line under Unreleased. A version's section
   is its tag annotation and its GitHub release notes, word for word; the workflow refuses a tag whose annotation
-  differs.
+  differs. Keep it short enough to read ([Writing the notes](#writing-the-notes)).
+- **A release that fixes a security issue has a Security section in its notes**, however the fix arrived: a public PR,
+  a private advisory fork or a hardening follow-up. Its fix lines go under that heading, never under Fixes, and a
+  release without a security fix has no such section. The heading is the one record the tools read: it puts the
+  "Security fixes" label on the release in Settings, and it makes the release part of the signed manifest's
+  `securityReleases`, which warns an admin whose update skips it ([Security fixes](#security-fixes)).
+- **A new `setup.sh` flag goes in the notes as a run of its own, after `./setup.sh --update`.** The previous release's
+  setup.sh is the one that runs `--update`, and it stops on a flag it doesn't know (exit 2) before it moves the clone.
+  So `./setup.sh --update --newflag` fails on every older clone; write `./setup.sh --update`, then `./setup.sh
+  --newflag`.
 
 1. **Freeze and release PR.** Branch `release/vX.Y.Z` from `main` and open a PR. Rebase it onto any fix that
    lands during the freeze.
 2. **Move Unreleased to `## vX.Y.Z — YYYY-MM-DD`** in CHANGELOG.md, with a new empty `## Unreleased` above it.
    Remove every `<!-- pending … -->` marker, and the whole line if its PR didn't merge; the script refuses a released
-   section with any HTML comment left. Sum up the Dependabot bumps in Under the hood. Preview it with
-   `release/changelog-section.sh X.Y.Z`.
+   section with any HTML comment left. Sum up the Dependabot bumps in Under the hood. Then trim it to
+   [Writing the notes](#writing-the-notes): merge the lines of one feature, drop fixes to things new in this release,
+   and move reference detail to the docs. Preview it with `release/changelog-section.sh X.Y.Z`, which warns past
+   120 lines.
+   Check the Security section against the repository's advisories, published and draft. Every advisory patched in
+   this version needs its line under Security:
+
+   ```bash
+   release/check-advisories.sh X.Y.Z     # fails on a patched version with no Security section; flags drafts with none set
+   # the same list by hand:
+   gh api --paginate 'repos/MDMesh-app/MDMesh/security-advisories?per_page=100' \
+     --jq '.[] | [.ghsa_id, .state, ([.vulnerabilities[]?.patched_versions // empty] | join(","))] | @tsv'
+   ```
+
+   It needs `gh` signed in as a maintainer who can read the repository's advisories. CI doesn't run it: the
+   workflow's token usually can't read them, drafts least of all.
+
+   Clear any agent protocol hold: in `server/src/test/java/com/hmdm/rest/json/agent/AgentProtocolVersionTest.java`
+   empty `AWAITING_BUMP` and `BUMP_HELD`, and set `AgentProtocol.VERSION` to the highest row of
+   `proto/VERSIONING.md`. A release never ships with a protocol bump held: once Unreleased is moved, the server test
+   `AgentProtocolVersionTest.aHeldBumpIsStillUnreleased` fails on the release PR until the hold is cleared (t0-fast's
+   server job runs on any change to CHANGELOG.md or proto/VERSIONING.md, so it runs on a changelog-only release PR).
 3. **Review and CI.** The PR's code review, green CI, and the native install matrix on the release branch, all nine
-   jobs (T2; see "T2 native rig" in [docs/DEV.md](docs/DEV.md)). Pull requests run T2 only when the installers
-   change, so this is what catches a server change that breaks a native upgrade:
+   matrix jobs, 3 distros × 3 scenarios (T2; see "T2 native rig" in [docs/DEV.md](docs/DEV.md)). Pull requests run
+   T2 only when the installers change, so this is what catches a server change that breaks a native upgrade:
    `gh workflow run t2-native.yml --ref release/vX.Y.Z`
 4. **The owner's phone check** of the release branch, and the owner's go.
 5. **Squash-merge** the release PR as `vX.Y.Z (#N)`.
@@ -39,7 +68,27 @@
    `--cleanup=whitespace` keeps lines that start with `#`. Then approve the `release` environment's deployment once
    the `gate` job is green (setup step 4).
 7. **Verify the published release** ([below](#verifying-a-published-release)): asset SHA-256 against the
-   manifest, the minisign signature, the APK's signing certificate, its versionCode, and the GHCR images.
+   manifest, the minisign signature, the APK's signing certificate, its versionCode, `quickstart.sh`, and the GHCR
+   images.
+
+### Writing the notes
+
+The notes are for the person running MDMesh. They read them to decide when to update and what to do. Aim for about
+100 lines; `release/changelog-section.sh` warns past 120. A big release can go over, but on purpose, not by piling up.
+
+- **A line goes in if an admin will notice it or has to act on it.** Leave out a fix to something new in the same
+  release, and refactors, tests and CI.
+- **One line per feature, not one per PR.** A feature built over several PRs gets one line, written when the
+  release PR is cut.
+- **About two lines each**: what changed, and who has to do what. The how and why belong in the PR and the docs.
+- **Reference detail goes in the docs, with one line that links to it.** Database columns and indexes go in
+  [UPGRADING](docs/UPGRADING.md); agent protocol changes in [proto/VERSIONING.md](proto/VERSIONING.md); console
+  extension props, tokens and deprecations in [web/EXTENDING.md](web/EXTENDING.md); new API endpoints in the
+  docs for that feature. Write links as full `https://github.com/MDMesh-app/MDMesh/blob/main/…` URLs: the GitHub
+  release page doesn't resolve relative ones.
+- **Under the hood is a few lines of links**, for example "Agent protocol 1.11 ([VERSIONING](…))" and one
+  Dependencies line naming the notable bumps.
+- **Upgrading and Security are never trimmed to fit.** Every step an admin must take stays, in full.
 
 ### Patch releases
 
@@ -56,8 +105,11 @@ Patches are tagged from `main` for now, like every release (the `gate` job accep
 ### Security fixes
 
 A fix for a vulnerability that isn't public yet is developed in a GitHub private security advisory (Security →
-Advisories → New draft advisory → Start a temporary private fork), not in a public PR. Its changelog line says what
-operators see, without the details.
+Advisories → New draft advisory → Start a temporary private fork), not in a public PR. Its changelog line goes under
+the release's **Security** heading, never under Fixes. While the advisory is still private, that is one plain line
+saying what operators see or should do ("Kiosk: Safe Mode is blocked whenever a device is in kiosk."), with no
+description of the vulnerability; the details belong in the advisory once it is published. Set the advisory's
+patched version to this release, so `release/check-advisories.sh` checks it.
 
 The fix is public from the moment it merges, so keep that window short:
 
@@ -66,6 +118,20 @@ The fix is public from the moment it merges, so keep that window short:
 - An advisory merge may skip `main`'s required checks, and whether CI runs in the temporary private fork depends on
   GitHub (check GitHub's docs). Treat CI on the release PR as the only CI the fix gets.
 - Publish the advisory once the release is out. See [SECURITY.md](SECURITY.md) for reporting.
+
+**A release with a security fix must have a Security section** in its CHANGELOG.md section (a `Security` line of its
+own, as v0.3.8's), whether the fix came through an advisory or not, and a release without a security fix must not have
+one. That heading is the one record of which releases fixed security issues: the release notes in Settings label the
+release "Security fixes", and the signed manifest's `securityReleases` lists every such version, which the console
+uses to warn an admin whose update skips one (`release/security-releases.py` derives it; the release workflow fails if
+the manifest's list and CHANGELOG.md differ).
+
+Why it is checked against the advisories: 0.3.7 (GHSA-pm7x-f5vm-mqr6) and 0.4.0 (GHSA-32jc-rxqg-hgf5) shipped their
+security fixes under Fixes, because the line followed "say what operators see" and nothing asked for a Security
+heading. Their notes carried no "Security fixes" label, and the first manifest with `securityReleases` would have said
+they fixed nothing. 0.5.0's CHANGELOG.md corrects both sections (their tags keep the notes they shipped with). The
+release workflow can't catch this, since it can only check the manifest against the changelog it is given;
+`release/check-advisories.sh` checks the changelog against the advisories.
 
 ## What the release workflow does
 
@@ -77,13 +143,44 @@ changelog check again when it starts and just before it publishes, and fails if 
 commit it checked out.
 
 `.github/workflows/release.yml` then: runs the agent unit tests + builds the **signed** release APK,
-builds & pushes the **server**, **web**, and **supervisor** images to GHCR as `:VERSION`, builds a
-**minisign-signed manifest**, and publishes a **GitHub Release** with `mdmesh-agent.apk`, `manifest.json`,
-and `manifest.json.minisig`. The fleet auto-updater consumes that signed manifest to apply/roll-out updates.
+builds & pushes the **server**, **web**, and **supervisor** images to GHCR as `:VERSION`, reads back each image's
+digest (`release/image-digest.sh`), builds a **minisign-signed manifest**, and publishes a **GitHub Release** with
+`mdmesh-agent.apk`, `manifest.json`, `manifest.json.minisig` and `quickstart.sh` (the tagged commit's copy, which the
+README's install command downloads from the latest release). Before the upload it checks that `quickstart.sh` is the
+file the signed manifest hashes, and after it reads the published asset back and checks it again. The fleet auto-updater consumes that signed manifest
+to apply/roll-out updates.
+
+The manifest (`release/build-manifest.sh`) keeps `components.serverImage`/`webImage` (the `:VERSION` tags, which
+supervisors before 0.5.0 read) and `components.apk`, and from 0.5.0 adds:
+
+- `components.images`: the server, web and supervisor images as `repo@sha256:…` (keys `server`, `web`,
+  `supervisor`);
+- `files`: the SHA-256 of each file the quick start downloads from the tag, and of `quickstart.sh` itself (the
+  release asset);
+- `commit`: the tagged commit.
+- `securityReleases`: every version up to this one whose CHANGELOG.md section has a Security heading, oldest first
+  (`release/security-releases.py`; [Security fixes](#security-fixes)). A 0.5.0+ supervisor reports the ones an update
+  skips over as `missedSecurity` in `/update/status`, from a verified manifest only.
+
+Who reads what:
+
+- A 0.5.0+ **supervisor** runs exactly those digests, and refuses a manifest without them or with them under another
+  owner than its `IMAGE_OWNER`.
+- The **quick start** does the same and checks each downloaded file against `files`. For a release before 0.5.0 it
+  stops and names that release's own `quickstart.sh`.
+- **`./setup.sh --update`** (and `--update --native`) reads the signature, `version` and `commit`, and moves the
+  clone only to a tag whose signed manifest names that tag's commit, so it never moves to a release before 0.5.0. It
+  builds from that checkout and reads neither `images` nor `files`.
+- **setup.sh and the native installer** check the latest release's APK against `components.apk.sha256` before the
+  QR uses it (`install/lib/release.sh`), and the **supervisor** checks it before serving its APK mirror.
+
+So a fork that publishes its own releases must use this workflow (or write the same fields).
+`scripts/release-manifest-check.sh` (T0) checks the manifest against what its readers expect.
 
 `:latest` moves **last**: only after the anonymous-pull check, the manifest signing and the GitHub Release
 have all succeeded does the final step retag each image's `:latest` to the release's `:VERSION` (same
-digest, registry-side, no rebuild), then verify all three digests. A failure anywhere earlier leaves
+digest, registry-side, no rebuild), then verify all three digests. It first checks that each `:VERSION` is still the
+digest the signed manifest pins. A failure anywhere earlier leaves
 `:latest` — and so every quick-start install — on the previous release.
 
 **If a changelog check fails**, re-tag. In the `gate` job or at the start of the `release` job nothing was built or
@@ -101,7 +198,13 @@ n=$(release/changelog-section.sh X.Y.Z) && git tag -f -a vX.Y.Z --cleanup=whites
 release/changelog-section.sh --check vX.Y.Z "$sha" && git push origin :refs/tags/vX.Y.Z && git push origin vX.Y.Z
 ```
 
-**If the job goes red after the GitHub Release step** (i.e. in "Move :latest to this release"): the
+**If "Published quickstart.sh matches the signed manifest" fails**, the published `quickstart.sh` asset was changed
+during the run: the checked install refuses it (the shortcut runs the tag's copy, not the asset). Upload the tag's
+own copy over it
+(`gh release upload vX.Y.Z quickstart.sh --clobber -R MDMesh-app/MDMesh` from the tagged commit, then check its
+SHA-256 against the manifest) and find out who changed it; then move `:latest` by hand as below.
+
+**If the job goes red after the GitHub Release step** (the quickstart.sh readback, or "Move :latest to this release"): the
 Release and its `:VERSION` images are published and fine, but `:latest` may point at the previous release
 for some or all of the three images. Don't re-run the whole job (it would rebuild and re-push `:VERSION`
 and try to recreate the Release). Fix `:latest` by hand, logged in to GHCR with `write:packages`:
@@ -176,16 +279,43 @@ The release job runs in the `release` environment, so the repo settings decide w
   - **Environment secrets:** the six secrets above (`MDM_RELEASE_STORE_B64`, `MDM_RELEASE_STORE_PASSWORD`,
     `MDM_RELEASE_KEY_ALIAS`, `MDM_RELEASE_KEY_PASSWORD`, `MINISIGN_SECRET_KEY`, `MINISIGN_PASSWORD`). Then delete any
     repository-level copies (Settings → Secrets and variables → Actions → Repository secrets).
-- **Settings → Rules → Rulesets → New tag ruleset** (enforcement *Active*), target tags matching `v*`: restrict
-  **creations**, **updates** and **deletions**, with a bypass list of the release maintainers only.
+- **Settings → Rules → Rulesets → New ruleset → New tag ruleset.** It is what keeps a release tag, and so what the
+  quick start's unchecked shortcut runs, from being moved. Exactly:
+  - **Ruleset name:** any, e.g. `v* ruleset`; **Enforcement status:** *Active*.
+  - **Bypass list:** add the release maintainers only (or a team of them), mode *Always allow*. Not *Repository admin*
+    as a role unless every admin is a release maintainer, and no apps or deploy keys.
+  - **Target tags → Add target → Include by pattern:** `v*`.
+  - **Rules:** tick **Restrict creations**, **Restrict updates**, **Restrict deletions** and **Block force pushes**;
+    leave the others off.
+  - Save, then check it: `gh api repos/MDMesh-app/MDMesh/rulesets` lists it with `"enforcement": "active"` and
+    `"target": "tag"`. Re-tagging after a failed changelog check (above) needs a bypass actor.
 - **Settings → Rules → Rulesets** (or branch protection) for `main`: require pull requests and the CI checks, and
   block force pushes, so "on `main`" means reviewed.
 
 ## How a deployment trusts a release
 The updater fetches the GitHub Release, verifies `manifest.json` against the baked
-`release/minisign.pub`, then checks each artifact's SHA-256 against the manifest. A release published
-without the private minisign key fails verification and is refused — so a hijacked repo/account alone
-can't push code to the fleet.
+`release/minisign.pub`, then checks each artifact's SHA-256 against the manifest. A 0.5.0+ supervisor pulls the server
+and web images by the digests it pins, and pins its own image the same way for its next start (an older supervisor
+pulls the `:VERSION` tags). A release published without the private minisign key fails verification and is
+refused, so a hijacked repo/account or a moved image tag alone can't push code to the fleet.
+
+**What runs `quickstart.sh`, and what protects it.** Anyone with write access to the repository can replace a release
+asset, without a PR or review. The README's one-line command runs the latest release's asset as it is, so it trusts
+everyone with write access. DEPLOY.md's install block checks the asset before running it: the manifest's
+minisign signature against the release key, that the manifest is the latest release's, and the script's SHA-256 in
+its `files`; only the private minisign key can make a script pass that. DEPLOY.md's unchecked shortcut instead takes the
+latest release's tag from GitHub's `/releases/latest` redirect, accepts it only if it is `/releases/tag/vX.Y.Z` (and
+stops otherwise), and runs `quickstart.sh` from `refs/tags/vX.Y.Z` on raw.githubusercontent.com: the full ref, so a
+branch with the same name can't stand in for the tag. What it runs is therefore the commit that tag points at, and the
+`v*` tag ruleset ([setup step 4](#4-release-environment-and-tag-protection)) is what stops anyone outside its bypass
+list from creating, moving or deleting a `v*` tag. It does not protect against a bypass actor. No path stops a writer who
+marks an older release as latest: that release is genuine and signed, so each installs it.
+Without the ruleset, anyone with write access could repoint a tag.
+
+The quick start verifies the same signature with `openssl` against a copy of the key line in `quickstart.sh`, then
+the image digests and the downloaded files' SHA-256. DEPLOY.md carries the same key in its install block (`-P`).
+T0 (`scripts/release-manifest-check.sh`) fails if either differs from `release/minisign.pub`.
+**If you ever rotate the minisign key, update both copies (quickstart.sh, DEPLOY.md) in the same PR.**
 
 ## Verifying a published release
 
@@ -202,4 +332,11 @@ aapt2 dump badging "$d/mdmesh-agent.apk" | grep -o "versionCode='[0-9]*'"
 for img in mdmesh-server mdmesh-web mdmesh-supervisor; do   # :V and :latest print the same digest
   for t in "$V" latest; do docker buildx imagetools inspect --format "$img:$t {{.Manifest.Digest}}{{println}}" "ghcr.io/mdmesh-app/$img:$t"; done
 done
+python3 -c 'import json,sys; print(*json.load(open(sys.argv[1]))["components"]["images"].values(), sep="\n")' "$d/manifest.json"   # = those digests
+python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["files"]["quickstart.sh"])' "$d/manifest.json"
+sha256sum "$d/quickstart.sh"                      # = that, and the same as quickstart.sh at the tag
 ```
+
+`components.images`, `files`, `commit` and the `quickstart.sh` asset exist from 0.5.0 on; a manifest from an earlier
+release (v0.4.0's, say) has only `version`, `channel`, `components.serverImage`/`webImage` (the `:VERSION` tags),
+`components.apk` and `compat`.

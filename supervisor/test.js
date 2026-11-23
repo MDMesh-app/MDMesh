@@ -1,8 +1,14 @@
 const t = require('node:test');
 const a = require('node:assert');
-const { semverGt, pickRelease, shapeStatus, imageTags, nextPhase, isTerminal, apkAsset, sha256Matches, recoveryPage, isPublishTemp,
-  assetRequest, fetchAsset, envValue, applyLine, applyRefusal, deploymentAdminVerdict,
+const { semverGt, pickRelease, shapeStatus, missedSecurity, imageTags, nextPhase, isTerminal, apkAsset, sha256Matches, recoveryPage, isPublishTemp,
+  assetRequest, fetchAsset, envValue, applyLine, applyRefusal, imagePins, deploymentAdminVerdict,
   legacyDeploymentAdmin } = require('./lib');
+
+// The digest-pinned refs server.js passes apply.sh after the signed manifest verified (components.images).
+const PIN = { server: 'ghcr.io/mdmesh-app/mdmesh-server@sha256:' + 'a'.repeat(64),
+  web: 'ghcr.io/mdmesh-app/mdmesh-web@sha256:' + 'b'.repeat(64),
+  supervisor: 'ghcr.io/mdmesh-app/mdmesh-supervisor@sha256:' + 'c'.repeat(64) };
+const applyArgs = (v, pins = PIN) => [v, pins.server, pins.web, pins.supervisor];
 
 t.test('semverGt', () => {
   a.equal(semverGt('1.2.4', '1.2.3'), true);
@@ -31,6 +37,40 @@ t.test('shapeStatus', () => {
   a.equal(shapeStatus({ current: '1.0.0', manifest: { version: '1.1.0' }, verified: false }).updateAvailable, false);
 });
 
+t.test('missedSecurity — the security releases an update skips over', () => {
+  const m = (version, securityReleases) => ({ version, securityReleases });
+  // Boundaries: the running version and the offered one are both left out; only what lies strictly between counts.
+  a.deepEqual(missedSecurity(m('0.1.15', ['0.1.12', '0.1.13', '0.1.15']), true, '0.1.12'), ['0.1.13']);
+  a.deepEqual(missedSecurity(m('0.1.15', ['0.1.11']), true, '0.1.12'), []);           // older than current: has it
+  a.deepEqual(missedSecurity(m('0.1.15', ['0.1.16']), true, '0.1.12'), []);           // newer than the offer
+  // Several, oldest first, whatever the manifest's order; duplicates once.
+  a.deepEqual(missedSecurity(m('0.5.2', ['0.5.1', '0.4.2', '0.3.8', '0.4.2']), true, '0.4.0'), ['0.4.2', '0.5.1']);
+  a.deepEqual(missedSecurity(m('0.1.15', ['0.1.12', '0.1.13', '0.1.14']), true, '0.1.11'), ['0.1.12', '0.1.13', '0.1.14']);
+  // None missed: no security release in between, or already on the latest.
+  a.deepEqual(missedSecurity(m('0.1.15', ['0.1.10']), true, '0.1.14'), []);
+  a.deepEqual(missedSecurity(m('0.1.15', ['0.1.13']), true, '0.1.15'), []);
+  a.deepEqual(missedSecurity(m('0.1.15', []), true, '0.1.12'), []);
+  // The offered release is itself a security release: its notes say so; nothing missed.
+  a.deepEqual(missedSecurity(m('0.1.13', ['0.1.13']), true, '0.1.12'), []);
+  // A manifest from before the field (0.4.x release tooling), or with something else in it.
+  a.deepEqual(missedSecurity({ version: '0.5.2' }, true, '0.4.0'), []);
+  a.deepEqual(missedSecurity(m('0.5.2', '0.5.1'), true, '0.4.0'), []);
+  a.deepEqual(missedSecurity(m('0.5.2', [1, null, '0.5.1-beta.1', 'v0.5.1', '0.5.1']), true, '0.4.0'), ['0.5.1']);
+  // Only a verified manifest is trusted.
+  a.deepEqual(missedSecurity(m('0.1.15', ['0.1.13']), false, '0.1.12'), []);
+  a.deepEqual(missedSecurity(null, true, '0.1.12'), []);
+  // A running version that isn't X.Y.Z can't be compared.
+  a.deepEqual(missedSecurity(m('0.1.15', ['0.1.13']), true, 'dev'), []);
+});
+
+t.test('shapeStatus — missedSecurity', () => {
+  const manifest = { version: '0.1.15', securityReleases: ['0.1.13', '0.1.15'] };
+  a.deepEqual(shapeStatus({ current: '0.1.12', manifest, verified: true }).missedSecurity, ['0.1.13']);
+  a.deepEqual(shapeStatus({ current: '0.1.12', manifest, verified: false }).missedSecurity, []);
+  a.deepEqual(shapeStatus({ current: '0.1.12', manifest: { version: '0.1.15' }, verified: true }).missedSecurity, []);
+  a.deepEqual(shapeStatus({ current: '0.1.12', manifest: null, verified: false }).missedSecurity, []);
+});
+
 t.test('imageTags', () => {
   const m = { version: '1.1.0', components: { serverImage: 'ghcr.io/o/mdmesh-server:1.1.0', webImage: 'ghcr.io/o/mdmesh-web:1.1.0' } };
   a.deepEqual(imageTags(m), { serverImage: 'ghcr.io/o/mdmesh-server:1.1.0', webImage: 'ghcr.io/o/mdmesh-web:1.1.0', version: '1.1.0' });
@@ -52,7 +92,7 @@ t.test('apkAsset', () => {
 });
 
 // A private repo 404s browser_download_url even with a token; only the asset API URL + octet-stream + token serves
-// the bytes (live rehearsal, brain/reviews/live-apply-rollback.md).
+// the bytes (seen in a live update against a private repo).
 t.test('assetRequest — token: asset API URL with octet-stream + Bearer; no token: browser_download_url, no auth', () => {
   const asset = { url: 'https://api.github.com/repos/o/r/releases/assets/1', browser_download_url: 'https://github.com/o/r/releases/download/v1/m.json' };
   a.deepEqual(assetRequest(asset, 'tok'), { url: asset.url,
@@ -167,8 +207,32 @@ t.test('envValue — reads KEY=value from .env text the way apply.sh get_env doe
   a.equal(envValue(null, 'CURRENT_VERSION'), null);
 });
 
+t.test('imagePins — the three digest-pinned refs, under the owner this install pulls from, or why not', () => {
+  const m = (images, version = '0.5.0') => ({ version, components: { serverImage: 'ghcr.io/mdmesh-app/mdmesh-server:' + version, images } });
+  a.deepEqual(imagePins(m(PIN), 'mdmesh-app'), PIN);
+  a.deepEqual(imagePins(m(PIN), null), PIN, 'no IMAGE_OWNER in .env: compose\'s default owner');
+  // A release from tooling before digest pinning (tags only): refused, saying so.
+  a.match(imagePins(m(undefined), 'mdmesh-app').error, /^the signed release 0\.5\.0 names its images by tag only, without digests/);
+  a.match(imagePins({ version: '0.5.0' }, 'mdmesh-app').error, /by tag only/);
+  a.match(imagePins(m([PIN.server]), 'mdmesh-app').error, /by tag only/);
+  // Each ref must be repo@sha256:<64 lowercase hex>.
+  for (const bad of ['ghcr.io/mdmesh-app/mdmesh-web:0.5.0', 'ghcr.io/mdmesh-app/mdmesh-web@sha256:' + 'B'.repeat(64),
+    'ghcr.io/mdmesh-app/mdmesh-web@sha256:' + 'b'.repeat(63), 'mdmesh-web@sha256:' + 'b'.repeat(64), 7, null]) {
+    a.equal(imagePins(m({ ...PIN, web: bad }), 'mdmesh-app').error,
+      'the signed release 0.5.0 has no valid digest for its web image, so it cannot be applied', String(bad));
+  }
+  // A fork's install (its own IMAGE_OWNER) following upstream releases, or upstream images in a fork's manifest.
+  a.equal(imagePins(m(PIN), 'forkco').error, 'the signed release 0.5.0 pins its server image at ghcr.io/mdmesh-app/mdmesh-server, '
+    + 'but this install pulls ghcr.io/forkco/mdmesh-server (IMAGE_OWNER=forkco in .env). Set GITHUB_REPO to the repository '
+    + 'that publishes forkco\'s images, or IMAGE_OWNER to the owner this release names, then run docker compose up -d');
+  a.match(imagePins(m({ ...PIN, supervisor: 'ghcr.io/other/mdmesh-supervisor@sha256:' + 'c'.repeat(64) }), 'mdmesh-app').error,
+    /pins its supervisor image at ghcr\.io\/other\/mdmesh-supervisor/);
+  a.match(imagePins(m({ ...PIN, web: 'ghcr.io/mdmesh-app/mdmesh-server@sha256:' + 'b'.repeat(64) }), 'mdmesh-app').error,
+    /pins its web image at ghcr\.io\/mdmesh-app\/mdmesh-server/, 'each image must be its own repository');
+});
+
 t.test('applyRefusal — the Update guard says what is actually true', () => {
-  const m = (v) => ({ version: v });
+  const m = (v) => ({ version: v, components: { images: PIN } });
   a.equal(applyRefusal({ manifest: m('0.0.3'), current: '0.0.2', skipVersion: null }), null, 'a newer verified release applies');
   a.equal(applyRefusal({ manifest: m('0.0.3'), current: '0.0.2', skipVersion: '0.0.3' }), null, 'the auto skip never blocks a manual Update');
   a.equal(applyRefusal({ manifest: null, current: '0.0.2' }), 'no verified update available');
@@ -185,6 +249,11 @@ t.test('applyRefusal — the Update guard says what is actually true', () => {
     'the verified release version "nightly" is not a release version (X.Y.Z), so it cannot be applied');
   a.equal(applyRefusal({ manifest: m('0.0.4'), current: 'latest', skipVersion: null }),
     'the running version "latest" is not a release version (X.Y.Z), so it cannot be compared: update by hand');
+  // A newer release must pin its images by digest under this install's owner (imagePins); the version checks come first.
+  a.match(applyRefusal({ manifest: { version: '0.0.5' }, current: '0.0.4' }), /names its images by tag only/);
+  a.match(applyRefusal({ manifest: m('0.0.5'), current: '0.0.4', imageOwner: 'forkco' }), /this install pulls ghcr\.io\/forkco/);
+  a.equal(applyRefusal({ manifest: m('0.0.5'), current: '0.0.4', imageOwner: 'mdmesh-app' }), null);
+  a.equal(applyRefusal({ manifest: { version: '0.0.4' }, current: '0.0.4' }), 'already running 0.0.4');
 });
 
 t.test('sha256Matches — the APK publish gate', () => {
@@ -236,7 +305,7 @@ t.test('recoveryPage — marks the page with whether apply/rollback is supported
   // The page itself hides the Roll back card and shows the manual steps under data-apply="0" (CSS, no JS needed).
   a.match(html, /body\[data-apply="0"\] #rbcard\{display:none\}/);
   a.match(html, /body:not\(\[data-apply="0"\]\) #manual\{display:none\}/);
-  a.ok(html.includes('git pull &amp;&amp; ./setup.sh') && html.includes('git pull &amp;&amp; sudo ./setup.sh --native'));
+  a.ok(html.includes('./setup.sh --update<') && html.includes('sudo ./setup.sh --update --native'));
 });
 
 t.test('recovery.html escapes status strings before they reach innerHTML', () => {
@@ -488,7 +557,10 @@ globalThis.fetch = (u, o) => {
 async function fakeGitHub(dir, opts) {
   const fs = require('fs'), path = require('path'), http = require('http'), crypto = require('crypto');
   const kd = fs.mkdtempSync(path.join(dir, 'gh-'));
+  // Pinned images under the default owner unless opts.images says otherwise (null: a manifest without digests).
   const manifest = { version: opts.version, channel: 'stable', components: {} };
+  const images = opts.images === undefined ? PIN : opts.images;
+  if (images) manifest.components.images = images;
   if (opts.apk) manifest.components.apk = { file: 'mdmesh-agent.apk', versionCode: 999, sha256: crypto.createHash('sha256').update(opts.apk).digest('hex') };
   fs.writeFileSync(path.join(kd, 'manifest.json'), JSON.stringify(manifest));
   cp.execFileSync('minisign', ['-G', '-W', '-p', path.join(kd, 'k.pub'), '-s', path.join(kd, 'k.key')], { stdio: 'ignore' });
@@ -721,8 +793,9 @@ t.test('an unverifiable release logs why (HTTP status / minisign), without secre
 // --- Stub docker + curl for driving apply.sh / rollback.sh without a daemon. The stub docker logs every call (one line
 // per call: its args) to $STUB_LOG and, for `compose exec -T postgres psql|pg_dump`, reads/writes stdio like the real
 // thing. Failure knobs (env): STUB_FAIL_RE (egrep on the args → exit 1), STUB_PSQL_FAIL=1 (the restore psql, the one
-// run with --single-transaction, prints an ERROR and exits 3, as psql -v ON_ERROR_STOP=1 does). curl succeeds unless
-// STUB_CURL_FAIL=1. ---
+// run with -c BEGIN, prints an ERROR and exits 3, as psql -v ON_ERROR_STOP=1 does). Like the real restore, the stub
+// psql fails when its input does not end with the COMMIT apply.sh/rollback.sh add after a complete dump (they send a
+// RAISE instead). curl succeeds unless STUB_CURL_FAIL=1. ---
 function makeStubs(dir) {
   const fs = require('fs'), path = require('path');
   const bin = path.join(dir, 'bin');
@@ -731,10 +804,21 @@ function makeStubs(dir) {
 echo "$*" >> "$STUB_LOG"
 if [ -n "\${STUB_FAIL_RE:-}" ] && echo "$*" | grep -Eq "$STUB_FAIL_RE"; then echo "stub: forced failure: $*" >&2; exit 1; fi
 case "$*" in
-  *" pg_dump "*) echo "-- stub dump"; echo "SELECT 1;";;
-  *" psql "*"--single-transaction"*)
+  "compose config --images "*)
+    # What compose resolves the image lines of docker-compose.release.yml to, from the .env in the project (cwd).
+    if [ -n "\${STUB_CONFIG_IMAGES:-}" ]; then printf '%s\n' "$STUB_CONFIG_IMAGES"; exit 0; fi
+    # Like compose: the environment wins over .env.
+    v() { if [ -n "\${!1:-}" ]; then printf '%s' "\${!1}"; else grep -E "^$1=" .env | head -1 | cut -d= -f2-; fi; }
+    o=$(v IMAGE_OWNER); o=\${o:-mdmesh-app}
+    echo "ghcr.io/$o/mdmesh-server:$(v SERVER_VERSION)"; echo "ghcr.io/$o/mdmesh-web:$(v WEB_VERSION)";;
+  "image inspect "*)
+    # RepoDigests of the image named by the last argument: that very ref, unless STUB_REPO_DIGESTS says otherwise.
+    printf '%s\n' "\${STUB_REPO_DIGESTS:-\${@: -1}}";;
+  *" pg_dump "*) echo "-- stub dump"; echo "SELECT 1;"; echo "-- PostgreSQL database dump complete";;
+  *" psql "*"-c BEGIN "*)
     cat > "$STUB_LOG.stdin"
-    if [ "\${STUB_PSQL_FAIL:-0}" = 1 ]; then echo 'psql:<stdin>:12: ERROR:  relation "x" does not exist' >&2; exit 3; fi;;
+    if [ "\${STUB_PSQL_FAIL:-0}" = 1 ]; then echo 'psql:<stdin>:12: ERROR:  relation "x" does not exist' >&2; exit 3; fi
+    if [ "$(tail -n1 "$STUB_LOG.stdin")" != "COMMIT;" ]; then echo 'psql:<stdin>:3: ERROR:  the backup is incomplete' >&2; exit 3; fi;;
 esac
 exit 0
 `, { mode: 0o755 });
@@ -742,7 +826,8 @@ exit 0
   return bin;
 }
 /** A deploy dir (project/.env) + backups dir + stubs under a fresh temp dir. HEALTH_TIMEOUT is 5, not 1: healthy()
- *  counts whole seconds, so with 1 a loaded machine can cross the deadline before the first (stubbed, instant) probe. */
+ *  counts whole seconds, so with 1 a loaded machine can cross the deadline before the first (stubbed, instant) probe.
+ *  HEALTH_TIMEOUT_MIN=0 lifts the scripts' 30 s floor, so a failing health check (HEALTH_TIMEOUT 0) ends at once. */
 function makeDeploy(envText) {
   const fs = require('fs'), os = require('os'), path = require('path');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sup-sh-'));
@@ -753,7 +838,7 @@ function makeDeploy(envText) {
   const log = path.join(dir, 'docker.log');
   fs.writeFileSync(log, '');
   const env = { ...process.env, PATH: bin + path.delimiter + process.env.PATH, STUB_LOG: log, COMPOSE_PROJECT_DIR: project,
-    BACKUP_DIR: backups, HEALTH_TIMEOUT: '5', HEALTH_URL: 'http://stub/health' };
+    BACKUP_DIR: backups, HEALTH_TIMEOUT: '5', HEALTH_TIMEOUT_MIN: '0', HEALTH_URL: 'http://stub/health' };
   return { dir, project, backups, log, env,
     envFile: () => fs.readFileSync(path.join(project, '.env'), 'utf8'),
     calls: () => fs.readFileSync(log, 'utf8').split('\n').filter(Boolean) };
@@ -795,7 +880,7 @@ t.test('rollback resets /update/status current to the version it restored', { ti
   const d = makeDeploy('SERVER_VERSION=0.0.2\nWEB_VERSION=0.0.2\nCURRENT_VERSION=0.0.2\n');
   fs.writeFileSync(path.join(d.backups, 'latest'), '20260927-120000\n');
   fs.writeFileSync(path.join(d.backups, '20260927-120000.env'), 'SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n');
-  fs.writeFileSync(path.join(d.backups, '20260927-120000.sql'), 'SELECT 1;\n');
+  fs.writeFileSync(path.join(d.backups, '20260927-120000.sql'), 'SELECT 1;\n-- PostgreSQL database dump complete\n');
   fs.writeFileSync(path.join(d.dir, 'recovery.token'), 'tok123');
   let sup = null;
   tt.after(async () => { await stopChild(sup && sup.child); fs.rmSync(d.dir, { recursive: true, force: true }); });
@@ -819,7 +904,7 @@ t.test('rollback.sh restores CURRENT_VERSION from the snapshot (not SERVER_VERSI
   // CURRENT_VERSION=0.0.0, not "latest" (which is no version at all and would hide every future update).
   const d = makeDeploy('SERVER_VERSION=latest\nWEB_VERSION=latest\nCURRENT_VERSION=0.0.0\n');
   try {
-    let r = runScript('apply.sh', ['0.0.2'], { ...d.env, STUB_CURL_FAIL: '0' });
+    let r = runScript('apply.sh', applyArgs('0.0.2'), { ...d.env, STUB_CURL_FAIL: '0' });
     a.equal(r.code, 0, r.all);
     const stamp = fs.readFileSync(path.join(d.backups, 'latest'), 'utf8').trim();
     a.match(fs.readFileSync(path.join(d.backups, stamp + '.env'), 'utf8'), /^CURRENT_VERSION=0\.0\.0$/m, 'apply.sh snapshots CURRENT_VERSION');
@@ -842,7 +927,7 @@ t.test('with AUTO_UPDATE on, a rollback is not undone by auto-applying the relea
     const d = makeDeploy('SERVER_VERSION=0.0.2\nWEB_VERSION=0.0.2\nCURRENT_VERSION=0.0.2\n');
     fs.writeFileSync(path.join(d.backups, 'latest'), '20260927-120000\n');
     fs.writeFileSync(path.join(d.backups, '20260927-120000.env'), 'SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n');
-    fs.writeFileSync(path.join(d.backups, '20260927-120000.sql'), 'SELECT 1;\n');
+    fs.writeFileSync(path.join(d.backups, '20260927-120000.sql'), 'SELECT 1;\n-- PostgreSQL database dump complete\n');
     fs.writeFileSync(path.join(d.dir, 'recovery.token'), 'tok123');
     let gh = null, sup = null;
     tt.after(async () => { await stopChild(sup && sup.child); if (gh) await gh.close(); fs.rmSync(d.dir, { recursive: true, force: true }); });
@@ -875,7 +960,7 @@ t.test('with AUTO_UPDATE on, a rollback is not undone by auto-applying the relea
 // to exit 0), and a failed restore must fail the script loudly, leaving the server stopped rather than running the
 // old version on the un-restored database. ---
 const idx = (calls, re) => calls.findIndex((c) => re.test(c));
-const PSQL_RE = /compose exec -T postgres psql .*--single-transaction/; // the restore itself
+const PSQL_RE = /compose exec -T postgres psql .*-c BEGIN /; // the restore itself
 
 function rollbackDeploy() {
   const fs = require('fs'), path = require('path');
@@ -883,7 +968,7 @@ function rollbackDeploy() {
   fs.writeFileSync(path.join(d.backups, 'latest'), '20260927-120000\n');
   fs.writeFileSync(path.join(d.backups, '20260927-120000.env'), 'SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n');
   // Like a real pg_dump: its preamble resets lock_timeout to 0 (which would undo a bound set before it).
-  fs.writeFileSync(path.join(d.backups, '20260927-120000.sql'), '-- dump\nSET lock_timeout = 0;\nSELECT 1;\n');
+  fs.writeFileSync(path.join(d.backups, '20260927-120000.sql'), '-- dump\nSET lock_timeout = 0;\nSELECT 1;\n-- PostgreSQL database dump complete\n');
   return d;
 }
 
@@ -892,14 +977,17 @@ function assertSafeRestoreOrder(calls, all) {
   a.ok(stop >= 0, 'the server is stopped before the restore:\n' + calls.join('\n') + '\n' + all);
   a.ok(psql > stop, 'psql runs after the server stopped:\n' + calls.join('\n'));
   // Ending the other sessions and the restore are ONE psql session and ONE transaction (no gap for a new lock to slip
-  // in), with a bounded lock_timeout set first: -c SET, -c terminate, then -f - (the dump), in that order.
+  // in), with a bounded lock_timeout set first: -c BEGIN, -c SET, -c terminate, -c the schema reset, then -f - (the
+  // dump, then the COMMIT), in that order. The reset drops public with everything in it (an object the update added can't block the restore) and
+  // makes it again with the owner and grants it had; in the same transaction, so a failed restore undoes it too.
   a.equal(calls.filter((c) => /compose exec -T postgres psql /.test(c)).length, 1, 'a single psql call:\n' + calls.join('\n'));
-  a.match(calls[psql], /-c SET lock_timeout = '60s' -c DO \$restore\$.*count\(pg_terminate_backend\(pid\)\).*datname = current_database\(\) AND pid <> pg_backend_pid\(\).*RAISE NOTICE 'ended % other session\(s\)'.*\$restore\$ -f -$/);
+  a.match(calls[psql], /-c BEGIN -c SET lock_timeout = '60s' -c DO \$restore\$.*count\(pg_terminate_backend\(pid\)\).*datname = current_database\(\) AND pid <> pg_backend_pid\(\).*RAISE NOTICE 'ended % other session\(s\)'.*\$restore\$ -c DO \$reset\$ .*SELECT nspowner::regrole, nspacl INTO o, a FROM pg_namespace WHERE nspname = 'public'; DROP SCHEMA public CASCADE; EXECUTE format\('CREATE SCHEMA public AUTHORIZATION %s', o\); .*aclexplode\(a\).*GRANT %s ON SCHEMA public TO %s.*\$reset\$ -f -$/);
   // Result rows (the dump's ~50 setval()s) go nowhere; errors and notices (stderr) still reach restore.log.
   a.match(calls[psql], / -o \/dev\/null /);
   a.ok(up > psql, 'the old server starts only after the restore:\n' + calls.join('\n'));
   a.match(calls[psql], /-v ON_ERROR_STOP=1/);
-  a.match(calls[psql], /--single-transaction/);
+  // Not --single-transaction: it commits whatever input arrived, and after the reset a cut-off stream is an empty database.
+  a.doesNotMatch(calls[psql], /--single-transaction/);
 }
 
 t.test('rollback.sh: stop server → restore (ON_ERROR_STOP, one transaction) → start → health', () => {
@@ -909,8 +997,8 @@ t.test('rollback.sh: stop server → restore (ON_ERROR_STOP, one transaction) �
     const r = runScript('rollback.sh', [], d.env);
     a.equal(r.code, 0, r.all);
     assertSafeRestoreOrder(d.calls(), r.all);
-    a.equal(fs.readFileSync(d.log + '.stdin', 'utf8'), "-- dump\nSET lock_timeout = '60s';\nSELECT 1;\n",
-      "the dump is fed to psql, with its own SET lock_timeout = 0 rewritten to the bound");
+    a.equal(fs.readFileSync(d.log + '.stdin', 'utf8'), "-- dump\nSET lock_timeout = '60s';\nSELECT 1;\n-- PostgreSQL database dump complete\nCOMMIT;\n",
+      "the dump is fed to psql, with its own SET lock_timeout = 0 rewritten to the bound, then the COMMIT");
     a.match(r.out, /PHASE rolled_back/);
   } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
 });
@@ -936,6 +1024,26 @@ t.test('rollback.sh: a failed restore exits non-zero, says what state the stack 
       'the old server is not started on the un-restored database:\n' + calls.join('\n'));
     a.ok(fs.existsSync(path.join(d.backups, '20260927-120000.restore.log')), 'the full psql output is kept');
   } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+});
+
+t.test('rollback.sh: a backup cut short is never committed: the stream ends with a RAISE instead of COMMIT, the restore '
+  + 'fails and the server stays stopped', () => {
+  const fs = require('fs'), path = require('path');
+  for (const dump of ['-- dump\nSET lock_timeout = 0;\nSELECT 1;\n', '']) {
+    const d = rollbackDeploy();
+    try {
+      fs.writeFileSync(path.join(d.backups, '20260927-120000.sql'), dump || '-- dump\n');
+      const r = runScript('rollback.sh', [], d.env);
+      a.notEqual(r.code, 0, r.all);
+      a.match(r.out, /PHASE failed/);
+      const stdin = fs.readFileSync(d.log + '.stdin', 'utf8').trimEnd().split('\n');
+      a.match(stdin[stdin.length - 1], /^DO \$x\$ BEGIN RAISE EXCEPTION 'the backup is incomplete \(it does not end like a pg_dump\)'; END \$x\$;$/);
+      a.ok(!stdin.includes('COMMIT;'), stdin.join('\n'));
+      const calls = d.calls();
+      a.equal(calls.slice(idx(calls, PSQL_RE) + 1).filter((c) => /^compose up /.test(c)).length, 0, calls.join('\n'));
+      a.match(d.envFile(), /^CURRENT_VERSION=0\.0\.2$/m, '.env still names the running version');
+    } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+  }
 });
 
 t.test('rollback.sh: if the server cannot be stopped, nothing is restored and the script fails loudly', () => {
@@ -967,11 +1075,76 @@ t.test('rollback.sh: restore ok but the old server does not start or stay health
   } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
 });
 
+t.test('HEALTH_TIMEOUT: .env wins over the supervisor environment, and an unusable value is ignored', () => {
+  const fs = require('fs'), path = require('path');
+  const timeoutWith = (envLine, envVar) => {
+    const d = rollbackDeploy();
+    try {
+      if (envLine !== null) fs.appendFileSync(path.join(d.project, '.env'), envLine + '\n');
+      const env = { ...d.env, STUB_CURL_FAIL: '1' };
+      if (envVar === null) delete env.HEALTH_TIMEOUT; else env.HEALTH_TIMEOUT = envVar;
+      const r = runScript('rollback.sh', [], env);
+      const m = /still unhealthy after rollback \((\d+)s\)/.exec(r.err);
+      a.ok(m, r.all);
+      return { seconds: Number(m[1]), err: r.err };
+    } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+  };
+  // Set in .env (an existing install adds a line): used even when the container's environment says otherwise.
+  a.equal(timeoutWith('HEALTH_TIMEOUT=0', '600').seconds, 0);
+  a.equal(timeoutWith('HEALTH_TIMEOUT="0"\r', '600').seconds, 0, 'quotes and a CR are tolerated');
+  // Not in .env: the environment (compose passes it through).
+  a.equal(timeoutWith(null, '0').seconds, 0);
+  // Not a whole number: said, and the next source is used.
+  const bad = timeoutWith('HEALTH_TIMEOUT=ten', '0');
+  a.equal(bad.seconds, 0);
+  a.match(bad.err, /HEALTH_TIMEOUT=ten is not a whole number of seconds, at least 0; ignored/);
+});
+
+/** What the scripts' health_timeout() answers for this .env text and environment (the real 30 s floor unless set). */
+function resolveHealthTimeout(script, envText, extraEnv) {
+  const fs = require('fs'), os = require('os'), path = require('path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sup-ht-'));
+  try {
+    const envFile = path.join(dir, '.env');
+    fs.writeFileSync(envFile, envText);
+    const src = fs.readFileSync(path.join(__dirname, script), 'utf8');
+    const fn = /health_timeout\(\) \{[\s\S]*?\n\}\n/.exec(src)[0];
+    const env = { PATH: process.env.PATH, ...extraEnv };
+    const r = cp.spawnSync('bash', ['-c', `ENV_FILE=${JSON.stringify(envFile)}\n${fn}health_timeout`], { env, encoding: 'utf8' });
+    return { value: r.stdout.trim(), err: r.stderr };
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+}
+
+t.test('HEALTH_TIMEOUT: 180 by default; below 30 (0 included, not "no limit") is refused like any bad value', () => {
+  for (const script of ['apply.sh', 'rollback.sh']) {
+    a.equal(resolveHealthTimeout(script, '', {}).value, '180', script);
+    a.equal(resolveHealthTimeout(script, 'HEALTH_TIMEOUT=900\n', { HEALTH_TIMEOUT: '180' }).value, '900', script);
+    a.equal(resolveHealthTimeout(script, 'HEALTH_TIMEOUT=30\n', {}).value, '30', script);
+    // Read as docker compose reads .env: an inline comment after whitespace is not part of the value, quoted or not
+    a.equal(resolveHealthTimeout(script, 'HEALTH_TIMEOUT=900 # slow database update\n', {}).value, '900', script);
+    a.equal(resolveHealthTimeout(script, 'HEALTH_TIMEOUT=900\t#slow\r\n', {}).value, '900', script);
+    a.equal(resolveHealthTimeout(script, 'HEALTH_TIMEOUT="900" # slow\n', {}).value, '900', script);
+    a.equal(resolveHealthTimeout(script, "HEALTH_TIMEOUT='600' # slow\n", {}).value, '600', script);
+    a.equal(resolveHealthTimeout(script, 'HEALTH_TIMEOUT=900#slow\n', { HEALTH_TIMEOUT: '240' }).value, '240',
+      `${script}: no whitespace before # (compose keeps it in the value): not a number`);
+    a.equal(resolveHealthTimeout(script, '# HEALTH_TIMEOUT=900\n', {}).value, '180', `${script}: a commented-out line`);
+    for (const low of ['0', '29']) {
+      const r = resolveHealthTimeout(script, `HEALTH_TIMEOUT=${low}\n`, { HEALTH_TIMEOUT: '240' });
+      a.equal(r.value, '240', `${script}: ${low} falls through to the environment`);
+      a.match(r.err, new RegExp(`HEALTH_TIMEOUT=${low} is not a whole number of seconds, at least 30; ignored`));
+      a.equal(resolveHealthTimeout(script, `HEALTH_TIMEOUT=${low}\n`, {}).value, '180', `${script}: then the default`);
+    }
+  }
+  const fs = require('fs'), path = require('path');
+  const fn = (f) => /health_timeout\(\) \{[\s\S]*?\n\}\n/.exec(fs.readFileSync(path.join(__dirname, f), 'utf8'))[0];
+  a.equal(fn('apply.sh'), fn('rollback.sh'), 'apply.sh and rollback.sh agree');
+});
+
 t.test('apply.sh: a failed health check rolls back with the same safe restore; a failed restore fails the apply loudly', () => {
   const fs = require('fs');
   let d = makeDeploy('SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n');
   try {
-    let r = runScript('apply.sh', ['0.0.2'], { ...d.env, STUB_CURL_FAIL: '1', HEALTH_TIMEOUT: '0' });
+    let r = runScript('apply.sh', applyArgs('0.0.2'), { ...d.env, STUB_CURL_FAIL: '1', HEALTH_TIMEOUT: '0' });
     a.equal(r.code, 1, r.all);
     // The first recreate is the new version's; the rollback's stop → restore → start follows it.
     const calls = d.calls(), firstUp = idx(calls, /^compose up /);
@@ -982,7 +1155,7 @@ t.test('apply.sh: a failed health check rolls back with the same safe restore; a
     fs.rmSync(d.dir, { recursive: true, force: true });
 
     d = makeDeploy('SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n');
-    r = runScript('apply.sh', ['0.0.2'], { ...d.env, STUB_CURL_FAIL: '1', HEALTH_TIMEOUT: '0', STUB_PSQL_FAIL: '1' });
+    r = runScript('apply.sh', applyArgs('0.0.2'), { ...d.env, STUB_CURL_FAIL: '1', HEALTH_TIMEOUT: '0', STUB_PSQL_FAIL: '1' });
     a.equal(r.code, 1, r.all);
     a.match(r.out, /PHASE failed/);
     a.doesNotMatch(r.out, /PHASE rolled_back/);
@@ -998,7 +1171,7 @@ t.test('apply.sh: a failed pull changed no container, so it resets .env only: no
   const fs = require('fs');
   const d = makeDeploy('SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n');
   try {
-    const r = runScript('apply.sh', ['0.0.2'], { ...d.env, STUB_FAIL_RE: '^compose pull ' });
+    const r = runScript('apply.sh', applyArgs('0.0.2'), { ...d.env, STUB_FAIL_RE: '^compose pull ' });
     a.equal(r.code, 1, r.all);
     a.match(r.out, /PHASE rolled_back/);
     // --quiet drops the per-layer progress (most of the log in the live rehearsal); errors still print.
@@ -1150,11 +1323,11 @@ t.test('apply.sh: if the rollback cannot stop the new server, .env names the new
   for (const knob of [{ STUB_FAIL_RE: '^compose stop server$' }, { STUB_PSQL_FAIL: '1' }]) {
     const d = makeDeploy('SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n');
     try {
-      const r = runScript('apply.sh', ['0.0.2'], { ...d.env, STUB_CURL_FAIL: '1', HEALTH_TIMEOUT: '0', ...knob });
+      const r = runScript('apply.sh', applyArgs('0.0.2'), { ...d.env, STUB_CURL_FAIL: '1', HEALTH_TIMEOUT: '0', ...knob });
       a.equal(r.code, 1, r.all);
       a.match(r.out, /PHASE failed/);
-      a.match(d.envFile(), /^SERVER_VERSION=0\.0\.2$/m, JSON.stringify(knob) + '\n' + r.all);
-      a.match(d.envFile(), /^WEB_VERSION=0\.0\.2$/m);
+      a.match(d.envFile(), /^SERVER_VERSION=0\.0\.2@sha256:a{64}$/m, JSON.stringify(knob) + '\n' + r.all);
+      a.match(d.envFile(), /^WEB_VERSION=0\.0\.2@sha256:b{64}$/m);
       a.match(d.envFile(), /^CURRENT_VERSION=0\.0\.2$/m);
       a.match(r.err, /^ERR .*\.env still names 0\.0\.2/m);
       // After a failed recreate the new server may or may not be up: the message must not claim it is running.
@@ -1239,6 +1412,154 @@ t.test('a successful manual apply of the skipped version clears the skip (auto.j
     a.equal(s.apply.phase, 'done', sup.log());
     a.equal(s.autoSkipped, null, 'the skip is cleared once that version is running');
     a.deepEqual(JSON.parse(fs.readFileSync(path.join(d.dir, 'auto.json'), 'utf8')), { auto: false, skipVersion: null });
+    // server.js handed apply.sh the signed manifest's digests, and those are what .env now runs.
+    a.match(d.envFile(), /^SERVER_VERSION=0\.0\.2@sha256:a{64}$/m);
+    a.match(d.envFile(), /^WEB_VERSION=0\.0\.2@sha256:b{64}$/m);
+  });
+
+// --- Images pinned by digest: apply.sh runs exactly the images the signed manifest names. ---
+t.test('apply.sh pins server + web by digest (.env <version>@sha256:…), checks compose resolves to them and the pulled '
+  + 'images carry them, then pins a release-following supervisor', () => {
+  const fs = require('fs');
+  const d = makeDeploy('IMAGE_OWNER=mdmesh-app\nSERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nSUPERVISOR_VERSION=latest\nCURRENT_VERSION=0.0.1\n');
+  try {
+    const r = runScript('apply.sh', applyArgs('0.0.2'), d.env);
+    a.equal(r.code, 0, r.all);
+    a.match(r.out, /^OK 0\.0\.2$/m);
+    a.match(d.envFile(), /^SERVER_VERSION=0\.0\.2@sha256:a{64}$/m);
+    a.match(d.envFile(), /^WEB_VERSION=0\.0\.2@sha256:b{64}$/m);
+    a.match(d.envFile(), /^CURRENT_VERSION=0\.0\.2$/m, 'CURRENT_VERSION stays a plain version (the supervisor compares it)');
+    a.match(d.envFile(), /^SUPERVISOR_VERSION=0\.0\.2@sha256:c{64}$/m, ':latest becomes the release\'s signed supervisor');
+    const calls = d.calls();
+    const at = (re) => idx(calls, re);
+    a.ok(at(/^compose config --images server caddy$/) > -1 && at(/^compose config --images/) < at(/ pg_dump /), calls.join('\n'));
+    a.ok(at(new RegExp('^image inspect .* ' + PIN.server.replace(/[.]/g, '\\.') + '$')) > at(/^compose pull /), calls.join('\n'));
+    a.ok(at(new RegExp('^image inspect .* ' + PIN.web.replace(/[.]/g, '\\.') + '$')) < at(/^compose up /), calls.join('\n'));
+    a.equal(calls.filter((c) => /supervisor/.test(c) && /^compose (pull|up)/.test(c)).length, 0, 'the supervisor is never recreated');
+  } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+  // A supervisor version set by hand or by setup.sh (which builds it) is left alone; an earlier pin moves on; unset is pinned.
+  for (const [before, after] of [['SUPERVISOR_VERSION=0.0.1\n', /^SUPERVISOR_VERSION=0\.0\.1$/m],
+    ['SUPERVISOR_VERSION=0.0.1@sha256:' + 'd'.repeat(64) + '\n', /^SUPERVISOR_VERSION=0\.0\.2@sha256:c{64}$/m],
+    ['', /^SUPERVISOR_VERSION=0\.0\.2@sha256:c{64}$/m]]) {
+    const d2 = makeDeploy('SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n' + before);
+    try {
+      const r = runScript('apply.sh', applyArgs('0.0.2'), d2.env);
+      a.equal(r.code, 0, r.all);
+      a.match(d2.envFile(), after, before);
+    } finally { fs.rmSync(d2.dir, { recursive: true, force: true }); }
+  }
+});
+
+t.test('apply.sh refuses refs that are missing, malformed or under another owner, before anything changes', () => {
+  const fs = require('fs');
+  const ENV = 'IMAGE_OWNER=forkco\nSERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nSUPERVISOR_VERSION=latest\nCURRENT_VERSION=0.0.1\n';
+  const cases = [
+    [applyArgs('0.0.2'), /^ERR the signed release 0\.0\.2 pins its server image at ghcr\.io\/mdmesh-app\/mdmesh-server, but this install pulls ghcr\.io\/forkco\/mdmesh-server \(IMAGE_OWNER=forkco in \.env\).* Nothing was changed\.$/m],
+    [['0.0.2'], /^ERR the signed release 0\.0\.2 names no digest for its server image .*Nothing was changed\.$/m],
+    [applyArgs('0.0.2', { server: 'ghcr.io/forkco/mdmesh-server@sha256:' + 'a'.repeat(64), web: 'ghcr.io/forkco/mdmesh-web:0.0.2',
+      supervisor: 'x' }), /^ERR the signed release 0\.0\.2 has no valid digest for its web image/m],
+  ];
+  for (const [args, want] of cases) {
+    const d = makeDeploy(ENV);
+    try {
+      const r = runScript('apply.sh', args, d.env);
+      a.equal(r.code, 1, r.all);
+      a.match(r.err, want);
+      a.match(r.out, /^PHASE failed$/m);
+      a.doesNotMatch(r.out, /PHASE backup/);
+      a.deepEqual(d.calls(), [], 'no docker call at all');
+      a.equal(d.envFile(), ENV, '.env untouched');
+    } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+  }
+  // The fork's own pinned images apply.
+  const d = makeDeploy(ENV);
+  try {
+    const own = { server: 'ghcr.io/forkco/mdmesh-server@sha256:' + 'a'.repeat(64), web: 'ghcr.io/forkco/mdmesh-web@sha256:' + 'b'.repeat(64),
+      supervisor: 'ghcr.io/forkco/mdmesh-supervisor@sha256:' + 'c'.repeat(64) };
+    const r = runScript('apply.sh', applyArgs('0.0.2', own), d.env);
+    a.equal(r.code, 0, r.all);
+    a.match(d.envFile(), /^SERVER_VERSION=0\.0\.2@sha256:a{64}$/m);
+  } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+});
+
+t.test('apply.sh: a compose file that does not resolve to the pinned refs is refused before the backup; a pulled image '
+  + 'without the signed digest resets .env only (no container changed)', () => {
+  const fs = require('fs');
+  // The compose check runs before the backup: a mismatch changes nothing at all.
+  for (const [knob, want] of [
+    [{ STUB_CONFIG_IMAGES: 'ghcr.io/mdmesh-app/mdmesh-server:0.0.2\nghcr.io/mdmesh-app/mdmesh-web:0.0.2' },
+      /^ERR this install's compose file does not resolve to the signed image ghcr\.io\/mdmesh-app\/mdmesh-server:0\.0\.2@sha256:a{64}.*Nothing was changed\.$/m],
+    [{ STUB_CONFIG_IMAGES: 'ghcr.io/mdmesh-app/mdmesh-server:0.0.2@sha256:' + 'a'.repeat(64) + '\nghcr.io/mdmesh-app/mdmesh-web:0.0.2' },
+      /^ERR this install's compose file does not resolve to the signed image ghcr\.io\/mdmesh-app\/mdmesh-web:0\.0\.2@sha256:b{64}.*Nothing was changed\.$/m],
+    [{ STUB_FAIL_RE: '^compose config ' }, /^ERR could not read the compose configuration/m]]) {
+    const ENV = 'SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nSUPERVISOR_VERSION=latest\nCURRENT_VERSION=0.0.1\n';
+    const d = makeDeploy(ENV);
+    try {
+      const r = runScript('apply.sh', applyArgs('0.0.2'), { ...d.env, ...knob });
+      a.equal(r.code, 1, r.all);
+      a.match(r.err, want);
+      a.match(r.out, /^PHASE failed$/m);
+      a.doesNotMatch(r.out, /PHASE backup/);
+      a.deepEqual(d.calls(), ['compose config --images server caddy'], 'no dump, no pull');
+      a.equal(require('fs').readdirSync(d.backups).length, 0, 'no backup, /backups/latest untouched');
+      a.equal(d.envFile(), ENV);
+    } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+  }
+  const knobs = [
+    [{ STUB_REPO_DIGESTS: 'ghcr.io/mdmesh-app/mdmesh-server@sha256:' + 'e'.repeat(64) },
+      /^ERR the pulled image does not carry the signed digest ghcr\.io\/mdmesh-app\/mdmesh-server@sha256:a{64}, so it is not used$/m],
+    // The server image is right and the web image isn't.
+    [{ STUB_REPO_DIGESTS: PIN.server },
+      /^ERR the pulled image does not carry the signed digest ghcr\.io\/mdmesh-app\/mdmesh-web@sha256:b{64}, so it is not used$/m],
+    // docker image inspect fails: no image with that digest here.
+    [{ STUB_FAIL_RE: '^image inspect ' },
+      /^ERR the pulled image does not carry the signed digest ghcr\.io\/mdmesh-app\/mdmesh-server@sha256:a{64}, so it is not used$/m],
+    [{ STUB_FAIL_RE: '^image inspect .*mdmesh-web@' },
+      /^ERR the pulled image does not carry the signed digest ghcr\.io\/mdmesh-app\/mdmesh-web@sha256:b{64}, so it is not used$/m],
+  ];
+  for (const [knob, want] of knobs) {
+    const d = makeDeploy('SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nSUPERVISOR_VERSION=latest\nCURRENT_VERSION=0.0.1\n');
+    try {
+      const r = runScript('apply.sh', applyArgs('0.0.2'), { ...d.env, ...knob });
+      a.equal(r.code, 1, r.all);
+      a.match(r.err, want);
+      a.match(r.out, /PHASE rolled_back/);
+      const calls = d.calls();
+      a.equal(idx(calls, /^compose up /), -1, calls.join('\n'));
+      a.equal(idx(calls, /^compose stop /), -1, calls.join('\n'));
+      a.match(d.envFile(), /^SERVER_VERSION=0\.0\.1$/m);
+      a.match(d.envFile(), /^WEB_VERSION=0\.0\.1$/m);
+      a.match(d.envFile(), /^SUPERVISOR_VERSION=latest$/m);
+      a.match(d.envFile(), /^CURRENT_VERSION=0\.0\.1$/m);
+    } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+  }
+});
+
+t.test('a release without digests, or pinned under another owner, is refused by Update with the reason; nothing runs',
+  { skip: !HAS_MINISIGN && 'minisign not installed', timeout: 40000 }, async () => {
+    const fs = require('fs');
+    for (const [opts, envText, want] of [
+      [{ version: '0.0.2', images: null }, '', /names its images by tag only/],
+      [{ version: '0.0.2' }, 'IMAGE_OWNER=forkco\n', /this install pulls ghcr\.io\/forkco\/mdmesh-server \(IMAGE_OWNER=forkco in \.env\)/],
+    ]) {
+      const d = makeDeploy(envText + 'SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n');
+      let gh = null, sup = null, authz = null;
+      try {
+        gh = await fakeGitHub(d.dir, opts);
+        authz = await fakeAuthz();
+        sup = await spawnSupervisor(d.dir, { ...d.env, ...gh.env, APPLY_SUPPORTED: '1', SERVER_BASE: authz.base }, /supervisor on/, ['--require', gh.preload]);
+        const status = async () => (await fetch(`http://127.0.0.1:${sup.port}/update/status`)).json();
+        const st = await waitFor(async () => { const x = await status(); return x.checkedAt && x; }, 'the startup poll');
+        a.equal(st.updateAvailable, true, 'the release is still offered: Update says why it will not apply');
+        const r = await fetch(`http://127.0.0.1:${sup.port}/update/apply`, { method: 'POST', headers: ADMIN });
+        a.equal(r.status, 400);
+        a.match((await r.json()).error, want);
+        a.deepEqual(d.calls(), [], 'apply.sh never ran');
+      } finally {
+        await stopChild(sup && sup.child); if (gh) await gh.close(); if (authz) await authz.close();
+        fs.rmSync(d.dir, { recursive: true, force: true });
+      }
+    }
   });
 
 t.test('restore_db: the lock bound is a fixed 60s; no environment value reaches the SQL (not even with a newline)', () => {
@@ -1249,8 +1570,8 @@ t.test('restore_db: the lock bound is a fixed 60s; no environment value reaches 
     try {
       const r = runScript('rollback.sh', [], { ...d.env, RESTORE_LOCK_TIMEOUT: val });
       a.equal(r.code, 0, r.all);
-      const call = d.calls().find((c) => /psql .*--single-transaction/.test(c));
-      a.ok(call.includes("-c SET lock_timeout = '60s' -c"), JSON.stringify(val) + ': ' + call);
+      const call = d.calls().find((c) => PSQL_RE.test(c));
+      a.ok(call.includes("-c BEGIN -c SET lock_timeout = '60s' -c"), JSON.stringify(val) + ': ' + call);
       a.ok(fs.readFileSync(d.log + '.stdin', 'utf8').includes("SET lock_timeout = '60s';"));
       a.ok(!call.includes('DROP TABLE'));
     } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
@@ -1264,7 +1585,7 @@ t.test('backups are private (umask 077): the dump (password hashes), the .env sn
   try {
     fs.chmodSync(path.join(d.project, '.env'), 0o644);
     // umask 022 in the caller (like the supervisor process): the scripts must tighten it themselves.
-    const r = cp.spawnSync('bash', ['-c', 'umask 022; exec bash "$0" 0.0.2', path.join(__dirname, 'apply.sh')],
+    const r = cp.spawnSync('bash', ['-c', 'umask 022; exec bash "$0" "$@"', path.join(__dirname, 'apply.sh'), ...applyArgs('0.0.2')],
       { env: { ...d.env, STUB_CURL_FAIL: '1', HEALTH_TIMEOUT: '0' }, encoding: 'utf8' });
     a.equal(r.status, 1, r.stdout + r.stderr); // health fails → rollback with a restore → restore.log written too
     const stamp = fs.readFileSync(path.join(d.backups, 'latest'), 'utf8').trim();
@@ -1285,12 +1606,13 @@ t.test('restore_db rewrites only the preamble SET lock_timeout = 0; data rows an
   const body = "SET idle_in_transaction_session_timeout = 0;\nSELECT pg_catalog.set_config('search_path', '', false);\n"
     + 'SET client_min_messages = warning;\n\nCREATE TABLE public.t (x text);\n'
     + 'CREATE FUNCTION public.f() RETURNS integer LANGUAGE plpgsql AS $$\nBEGIN\nSET lock_timeout = 0;\nRETURN 1;\nEND $$;\n'
-    + 'COPY public.t (x) FROM stdin;\nSET lock_timeout = 0;\nkeep me\n\\.\n\nSET lock_timeout = 0;\n';
+    + 'COPY public.t (x) FROM stdin;\nSET lock_timeout = 0;\nkeep me\n\\.\n\nSET lock_timeout = 0;\n'
+    + '\n--\n-- PostgreSQL database dump complete\n--\n\n\\unrestrict abc123\n\n';
   const cases = [
-    // [dump, expected psql stdin]
-    [pre + 'SET lock_timeout = 0;\n' + body, pre + "SET lock_timeout = '60s';\n" + body],
+    // [dump, expected psql stdin: the dump, then the COMMIT]
+    [pre + 'SET lock_timeout = 0;\n' + body, pre + "SET lock_timeout = '60s';\n" + body + 'COMMIT;\n'],
     // No preamble line at all: nothing may be rewritten (the first whole-line match is then a data row).
-    [pre + body, pre + body],
+    [pre + body, pre + body + 'COMMIT;\n'],
   ];
   for (const [dump, want] of cases) {
     const d = rollbackDeploy();

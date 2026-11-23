@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Name of the admin alert channel (id mdm_alert), shown in Settings > Apps > MDMesh > Notifications. -->
+    <string name="alert_notification_channel">MDMesh alerts</string>
+</resources>

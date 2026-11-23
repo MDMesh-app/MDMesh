@@ -1,11 +1,13 @@
 package com.hmdm.rest.resource.support;
 
+import com.hmdm.persistence.DeviceGoneException;
 import com.hmdm.persistence.AgentCommandDAO;
 import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.AgentCommand;
 import com.hmdm.persistence.domain.Application;
 import com.hmdm.persistence.domain.Configuration;
 import com.hmdm.persistence.domain.Device;
+import com.hmdm.rest.json.agent.DesiredAppPermissions;
 import com.hmdm.rest.json.agent.DesiredConfig;
 import com.hmdm.util.AgentCapabilityTokens;
 import com.hmdm.util.ConfigReconcileDecision;
@@ -43,11 +45,27 @@ public class ConfigReconciler {
 
     private final UnsecureDAO unsecureDAO;
     private final AgentCommandDAO commandDAO;
+    private final ExtensionPoints extensionPoints;
+    private final KioskBackgroundImageUrls backgroundImageUrls;
 
+    /**
+     * @param extensionPoints     the server plugins' policy keys, from the plugins on for each configuration's
+     *                            customer (none without plugins)
+     * @param backgroundImageUrls builds the kiosk background image URL from the current base URL as the document is
+     *                            built; null sends the URL stored with the configuration
+     */
     @Inject
-    public ConfigReconciler(UnsecureDAO unsecureDAO, AgentCommandDAO commandDAO) {
+    public ConfigReconciler(UnsecureDAO unsecureDAO, AgentCommandDAO commandDAO, ExtensionPoints extensionPoints,
+                            KioskBackgroundImageUrls backgroundImageUrls) {
         this.unsecureDAO = unsecureDAO;
         this.commandDAO = commandDAO;
+        this.extensionPoints = extensionPoints;
+        this.backgroundImageUrls = backgroundImageUrls;
+    }
+
+    /** Sends the stored kiosk background image URL as is (tests that don't involve the image). */
+    public ConfigReconciler(UnsecureDAO unsecureDAO, AgentCommandDAO commandDAO, ExtensionPoints extensionPoints) {
+        this(unsecureDAO, commandDAO, extensionPoints, null);
     }
 
     /** The desired-state document for the device's configuration, or null when it has none. */
@@ -55,13 +73,82 @@ public class ConfigReconciler {
         if (device == null || device.getConfigurationId() == null) return null;
         Configuration cfg = unsecureDAO.getConfigurationById(device.getConfigurationId());
         if (cfg == null) return null;
+        // Null means a legacy server did not understand the section; an empty list deliberately means release every
+        // explicit app-permission override the agent applied previously.
+        cfg.setManagedAppPermissions(unsecureDAO.getManagedAppPermissions(cfg.getId()));
+        // Built now, not when the image was picked: a later base.url change (HTTP -> HTTPS, a new domain) reaches the
+        // devices as a new revision instead of a URL the agent refuses.
+        if (backgroundImageUrls != null) cfg.setBackgroundImageUrl(backgroundImageUrls.current(cfg));
         List<Application> apps = unsecureDAO.getPlainConfigurationAppsOptimized(cfg.getId());
-        return DesiredConfigBuilder.build(cfg, apps);
+        return DesiredConfigBuilder.build(cfg, apps, extensionPoints.contributors(cfg.getCustomerId()));
     }
 
+    /**
+     * The document as this device receives it. An agent without {@code app.runtimePermissions} gets it without the
+     * appPermissions section, under the revision of what it gets: it can't apply the rules, and must not be sent the
+     * same document again and again for reporting a revision it never had.
+     */
+    DesiredConfig currentDocument(Device device, Set<String> deviceTokens) {
+        DesiredConfig doc = currentDocument(device);
+        if (doc != null && doc.getAppPermissions() != null && !managesAppPermissions(deviceTokens)) {
+            doc.setAppPermissions(null);
+            doc.setRevision(DesiredConfigBuilder.revision(doc));
+        }
+        return doc;
+    }
+
+    private static boolean managesAppPermissions(Set<String> deviceTokens) {
+        return AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.APP_PERMISSIONS_CAPABILITY, deviceTokens);
+    }
+
+    /**
+     * The revision the console compares with the one the device applied, for its sync status. An agent that can apply
+     * app permission rules must have applied the whole document. One that can't is in sync with the document it gets
+     * when the configuration has no rules (nothing is missing), and never when it has some: its device doesn't enforce
+     * them, so it must not show as in sync.
+     *
+     * @param doc the configuration's document ({@link #statusDocument}), left as it was; null gives null
+     */
+    public static String statusRevision(DesiredConfig doc, Set<String> deviceTokens) {
+        if (doc == null) return null;
+        List<DesiredAppPermissions> rules = doc.getAppPermissions();
+        if (rules == null || !rules.isEmpty() || managesAppPermissions(deviceTokens)) return doc.getRevision();
+        doc.setAppPermissions(null);
+        try {
+            return DesiredConfigBuilder.revision(doc);
+        } finally {
+            doc.setAppPermissions(rules);
+        }
+    }
+
+    /**
+     * The configuration's full document, for the console's sync status; null when the device has no configuration, or
+     * when a server plugin's contributor fails on it (logged as reconcile does), so one broken plugin doesn't take down
+     * the status of every configuration.
+     */
+    public DesiredConfig statusDocument(Device device) {
+        try {
+            return currentDocument(device);
+        } catch (IllegalStateException e) {
+            Integer cfgId = device.getConfigurationId();
+            if (shouldWarn(cfgId == null ? Integer.valueOf(-1) : cfgId, System.currentTimeMillis())) {
+                logger.warn("no current revision for configuration {}", cfgId, e);
+            } else {
+                logger.debug("no current revision for configuration {}", cfgId, e);
+            }
+            return null;
+        }
+    }
+
+    /** The full document's revision ({@link #statusDocument}): what an agent that applies every section reports. */
     public String currentRevision(Device device) {
-        DesiredConfig d = currentDocument(device);
-        return d == null ? null : d.getRevision();
+        DesiredConfig doc = statusDocument(device);
+        return doc == null ? null : doc.getRevision();
+    }
+
+    /** {@link #statusRevision} of the device's configuration ({@link #statusDocument}). */
+    public String currentRevision(Device device, Set<String> deviceTokens) {
+        return statusRevision(statusDocument(device), deviceTokens);
     }
 
     /**
@@ -69,7 +156,8 @@ public class ConfigReconciler {
      * @param configAgentVersion the version that last completed config.apply (null = no baseline yet)
      * @param receivedAt         when this check-in reached the server, before its results were recorded: a
      *                           config.apply delivered earlier and still open is not running on the device
-     * @return true when a config.apply was enqueued. Never throws.
+     * @return true when a config.apply was enqueued
+     * @throws com.hmdm.persistence.DeviceGoneException the device was deleted meanwhile; nothing else is thrown
      */
     public boolean reconcile(Device device, Set<String> deviceTokens, String appliedRevision,
                              String agentVersion, String configAgentVersion, long now, long receivedAt) {
@@ -77,7 +165,7 @@ public class ConfigReconciler {
             // Cost short-circuit only: an old agent without the capability pays nothing (no config/app
             // query at all). ConfigReconcileDecision.decide still re-checks this same gate below.
             if (!AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, deviceTokens)) return false;
-            DesiredConfig doc = currentDocument(device);
+            DesiredConfig doc = currentDocument(device, deviceTokens);
             if (doc == null) return false;
             String number = device.getNumber();
             if (configAgentVersion == null && agentVersion != null) {
@@ -101,24 +189,12 @@ public class ConfigReconciler {
                     now, agentChanged) != ConfigReconcileDecision.Action.ENQUEUE) {
                 return false;
             }
-            AgentCommand cmd = new AgentCommand();
-            cmd.setDeviceNumber(number);
-            cmd.setType(DesiredConfigBuilder.COMMAND_TYPE);
-            cmd.setPayload(DesiredConfigBuilder.toPayloadJson(doc));
-            cmd.setRequiresCapability(DesiredConfigBuilder.CAPABILITY);
-            cmd.setAgentVersion(agentVersion);
-            cmd.setStatus("pending");
-            cmd.setCreatedAt(now);
-            try {
-                commandDAO.insert(cmd);
-            } catch (Exception e) {
-                if (!isUniqueViolation(e)) throw e;
-                logger.debug("config.apply for {} already queued by a concurrent check-in", number);
-                return false;
-            }
+            if (!enqueue(number, doc, agentVersion, now)) return false;
             logger.info("config.apply queued for {} (revision {} -> {}, agent {})", number, appliedRevision,
                     doc.getRevision(), agentChanged ? configAgentVersion + " -> " + agentVersion : agentVersion);
             return true;
+        } catch (DeviceGoneException e) {
+            throw e; // the device was deleted meanwhile: its caller answers as for an unknown device
         } catch (Exception e) {
             // A broken configuration fails on EVERY check-in of every device on it: WARN at most once
             // per minute per configuration id, DEBUG otherwise.
@@ -129,6 +205,67 @@ public class ConfigReconciler {
             } else {
                 logger.debug("config reconcile skipped for {} (configuration {})", number, cfgId, e);
             }
+            return false;
+        }
+    }
+
+    /** What {@link #retryNow} did. */
+    public enum Retry {
+        /** A config.apply is queued: the device gets it at its next check-in (the caller wakes it). */
+        QUEUED,
+        /** One is already on its way to the device; nothing new was queued. */
+        ALREADY_QUEUED,
+        /** The device already applied the current configuration. */
+        IN_SYNC,
+        /** The device's agent can't apply configurations. */
+        UNSUPPORTED,
+        /** The device has no configuration. */
+        NO_CONFIGURATION
+    }
+
+    /**
+     * The console's Retry apply: queue the configuration now, without the hour's backoff that follows a failed attempt
+     * ({@link ConfigReconcileDecision#decideRetry}), so the device gets it as soon as it is woken. Uses what the device
+     * last reported (its capabilities and applied revision). A config.apply already open is left alone, delivered or
+     * not: the device may be applying it now.
+     */
+    public Retry retryNow(Device device, long now) {
+        String number = device.getNumber();
+        Set<String> tokens = AgentCapabilityTokens.flatten(commandDAO.getDeviceCapabilities(number));
+        if (!AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, tokens)) return Retry.UNSUPPORTED;
+        DesiredConfig doc = currentDocument(device, tokens);
+        if (doc == null) return Retry.NO_CONFIGURATION;
+        com.hmdm.persistence.domain.DeviceState state = commandDAO.getState(number);
+        String applied = state == null ? null : state.getAppliedConfigRevision();
+        String agentVersion = state == null ? null : state.getAgentVersion();
+        boolean agentChanged = state != null
+                && ConfigReconcileDecision.agentChanged(agentVersion, state.getConfigAgentVersion());
+        boolean open = commandDAO.hasOpenOfType(number, DesiredConfigBuilder.COMMAND_TYPE);
+        if (ConfigReconcileDecision.decideRetry(tokens, doc.getRevision(), applied, open, agentChanged)
+                != ConfigReconcileDecision.Action.ENQUEUE) {
+            return open ? Retry.ALREADY_QUEUED : Retry.IN_SYNC;
+        }
+        if (!enqueue(number, doc, agentVersion, now)) return Retry.ALREADY_QUEUED;
+        logger.info("config.apply queued for {} by Retry apply (revision {} -> {})", number, applied, doc.getRevision());
+        return Retry.QUEUED;
+    }
+
+    /** Queue {@code doc} for the device; false when a concurrent check-in or retry queued one first. */
+    private boolean enqueue(String number, DesiredConfig doc, String agentVersion, long now) {
+        AgentCommand cmd = new AgentCommand();
+        cmd.setDeviceNumber(number);
+        cmd.setType(DesiredConfigBuilder.COMMAND_TYPE);
+        cmd.setPayload(DesiredConfigBuilder.toPayloadJson(doc));
+        cmd.setRequiresCapability(DesiredConfigBuilder.CAPABILITY);
+        cmd.setAgentVersion(agentVersion);
+        cmd.setStatus("pending");
+        cmd.setCreatedAt(now);
+        try {
+            commandDAO.insert(cmd);
+            return true;
+        } catch (RuntimeException e) {
+            if (!isUniqueViolation(e)) throw e;
+            logger.debug("config.apply for {} already queued by a concurrent check-in", number);
             return false;
         }
     }

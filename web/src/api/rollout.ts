@@ -16,6 +16,8 @@ export interface RolloutProgress {
   targetVersion: string;
   canary: RolloutCounts;
   fleet: RolloutCounts | null; // null until the rollout is promoted to fleet
+  /** Devices outside the canary that the user can see; 0 means a promote would reach nobody. */
+  others?: number;
 }
 
 export interface ActiveRollout {
@@ -27,6 +29,14 @@ export interface ActiveRollout {
   createdAt: number;
   updatedAt: number;
   progress: RolloutProgress;
+}
+
+/** Current-device progress against a mirrored agent target, including after a rollout finishes. */
+export interface RolloutTargetSummary {
+  targetVersion: string;
+  progress: RolloutCounts;
+  /** Every update-capable enrolled device is current; an empty fleet is not complete. */
+  complete: boolean;
 }
 
 export interface CreateRolloutRequest {
@@ -43,6 +53,10 @@ const BASE = '/private/agent/v1/rollout';
 /** The current canary/fleet rollout for this customer, or null if none is active. */
 export async function getActiveRollout(): Promise<ActiveRollout | null> {
   return apiClient.get<ActiveRollout | null>(`${BASE}/active`);
+}
+
+export async function getRolloutTargetSummary(targetVersion: string): Promise<RolloutTargetSummary> {
+  return apiClient.get<RolloutTargetSummary>(`${BASE}/summary?targetVersion=${encodeURIComponent(targetVersion)}`);
 }
 
 /** Start a canary-stage rollout. Throws ApiError (e.g. a rollout is already active). */

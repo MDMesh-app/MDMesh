@@ -1,0 +1,185 @@
+/* Overview. Shared parts (fleet card, stat cells, attention rows, activity feed, cards) come from ui/; the layout is
+   the page Grid. This file holds the aside column and the By configuration / Server card bodies. */
+
+/* "● Updated 20s ago" beside Enroll device. */
+.v2 .v2-ov-updated {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--secondary);
+}
+
+/* The two card columns: each stacks its cards on the grid gutter, each card as tall as its content. */
+.v2 .v2-ov-main,
+.v2 .v2-ov-aside {
+  gap: var(--grid-gap);
+}
+.v2 .v2-grid__cell:empty {
+  display: none;
+}
+.v2 .v2-ov-stats {
+  justify-content: center;
+}
+
+.v2 .v2-ov-statlink {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 0.2em;
+}
+.v2 .v2-ov-statlink:hover {
+  text-decoration-color: currentColor;
+}
+
+/* ---- By configuration: one rule-separated row per configuration: name and count, a bar, a note ---- */
+.v2 .v2-ov-cfgs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.v2 .v2-ov-cfg {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) 0;
+  border-top: var(--hairline) solid var(--line-soft);
+}
+.v2 .v2-ov-cfg:last-child {
+  padding-bottom: 0;
+}
+.v2 .v2-ov-cfg__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+.v2 .v2-ov-cfg__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: var(--weight-medium);
+  color: var(--text);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.v2 a.v2-ov-cfg__name:hover {
+  text-decoration: underline;
+}
+.v2 .v2-ov-cfg__count {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+}
+.v2 .v2-ov-cfg__note {
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
+}
+.v2 .v2-ov-cfg__note.is-ok {
+  color: var(--ok-ink);
+}
+.v2 .v2-ov-cfg__note.is-warn {
+  color: var(--warn-ink);
+}
+.v2 .v2-ov-cfg__note.is-muted {
+  color: var(--secondary);
+}
+
+/* ---- Server card: the running version, then an update as an inset callout with its action ---- */
+.v2 .v2-ov-srv__run {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.v2 .v2-ov-srv__panel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-sunken);
+}
+.v2 .v2-ov-srv__title {
+  font-weight: var(--weight-medium);
+}
+.v2 .v2-ov-srv__line {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
+}
+/* A sentence that may wrap: its icon stays on the first line. */
+.v2 .v2-ov-srv__line--long {
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  text-wrap: pretty;
+}
+.v2 .v2-ov-srv__icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  height: var(--lh-meta);
+}
+.v2 .v2-ov-srv__line.is-ok {
+  color: var(--ok-ink);
+}
+.v2 .v2-ov-srv__line.is-warn {
+  color: var(--warn-ink);
+}
+.v2 .v2-ov-srv__line.is-alert {
+  color: var(--alert-ink);
+}
+.v2 .v2-ov-srv__meta {
+  color: var(--secondary);
+}
+
+/* Phones: the attention table would scroll sideways; stack each row instead: device, reason, then time and action. */
+@media (max-width: 600px) {
+  .v2 .v2-ov-att .v2-attn {
+    display: block;
+    min-width: 0;
+  }
+  .v2 .v2-ov-att .v2-attn tbody {
+    display: block;
+  }
+  .v2 .v2-ov-att .v2-attn tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'device device'
+      'reason reason'
+      'when action';
+    align-items: center;
+    gap: var(--space-2) var(--space-3);
+    height: auto;
+    padding: var(--space-3) var(--card-pad);
+  }
+  .v2 .v2-ov-att .v2-attn td {
+    display: block;
+    width: auto;
+    max-width: none;
+    padding: 0;
+  }
+  .v2 .v2-ov-att .v2-attn .v2-attn__device {
+    grid-area: device;
+    padding: 0;
+  }
+  .v2 .v2-ov-att .v2-attn__reason {
+    grid-area: reason;
+  }
+  .v2 .v2-ov-att .v2-attn__when {
+    grid-area: when;
+    text-align: left;
+  }
+  .v2 .v2-ov-att .v2-attn .v2-attn__action {
+    grid-area: action;
+    padding: 0;
+  }
+}
+
+/* First run (no device yet): the steps to the first one, above the empty grid. */
+.v2 .v2-ov-first {
+  gap: var(--space-4);
+}

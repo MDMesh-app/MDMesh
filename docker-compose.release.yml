@@ -1,14 +1,15 @@
 # Pull-only MDMesh stack — no build context, every service runs a published GHCR image. This is the
 # "no clone, no build" deploy. Easiest via quickstart.sh, or by hand:
 #
-#   curl -fsSLO https://raw.githubusercontent.com/MDMesh-app/MDMesh/main/docker-compose.release.yml
+#   curl -fsSLO https://raw.githubusercontent.com/MDMesh-app/MDMesh/refs/tags/vX.Y.Z/docker-compose.release.yml   # the release you run
 #   # write a .env (DB_PASSWORD, HASH_SECRET, BASE_URL, IMAGE_OWNER, …) — see quickstart.sh. For the tunnel, include
 #   # COMPOSE_PROFILES=cloudflare: --profile alone doesn't reach caddy, which then won't believe cloudflared's
 #   # CF-Connecting-IP (docker/edge-peers.sh)
 #   docker compose -f docker-compose.release.yml --profile cloudflare up -d                 # tunnel
 #   docker compose -f docker-compose.release.yml -f docker-compose.domain.yml up -d         # own domain
 #
-# Pin SERVER_VERSION/WEB_VERSION/SUPERVISOR_VERSION in .env for production; they default to :latest.
+# Pin SERVER_VERSION/WEB_VERSION/SUPERVISOR_VERSION in .env for production; they default to :latest. The quick start
+# and every update pin them by digest from the signed release manifest (0.5.0@sha256:…: docker pulls by the digest).
 services:
   postgres:
     image: postgres:14
@@ -83,6 +84,9 @@ services:
       GITHUB_REPO: ${GITHUB_REPO:-}
       UPDATE_CHANNEL: ${UPDATE_CHANNEL:-stable}
       POLL_INTERVAL_HOURS: ${POLL_INTERVAL_HOURS:-6}
+      # Seconds (at least 30) a new server gets to answer before an update is rolled back. apply.sh reads it from .env
+      # too, so a value set there counts without recreating the supervisor (docs/OPERATIONS.md).
+      HEALTH_TIMEOUT: ${HEALTH_TIMEOUT:-180}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       CURRENT_VERSION: ${CURRENT_VERSION:-0.0.0}
       AUTO_UPDATE: ${AUTO_UPDATE:-0}

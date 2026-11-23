@@ -19,6 +19,15 @@ public class ConfigReconcileDecisionTest {
         return c;
     }
 
+    @Test public void a_console_retry_skips_the_backoff_but_nothing_else() {
+        assertEquals("right after a failure", ENQUEUE, ConfigReconcileDecision.decideRetry(CAPABLE, "r2", "r1", false, false));
+        assertEquals("never stacks on an open command", NONE, ConfigReconcileDecision.decideRetry(CAPABLE, "r2", "r1", true, false));
+        assertEquals("in sync", NONE, ConfigReconcileDecision.decideRetry(CAPABLE, "r1", "r1", false, false));
+        assertEquals("in sync on a new agent", ENQUEUE, ConfigReconcileDecision.decideRetry(CAPABLE, "r1", "r1", false, true));
+        assertEquals("no configuration", NONE, ConfigReconcileDecision.decideRetry(CAPABLE, null, "r1", false, false));
+        assertEquals("still capability-gated", NONE,
+                ConfigReconcileDecision.decideRetry(Collections.<String>emptySet(), "r2", "r1", false, false));
+    }
     @Test public void no_capability_means_none() {
         assertEquals(NONE, ConfigReconcileDecision.decide(Collections.<String>emptySet(), "r1", null, false, null, NOW));
     }

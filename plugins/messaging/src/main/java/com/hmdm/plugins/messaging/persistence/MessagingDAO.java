@@ -105,6 +105,11 @@ public class MessagingDAO extends AbstractDAO<Message> {
         });
     }
 
+    /** The device a message was sent to; null when there is no such message. */
+    public Integer getMessageDeviceId(int id) {
+        return this.messageMapper.getMessageDeviceId(id);
+    }
+
     /**
      * <p>Updates the message status (sets as read)</p>
      *

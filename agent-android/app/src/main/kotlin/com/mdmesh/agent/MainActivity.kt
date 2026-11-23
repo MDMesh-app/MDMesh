@@ -1,31 +1,20 @@
 package com.mdmesh.agent
 
-import android.Manifest
-import android.app.ActivityManager
-import android.app.admin.DevicePolicyManager
-import android.graphics.Color
-import android.graphics.Typeface
-import android.os.Build
-import android.os.Bundle
-import android.util.TypedValue
-import android.view.Gravity
-import android.view.ViewGroup
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
 import android.content.Intent
+import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.viewModels
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.mdmesh.agent.service.CheckInService
-import com.mdmesh.core.config.ServerConfigStore
-import com.mdmesh.core.store.DeviceIdStore
-import com.mdmesh.core.sync.SyncStatus
-import com.mdmesh.policy.wifi.DpmHandle
+import com.mdmesh.agent.ui.DialogSlot
+import com.mdmesh.agent.ui.MdmDialog
+import com.mdmesh.agent.ui.StatusScreen
+import com.mdmesh.core.action.NotificationPermissionAccess
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
-import java.text.DateFormat
-import java.util.Date
 import javax.inject.Inject
 
 /**
@@ -35,24 +24,30 @@ import javax.inject.Inject
  *
  * Shows the real managed state — Device-Owner status, server-issued device id, kiosk state,
  * and the server URL — so a person looking at the device can see it's managed by MDMesh.
+ * The state lives in [StatusViewModel] (one [com.mdmesh.agent.ui.StatusUiState]); [StatusScreen] draws it.
  */
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
-    @Inject lateinit var deviceIdStore: DeviceIdStore
-    @Inject lateinit var dpmHandle: DpmHandle
-    @Inject lateinit var serverConfig: ServerConfigStore
-    @Inject lateinit var syncStatus: SyncStatus
+    @Inject lateinit var notificationPermission: NotificationPermissionAccess
 
-    private lateinit var deviceIdValue: TextView
-    private lateinit var kioskValue: TextView
+    private val model: StatusViewModel by viewModels()
+    /** The Return to kiosk confirmation; reopened after a rotation. */
+    private val dialogs = DialogSlot("dialog")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(buildUi())
+        setContentView(R.layout.activity_status)
+        val screen = StatusScreen(this, onReturn = ::confirmReturnToKiosk, onCopy = model::copy)
+        screen.render(model.state.value)
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                model.state.collect(screen::render)
+            }
+        }
         // Grant our own POST_NOTIFICATIONS as Device Owner BEFORE starting the foreground
         // service, so the "MDMesh active" notification is visible on Android 13+.
-        grantSelfNotifications()
+        notificationPermission.ensure()
         // NOTE: we intentionally do NOT pop the battery-optimization request dialog here. As a
         // foreground-service Device Owner we survive Doze well enough, and that full-screen system
         // dialog used to sit on top and pause the kiosk launcher, so a kiosk.enter wouldn't take
@@ -61,146 +56,54 @@ class MainActivity : ComponentActivity() {
         // Start the near-real-time command channel (foreground poll loop). Starting from the
         // launcher activity keeps us in the foreground-start allowance on Android 12+.
         ContextCompat.startForegroundService(this, Intent(this, CheckInService::class.java))
-        refresh()
+        // Reopen the confirmation a rotation closed, if returning is still possible (the button says so).
+        dialogs.restore(savedInstanceState)
+        if (dialogs.takeRestored() == DIALOG_RETURN && model.state.value.kiosk.returnEnabled) confirmReturnToKiosk()
     }
 
-    /** Self-grant POST_NOTIFICATIONS (Device Owner, API 33+) so our FGS notification shows. */
-    private fun grantSelfNotifications() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
-        runCatching {
-            val dpm = dpmHandle.dpm
-            if (dpm.isDeviceOwnerApp(packageName)) {
-                dpm.setPermissionGrantState(
-                    dpmHandle.admin,
-                    packageName,
-                    Manifest.permission.POST_NOTIFICATIONS,
-                    DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED,
-                )
-            }
-        }
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        dialogs.save(outState)
     }
 
     override fun onResume() {
         super.onResume()
-        refresh()
+        model.refresh()
     }
 
-    private fun refresh() {
-        kioskValue.text = if (isLocked()) "Locked (kiosk active)" else "Not locked"
-        lifecycleScope.launch {
-            val id = deviceIdStore.current()
-            deviceIdValue.text = if (id.isNullOrBlank()) enrollingLabel() else id
-        }
+    override fun onStop() {
+        super.onStop()
+        // Leaving the screen (not rotating): an old return failure no longer applies when the person comes back.
+        if (!isChangingConfigurations) model.screenLeft()
     }
 
-    /** "Enrolling…" plus the last sync error (if any), so a stuck enrollment is diagnosable on-device. */
-    private fun enrollingLabel(): String {
-        val failure = syncStatus.lastError.value ?: return "Enrolling…"
-        val at = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(failure.atMillis))
-        return "Enrolling… (last error: ${failure.message} at $at)"
+    override fun onDestroy() {
+        dialogs.dismiss()
+        super.onDestroy()
     }
 
-    private fun isLocked(): Boolean {
-        val am = getSystemService(ACTIVITY_SERVICE) as ActivityManager
-        return am.lockTaskModeState == ActivityManager.LOCK_TASK_MODE_LOCKED
-    }
-
-    private fun isDeviceOwner(): Boolean =
-        dpmHandle.dpm.isDeviceOwnerApp(packageName)
-
-    private fun buildUi(): ScrollView {
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(INK)
-            setPadding(dp(28), dp(40), dp(28), dp(40))
-            layoutParams = ViewGroup.LayoutParams(MATCH, MATCH)
-        }
-        root.addView(text("MDMesh", 30f, SIGNAL, bold = true))
-        root.addView(text("Device agent", 14f, MUTED).apply { setPadding(0, dp(2), 0, dp(20)) })
-
-        root.addView(label("MANAGEMENT"))
-        root.addView(
-            text(
-                if (isDeviceOwner()) "Device Owner — active" else "Not managed",
-                16f,
-                if (isDeviceOwner()) OK else ALERT,
-            ),
+    /** Ask first: returning locks the device, and some kiosks have no exit on the device at all. */
+    private fun confirmReturnToKiosk() {
+        if (model.state.value.kiosk.returning || dialogs.showing != null) return
+        val kiosk = model.configuredKiosk() ?: return model.refresh()
+        val prompt = KioskReturnPrompt.of(kiosk)
+        val spec = MdmDialog.Spec(
+            title = getString(prompt.title),
+            message = getString(prompt.message),
+            confirm = getString(prompt.confirm),
+            cancel = getString(R.string.action_cancel),
+            // No exit on the device: an alert-tone lock in the header and a danger confirm.
+            icon = if (prompt.danger) R.drawable.ic_v2_lock else 0,
+            danger = prompt.danger,
         )
-        root.addView(spacer())
-
-        root.addView(label("DEVICE ID"))
-        deviceIdValue = text("…", 14f, TEXT, mono = true)
-        root.addView(deviceIdValue)
-        root.addView(spacer())
-
-        root.addView(label("KIOSK"))
-        kioskValue = text("…", 16f, TEXT)
-        root.addView(kioskValue)
-        root.addView(spacer())
-
-        root.addView(label("AGENT VERSION"))
-        root.addView(
-            text(
-                "${com.mdmesh.agent.BuildConfig.VERSION_NAME} (build ${com.mdmesh.agent.BuildConfig.VERSION_CODE})",
-                15f,
-                TEXT,
-                mono = true,
-            ),
-        )
-        root.addView(spacer())
-
-        root.addView(label("SERVER"))
-        root.addView(text(serverConfig.baseUrl(), 13f, MUTED, mono = true))
-        root.addView(spacer())
-
-        root.addView(
-            text("Managed by MDMesh", 12f, MUTED).apply {
-                gravity = Gravity.CENTER
-                setPadding(0, dp(24), 0, 0)
-            },
-        )
-
-        return ScrollView(this).apply {
-            setBackgroundColor(INK)
-            addView(root)
-            layoutParams = ViewGroup.LayoutParams(MATCH, MATCH)
+        val dialog = MdmDialog.create(this, spec) {
+            it.dismiss()
+            model.returnToKiosk(kiosk)
         }
+        dialogs.show(DIALOG_RETURN, dialog)
     }
-
-    private fun label(s: String): TextView =
-        text(s, 11f, FAINT).apply {
-            letterSpacing = 0.10f
-            setPadding(0, 0, 0, dp(4))
-        }
-
-    private fun spacer(): TextView = TextView(this).apply {
-        height = dp(16)
-    }
-
-    private fun text(
-        s: String,
-        sizeSp: Float,
-        color: Int,
-        bold: Boolean = false,
-        mono: Boolean = false,
-    ): TextView = TextView(this).apply {
-        text = s
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp)
-        setTextColor(color)
-        if (bold) setTypeface(typeface, Typeface.BOLD)
-        if (mono) typeface = Typeface.MONOSPACE
-    }
-
-    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
     private companion object {
-        const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
-        val INK = Color.parseColor("#0E1117")
-        val TEXT = Color.parseColor("#E8EEF4")
-        val MUTED = Color.parseColor("#8693A4")
-        val FAINT = Color.parseColor("#5C6675")
-        val SIGNAL = Color.parseColor("#F4B942")
-        val OK = Color.parseColor("#3FD08A")
-        val ALERT = Color.parseColor("#F2545B")
+        const val DIALOG_RETURN = "return"
     }
 }

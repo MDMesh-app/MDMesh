@@ -102,6 +102,8 @@ public class Device implements CustomerData, Serializable {
     @ApiModelProperty(hidden = true)
     private Long enrollTime;
     @ApiModelProperty(hidden = true)
+    private Long wipedAt;
+    @ApiModelProperty(hidden = true)
     private String serial;
     @ApiModelProperty("Stable per-device hardware id (enrollment-specific id / ANDROID_ID)")
     private String hardwareId;
@@ -355,6 +357,15 @@ public class Device implements CustomerData, Serializable {
         this.enrollTime = enrollTime;
     }
 
+    /** When a factory reset (device.wipe) was delivered to the device, epoch millis; null if it wasn't wiped. */
+    public Long getWipedAt() {
+        return wipedAt;
+    }
+
+    public void setWipedAt(Long wipedAt) {
+        this.wipedAt = wipedAt;
+    }
+
     public String getSerial() {
         return serial;
     }
@@ -413,6 +424,7 @@ public class Device implements CustomerData, Serializable {
                 ", kioskMode='" + kioskMode + '\'' +
                 ", androidVersion='" + androidVersion + '\'' +
                 ", enrollTime='" + enrollTime + '\'' +
+                ", wipedAt=" + wipedAt +
                 ", serial='" + serial + '\'' +
                 ", statusCode='" + statusCode + '\'' +
                 ", oldNumber='" + oldNumber + '\'' +

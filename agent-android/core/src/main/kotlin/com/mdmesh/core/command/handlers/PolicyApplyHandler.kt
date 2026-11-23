@@ -26,7 +26,7 @@ class PolicyApplyHandler(
     private val toggles: () -> ResolvedToggles,
 ) : CommandHandler {
 
-    override val type: String = "policy.apply"
+    override val type: String = TYPE
 
     @Serializable
     private data class Payload(
@@ -55,5 +55,9 @@ class PolicyApplyHandler(
             // Not a failure, as in config.apply: skipped on purpose for now (e.g. Wi-Fi radio Off on the only network).
             is PolicyOutcome.Deferred -> CommandResults.done(command, ConfigOutcome.deferred(outcome.reason))
         }
+    }
+
+    companion object {
+        const val TYPE = "policy.apply"
     }
 }

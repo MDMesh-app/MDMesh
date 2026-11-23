@@ -21,6 +21,7 @@
 
 package com.hmdm.rest.resource;
 
+import com.hmdm.persistence.DeviceGoneException;
 import com.hmdm.persistence.AgentCommandDAO;
 import com.hmdm.persistence.AgentEnrollmentTokenDAO;
 import com.hmdm.persistence.DeviceDAO;
@@ -28,6 +29,7 @@ import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.AgentCommand;
 import com.hmdm.persistence.domain.AgentEnrollmentToken;
 import com.hmdm.persistence.domain.Device;
+import com.hmdm.rest.json.agent.EnrolledDeviceView;
 import com.hmdm.persistence.domain.DeviceState;
 import com.hmdm.persistence.domain.DeviceSyncRow;
 import com.hmdm.notification.AgentWakeHub;
@@ -36,11 +38,15 @@ import com.hmdm.rest.json.Response;
 import com.hmdm.rest.json.agent.CommandHistoryView;
 import com.hmdm.rest.json.agent.ConfigStatusView;
 import com.hmdm.rest.json.agent.ConfigSyncSummary;
+import com.hmdm.rest.resource.support.AdminCommandPolicy;
 import com.hmdm.rest.resource.support.InstallHashes;
+import com.hmdm.rest.resource.support.KioskCommandImages;
+import com.hmdm.rest.json.agent.DesiredConfig;
 import com.hmdm.rest.resource.support.ConfigReconciler;
 import com.hmdm.security.SecurityContext;
 import com.hmdm.util.AgentCapabilityTokens;
 import com.hmdm.util.DesiredConfigBuilder;
+import com.hmdm.util.EnrollmentTokenLimits;
 import com.hmdm.util.InstallIntegrity;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
@@ -79,9 +85,6 @@ public class AgentAdminResource {
 
     private static final Logger logger = LoggerFactory.getLogger(AgentAdminResource.class);
 
-    /** Default lifetime of a freshly-minted enrollment token (24h). */
-    private static final long DEFAULT_TOKEN_TTL_MILLIS = 24L * 60L * 60L * 1000L;
-
     private AgentEnrollmentTokenDAO tokenDAO;
     private AgentCommandDAO commandDAO;
     private UnsecureDAO unsecureDAO;
@@ -90,6 +93,7 @@ public class AgentAdminResource {
     private com.hmdm.rest.resource.support.ConfigAppInstaller configAppInstaller;
     private ConfigReconciler configReconciler;
     private InstallHashes installHashes;
+    private KioskCommandImages kioskImages;
 
     /**
      * <p>A constructor required by Swagger.</p>
@@ -105,7 +109,8 @@ public class AgentAdminResource {
                               AgentWakeHub wakeHub,
                               com.hmdm.rest.resource.support.ConfigAppInstaller configAppInstaller,
                               ConfigReconciler configReconciler,
-                              InstallHashes installHashes) {
+                              InstallHashes installHashes,
+                              KioskCommandImages kioskImages) {
         this.tokenDAO = tokenDAO;
         this.commandDAO = commandDAO;
         this.unsecureDAO = unsecureDAO;
@@ -114,6 +119,7 @@ public class AgentAdminResource {
         this.configAppInstaller = configAppInstaller;
         this.configReconciler = configReconciler;
         this.installHashes = installHashes;
+        this.kioskImages = kioskImages;
     }
 
     /**
@@ -132,9 +138,24 @@ public class AgentAdminResource {
         return false;
     }
 
+    /**
+     * Why this user may not queue anything for {@code device}, or null when they may: outside their devices, or refused
+     * by {@link AdminCommandPolicy#refusalFor} (marked wiped). Every route here that queues for a device asks; bulk skips
+     * such a device.
+     */
+    private Response queueRefusal(Device device) {
+        if (!deviceDAO.isAccessibleToUser(device)) {
+            return Response.PERMISSION_DENIED();
+        }
+        String refusal = AdminCommandPolicy.refusalFor(device);
+        return refusal == null ? null : Response.ERROR(refusal);
+    }
+
     // =================================================================================================================
-    @ApiOperation(value = "Mint enrollment token", notes = "Creates a single-use enrollment token for the current customer. "
-            + "An optional configurationId binds the enrolled device to that configuration.")
+    @ApiOperation(value = "Mint enrollment token", notes = "Creates an enrollment token for the current customer. "
+            + "An optional configurationId binds the enrolled devices to that configuration. An optional maxUses (1 to "
+            + "1000, default 1: single use) lets one token enroll that many devices, and an optional validHours (1 to "
+            + "720, default 24) sets how long it is valid.")
     @POST
     @Path("/token")
     @Consumes(MediaType.APPLICATION_JSON)
@@ -165,24 +186,59 @@ public class AgentAdminResource {
             }
         }
 
+        // How many devices, and for how long: one, for a day, unless the request says otherwise.
+        Integer maxUses = body == null ? null : body.getMaxUses();
+        Integer validHours = body == null ? null : body.getValidHours();
+        String limitsProblem = EnrollmentTokenLimits.problem(maxUses, validHours);
+        if (limitsProblem != null) {
+            return Response.ERROR(limitsProblem);
+        }
+
         long now = System.currentTimeMillis();
         AgentEnrollmentToken token = new AgentEnrollmentToken();
         token.setToken(UUID.randomUUID().toString());
         token.setCustomerId(customerId.get());
         token.setConfigurationId(configurationId);
         token.setUsed(false);
+        token.setMaxUses(EnrollmentTokenLimits.uses(maxUses));
+        token.setUseCount(0);
         token.setCreatedAt(now);
-        token.setExpiresAt(now + DEFAULT_TOKEN_TTL_MILLIS);
+        token.setExpiresAt(now + EnrollmentTokenLimits.validMillis(validHours));
         tokenDAO.insert(token);
 
-        logger.info("Agent enrollment token {} minted for customer {} (configuration {})",
-                token.getId(), customerId.get(), configurationId);
+        logger.info("Agent enrollment token {} minted for customer {} (configuration {}, {} device(s))",
+                token.getId(), customerId.get(), configurationId, token.getMaxUses());
         return Response.OK(token);
     }
 
     // =================================================================================================================
-    @ApiOperation(value = "Sync configuration apps", notes = "Queues app.install commands for the device's "
-            + "configuration apps marked action=install. Use after enrolling an older device or editing a configuration.")
+    @ApiOperation(value = "Stop all enrollment codes", notes = "Stops every enrollment token of the current customer "
+            + "that has not expired, including codes for a batch already printed or shared, so none enrolls another "
+            + "device. Devices already enrolled are not affected. Returns {\"revoked\": n}, the tokens stopped.")
+    @POST
+    @Path("/token/revoke-all")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response revokeAllTokens() {
+        if (!canEditDevices("stop enrollment codes")) {
+            return Response.PERMISSION_DENIED();
+        }
+        Optional<Integer> customerId = SecurityContext.get().getCurrentCustomerId();
+        if (!customerId.isPresent()) {
+            return Response.PERMISSION_DENIED();
+        }
+        int revoked = tokenDAO.revokeAll(customerId.get());
+        logger.info("Agent enrollment tokens stopped for customer {} by user {}: {}", customerId.get(),
+                SecurityContext.get().getCurrentUser().map(u -> u.getLogin()).orElse("?"), revoked);
+        Map<String, Object> result = new HashMap<>();
+        result.put("revoked", revoked);
+        return Response.OK(result);
+    }
+
+    // =================================================================================================================
+    @ApiOperation(value = "Sync configuration apps", notes = "Queues app.install commands for every one of the device's "
+            + "configuration apps marked action=install. Apps added to its configuration, and a move to another "
+            + "configuration, install at the next check-in without this; use it to send apps again, e.g. after one "
+            + "was removed on the device or gave up after failing.")
     @POST
     @Path("/devices/{deviceId}/syncApps")
     @Produces(MediaType.APPLICATION_JSON)
@@ -196,18 +252,25 @@ public class AgentAdminResource {
         }
         Device device = unsecureDAO.getDeviceByNumber(deviceId);
         if (device == null) {
-            return Response.DEVICE_NOT_FOUND_ERROR();
+            return Response.ERROR("error.agent.device.unknown");
         }
-        if (!deviceDAO.isAccessibleToUser(device)) {
-            return Response.PERMISSION_DENIED();
+        Response refused = queueRefusal(device);
+        if (refused != null) {
+            return refused;
         }
-        int queued = configAppInstaller.enqueueConfigApps(device);
+        int queued;
+        try {
+            queued = configAppInstaller.enqueueConfigApps(device);
+        } catch (DeviceGoneException e) {
+            return deviceGone(deviceId, "sync configuration apps");
+        }
         logger.info("Sync apps for device {}: {} app.install queued", deviceId, queued);
         return Response.OK(java.util.Collections.singletonMap("queued", queued));
     }
 
     // =================================================================================================================
-    @ApiOperation(value = "Queue agent command", notes = "Queues an opaque command for a device.")
+    @ApiOperation(value = "Queue agent command", notes = "Queues an opaque command for a device. A device marked wiped is "
+            + "refused (error.agent.command.wiped).")
     @POST
     @Path("/devices/{deviceId}/commands")
     @Consumes(MediaType.APPLICATION_JSON)
@@ -219,8 +282,8 @@ public class AgentAdminResource {
         if (body == null || body.getType() == null || body.getType().trim().isEmpty()) {
             return Response.ERROR("error.agent.command.invalid");
         }
-        if (isServerOwned(body.getType())) {
-            return Response.ERROR("error.agent.command.serverOwned");
+        if (AdminCommandPolicy.isServerOwned(body.getType())) {
+            return Response.ERROR(AdminCommandPolicy.SERVER_OWNED);
         }
 
         Optional<Integer> customerId = SecurityContext.get().getCurrentCustomerId();
@@ -232,8 +295,9 @@ public class AgentAdminResource {
         if (device == null) {
             return Response.ERROR("error.agent.device.unknown");
         }
-        if (!deviceDAO.isAccessibleToUser(device)) {
-            return Response.PERMISSION_DENIED();
+        Response refused = queueRefusal(device);
+        if (refused != null) {
+            return refused;
         }
 
         final String payload;
@@ -243,18 +307,19 @@ public class AgentAdminResource {
             return e.response;
         }
 
-        AgentCommand command = new AgentCommand();
-        command.setDeviceNumber(deviceId);
-        command.setType(body.getType());
-        command.setPayload(payload);
-        command.setRequiresCapability(body.getRequiresCapability());
-        command.setStatus("pending");
-        command.setCreatedAt(System.currentTimeMillis());
-        commandDAO.insert(command);
+        final String devicePayload;
+        try {
+            devicePayload = forDevice(body.getType(), payload, device);
+        } catch (NoConfigurationException e) {
+            return Response.ERROR("error.agent.command.noConfiguration");
+        }
 
-        // Wake the device so it pulls the command immediately (best-effort; floor reconcile backs it up).
-        wakeHub.wake(deviceId, "commands");
-
+        AgentCommand command;
+        try {
+            command = enqueue(device, body.getType(), devicePayload, body.getRequiresCapability());
+        } catch (DeviceGoneException e) {
+            return deviceGone(deviceId, "queue command");
+        }
         logger.info("Agent command {} queued for device {}", command.getId(), deviceId);
         // Payload-free view (same shape as the history): never echo a payload back to the console.
         return Response.OK(CommandHistoryView.from(command));
@@ -270,8 +335,21 @@ public class AgentAdminResource {
         }
     }
 
-    /** The payload to queue: an {@code app.install} gets its APK's SHA-256 (see {@link InstallIntegrity}). */
+    /**
+     * The payload to queue: an {@code app.install} gets its APK's SHA-256 (see {@link InstallIntegrity}), and a
+     * {@code kiosk.enter} its managed background image's current URL (see {@link KioskCommandImages}), after its exit PIN
+     * is checked ({@link com.hmdm.util.KioskExitPin#enterCommandProblem}). Single and bulk commands both come through
+     * here.
+     */
     private String payloadToQueue(String type, String payload, int customerId) throws CommandRejectedException {
+        // A kiosk PIN sent by the client follows the configurations' rule. The configured kiosk's PIN is never sent:
+        // the payload asks for it, and forDevice fills it in from each device's own configuration.
+        String pinProblem = com.hmdm.util.KioskExitPin.enterCommandProblem(type, payload);
+        if (pinProblem != null) {
+            logger.warn("Agent command {} rejected: exit PIN format", type);
+            throw new CommandRejectedException(Response.ERROR(pinProblem));
+        }
+        if (kioskImages != null) payload = kioskImages.forCommand(type, payload, customerId);
         try {
             return InstallIntegrity.forCommand(type, payload, installHashes.forCustomer(customerId));
         } catch (InstallIntegrity.LookupFailedException e) {
@@ -285,21 +363,49 @@ public class AgentAdminResource {
     }
 
     /**
-     * {@code config.apply} is queued only by the server, from the device's configuration (ConfigReconciler), and at most
-     * one is open per device: an admin one is refused before anything is queued. Case-insensitive, like the bulk guard.
+     * The payload as {@code device} gets it: a {@code kiosk.enter} that asks for the configured PIN gets its own
+     * configuration's PIN (Return to configured kiosk).
+     *
+     * @throws NoConfigurationException when it asks for one and the device has no configuration
      */
-    private static boolean isServerOwned(String type) {
-        return DesiredConfigBuilder.COMMAND_TYPE.equalsIgnoreCase(type.trim());
+    private String forDevice(String type, String payload, Device device) throws NoConfigurationException {
+        if (!com.hmdm.util.KioskExitPin.wantsConfiguredPin(type, payload)) return payload;
+        com.hmdm.persistence.domain.Configuration cfg = device.getConfigurationId() == null ? null
+                : unsecureDAO.getConfigurationById(device.getConfigurationId());
+        if (cfg == null) throw new NoConfigurationException();
+        return com.hmdm.util.KioskExitPin.withConfiguredPin(payload, cfg.getPassword());
     }
 
-    /** Command types that must never be issued in bulk (destructive group). Lowercased — matched
-     *  case-insensitively so a mixed-case type can't slip past this destructive-action guard. */
-    private static final Set<String> BULK_FORBIDDEN_TYPES =
-            Set.of("device.wipe", "device.passcodereset");
+    /** A command asks for the device's configuration, and it has none. */
+    private static final class NoConfigurationException extends Exception {
+    }
+
+    /** The answer when the device was deleted while the request ran: the one an unknown device gets. */
+    private static Response deviceGone(String deviceId, String action) {
+        logger.warn("Agent admin {}: device {} was deleted meanwhile", action, deviceId);
+        return Response.ERROR("error.agent.device.unknown");
+    }
+
+    /** Queue {@code payload} for {@code device}, already checked by {@link #queueRefusal}, and wake it to pull it.
+     *  @throws DeviceGoneException the device was deleted meanwhile */
+    private AgentCommand enqueue(Device device, String type, String payload, String requiresCapability) {
+        AgentCommand command = new AgentCommand();
+        command.setDeviceNumber(device.getNumber());
+        command.setType(type);
+        command.setPayload(payload);
+        command.setRequiresCapability(requiresCapability);
+        command.setStatus("pending");
+        command.setCreatedAt(System.currentTimeMillis());
+        commandDAO.insert(command);
+        // Best effort: without a live connection it gets the command at its next check-in.
+        wakeHub.wake(device.getNumber(), "commands");
+        return command;
+    }
 
     // =================================================================================================================
     @ApiOperation(value = "Queue agent command for many devices",
-            notes = "Fans one opaque command out to a list of device ids (destructive types rejected).")
+            notes = "Fans one opaque command out to a list of device ids. Destructive types are rejected; "
+                    + "devices the user can't reach, or marked wiped, are skipped.")
     @POST
     @Path("/bulk/commands")
     @Consumes(MediaType.APPLICATION_JSON)
@@ -316,11 +422,11 @@ public class AgentAdminResource {
             return Response.ERROR("error.agent.command.invalid");
         }
         final String type = req.getCommand().getType().trim();
-        if (BULK_FORBIDDEN_TYPES.contains(type.toLowerCase(java.util.Locale.ROOT))) {
-            return Response.ERROR("error.agent.command.bulkForbidden");
+        if (AdminCommandPolicy.isBulkForbidden(type)) {
+            return Response.ERROR(AdminCommandPolicy.BULK_FORBIDDEN);
         }
-        if (isServerOwned(type)) {
-            return Response.ERROR("error.agent.command.serverOwned");
+        if (AdminCommandPolicy.isServerOwned(type)) {
+            return Response.ERROR(AdminCommandPolicy.SERVER_OWNED);
         }
 
         Optional<Integer> customerId = SecurityContext.get().getCurrentCustomerId();
@@ -341,19 +447,24 @@ public class AgentAdminResource {
         for (Integer id : req.getDeviceIds()) {
             if (id == null) { continue; }
             Device device = unsecureDAO.getDeviceById(id);
-            if (device == null || !deviceDAO.isAccessibleToUser(device)) {
+            if (device == null || queueRefusal(device) != null) {
                 skipped.add(id);
                 continue;
             }
-            AgentCommand command = new AgentCommand();
-            command.setDeviceNumber(device.getNumber());
-            command.setType(type);
-            command.setPayload(payload);
-            command.setRequiresCapability(req.getCommand().getRequiresCapability());
-            command.setStatus("pending");
-            command.setCreatedAt(System.currentTimeMillis());
-            commandDAO.insert(command);
-            wakeHub.wake(device.getNumber(), "commands");
+            final String devicePayload;
+            try {
+                devicePayload = forDevice(type, payload, device);
+            } catch (NoConfigurationException e) {
+                skipped.add(id); // asks for its configuration's kiosk PIN, and it has no configuration
+                continue;
+            }
+            try {
+                enqueue(device, type, devicePayload, req.getCommand().getRequiresCapability());
+            } catch (DeviceGoneException e) {
+                logger.warn("Bulk command {}: device {} was deleted meanwhile, skipped", type, id);
+                skipped.add(id);
+                continue;
+            }
             queued++;
         }
 
@@ -384,6 +495,37 @@ public class AgentAdminResource {
         return Response.OK(commandDAO.getState(deviceId));
     }
 
+    /** The most devices one "enrolled since" answer lists (the Enroll page shows the newest). */
+    static final int MAX_ENROLLED_SINCE = 50;
+
+    // =================================================================================================================
+    @ApiOperation(value = "Devices enrolled since", notes = "The devices of the customer the user may access that "
+            + "enrolled at or after `since` (server time, ms), newest first, at most `limit` (1 to 50, default 25), with "
+            + "the server's time: {serverTime, devices}. The Enroll page polls it while a code is shown.")
+    @GET
+    @Path("/devices/enrolled")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response listEnrolledSince(@QueryParam("since") Long since, @QueryParam("limit") Integer limit) {
+        Optional<Integer> customerId = SecurityContext.get().getCurrentCustomerId();
+        if (!customerId.isPresent()) return Response.PERMISSION_DENIED();
+        Optional<com.hmdm.persistence.domain.User> user = SecurityContext.get().getCurrentUser();
+        if (!user.isPresent()) return Response.PERMISSION_DENIED();
+        long now = System.currentTimeMillis();
+        long from = since == null ? now : since;
+        int max = limit == null ? 25 : Math.max(1, Math.min(limit, MAX_ENROLLED_SINCE));
+        // Access is filtered in the query, before its LIMIT, so a user limited to some groups still gets theirs.
+        List<EnrolledDeviceView> out = new ArrayList<>();
+        for (Device d : commandDAO.listEnrolledSince(customerId.get(), user.get().getId(), user.get().isSuperAdmin(),
+                from, max)) {
+            out.add(new EnrolledDeviceView(d));
+        }
+        // The server's clock with the list: the page compares it with these server times, never the browser's clock.
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("serverTime", now);
+        body.put("devices", out);
+        return Response.OK(body);
+    }
+
     // =================================================================================================================
     @ApiOperation(value = "Device configuration status", notes = "Desired-state revision vs the revision the agent last applied.")
     @GET
@@ -398,10 +540,12 @@ public class AgentAdminResource {
 
         ConfigStatusView v = new ConfigStatusView();
         v.setConfigurationId(device.getConfigurationId());
-        v.setCurrentRevision(configReconciler.currentRevision(device));
+        Set<String> tokens = AgentCapabilityTokens.flatten(commandDAO.getDeviceCapabilities(deviceId));
+        DesiredConfig doc = configReconciler.statusDocument(device);
+        v.setCurrentRevision(ConfigReconciler.statusRevision(doc, tokens));
+        v.setKioskBackgroundImageFrom(doc);
         DeviceState state = commandDAO.getState(deviceId);
         if (state != null) { v.setAppliedRevision(state.getAppliedConfigRevision()); v.setAppliedAt(state.getAppliedConfigAt()); }
-        Set<String> tokens = AgentCapabilityTokens.flatten(commandDAO.getDeviceCapabilities(deviceId));
         boolean supported = AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, tokens);
         v.setSupported(supported);
         v.setInSync(v.getCurrentRevision() != null && v.getCurrentRevision().equals(v.getAppliedRevision()));
@@ -417,19 +561,27 @@ public class AgentAdminResource {
     public Response getSyncSummary() {
         Optional<Integer> customerId = SecurityContext.get().getCurrentCustomerId();
         if (!customerId.isPresent()) return Response.PERMISSION_DENIED();
-        Map<Integer, String> revisionByConfig = new HashMap<>();
+        Map<Integer, DesiredConfig> documentByConfig = new HashMap<>();
         Map<Integer, ConfigSyncSummary> out = new LinkedHashMap<>();
         Set<String> accessible = deviceDAO.getDeviceNumbersAccessibleToUser();
         for (DeviceSyncRow row : commandDAO.listDevicesForSync(customerId.get())) {
             if (!accessible.contains(row.getDeviceNumber())) continue;
             Integer cfgId = row.getConfigurationId();
             ConfigSyncSummary s = out.computeIfAbsent(cfgId, id -> { ConfigSyncSummary x = new ConfigSyncSummary(); x.setConfigurationId(id); return x; });
+            if (row.isWiped()) {
+                s.setWiped(s.getWiped() + 1);
+                continue;
+            }
             s.setTotal(s.getTotal() + 1);
-            String current = revisionByConfig.computeIfAbsent(cfgId, id -> {
-                Device probe = new Device(); probe.setConfigurationId(id); probe.setCustomerId(customerId.get());
-                return configReconciler.currentRevision(probe);
-            });
+            // containsKey/put, not computeIfAbsent: a configuration whose plugin fails has a null document, which
+            // computeIfAbsent wouldn't keep, so the document would be rebuilt (and fail again) for every device on it.
+            if (!documentByConfig.containsKey(cfgId)) {
+                Device probe = new Device(); probe.setConfigurationId(cfgId); probe.setCustomerId(customerId.get());
+                documentByConfig.put(cfgId, configReconciler.statusDocument(probe));
+            }
             Set<String> tokens = AgentCapabilityTokens.flatten(row.getCapabilitiesJson());
+            // Per device: an agent without app permission support is compared with what it can apply.
+            String current = ConfigReconciler.statusRevision(documentByConfig.get(cfgId), tokens);
             boolean supported = AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, tokens);
             if (!supported) {
                 s.setUnsupported(s.getUnsupported() + 1);
@@ -542,7 +694,63 @@ public class AgentAdminResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(value = "Force sync", notes = "Wake the device now so it pulls pending commands + reports state.")
+    @ApiOperation(value = "Retry configuration apply", notes = "Queues the device's configuration (config.apply) now, "
+            + "without the hour the server otherwise waits after a failed attempt, and wakes the device. Answers "
+            + "{result, connected}: result is queued, alreadyQueued (one is on its way: the device is woken for it), "
+            + "inSync, unsupported (the agent can't apply configurations) or noConfiguration; connected is false when "
+            + "the device has no live connection, so it gets the configuration at its next check-in.")
+    @POST
+    @Path("/devices/{deviceId}/retryConfig")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response retryConfig(@PathParam("deviceId") String deviceId) {
+        if (!canEditDevices("retry configuration apply")) {
+            return Response.PERMISSION_DENIED();
+        }
+        Optional<Integer> customerId = SecurityContext.get().getCurrentCustomerId();
+        if (!customerId.isPresent()) {
+            return Response.PERMISSION_DENIED();
+        }
+        Device device = unsecureDAO.getDeviceByNumber(deviceId);
+        if (device == null) {
+            return Response.ERROR("error.agent.device.unknown");
+        }
+        Response refused = queueRefusal(device);
+        if (refused != null) {
+            return refused;
+        }
+        ConfigReconciler.Retry result;
+        try {
+            result = configReconciler.retryNow(device, System.currentTimeMillis());
+        } catch (DeviceGoneException e) {
+            return deviceGone(deviceId, "retry configuration apply");
+        }
+        boolean connected = wakeHub.isOnline(deviceId);
+        if (result == ConfigReconciler.Retry.QUEUED || result == ConfigReconciler.Retry.ALREADY_QUEUED) {
+            wakeHub.wake(deviceId, "commands");
+        }
+        logger.info("Retry apply for device {} by user {}: {}", deviceId,
+                SecurityContext.get().getCurrentUser().map(u -> u.getLogin()).orElse("?"), result);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("result", retryResultName(result));
+        body.put("connected", connected);
+        return Response.OK(body);
+    }
+
+    /** The API's name for a retry result: queued, alreadyQueued, inSync, unsupported, noConfiguration. */
+    static String retryResultName(ConfigReconciler.Retry result) {
+        switch (result) {
+            case QUEUED: return "queued";
+            case ALREADY_QUEUED: return "alreadyQueued";
+            case IN_SYNC: return "inSync";
+            case UNSUPPORTED: return "unsupported";
+            default: return "noConfiguration";
+        }
+    }
+
+    // =================================================================================================================
+    @ApiOperation(value = "Force sync", notes = "Wake the device now so it pulls pending commands + reports state. " +
+            "Answers {connected}: false when the device has no live connection, so the wake can't reach it and it " +
+            "syncs at its next check-in.")
     @POST
     @Path("/devices/{deviceId}/sync")
     @Produces(MediaType.APPLICATION_JSON)
@@ -561,7 +769,9 @@ public class AgentAdminResource {
         if (!deviceDAO.isAccessibleToUser(device)) {
             return Response.PERMISSION_DENIED();
         }
+        // The wake is dropped without a live socket: say so, so the console doesn't report a sync that can't happen.
+        boolean connected = wakeHub.isOnline(deviceId);
         wakeHub.wake(deviceId, "commands");
-        return Response.OK();
+        return Response.OK(java.util.Collections.singletonMap("connected", connected));
     }
 }

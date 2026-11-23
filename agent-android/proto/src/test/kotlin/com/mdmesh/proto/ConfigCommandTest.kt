@@ -46,7 +46,7 @@ class ConfigCommandTest {
         val json = """{"revision":"r","location":{"mode":"off"}}"""
         val p = ProtocolJson.json.decodeFromString(ConfigApplyPayload.serializer(), json)
         assertEquals(DeviceAction.LOCATION_OFF, p.location?.mode)
-        assertEquals("1.5", ProtocolJson.PROTOCOL_VERSION)
+        assertEquals("1.13", ProtocolJson.PROTOCOL_VERSION)
     }
 
     @Test
@@ -71,5 +71,30 @@ class ConfigCommandTest {
             """{"revision":"r","configurationId":1}""",
         )
         assertNull(p.factoryResetProtection)
+    }
+
+    @Test
+    fun `connectivity decodes and is absent by default (protocol 1_5)`() {
+        val json = """{"revision":"r","connectivity":{"mode":"alwaysOn"}}"""
+        val p = ProtocolJson.json.decodeFromString(ConfigApplyPayload.serializer(), json)
+        assertEquals(DeviceAction.POWER_ALWAYS_ON, p.connectivity?.mode)
+        val absent = ProtocolJson.json.decodeFromString(ConfigApplyPayload.serializer(), """{"revision":"r"}""")
+        assertNull(absent.connectivity)
+    }
+
+    @Test
+    fun `app permissions distinguish an old server omission from an explicit release (protocol 1_7)`() {
+        val managedJson = """{"revision":"r","appPermissions":[{"packageName":"org.example.maps",""" +
+            """"permissions":{"android.permission.CAMERA":"deny"}}]}"""
+        val managed = ProtocolJson.json.decodeFromString(ConfigApplyPayload.serializer(), managedJson)
+        assertEquals("deny", managed.appPermissions?.single()?.permissions?.get("android.permission.CAMERA"))
+        val omitted = ProtocolJson.json.decodeFromString(ConfigApplyPayload.serializer(), """{"revision":"r"}""")
+        assertNull(omitted.appPermissions)
+        assertEquals(emptyList<ConfigAppPermissions>(),
+            ProtocolJson.json.decodeFromString(
+                ConfigApplyPayload.serializer(),
+                """{"revision":"r","appPermissions":[]}""",
+            ).appPermissions,
+        )
     }
 }

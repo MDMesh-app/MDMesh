@@ -29,6 +29,7 @@ import com.hmdm.persistence.domain.Settings;
 import com.hmdm.rest.filter.AuthFilter;
 import com.hmdm.rest.json.AuthOptionsResponse;
 import com.hmdm.rest.json.Response;
+import com.hmdm.security.ConsoleSession;
 import com.hmdm.security.LoginThrottle;
 import com.hmdm.rest.json.UserCredentials;
 import com.hmdm.persistence.domain.User;
@@ -72,6 +73,9 @@ public class AuthResource {
 
     /** The message of a sign-in refused because of too many failed ones (LoginThrottle); the console shows it. */
     public static final String TOO_MANY_ATTEMPTS = "error.auth.too.many.attempts";
+
+    /** Standard base64 characters, without padding. */
+    private static final java.util.regex.Pattern BASE64 = java.util.regex.Pattern.compile("[A-Za-z0-9+/]*");
 
     /**
      * <p>A constructor required by Swagger.</p>
@@ -121,6 +125,7 @@ public class AuthResource {
         if ( credentials.getLogin() == null || credentials.getPassword() == null ) {
             return Response.ERROR();
         }
+        req.setAttribute(UserCredentials.REQUEST_LOGIN, credentials.getLogin());   // for the audit record
 
         // Failed sign-ins are limited per client address and per account (LoginThrottle), without sleeping: a refused
         // attempt is answered at once, with the same message whichever limit refused, and its password is never
@@ -131,12 +136,20 @@ public class AuthResource {
             return Response.ERROR(TOO_MANY_ATTEMPTS);
         }
         if (user == null) {
+            // As long as a check for a real account (one bcrypt), so the time taken does not tell it is unknown
+            PasswordUtil.passwordMatch(credentials.getPassword(), null);
             return Response.ERROR();
         }
 
         String password = null;
         if (transmitPassword) {
-            byte[] passEnc = Base64.getDecoder().decode(credentials.getPassword());
+            byte[] passEnc = encryptedPassword(credentials.getPassword(), rsaKeyService.blockBytes());
+            if (passEnc == null) {
+                // As long as a check for a real password (one bcrypt), as for an unknown account above, so the time
+                // taken does not tell the account exists
+                PasswordUtil.passwordMatch(credentials.getPassword(), null);
+                return Response.ERROR();
+            }
             password = rsaKeyService.decrypt(passEnc);
         } else {
             password = credentials.getPassword();
@@ -153,8 +166,8 @@ public class AuthResource {
                 this.customerDAO.recordLastLoginTime(user.getCustomerId(), System.currentTimeMillis());
             });
 
-            HttpSession userSession = req.getSession();
-            userSession.setAttribute(AuthFilter.sessionCredentials, user );
+            // A new session id at sign-in: the one the browser had before is never the signed-in one.
+            HttpSession userSession = ConsoleSession.start(req, user);
 
             boolean secondFactorPending = false;
             Settings settings = settingsDAO.getSettings(user.getCustomerId());
@@ -233,5 +246,30 @@ public class AuthResource {
             response.setPublicKey(encoded);
         }
         return Response.OK(response);
+    }
+
+    /**
+     * The ciphertext a transmit.password sign-in sends: one block of the server's key ({@code blockBytes}) in padded
+     * standard base64 (172 characters, the last one {@code =}, for a 1024-bit key), or one byte less, as clients that
+     * drop a leading zero byte send it (the same 172 characters, ending {@code ==}). Anything else is null, refused
+     * before it is decoded.
+     */
+    private static byte[] encryptedPassword(String sent, int blockBytes) {
+        if (sent == null || blockBytes <= 1 || !(isBase64Of(sent, blockBytes) || isBase64Of(sent, blockBytes - 1))) {
+            return null;
+        }
+        try {
+            return Base64.getDecoder().decode(sent);
+        } catch (IllegalArgumentException notBase64) {
+            return null;
+        }
+    }
+
+    /** Whether {@code sent} has the shape of {@code bytes} bytes in padded standard base64: its length and padding. */
+    private static boolean isBase64Of(String sent, int bytes) {
+        final int length = 4 * ((bytes + 2) / 3);
+        final int padding = (3 - bytes % 3) % 3;
+        return sent.length() == length && BASE64.matcher(sent.substring(0, length - padding)).matches()
+                && sent.substring(length - padding).equals("==".substring(0, padding));
     }
 }

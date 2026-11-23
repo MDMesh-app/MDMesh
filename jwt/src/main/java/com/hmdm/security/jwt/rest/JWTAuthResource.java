@@ -37,6 +37,7 @@ import org.slf4j.LoggerFactory;
 import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.User;
 import com.hmdm.rest.json.UserCredentials;
+import com.hmdm.security.jwt.JWTFilter;
 import com.hmdm.security.jwt.TokenProvider;
 
 import javax.servlet.http.HttpServletRequest;
@@ -130,6 +131,9 @@ public class JWTAuthResource {
             if (credentials.getLogin() == null || credentials.getPassword() == null) {
                 return Response.status(Response.Status.BAD_REQUEST).build();
             }
+            if (req != null) {
+                req.setAttribute(UserCredentials.REQUEST_LOGIN, credentials.getLogin());   // for the audit record
+            }
 
             // Shares the console's limit on failed sign-ins (LoginThrottle); nothing sleeps. A refusal is the same 429
             // and Retry-After whichever limit refused.
@@ -141,8 +145,11 @@ public class JWTAuthResource {
                         .build();
             }
             if (user == null) {
+                // As long as a check for a real account (one bcrypt), so the time taken does not tell it is unknown
+                PasswordUtil.passwordMatch(credentials.getPassword(), null);
                 return Response.status(Response.Status.UNAUTHORIZED).build();
-            } else if (!PasswordUtil.passwordMatch(credentials.getPassword(), user.getPassword())) {
+            } else if (!userDAO.checkPasswordUnsecure(user, credentials.getPassword())) {
+                // A legacy hash that matches is stored as bcrypt there.
                 // No lastLoginFail write: it would make a failure for a real account measurably slower (LocalAuth)
                 return Response.status(Response.Status.UNAUTHORIZED).build();
             }
@@ -163,6 +170,10 @@ public class JWTAuthResource {
                 user.setPassword(null);
 
                 String token = tokenProvider.createToken(user, false);
+                if (req != null) {
+                    // The audit record of this sign-in names the user (public route: no context, no session)
+                    req.setAttribute(JWTFilter.REQUEST_USER, user);
+                }
 
                 JWTToken result = new JWTToken(token);
 

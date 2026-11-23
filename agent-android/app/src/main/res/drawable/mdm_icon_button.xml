@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Icon button (copy, show PIN): a round ripple, and for keyboard and D-pad focus a 2dp ring, 2dp off the 40dp
+     touch circle, inside the 48dp target. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:bottom="6dp" android:left="6dp" android:right="6dp" android:top="6dp">
+        <ripple android:color="@color/mdm_ripple">
+            <item android:id="@android:id/mask">
+                <shape android:shape="oval">
+                    <solid android:color="@android:color/white" />
+                </shape>
+            </item>
+        </ripple>
+    </item>
+    <item android:bottom="2dp" android:left="2dp" android:right="2dp" android:top="2dp">
+        <selector>
+            <item android:state_focused="true">
+                <shape android:shape="oval">
+                    <stroke android:width="2dp" android:color="@color/mdm_focus" />
+                </shape>
+            </item>
+        </selector>
+    </item>
+</layer-list>

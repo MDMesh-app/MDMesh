@@ -135,6 +135,7 @@ public final class Initializer extends GuiceServletContextListener {
         modules.add(new PersistenceModule(this.context));
         modules.add(new LiquibaseModule(this.context));
         modules.add(new ConfigureModule(this.context));
+        modules.add(new ExtensionPointsModule());
         modules.add(new MainRestModule());
         modules.add(new PublicRestModule());
         modules.add(new PrivateRestModule());

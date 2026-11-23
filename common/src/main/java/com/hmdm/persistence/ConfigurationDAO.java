@@ -84,13 +84,26 @@ public class ConfigurationDAO extends AbstractLinkedDAO<Configuration, Applicati
         log.info("Base URL: " + baseUrl);
     }
 
+    /** The user's configurations, as list rows: without their {@code extensions} (see {@link #withoutExtensions}). */
     public List<Configuration> getAllConfigurations() {
-        return getListWithCurrentUser(currentUser -> this.mapper.getAllConfigurations(currentUser.getCustomerId(), currentUser.getId()));
+        return withoutExtensions(getListWithCurrentUser(currentUser ->
+                this.mapper.getAllConfigurations(currentUser.getCustomerId(), currentUser.getId())));
     }
 
+    /** The user's configurations matching {@code value}, as list rows: without their {@code extensions}. */
     public List<Configuration> getAllConfigurationsByValue(String value) {
-        return getListWithCurrentUser(currentUser ->
-                this.mapper.getAllConfigurationsByValue(currentUser.getCustomerId(), "%" + value + "%", currentUser.getId()));
+        return withoutExtensions(getListWithCurrentUser(currentUser ->
+                this.mapper.getAllConfigurationsByValue(currentUser.getCustomerId(), "%" + value + "%", currentUser.getId())));
+    }
+
+    /**
+     * List rows leave out {@code extensions}, up to 64 KB a row that no list reads, as they leave out files and app
+     * settings: one configuration (getConfigurationById) carries them. A row saved back as it is keeps what is stored,
+     * since a save without extensions keeps them.
+     */
+    private static List<Configuration> withoutExtensions(List<Configuration> rows) {
+        for (Configuration c : rows) c.setExtensions(null);
+        return rows;
     }
 
     public Configuration getConfigurationByName(String name) {
@@ -103,6 +116,22 @@ public class ConfigurationDAO extends AbstractLinkedDAO<Configuration, Applicati
         return c != null;
     }
 
+    /** The current customer's configurations that have a managed background image: id, name and file id only. */
+    public List<Configuration> getBackgroundImageUses() {
+        return getListWithCurrentUser(currentUser -> this.mapper.getBackgroundImageUses(currentUser.getCustomerId()));
+    }
+
+    /** Of {@link #getBackgroundImageUses()}, the configurations the current user may open: one query for all. */
+    public List<Configuration> getAccessibleBackgroundImageUses() {
+        return getListWithCurrentUser(currentUser ->
+                this.mapper.getAccessibleBackgroundImageUses(currentUser.getCustomerId(), currentUser.getId()));
+    }
+
+    /** True when an uploaded file is the managed background image of at least one configuration. */
+    public boolean isBackgroundImageFileUsed(int fileId) {
+        return this.mapper.countBackgroundImageFileReferences(fileId) > 0;
+    }
+
     public void insertConfiguration(Configuration config) {
         insertRecord(config, configuration -> {
             this.mapper.insertConfiguration(configuration);
@@ -112,6 +141,9 @@ public class ConfigurationDAO extends AbstractLinkedDAO<Configuration, Applicati
             }
             if (configuration.getApplicationSettings() != null && !configuration.getApplicationSettings().isEmpty()) {
                 this.mapper.insertConfigurationApplicationSettings(configuration.getId(), configuration.getApplicationSettings());
+            }
+            if (configuration.getManagedAppPermissions() != null && !configuration.getManagedAppPermissions().isEmpty()) {
+                this.mapper.insertManagedAppPermissions(configuration.getId(), configuration.getManagedAppPermissions());
             }
             if (configuration.getApplicationUsageParameters() != null && !configuration.getApplicationUsageParameters().isEmpty()) {
                 this.mapper.saveConfigurationApplicationUsageParameters(configuration.getId(), configuration.getApplicationUsageParameters());
@@ -149,6 +181,12 @@ public class ConfigurationDAO extends AbstractLinkedDAO<Configuration, Applicati
                         this.mapper.removeConfigurationApplicationSettingsById(configuration.getId());
                         if (!configuration.getApplicationSettings().isEmpty()) {
                             this.mapper.insertConfigurationApplicationSettings(configuration.getId(), configuration.getApplicationSettings());
+                        }
+                    }
+                    if (configuration.getManagedAppPermissions() != null) {
+                        this.mapper.removeManagedAppPermissions(configuration.getId());
+                        if (!configuration.getManagedAppPermissions().isEmpty()) {
+                            this.mapper.insertManagedAppPermissions(configuration.getId(), configuration.getManagedAppPermissions());
                         }
                     }
                     if (configuration.getApplicationUsageParameters() != null && !configuration.getApplicationUsageParameters().isEmpty()) {
@@ -248,6 +286,7 @@ public class ConfigurationDAO extends AbstractLinkedDAO<Configuration, Applicati
         if (configuration != null) {
             final List<ApplicationSetting> appSettings = this.applicationSettingDAO.getApplicationSettingsByConfigurationId(id);
             configuration.setApplicationSettings(appSettings);
+            configuration.setManagedAppPermissions(this.mapper.getManagedAppPermissions(id));
 
             final List<ConfigurationApplicationParameters> applicationParameters = this.mapper.getApplicationParameters(id);
             configuration.setApplicationUsageParameters(applicationParameters);

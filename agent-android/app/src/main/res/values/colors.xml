@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#0B3D91</color>
+    <!-- Launcher icon background: v2 ink (the light -ink token, as mdm_ink). One value: the icon doesn't follow dark mode. -->
+    <color name="ic_launcher_background">#15181D</color>
+    <!-- "Device management active" accent (setColor): v2 ink. One value: the notification is built once, and the
+         system adjusts the accent for contrast in a dark shade. -->
+    <color name="mdm_notification_ink">#15181D</color>
 </resources>

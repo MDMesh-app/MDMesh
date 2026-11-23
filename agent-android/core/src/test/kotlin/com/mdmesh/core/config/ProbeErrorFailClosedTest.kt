@@ -83,7 +83,7 @@ class ProbeErrorFailClosedTest {
     @Test
     fun `a probe error reports the key failed, keeps the document unsaved and applies the other keys`() = runTest {
         val store = InMemoryConfigStateStore()
-        val applier = ConfigApplier(resolver::current, kiosk(), {}, store)
+        val applier = ConfigApplier(resolver::current, kiosk(), {}, store, setPowerMode = {})
 
         flaky.broken = true
         val r = applier.apply(doc)
@@ -110,7 +110,7 @@ class ProbeErrorFailClosedTest {
     @Test
     fun `a kept policy whose check throws later is reported failed, not unsupported`() = runTest {
         val store = InMemoryConfigStateStore()
-        val applier = ConfigApplier(resolver::current, kiosk(), {}, store)
+        val applier = ConfigApplier(resolver::current, kiosk(), {}, store, setPowerMode = {})
         applier.apply(doc)
         assertEquals("r1", store.revision())
 
@@ -126,7 +126,7 @@ class ProbeErrorFailClosedTest {
     @Test
     fun `a key whose check throws is never released, and the release is retried`() = runTest {
         val store = InMemoryConfigStateStore()
-        val applier = ConfigApplier(resolver::current, kiosk(), {}, store)
+        val applier = ConfigApplier(resolver::current, kiosk(), {}, store, setPowerMode = {})
         applier.apply(doc)
 
         flaky.broken = true
@@ -181,7 +181,7 @@ class ProbeErrorFailClosedTest {
         val dpm = Flaky()
         val policy = WifiRadioPolicy(radio, { _, _ -> }, 33, InMemoryWifiRadioOffState(), { now }) { dpm.check(); true }
         val toggles = TogglePolicyResolver(linkedMapOf<String, () -> TogglePolicy?>("wifiRadio" to { policy }))
-        val applier = ConfigApplier(toggles::current, kiosk(), {}, InMemoryConfigStateStore())
+        val applier = ConfigApplier(toggles::current, kiosk(), {}, InMemoryConfigStateStore(), setPowerMode = {})
         applier.apply(ConfigApplyPayload(revision = "h1", policies = mapOf("wifiRadio" to false)))
         assertFalse(radio.on)
 
@@ -209,7 +209,7 @@ class ProbeErrorFailClosedTest {
     fun `a new revision ends a self-heal hold through the kept instance when its check throws`() = runTest {
         val r = RadioSetup()
         val toggles = TogglePolicyResolver(linkedMapOf<String, () -> TogglePolicy?>("wifiRadio" to { r.policy }))
-        val applier = ConfigApplier(toggles::current, kiosk(), {}, InMemoryConfigStateStore())
+        val applier = ConfigApplier(toggles::current, kiosk(), {}, InMemoryConfigStateStore(), setPowerMode = {})
         applier.apply(off("h1"))
         r.state.heldOn = true // a self-heal turned Wi-Fi back on
 
@@ -228,7 +228,7 @@ class ProbeErrorFailClosedTest {
             linkedMapOf<String, () -> TogglePolicy?>("wifiRadio" to { r.policy.takeIf { it.isSupported() } }),
         )
         val store = InMemoryConfigStateStore().apply { delivered = off("h1") } // from before the restart
-        val applier = ConfigApplier(toggles::current, kiosk(), {}, store)
+        val applier = ConfigApplier(toggles::current, kiosk(), {}, store, setPowerMode = {})
         r.state.heldOn = true
 
         r.dpm.broken = true
@@ -250,7 +250,7 @@ class ProbeErrorFailClosedTest {
         val toggles = TogglePolicyResolver(linkedMapOf<String, () -> TogglePolicy?>("wifiRadio" to { r.policy }))
         // Written by an agent without holdEndedFor: only the delivered document is known.
         val store = InMemoryConfigStateStore().apply { delivered = off("h1") }
-        val applier = ConfigApplier(toggles::current, kiosk(), {}, store)
+        val applier = ConfigApplier(toggles::current, kiosk(), {}, store, setPowerMode = {})
         r.state.heldOn = true
 
         val resend = applier.apply(off("h1"))

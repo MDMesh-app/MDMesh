@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Focus on the filled ink button: an ink ring on an ink fill wouldn't show, so the 2dp ring is drawn in on-ink,
+     2dp in from the fill's edge. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true">
+        <inset
+            android:insetLeft="2dp"
+            android:insetTop="6dp"
+            android:insetRight="2dp"
+            android:insetBottom="6dp">
+            <shape android:shape="rectangle">
+                <corners android:radius="8dp" />
+                <stroke android:width="2dp" android:color="@color/mdm_on_ink" />
+            </shape>
+        </inset>
+    </item>
+</selector>

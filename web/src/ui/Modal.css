@@ -1,0 +1,149 @@
+/* Dialog (Radix): an r12 panel on the --elev-3 shadow, centred over the scrim. A header and footer that stay put
+   while a tall body scrolls between them. Scale-and-fade in (--dur-enter) and out (--dur-exit). */
+.v2 .v2-modal__scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-overlay);
+  background: var(--backdrop);
+}
+.v2 .v2-modal__scrim[data-state='open'] {
+  animation: v2-fade-in var(--dur-enter) var(--ease);
+}
+.v2 .v2-modal__scrim[data-state='closed'] {
+  animation: v2-fade-out var(--dur-exit) var(--ease);
+}
+.v2 .v2-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: var(--z-overlay);
+  display: flex;
+  flex-direction: column;
+  width: calc(100% - var(--space-8));
+  max-height: calc(100dvh - var(--space-12));
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--elev-3);
+  transform: translate(-50%, -50%);
+  outline: none;
+}
+.v2 .v2-modal[data-state='open'] {
+  animation: v2-dialog-in var(--dur-enter) var(--ease);
+}
+.v2 .v2-modal[data-state='closed'] {
+  animation: v2-dialog-out var(--dur-exit) var(--ease);
+}
+.v2 .v2-modal--sm {
+  max-width: 400px;
+}
+.v2 .v2-modal--md {
+  max-width: 520px;
+}
+.v2 .v2-modal--lg {
+  max-width: 720px;
+}
+.v2 .v2-modal--full {
+  width: 100vw;
+  max-width: none;
+  height: 100dvh;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+}
+.v2 .v2-modal--full .v2-modal__panel {
+  min-height: 100%;
+}
+.v2 .v2-modal--full .v2-modal__body {
+  flex: 1 1 auto;
+  align-items: center;
+}
+/* Centred by auto margins, not justify-content: center, which would push the top of a code taller than the window
+   (a landscape phone) above the scrollable area, out of reach. Auto margins shrink to 0 and the body scrolls instead. */
+.v2 .v2-modal--full .v2-modal__body > :first-child {
+  margin-top: auto;
+}
+.v2 .v2-modal--full .v2-modal__body > :last-child {
+  margin-bottom: auto;
+}
+.v2 .v2-modal__panel {
+  --modal-pad-x: var(--space-6);
+
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-6) var(--modal-pad-x) var(--space-4);
+}
+.v2 .v2-modal__head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin-top: calc(var(--space-1) * -1);
+}
+.v2 .v2-modal__head > .v2-iconbtn {
+  margin: calc(var(--space-1) * -1) calc(var(--space-2) * -1) 0 0;
+}
+.v2 .v2-modal__titles {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.v2 .v2-modal__title {
+  font-size: var(--text-title);
+  line-height: var(--lh-title);
+  font-weight: var(--weight-semibold);
+}
+.v2 .v2-modal__desc {
+  color: var(--secondary);
+}
+.v2 .v2-modal__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+
+  /* The part that scrolls when the dialog is taller than the window. It reaches the panel's edges (its scrollbar
+     sits at the dialog's edge) and 4px past its content above and below, so focus rings aren't clipped. */
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  margin: calc(var(--space-1) * -1) calc(var(--modal-pad-x) * -1);
+  padding: var(--space-1) var(--modal-pad-x);
+
+  /* A hairline under the header once the body is scrolled: the first layer scrolls with the content and covers the
+     line while the body is at its top. */
+  background:
+    linear-gradient(var(--surface), var(--surface)) top / 100% 1px no-repeat local,
+    linear-gradient(var(--line-soft), var(--line-soft)) top / 100% 1px no-repeat scroll;
+}
+.v2 .v2-modal__body:focus-visible {
+  outline-offset: calc(var(--indicator) * -1);
+}
+.v2 .v2-modal__body * {
+  scroll-margin-block: var(--space-1);
+}
+.v2 .v2-modal__foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-inline: calc(var(--modal-pad-x) * -1);
+  padding: var(--space-4) var(--modal-pad-x) 0;
+  border-top: var(--hairline) solid var(--line-soft);
+}
+
+@media (max-width: 640px) {
+  .v2 .v2-modal__panel {
+    --modal-pad-x: var(--space-4);
+
+    padding-block: var(--space-4);
+  }
+  .v2 .v2-modal__foot > * {
+    flex: 1 1 auto;
+  }
+}

@@ -27,6 +27,7 @@
         SELECT devices.id AS deviceId, devices.number, devices.description, devices.lastUpdate,
                devices.configurationId, devices.info, devices.imei, devices.phone, devices.customerId,
                devices.custom1, devices.custom2, devices.custom3, devices.oldNumber, devices.hardwareid,
+               devices.wipedAt,
                groups.id AS groupId, groups.name AS groupName,
                configurations.name as configName
         FROM devices
@@ -52,6 +53,7 @@
         <result property="kioskMode" column="kioskMode"/>
         <result property="androidVersion" column="androidVersion"/>
         <result property="enrollTime" column="enrollTime"/>
+        <result property="wipedAt" column="wipedAt"/>
         <result property="serial" column="serial"/>
         <result property="statusCode" column="statusCode"/>
         <result property="publicIp" column="publicIp"/>
@@ -132,7 +134,7 @@
                 WHEN 'MDM_MODE' = #{sortBy} THEN COALESCE(devices.infojson -&gt;&gt; 'mdmMode', '')::VARCHAR(100)
                 WHEN 'KIOSK_MODE' = #{sortBy} THEN COALESCE(devices.infojson -&gt;&gt; 'kioskMode', '')::VARCHAR(100)
                 WHEN 'ANDROID_VERSION' = #{sortBy} THEN COALESCE(devices.infojson -&gt;&gt; 'androidVersion', '')::VARCHAR(100)
-                WHEN 'ENROLLMENT_DATE' = #{sortBy} THEN devices.enrollTime::VARCHAR(100)
+                WHEN 'ENROLLMENT_DATE' = #{sortBy} THEN COALESCE(devices.enrollTime, 0)::VARCHAR(100)
                 WHEN 'SERIAL' = #{sortBy} THEN COALESCE(devices.infojson -&gt;&gt; 'serial', '')::VARCHAR(100)
                 WHEN 'PUBLICIP' = #{sortBy} THEN COALESCE(devices.publicIp, '')::VARCHAR(100)
                 WHEN 'CUSTOM1' = #{sortBy} THEN LOWER(devices.custom1)::VARCHAR(100)
@@ -255,7 +257,7 @@
     <select id="getAllDevices" parameterType="DeviceSearchRequest" resultMap="deviceResult">
         SELECT devices.id AS deviceId, devices.number, devices.description, devices.lastUpdate,
                devices.configurationId, devices.info, devices.imei, devices.phone, devices.customerId,
-               devices.enrollTime, devices.publicIp,
+               devices.enrollTime, devices.publicIp, devices.wipedAt,
                (devices.infojson ->> 'mdmMode')::BOOLEAN AS mdmMode,
                (devices.infojson ->> 'kioskMode')::BOOLEAN AS kioskMode,
                devices.infojson ->> 'androidVersion' AS androidVersion,
@@ -520,12 +522,19 @@
         LIMIT #{limit};
     </select>
 
+    <!-- Each group once, and only those the device is not already in: an edit deletes only the groups its user may
+         use (removeDeviceGroupsByDeviceId), so the others are still there when the console sends them back. -->
     <insert id="insertDeviceGroups">
-        INSERT INTO deviceGroups (deviceId, groupId) VALUES
+        INSERT INTO deviceGroups (deviceId, groupId)
+        SELECT DISTINCT #{id}, sent.groupId
+        FROM (VALUES
         <foreach item="groupId" index="index" collection="groups"
                  open="" separator="," close="">
-            (#{id}, #{groupId})
+            (CAST(#{groupId} AS INTEGER))
         </foreach>
+        ) AS sent (groupId)
+        WHERE NOT EXISTS (SELECT 1 FROM deviceGroups existing
+                          WHERE existing.deviceId = #{id} AND existing.groupId = sent.groupId)
     </insert>
 
     <select id="getAllGroups" resultType="Group">

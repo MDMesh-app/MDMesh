@@ -1,4 +1,38 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    App theme: AppCompat DayNight (follows the system light/dark setting), coloured from the v2 tokens in
+    colors_v2.xml (values/ = light, values-night/ = dark). No Material Components: dialogs, buttons and fields
+    are hand-styled below. Screens keep clear of the system bars themselves (ui/SystemBars.kt): on Android 15+
+    the app (targetSdk 35) is drawn edge to edge.
+-->
 <resources>
-    <style name="Theme.MdmAgent" parent="Theme.AppCompat.DayNight.NoActionBar" />
+
+    <style name="Theme.MdmAgent" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/mdm_ink</item>
+        <item name="colorAccent">@color/mdm_ink</item>
+        <item name="colorControlNormal">@color/mdm_control_border</item>
+        <item name="colorControlActivated">@color/mdm_ink</item>
+        <item name="colorControlHighlight">@color/mdm_ripple</item>
+        <item name="colorError">@color/mdm_alert_ink</item>
+        <item name="android:textColorHighlight">@color/mdm_selection</item>
+        <item name="alertDialogTheme">@style/ThemeOverlay.MdmAgent.Dialog</item>
+    </style>
+
+    <!-- The dialog window (androidx.appcompat AlertDialog): v2 Modal surface, 16dp corners, scrim. Its content is
+         our own layout, mdm_dialog.xml (MdmDialog), not AppCompat's alert template; this overlay themes its field. -->
+    <style name="ThemeOverlay.MdmAgent.Dialog" parent="Theme.AppCompat.DayNight.Dialog.Alert">
+        <item name="android:windowBackground">@drawable/mdm_dialog_bg</item>
+        <item name="android:backgroundDimAmount">@dimen/mdm_dim_amount</item>
+        <item name="android:textColorHint">@color/mdm_secondary</item>
+        <item name="android:textColorHighlight">@color/mdm_selection</item>
+        <item name="colorPrimary">@color/mdm_ink</item>
+        <item name="colorAccent">@color/mdm_ink</item>
+        <item name="colorControlNormal">@color/mdm_control_border</item>
+        <item name="colorControlActivated">@color/mdm_ink</item>
+        <item name="colorControlHighlight">@color/mdm_ripple</item>
+        <item name="colorError">@color/mdm_alert_ink</item>
+        <item name="android:editTextStyle">@style/Widget.MdmAgent.EditText</item>
+        <item name="editTextStyle">@style/Widget.MdmAgent.EditText</item>
+    </style>
+
 </resources>

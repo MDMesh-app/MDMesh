@@ -1,0 +1,147 @@
+/* Shell: a sticky 220px sidebar and a left-anchored page column (max 1440, 24px gutters). */
+.v2 .v2-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-wrap: nowrap;
+  background: var(--app);
+}
+.v2 .v2-shell__side {
+  flex: 0 0 var(--sidebar-w);
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  height: 100vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-right: var(--hairline) solid var(--border);
+  z-index: var(--z-sticky);
+}
+.v2 .v2-shell__mainwrap {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.v2 .v2-shell__main {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  max-width: calc(var(--content-max) + var(--page-gutter) * 2);
+  padding: var(--page-gutter);
+  display: flex;
+  flex-direction: column;
+  gap: var(--grid-gap);
+  outline: none;
+}
+
+/* Room under the last row for the floating selection bar while it shows. */
+.v2 .v2-shell__main:has(.v2-bulkbar[data-state='open']) {
+  padding-bottom: calc(var(--row) + var(--space-12));
+}
+
+/* One page: its sections stacked with the grid gutter; arrives with a short fade (opacity only, nothing moves). */
+.v2 .v2-route {
+  display: flex;
+  flex-direction: column;
+  gap: var(--grid-gap);
+  min-width: 0;
+  animation: v2-fade-in var(--dur-enter) var(--ease);
+}
+.v2 .v2-pageskel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--section-gap);
+  padding-top: var(--space-1);
+}
+.v2 .v2-pageskel__card {
+  overflow: hidden;
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.v2 .v2-skip {
+  position: absolute;
+  left: var(--space-3);
+  top: calc(var(--space-12) * -1);
+  z-index: var(--z-toast);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
+  background: var(--ink);
+  color: var(--on-ink);
+  text-decoration: none;
+  font-weight: var(--weight-medium);
+}
+.v2 .v2-skip:focus {
+  top: var(--space-3);
+  color: var(--on-ink);
+}
+
+/* ---- ≤ 860px: top bar + drawer ---- */
+.v2 .v2-mobilebar {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  align-self: stretch;
+  height: var(--topbar-h);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--page-gutter);
+  background: var(--surface);
+  border-bottom: var(--hairline) solid var(--border);
+}
+.v2 .v2-mobilebar__brand {
+  font-size: var(--text-input);
+  line-height: var(--lh-input);
+}
+.v2 .v2-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-drawer);
+  background: var(--backdrop);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-enter) var(--ease);
+}
+.v2 .v2-scrim.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (max-width: 860px) {
+  .v2 .v2-shell {
+    display: block;
+  }
+  .v2 .v2-shell__side {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: min(280px, 85vw);
+    height: 100%;
+    z-index: var(--z-overlay);
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition:
+      transform var(--dur-enter) var(--ease),
+      visibility 0s linear var(--dur-enter);
+  }
+  .v2 .v2-shell__side.is-open {
+    transform: none;
+    visibility: visible;
+    transition:
+      transform var(--dur-enter) var(--ease),
+      visibility 0s;
+    box-shadow: var(--elev-3);
+  }
+}
+
+/* The sticky mobile bar must never cover the focused element (2.4.11). */
+@media (max-width: 860px) {
+  html:has(.v2-mobilebar) {
+    scroll-padding-top: 52px; /* the 44px bar + 8: html sits outside .v2, so no tokens here */
+  }
+}

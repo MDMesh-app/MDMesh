@@ -1,0 +1,529 @@
+/* ============================================================================
+   MDMesh design tokens and base styles. Every token is scoped under `.v2`.
+
+   This file is the only place a raw value may appear: stylelint (stylelint.config.mjs) rejects colours, sizes,
+   spacing, radii, shadows and motion values anywhere else. When a value is missing, add a token here.
+
+   The system (the owner's comfortable density): 14px UI text, controls 32 / 36 / 40, 48px table rows, 16px card
+   padding, a 4px spacing grid, the website's radius family, three elevations and one easing. Colours are named by job, not hue. Every text colour reaches
+   4.5:1 on the surfaces it sits on, every control edge and icon 3:1, in light and dark.
+
+   The `.v2` class sits on <body> (index.html): it is the console's namespace, and every component class is
+   prefixed `v2-`. Extensions use these tokens as `var(--name)`; the names under "Deprecated aliases" still work
+   and follow the new scale (they are snapshotted in sdk/surface.txt and go after one release's notice).
+   ========================================================================= */
+
+.v2 {
+  /* ---- surfaces ---- */
+  --app: #f6f7f9; /* page background */
+  --surface: #ffffff; /* cards, sidebar, inputs, menus, dialogs */
+  --surface-2: #f1f2f5; /* segmented track, current nav item, letter tiles */
+  --surface-sunken: #fafbfc; /* recessed panels inside a card */
+  --row-selected: #f4f6f9; /* selected table row */
+  --hover: #f3f4f7; /* hover fill for rows and quiet controls */
+  --pressed: #eceef2; /* pressed fill for quiet controls */
+  --seg-selected: #ffffff; /* raised segment */
+
+  /* ---- lines ---- */
+  --border: #e7e9ee; /* card and panel border, table rules (decorative) */
+  --border-strong: #d6dae1; /* text buttons, outline tags */
+  --line-soft: #eef0f3; /* row dividers inside cards, bar tracks */
+  --input-border: #838b99; /* text inputs, selects, checkboxes: 3:1 on white, --app and --surface-2 (1.4.11) */
+  --control-border: var(--input-border);
+
+  /* ---- ink + text ---- */
+  --ink: #15181d; /* primary button, current-state indicators, switch on */
+  --on-ink: #ffffff;
+  --ink-hover: #2a2f38;
+  --ink-pressed: #000000;
+  --text: #1b2230;
+  --text-2: #384152; /* labels in rows, subtitles, inactive nav */
+  --secondary: #4a5163; /* help, meta, table head: 7:1 on every neutral ground */
+  --muted: #6b7686; /* offline ring only: 4.30:1 on --app, never text off white */
+  --faint: #9aa3b0; /* disabled text only */
+
+  /* ---- accent: Console blue. Two jobs only: the focus ring and the favicon. ---- */
+  --accent: #2f5597; /* 7.3:1 on white, 6.5:1 on --surface-2 */
+  --focus: var(--accent);
+
+  /* ---- location map: drawn on the light map tiles in both themes, so the dark theme keeps these ---- */
+  --map-trail: #1a3a7a; /* the path and its markers: 3:1 on every tile fill, dimmed too (mapContrast.test.ts) */
+  --map-halo: #ffffff; /* the casing under the path and the markers' rings */
+
+  /* ---- status: dot / ink / soft / line ---- */
+  --online: #189c5f;
+  --ok-ink: #096139;
+  --ok-soft: #e6f6ee;
+  --ok-line: #bfe8d2;
+  --ok-wash: #f7fcf9;
+  --ok-mark: #8fd8b1;
+
+  --warn: #c07922;
+  --warn-ink: #77450c;
+  --warn-soft: #fcf1e3;
+  --warn-line: #f1d3ad;
+
+  --alert: #d64545;
+  --alert-ink: #902626;
+  --alert-soft: #fbe9e9;
+  --alert-line: #f0d4d4;
+  --danger: #c43838; /* solid destructive button: white text 5.2:1 */
+  --danger-hover: #a92e2e;
+  --on-danger: #ffffff;
+
+  --offline: #7e8a9c;
+  --idle-ink: #4a5163;
+  --idle-soft: #f1f2f5;
+  --idle-line: #e7e9ee;
+  --bar-idle: #d6dae1;
+
+  /* ---- disabled: the same variant, faded (one visual language) ---- */
+  --disabled-opacity: 0.45;
+  --disabled-bg: #e7e9ee;
+  --disabled-ink: #4a5163;
+
+  /* ---- controls ---- */
+  --switch-on: var(--ink);
+  --switch-on-knob: #ffffff;
+  --switch-off: #d6dae1;
+  --switch-off-knob: #ffffff;
+  --switch-off-ring: var(--muted);
+  --swatch-line: rgba(21, 24, 29, 0.15);
+  --glyph-body: var(--surface);
+  --glyph-screen: #d6dae1;
+  --backdrop: rgba(20, 30, 55, 0.32);
+  --skeleton: #eceef2;
+  --skeleton-shine: rgba(255, 255, 255, 0.6);
+
+  /* ---- elevation (3 levels; cards are flat: 1px border, no shadow) ---- */
+  --elev-1: 0 1px 2px rgba(20, 30, 55, 0.1); /* raised segment, switch knob */
+  --elev-2: 0 1px 2px rgba(20, 30, 55, 0.06), 0 8px 24px rgba(20, 30, 55, 0.12); /* menus, popovers, toasts, bars */
+  --elev-3: 0 2px 4px rgba(20, 30, 55, 0.06), 0 24px 48px rgba(20, 30, 55, 0.18); /* dialogs */
+
+  /* ---- type: Plex Sans for everything, Plex Mono only for copyable machine identifiers ---- */
+  --font-sans: 'IBM Plex Sans', 'Helvetica Neue', Arial, system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --text-caps: 11px; /* caps meta, count badges */
+  --text-meta: 13px; /* meta, help, table head, pills */
+  --text-ui: 14px; /* UI and body */
+  --text-input: 15px; /* input text, emphasised values */
+  --text-title: 16px; /* card titles */
+  --text-page: 22px; /* page titles, stat values */
+  --text-display: 28px; /* display numerals (fleet total) */
+
+  --lh-caps: 16px;
+  --lh-meta: 18px;
+  --lh-ui: 20px;
+  --lh-input: 22px;
+  --lh-title: 24px;
+  --lh-page: 28px;
+  --lh-display: 32px;
+
+  --weight-regular: 400;
+  --weight-medium: 500; /* emphasis, labels, selected states, buttons */
+  --weight-semibold: 600; /* page and card titles only */
+
+  --track-tight: -0.015em; /* page titles, display numerals */
+  --track-caps: 0.04em; /* 11px caps meta */
+
+  /* ---- spacing: a 4px grid ---- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+
+  /* ---- sizes ---- */
+  --control-xs: 28px; /* ghost icon buttons inside table rows */
+  --control-sm: 32px; /* row actions, chips, compact toolbars */
+  --control-md: 36px; /* default: buttons, inputs, selects, search, segmented tracks */
+  --control-lg: 40px; /* page primary, dialog footers, sign-in */
+  --row: 48px; /* table rows */
+  --row-compact: 44px; /* compact tables, list rows inside cards */
+  --nav-item: 36px; /* sidebar items */
+  --touch: 44px; /* minimum target in the phone layout */
+  --icon-sm: 14px;
+  --icon-md: 16px;
+  --icon-nav: 18px; /* sidebar nav icons */
+  --check: 16px; /* checkbox and radio */
+  --dot-sm: 6px; /* sync marks */
+  --dot: 7px; /* status marks */
+  --dot-lg: 8px; /* legends */
+  --dot-ring: 1.5px; /* the outline of a hollow (offline) mark */
+  --hairline: 1px;
+  --indicator: 2px; /* tab underline, focus ring */
+
+  /* ---- radii: the website's family (6 / 10 / 16 / pill), by role. Nested: outer − inset (a 10 track, 4 in → 6). ---- */
+  --radius-chip: 6px; /* chips, tags, segments in a track, items in a menu or list, tooltips, small tiles */
+  --radius-control: 10px; /* buttons, inputs, selects, nav items; menus, popovers, callouts, toasts, notices */
+  --radius-card: 16px; /* cards, dialogs, the sign-in card */
+  --radius-check: 4px; /* checkbox: a 16px box (6 would read as a circle) */
+  --radius-full: 999px; /* dots, pills, switches */
+
+  /* ---- layout ---- */
+  --sidebar-w: 240px;
+  --content-max: 1440px; /* left-anchored page column */
+  --prose-max: 760px; /* forms and settings prose */
+  --page-gutter: var(--space-6);
+  --grid-gap: var(--space-4); /* between cards, both axes */
+  --section-gap: var(--space-6); /* page header to content */
+  --card-pad: var(--space-4);
+  --topbar-h: 56px;
+  --z-sticky: 10;
+  --z-drawer: 40;
+  --z-overlay: 50;
+  --z-toast: 60;
+
+  /* ---- motion: one easing, transform and opacity only ---- */
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --dur-micro: 150ms; /* hover fills, tab indicator, switch */
+  --dur-enter: 180ms; /* dialogs, menus, popovers, toasts opening; route and tab content */
+  --dur-exit: 120ms; /* the same closing */
+  --lift: 4px; /* how far a popover travels in */
+  --scale-in: 0.97; /* a dialog's starting scale */
+  --skeleton-delay: 150ms; /* most loads finish sooner: no flash of placeholders */
+  --skeleton-sweep: 1600ms;
+
+  /* ---- edge fades for strips that scroll sideways (masks: only alpha matters) ---- */
+  --fade-end: linear-gradient(to right, #000 calc(100% - var(--space-8)), transparent);
+  --fade-start: linear-gradient(to left, #000 calc(100% - var(--space-8)), transparent);
+  --fade-both: linear-gradient(
+    to right,
+    transparent,
+    #000 var(--space-8),
+    #000 calc(100% - var(--space-8)),
+    transparent
+  );
+
+  /* ---- Deprecated aliases (sdk/surface.txt). They follow the scale above; removed after one release. ---- */
+  --fs-display: var(--text-display);
+  --fs-h1: var(--text-page);
+  --fs-h1-sm: var(--text-page);
+  --fs-stat: var(--text-page);
+  --fs-stat-sm: var(--text-page);
+  --fs-title-lg: var(--text-title);
+  --fs-title: var(--text-title);
+  --fs-h2: var(--text-title);
+  --fs-lead: var(--text-input);
+  --fs-body: var(--text-ui);
+  --fs-control: var(--text-ui);
+  --fs-sm: var(--text-ui);
+  --fs-meta: var(--text-meta);
+  --fs-small: var(--text-meta);
+  --fs-tiny: var(--text-caps);
+  --fs-micro: var(--text-caps);
+  --lh-body: 1.43; /* 20px at 14px */
+  --lh-h1: 1.28; /* 28px at 22px */
+  --ls-h1: var(--track-tight);
+  --ls-display: var(--track-tight);
+  --ls-eyebrow: var(--track-caps);
+  --radius-xs: var(--radius-chip);
+  --radius-swatch: var(--radius-chip);
+  --radius-seg: var(--radius-chip);
+  --radius-tile: var(--radius-control);
+  --radius-sm: var(--radius-control);
+  --radius-md: var(--radius-control);
+  --radius-card-sm: var(--radius-control);
+  --radius-lg: var(--radius-card);
+  --radius-auth: var(--radius-card);
+  --radius-pill: var(--radius-full);
+  --space-0: var(--space-1);
+  --space-1h: var(--space-1);
+  --space-2h: var(--space-2);
+  --space-3h: var(--space-3);
+  --space-5: var(--space-4);
+  --shadow-seg: var(--elev-1);
+  --shadow-knob: var(--elev-1);
+  --shadow-float: var(--elev-2);
+  --shadow-auth: var(--elev-2);
+  --shadow-modal: var(--elev-3);
+  --main-max: var(--content-max);
+  --page-pad: var(--page-gutter);
+  --page-gap: var(--grid-gap);
+  --mobilebar-h: var(--topbar-h);
+
+  color-scheme: light;
+}
+
+/* ----------------------------------------------------------------------------
+   Dark: designed, not inverted. Raised surfaces get lighter; every text colour reaches 4.5:1 on --surface.
+   ------------------------------------------------------------------------- */
+[data-theme='dark'] .v2,
+.v2[data-theme='dark'] {
+  --app: #0f1115;
+  --surface: #161922;
+  --surface-2: #1e222c;
+  --surface-sunken: #13161d;
+  --row-selected: #1b2030;
+  --hover: #1c2029;
+  --pressed: #232834;
+  --seg-selected: #2b313d;
+
+  --border: #272c37;
+  --border-strong: #39404e;
+  --line-soft: #21262f;
+  --input-border: #727b8b;
+
+  --ink: #e7ebf1; /* primary fill: off-white, not the brightest thing on screen */
+  --on-ink: #15181d;
+  --ink-hover: #d3d9e2;
+  --ink-pressed: #c4ccd7;
+  --text: #e7ebf1;
+  --text-2: #c4ccd7;
+  --secondary: #aeb6c1;
+  --muted: #8b95a3;
+  --faint: #6c7480;
+
+  --accent: #7fa2ea; /* 6.9:1 on --surface */
+
+  --online: #2bb979;
+  --ok-ink: #4fd194;
+  --ok-soft: #13261d;
+  --ok-line: #1f4a35;
+  --ok-wash: #121f19;
+  --ok-mark: #2f7a55;
+
+  --warn: #e0973a;
+  --warn-ink: #f0b265;
+  --warn-soft: #2a2015;
+  --warn-line: #4d3a20;
+
+  --alert: #e25757;
+  --alert-ink: #f4a0a0;
+  --alert-soft: #2a1b1e;
+  --alert-line: #45292d;
+  --danger: #c43838;
+  --danger-hover: #b83232;
+  --on-danger: #ffffff;
+
+  --offline: #667184;
+  --idle-ink: #aeb6c1;
+  --idle-soft: #1e222c;
+  --idle-line: #272c37;
+  --bar-idle: #39404e;
+
+  --disabled-bg: #272c37;
+  --disabled-ink: #aeb6c1;
+
+  --switch-on-knob: #15181d;
+  --switch-off: #39404e;
+  --switch-off-knob: #c4ccd7;
+  --switch-off-ring: var(--muted);
+  --swatch-line: rgba(242, 244, 248, 0.2);
+  --glyph-screen: #39404e;
+  --backdrop: rgba(0, 0, 0, 0.55);
+  --skeleton: #1e222c;
+  --skeleton-shine: rgba(255, 255, 255, 0.04);
+
+  --elev-1: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --elev-2: 0 0 0 1px rgba(255, 255, 255, 0.04), 0 8px 24px rgba(0, 0, 0, 0.5);
+  --elev-3: 0 0 0 1px rgba(255, 255, 255, 0.05), 0 24px 48px rgba(0, 0, 0, 0.6);
+
+  color-scheme: dark;
+}
+
+/* Phones: a 16px page gutter (every layout that bleeds to the page edge reads it). */
+@media (max-width: 860px) {
+  .v2 {
+    --page-gutter: var(--space-4);
+  }
+}
+
+/* ----------------------------------------------------------------------------
+   Reset. Border-box sizing, no default body margin, a full-height root. The theme switch crossfades through a
+   View Transition only (ui/theme.tsx); nothing else animates colour on the page.
+   ------------------------------------------------------------------------- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 200ms;
+  animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+.v2 ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.v2 ::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: var(--radius-full);
+}
+.v2 ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ----------------------------------------------------------------------------
+   Base: 13/20 Plex Sans on --app, inherited fonts in controls, one focus ring (keyboard only).
+   ------------------------------------------------------------------------- */
+.v2 {
+  font-family: var(--font-sans);
+  font-size: var(--text-ui);
+  line-height: var(--lh-ui);
+  color: var(--text);
+  background: var(--app);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+.v2 a {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  text-decoration-thickness: var(--hairline);
+}
+.v2 a:hover {
+  color: var(--text-2);
+}
+.v2 button,
+.v2 input,
+.v2 select,
+.v2 textarea {
+  font: inherit;
+}
+.v2 :focus-visible {
+  outline: var(--indicator) solid var(--focus);
+  outline-offset: var(--indicator);
+}
+.v2 :where(h1, h2, h3, h4, p, dl, dd, figure) {
+  margin: 0;
+}
+.v2 :where(h1, h2, h3) {
+  text-wrap: balance;
+}
+.v2 ::placeholder {
+  color: var(--secondary);
+  opacity: 1;
+}
+
+/* Disclosures (<details>): one look everywhere, a drawn chevron that turns as it opens (summaries with their own class
+   draw their own). */
+.v2 summary:not([class]) {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-xs);
+  border-radius: var(--radius-chip);
+  list-style: none;
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+}
+.v2 summary:not([class])::-webkit-details-marker {
+  display: none;
+}
+.v2 summary:not([class])::before {
+  content: '';
+  flex: 0 0 auto;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  background: var(--secondary);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M4.5 3l3 3-3 3' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+  transition: transform var(--dur-micro) var(--ease);
+}
+.v2 details[open] > summary:not([class])::before {
+  transform: rotate(90deg);
+}
+@media (max-width: 860px) {
+  .v2 summary:not([class]) {
+    min-height: var(--touch);
+  }
+}
+
+/* Utility classes page code may use alongside the components. */
+.v2 .v2-mono {
+  font-family: var(--font-mono);
+}
+.v2 .v2-num {
+  font-variant-numeric: tabular-nums;
+}
+.v2 .v2-secondary {
+  color: var(--secondary);
+}
+.v2 .v2-eyebrow {
+  font-size: var(--text-caps);
+  line-height: var(--lh-caps);
+  font-weight: var(--weight-medium);
+  text-transform: uppercase;
+  letter-spacing: var(--track-caps);
+  color: var(--secondary);
+}
+.v2 .v2-visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Shared enter/exit keyframes: every overlay (dialog, menu, popover, tooltip, toast) and route/tab content. */
+@keyframes v2-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes v2-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes v2-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--pop-from, calc(var(--lift) * -1))) scale(var(--scale-in));
+  }
+}
+@keyframes v2-pop-out {
+  to {
+    opacity: 0;
+    transform: translateY(var(--pop-from, calc(var(--lift) * -1))) scale(var(--scale-in));
+  }
+}
+@keyframes v2-dialog-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(var(--scale-in));
+  }
+}
+@keyframes v2-dialog-out {
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(var(--scale-in));
+  }
+}
+@keyframes v2-shimmer {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .v2 *,
+  .v2 *::before,
+  .v2 *::after,
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

@@ -1,26 +1,28 @@
 package com.mdmesh.core.di
 
-import android.content.Context
+import com.mdmesh.core.config.ServerAddress
+import com.mdmesh.core.config.ServerConfigStore
+import com.mdmesh.core.store.AgentDataStores
+import com.mdmesh.core.store.DataStoreKioskStateStore
 import com.mdmesh.core.store.DeviceIdStore
 import com.mdmesh.core.store.DeviceIdentity
 import com.mdmesh.core.store.EnrollTokenProvider
 import com.mdmesh.core.store.EnrollTokenStore
+import com.mdmesh.core.store.KioskStateStore
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
-import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
+/** The stores over [AgentDataStores], the one place their DataStore files are opened. */
 @Module
 @InstallIn(SingletonComponent::class)
 object StoreModule {
 
     @Provides
     @Singleton
-    fun provideDeviceIdStore(
-        @ApplicationContext context: Context,
-    ): DeviceIdStore = DeviceIdStore(context)
+    fun provideDeviceIdStore(stores: AgentDataStores): DeviceIdStore = DeviceIdStore(stores.identity)
 
     /** Expose the store behind its interface so sync/enroll logic stays Android-free. */
     @Provides
@@ -28,10 +30,15 @@ object StoreModule {
 
     @Provides
     @Singleton
-    fun provideEnrollTokenStore(
-        @ApplicationContext context: Context,
-    ): EnrollTokenStore = EnrollTokenStore(context)
+    fun provideEnrollTokenStore(stores: AgentDataStores): EnrollTokenStore = EnrollTokenStore(stores.enroll)
 
     @Provides
     fun provideEnrollTokenProvider(store: EnrollTokenStore): EnrollTokenProvider = store
+
+    @Provides
+    @Singleton
+    fun provideKioskStateStore(stores: AgentDataStores): KioskStateStore = DataStoreKioskStateStore(stores.kiosk)
+
+    @Provides
+    fun provideServerAddress(store: ServerConfigStore): ServerAddress = store
 }

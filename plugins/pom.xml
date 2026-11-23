@@ -45,6 +45,8 @@
         <module>messaging</module>
         <module>push</module>
         <module>xtra</module>
+        <!-- A fork's own plugins: add them inside fork/, never here (fork/README.md). -->
+        <module>fork</module>
     </modules>
 
     <dependencies>

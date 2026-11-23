@@ -2,6 +2,9 @@
 
 **Status:** Accepted (2026-06-21)
 
+**Amended:** the agent is new, but some files were ported from hmdm-android rather than only
+reimplemented. [NOTICE](../../NOTICE) has the current position, and those files carry the upstream header.
+
 ## Context
 
 The Headwind Android agent (`h-mdm/hmdm-android`, Apache-2.0) is mature but, on teardown:

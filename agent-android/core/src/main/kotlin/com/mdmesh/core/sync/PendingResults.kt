@@ -34,8 +34,8 @@ class PendingResults(private val backup: Backup = Backup.None) {
     }
 
     /**
-     * SharedPreferences: one small value, read once. Callers run on the main thread (the check-in service's scope), so
-     * each write is committed to disk on one background thread, in order, rather than blocking the caller.
+     * SharedPreferences: one small value, read once. Each write is committed to disk on one background thread, in
+     * order, rather than blocking the caller (a check-in, or a command handler adding its result).
      */
     private class PrefsBackup(private val context: Context) : Backup {
         private val prefs by lazy { context.getSharedPreferences("mdm_pending_results", Context.MODE_PRIVATE) }

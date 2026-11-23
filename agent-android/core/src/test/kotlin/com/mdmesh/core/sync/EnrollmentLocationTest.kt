@@ -23,7 +23,7 @@ class EnrollmentLocationTest {
         val identity = FakeIdentity(initialId = "dev-1", initialSecret = "sek-1")
         val events = object : EventSink {
             override fun record(type: String, detail: String?) = Unit
-            override fun drain() = emptyList<TelemetryEventDto>()
+            override fun drain(max: Int) = emptyList<TelemetryEventDto>()
             override fun restore(events: List<TelemetryEventDto>) = Unit
         }
         return CheckInCoordinator(

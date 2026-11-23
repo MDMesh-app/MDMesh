@@ -1,0 +1,129 @@
+/* ---- stacked field: 13px/500 label, the control, 12px help or error ---- */
+.v2 .v2-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.v2 .v2-field__label {
+  font-size: var(--text-ui);
+  line-height: var(--lh-ui);
+  font-weight: var(--weight-medium);
+}
+.v2 .v2-field--sm .v2-field__label {
+  font-size: var(--text-ui);
+}
+.v2 .v2-field__help {
+  max-width: 80ch;
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
+  color: var(--secondary);
+}
+.v2 .v2-field__help.is-ok {
+  color: var(--ok-ink);
+}
+.v2 .v2-field__error {
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
+  color: var(--alert-ink);
+}
+
+/* ---- setting row: label and help on the left, the control on the right ---- */
+.v2 .v2-fieldrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-6);
+  padding: var(--space-3) 0;
+}
+.v2 .v2-fieldrow--divider {
+  border-top: var(--hairline) solid var(--line-soft);
+}
+.v2 .v2-fieldrow__text {
+  flex: 1 1 260px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.v2 .v2-fieldrow__text--lg {
+  flex-basis: 300px;
+  gap: 0;
+}
+.v2 .v2-fieldrow__labelline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+}
+.v2 .v2-fieldrow__label {
+  font-size: var(--text-ui);
+  line-height: var(--lh-ui);
+  font-weight: var(--weight-medium);
+}
+.v2 .v2-fieldrow__help {
+  max-width: 80ch;
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
+  color: var(--secondary);
+}
+.v2 .v2-fieldrow__control {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0 0 0 auto;
+  padding: 0;
+  border: 0;
+  display: flex;
+}
+.v2 .v2-fieldrow__below {
+  flex: 1 1 100%;
+}
+/* A disabled row: its control is disabled by the fieldset and dims (exempt as an inactive control). The label and
+   help stay readable at 4.5:1, since they say what the setting does and why it's off; the label drops to secondary. */
+.v2 .v2-fieldrow.is-disabled .v2-fieldrow__label {
+  color: var(--secondary);
+}
+.v2 .v2-fieldrow.is-disabled .v2-fieldrow__control {
+  opacity: var(--disabled-opacity);
+}
+
+/* ---- "Changed" chip and eyebrows ---- */
+.v2 .v2-changed {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 20px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--surface-2);
+  font-size: var(--text-caps);
+  line-height: var(--lh-caps);
+  font-weight: var(--weight-medium);
+  color: var(--ink);
+}
+.v2 .v2-changed__dot {
+  width: var(--dot-sm);
+  height: var(--dot-sm);
+  border-radius: var(--radius-full);
+  background: var(--ink);
+}
+.v2 .v2-eyebrow {
+  margin: 0;
+  font-size: var(--text-caps);
+  line-height: var(--lh-caps);
+  font-weight: var(--weight-medium);
+  text-transform: uppercase;
+  letter-spacing: var(--track-caps);
+  color: var(--secondary);
+}
+.v2 .v2-eyebrowline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+}
+.v2 .v2-eyebrowline__help {
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
+  color: var(--secondary);
+}

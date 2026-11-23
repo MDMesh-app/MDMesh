@@ -170,6 +170,12 @@ public class DeviceView {
         return device.getEnrollTime();
     }
 
+    @ApiModelProperty("When a factory reset was delivered to the device (it erases itself, so it no longer reports); " +
+            "absent if it wasn't wiped")
+    public Long getWipedAt() {
+        return device.getWipedAt();
+    }
+
     @ApiModelProperty("Device serial number")
     public String getSerial() {
         return device.getSerial();

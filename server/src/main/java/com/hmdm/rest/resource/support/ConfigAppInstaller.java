@@ -12,12 +12,14 @@ package com.hmdm.rest.resource.support;
 
 import com.hmdm.notification.AgentWakeHub;
 import com.hmdm.rest.json.InstallPayloadBuilder;
+import com.hmdm.persistence.DeviceGoneException;
 import com.hmdm.persistence.AgentCommandDAO;
 import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.AgentCommand;
 import com.hmdm.persistence.domain.Application;
 import com.hmdm.persistence.domain.ApplicationVersion;
 import com.hmdm.persistence.domain.Device;
+import com.hmdm.util.DesiredConfigBuilder;
 import com.hmdm.util.RolloutProgress;
 import com.hmdm.util.InstallIntegrity;
 import org.slf4j.Logger;
@@ -25,20 +27,19 @@ import org.slf4j.LoggerFactory;
 
 import javax.inject.Inject;
 import javax.inject.Singleton;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
  * Turns a device's configuration app list into queued {@code app.install} commands — the piece
  * that makes a configuration a "golden image" for the command-driven agent (which never reads the
- * configuration itself). Used at enrollment and by the admin "sync apps" action.
+ * configuration itself). Used at enrollment, by the admin "sync apps" action (which re-sends every app), and by
+ * {@link AppReconciler} at check-in (only the apps a device still needs).
  */
 @Singleton
 public class ConfigAppInstaller {
 
     private static final Logger logger = LoggerFactory.getLogger(ConfigAppInstaller.class);
-
-    /** Action value in configurationApplications meaning "install this app". */
-    private static final int ACTION_INSTALL = 1;
 
     private final UnsecureDAO unsecureDAO;
     private final AgentCommandDAO commandDAO;
@@ -57,8 +58,9 @@ public class ConfigAppInstaller {
     /**
      * Queue an {@code app.install} for every action=install app of the device's configuration
      * that has a real hosted APK URL. An app whose SHA-256 is unknown (hosted elsewhere, none stored) is recorded as
-     * a failed command saying so instead of being sent. Returns the number queued. Never throws — callers treat
-     * this as best-effort (enrollment must not fail because an app list is dirty).
+     * a failed command saying so instead of being sent. Returns the number queued. Throws nothing but
+     * {@link com.hmdm.persistence.DeviceGoneException} (the device was deleted meanwhile): callers treat this as
+     * best-effort (enrollment must not fail because an app list is dirty).
      */
     public int enqueueConfigApps(Device device) {
         if (device == null || device.getConfigurationId() == null) {
@@ -66,54 +68,78 @@ public class ConfigAppInstaller {
         }
         int queued = 0;
         try {
-            List<Application> apps = unsecureDAO.getPlainConfigurationApplications(
-                    device.getCustomerId(), device.getConfigurationId());
             long now = System.currentTimeMillis();
-            for (Application app : apps) {
-                if (app == null || app.getAction() != ACTION_INSTALL) {
-                    continue;
-                }
-                String url = firstUsableUrl(app);
-                boolean hasParts = app.getParts() != null && !app.getParts().trim().isEmpty();
-                if ((url == null && !hasParts) || app.getPkg() == null || app.getPkg().trim().isEmpty()) {
-                    // Catalog placeholder / web app / seed leftover — nothing downloadable.
-                    continue;
-                }
-                String payload;
-                String problem = null;
-                try {
-                    payload = installPayload(app, url);
-                } catch (IllegalArgumentException e) {
-                    // Recorded as an already-failed command, never sent: the device's history shows why, and an
-                    // older agent (which ignored a missing sha256) never gets an unverifiable install.
-                    payload = InstallPayloadBuilder.build(app.getPkg().trim(), app.getVersionCode(), url, app.getParts());
-                    problem = e.getMessage();
-                    logger.warn("Not installing {} on device {}: {}", app.getPkg(), device.getNumber(), problem);
-                }
-                AgentCommand cmd = new AgentCommand();
-                cmd.setDeviceNumber(device.getNumber());
-                cmd.setType("app.install");
-                cmd.setPayload(payload);
-                cmd.setRequiresCapability(RolloutProgress.INSTALL_CAPABILITY);
-                cmd.setCreatedAt(now);
-                if (problem != null) {
-                    cmd.setStatus("failed");
-                    cmd.setDetail(problem);
-                    cmd.setCompletedAt(now);
-                    commandDAO.insert(cmd);
-                    continue;
-                }
-                cmd.setStatus("pending");
+            for (Application app : installableApps(device)) {
+                AgentCommand cmd = installCommand(device, app, now);
                 commandDAO.insert(cmd);
-                queued++;
+                if ("pending".equals(cmd.getStatus())) {
+                    queued++;
+                }
             }
             if (queued > 0) {
                 wakeHub.wake(device.getNumber(), "commands");
             }
+        } catch (DeviceGoneException e) {
+            throw e; // the device was deleted meanwhile: its caller answers as for an unknown device
         } catch (Exception e) {
             logger.warn("Failed to queue configuration apps for device {}", device.getNumber(), e);
         }
         return queued;
+    }
+
+    /**
+     * The device's configuration apps marked Install that the agent can download: a package name, and a real URL or
+     * bundle parts. Catalog placeholders, web apps and seed leftovers are left out.
+     */
+    public List<Application> installableApps(Device device) {
+        List<Application> out = new ArrayList<>();
+        for (Application app : unsecureDAO.getPlainConfigurationApplications(
+                device.getCustomerId(), device.getConfigurationId())) {
+            if (app == null || app.getAction() != DesiredConfigBuilder.ACTION_INSTALL) {
+                continue;
+            }
+            String url = firstUsableUrl(app);
+            boolean hasParts = app.getParts() != null && !app.getParts().trim().isEmpty();
+            if ((url == null && !hasParts) || app.getPkg() == null || app.getPkg().trim().isEmpty()) {
+                continue;
+            }
+            out.add(app);
+        }
+        return out;
+    }
+
+    /**
+     * The {@code app.install} for one of {@link #installableApps}, not yet inserted: pending, or already failed with
+     * the reason when the APK's SHA-256 can't be had. @throws InstallIntegrity.LookupFailedException when looking a
+     * hash up failed (retry later).
+     */
+    public AgentCommand installCommand(Device device, Application app, long now) {
+        String url = firstUsableUrl(app);
+        String payload;
+        String problem = null;
+        try {
+            payload = installPayload(app, url);
+        } catch (IllegalArgumentException e) {
+            // Recorded as an already-failed command, never sent: the device's history shows why, and an
+            // older agent (which ignored a missing sha256) never gets an unverifiable install.
+            payload = InstallPayloadBuilder.build(app.getPkg().trim(), app.getVersionCode(), url, app.getParts());
+            problem = e.getMessage();
+            logger.warn("Not installing {} on device {}: {}", app.getPkg(), device.getNumber(), problem);
+        }
+        AgentCommand cmd = new AgentCommand();
+        cmd.setDeviceNumber(device.getNumber());
+        cmd.setType(InstallIntegrity.INSTALL_TYPE);
+        cmd.setPayload(payload);
+        cmd.setRequiresCapability(RolloutProgress.INSTALL_CAPABILITY);
+        cmd.setCreatedAt(now);
+        if (problem != null) {
+            cmd.setStatus("failed");
+            cmd.setDetail(problem);
+            cmd.setCompletedAt(now);
+        } else {
+            cmd.setStatus("pending");
+        }
+        return cmd;
     }
 
     /**

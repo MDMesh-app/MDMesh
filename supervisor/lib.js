@@ -24,6 +24,24 @@ function pickRelease(releases, channel) {
     || null;
 }
 
+const RELEASE_VERSION = /^\d+\.\d+\.\d+$/;
+
+/** The security releases an update from `current` to the manifest's version skips over: the versions in the manifest's
+ *  securityReleases (every release whose CHANGELOG.md section has a Security heading, release/build-manifest.sh) newer
+ *  than `current` and older than the offered release, oldest first. The offered release itself is left out (its own
+ *  notes already say "Security fixes"). Trusted only from a VERIFIED manifest; an unverified one, or one from release
+ *  tooling before the field (0.4.x and older), gives []. */
+function missedSecurity(manifest, verified, current) {
+  const latest = manifest && manifest.version;
+  const list = manifest && manifest.securityReleases;
+  if (!verified || !latest || !Array.isArray(list)) return [];
+  const seen = new Set();
+  return list
+    .filter((v) => typeof v === 'string' && RELEASE_VERSION.test(v) && semverGt(v, current) && semverGt(latest, v)
+      && !seen.has(v) && seen.add(v))
+    .sort((a, b) => (semverGt(a, b) ? 1 : semverGt(b, a) ? -1 : 0));
+}
+
 /** Build the status object the console + recovery page read. Update only offered if VERIFIED. */
 function shapeStatus({ current, manifest, verified, checkedAt, error }) {
   const latest = manifest && manifest.version;
@@ -35,26 +53,62 @@ function shapeStatus({ current, manifest, verified, checkedAt, error }) {
     channel: (manifest && manifest.channel) || null,
     checkedAt: checkedAt || null,
     error: error || null,
+    missedSecurity: missedSecurity(manifest, verified, current),
   };
 }
 
 /** Why an Update must not start, or null if it may. `manifest` is the last VERIFIED manifest (null if none), `current`
  *  the running version, `skipVersion` the auto-apply skip (it never blocks a manual Update; it only marks a running
- *  version whose update failed). The version guard matters beyond the banner: re-applying the running (or an older)
+ *  version whose update failed), `imageOwner` the install's IMAGE_OWNER: a newer release must also pin its images by
+ *  digest under that owner (imagePins). The version guard matters beyond the banner: re-applying the running (or an older)
  *  version would overwrite /backups/latest with a dump of the post-update database, leaving nothing to roll back to. */
-function applyRefusal({ manifest, current, skipVersion }) {
+function applyRefusal({ manifest, current, skipVersion, imageOwner }) {
   if (!manifest) return 'no verified update available';
   const to = manifest.version;
   if (!to) return 'the verified manifest has no version';
   if (!parseSemver(to)) return `the verified release version "${to}" is not a release version (X.Y.Z), so it cannot be applied`;
   if (!parseSemver(current)) return `the running version "${current}" is not a release version (X.Y.Z), so it cannot be compared: update by hand`;
-  if (semverGt(to, current)) return null;
+  if (semverGt(to, current)) return imagePins(manifest, imageOwner).error || null;
   if (to === current || !semverGt(current, to)) {
     return current === skipVersion
       ? `already running ${current}, whose update failed: if it is not healthy, use Roll back (/recovery) to return to the previous version`
       : `already running ${current}`;
   }
   return `already running ${current} (newer than ${to})`;
+}
+
+// A digest-pinned image reference: a lowercase repository path (registry host first, no port) + @sha256:<64 hex>.
+const DIGEST_REF = /^([a-z0-9][a-z0-9._-]*(?:\/[a-z0-9][a-z0-9._-]*)+)@(sha256:[0-9a-f]{64})$/;
+const PINNED_IMAGES = ['server', 'web', 'supervisor'];
+
+/** The images a verified manifest deploys, pinned by digest, for an install that pulls from ghcr.io/<imageOwner>
+ *  (IMAGE_OWNER in .env; compose's default is mdmesh-app). The manifest's components.images holds, from 0.5.0 on,
+ *  `ghcr.io/<owner>/mdmesh-<name>@sha256:…` for server, web and supervisor (release/build-manifest.sh). Returns
+ *  { server, web, supervisor } (the three refs) or { error } saying why the release cannot be applied: a manifest
+ *  from release tooling without digests, a malformed ref, or images published under another owner than the one this
+ *  install pulls from (a fork's install following upstream releases, or the reverse). apply.sh checks the same again. */
+function imagePins(manifest, imageOwner) {
+  const v = (manifest && manifest.version) || '(unknown)';
+  const im = manifest && manifest.components && manifest.components.images;
+  if (!im || typeof im !== 'object' || Array.isArray(im)) {
+    return { error: `the signed release ${v} names its images by tag only, without digests (its release workflow predates `
+      + 'digest pinning), so this supervisor will not apply it. Publish it with the current release workflow, or update by '
+      + 'hand (docs/UPGRADING.md)' };
+  }
+  const owner = imageOwner || 'mdmesh-app';
+  const pins = {};
+  for (const name of PINNED_IMAGES) {
+    const m = DIGEST_REF.exec(typeof im[name] === 'string' ? im[name] : '');
+    if (!m) return { error: `the signed release ${v} has no valid digest for its ${name} image, so it cannot be applied` };
+    const want = `ghcr.io/${owner}/mdmesh-${name}`;
+    if (m[1] !== want) {
+      return { error: `the signed release ${v} pins its ${name} image at ${m[1]}, but this install pulls ${want} `
+        + `(IMAGE_OWNER=${owner} in .env). Set GITHUB_REPO to the repository that publishes ${owner}'s images, or IMAGE_OWNER `
+        + 'to the owner this release names, then run docker compose up -d' };
+    }
+    pins[name] = im[name];
+  }
+  return pins;
 }
 
 /** Pull the image refs + target version a verified manifest applies. */
@@ -229,8 +283,8 @@ function legacyDeploymentAdmin(body) {
 }
 
 module.exports = {
-  parseSemver, semverGt, pickRelease, shapeStatus,
-  imageTags, nextPhase, isTerminal, APPLY_PHASES, APPLY_TERMINAL,
+  parseSemver, semverGt, pickRelease, shapeStatus, missedSecurity,
+  imageTags, imagePins, nextPhase, isTerminal, APPLY_PHASES, APPLY_TERMINAL,
   apkAsset, sha256Matches, recoveryPage, isPublishTemp, assetRequest, fetchAsset, envValue, applyLine, applyRefusal,
   deploymentAdminVerdict, legacyDeploymentAdmin,
 };

@@ -3,10 +3,10 @@ name: release
 # Cut a release: tag the release PR's merge commit with its CHANGELOG.md section, then push the tag (RELEASING.md):
 #   n=$(release/changelog-section.sh 1.2.3) && git tag -a v1.2.3 --cleanup=whitespace -m "$n" SHA
 #   release/changelog-section.sh --check v1.2.3 SHA && git push origin v1.2.3
-# Produces a tested, signed GitHub Release: the release APK, server+web images on GHCR, and a
-# minisign-signed manifest the fleet updater consumes. Requires these `release` environment secrets (see RELEASING.md):
-# MDM_RELEASE_STORE_B64, MDM_RELEASE_STORE_PASSWORD, MDM_RELEASE_KEY_ALIAS, MDM_RELEASE_KEY_PASSWORD,
-# MINISIGN_SECRET_KEY, MINISIGN_PASSWORD.
+# Produces a tested, signed GitHub Release: the release APK, quickstart.sh, the server, web and supervisor images on
+# GHCR, and a minisign-signed manifest the fleet updater and the quick start consume. Requires these `release`
+# environment secrets (see RELEASING.md): MDM_RELEASE_STORE_B64, MDM_RELEASE_STORE_PASSWORD, MDM_RELEASE_KEY_ALIAS,
+# MDM_RELEASE_KEY_PASSWORD, MINISIGN_SECRET_KEY, MINISIGN_PASSWORD.
 #
 # Who may release: the `gate` job (no secrets, read-only token) refuses a tag whose commit is not on main, and the
 # `release` job, which alone holds the signing secrets and write tokens, runs in the `release` environment: it waits
@@ -150,7 +150,7 @@ jobs:
           echo "CK=$CK" >> "$GITHUB_ENV"
 
       # --- Build + push images to GHCR (:VERSION only; :latest moves in the last step) ---
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f  # v4.6.0
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550  # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -163,8 +163,13 @@ jobs:
           O=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')   # GHCR repo names must be lowercase
           IMG="ghcr.io/${O}/mdmesh-server"
           docker build -f docker/server.Dockerfile -t "$IMG:$VERSION" .
+          # Before the push: the server's JVM, started from this image, runs a JDK without the CVE-2026-114938
+          # (OpenJDK) Base64 bug, or has -XX:-UseBASE64Intrinsics in effect (install/tomcat-setenv.sh).
+          scripts/server-jvm-check.sh --image "$IMG:$VERSION"
           docker push "$IMG:$VERSION"
           echo "SERVER_IMG=$IMG:$VERSION" >> "$GITHUB_ENV"
+          D=$(release/image-digest.sh "$IMG:$VERSION")   # its own line, so a failed lookup fails the step
+          echo "SERVER_REF=$IMG@$D" >> "$GITHUB_ENV"
       - name: Web image (bake release QR checksum/package)
         env:
           OWNER: ${{ github.repository_owner }}
@@ -180,6 +185,8 @@ jobs:
             -t "$IMG:$VERSION" .
           docker push "$IMG:$VERSION"
           echo "WEB_IMG=$IMG:$VERSION" >> "$GITHUB_ENV"
+          D=$(release/image-digest.sh "$IMG:$VERSION")
+          echo "WEB_REF=$IMG@$D" >> "$GITHUB_ENV"
       - name: Supervisor image
         env:
           OWNER: ${{ github.repository_owner }}
@@ -190,6 +197,8 @@ jobs:
           # Publish exactly the image the smoke step tested (no rebuild).
           docker tag "$SUP_IMG" "$IMG:$VERSION"
           docker push "$IMG:$VERSION"
+          D=$(release/image-digest.sh "$IMG:$VERSION")
+          echo "SUPERVISOR_REF=$IMG@$D" >> "$GITHUB_ENV"
       - name: Verify images are publicly pullable (guards against private GHCR packages, #3)
         env:
           OWNER: ${{ github.repository_owner }}
@@ -213,6 +222,9 @@ jobs:
           fi
 
       # --- Manifest: build + sign ---
+      # The manifest pins the three images by the digests read back from GHCR right after each push (*_REF above), and
+      # the quick start's downloads by SHA-256 (release/build-manifest.sh). A 0.5.0+ supervisor and the quick start run
+      # exactly those digests; the :VERSION tags stay in it for older supervisors.
       - name: Build + sign manifest
         env:
           MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
@@ -223,8 +235,15 @@ jobs:
         run: |
           sudo apt-get update -y && sudo apt-get install -y minisign
           release/build-manifest.sh "$VERSION" stable \
-            "$SERVER_IMG" "$WEB_IMG" mdmesh-agent.apk "$CODE" "$CK" "$PROTO"
+            "$SERVER_IMG" "$WEB_IMG" mdmesh-agent.apk "$CODE" "$CK" "$PROTO" \
+            "$SERVER_REF" "$WEB_REF" "$SUPERVISOR_REF"
           release/sign-manifest.sh manifest.json
+      # The signed manifest's securityReleases (a supervisor reads them to warn an admin who would skip a security
+      # release) must be exactly CHANGELOG.md's: every version up to this one with a Security section (RELEASING.md).
+      - name: Signed manifest's securityReleases match CHANGELOG.md
+        run: |
+          release/security-releases.py --check manifest.json \
+            || { echo "::error::manifest.json's securityReleases differ from CHANGELOG.md (details above; RELEASING.md)"; exit 1; }
 
       # --- Publish ---
       # The notes are the tag annotation, checked once more against CHANGELOG.md right before publishing, with the
@@ -239,14 +258,37 @@ jobs:
           { git tag -l --format='%(contents)' "$REF_NAME" \
             | sed -E '/^-----BEGIN (PGP SIGNATURE|SSH SIGNATURE|SIGNED MESSAGE)-----/,$d'; } > release-notes.md
           grep -q '[^[:space:]]' release-notes.md || { echo "::error::release notes for ${REF_NAME} came out empty"; exit 1; }
-      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64  # v3.0.3
+      # The quickstart.sh uploaded below must be exactly the file the signed manifest hashes: nothing in this job writes
+      # it after the checkout, and this checks it right before the upload (the readback after it checks the asset).
+      - name: quickstart.sh matches the signed manifest
+        run: |
+          want=$(python3 -c 'import json; print(json.load(open("manifest.json"))["files"]["quickstart.sh"])')
+          got=$(sha256sum quickstart.sh | cut -d' ' -f1)
+          [ "$want" = "$got" ] || { echo "::error::quickstart.sh is ${got}, but the signed manifest has ${want}"; exit 1; }
+      - uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3  # v3.0.4
         with:
           body_path: release-notes.md
           generate_release_notes: false
+          # quickstart.sh is the tagged commit's copy: the README's checked install block downloads it from the latest
+          # release and checks it against its SHA-256 in the signed manifest's files (build-manifest.sh).
           files: |
             mdmesh-agent.apk
             manifest.json
             manifest.json.minisig
+            quickstart.sh
+
+      # --- Read the published quickstart.sh back (README's install block downloads it) ---
+      # A Release whose quickstart.sh isn't the file the signed manifest hashes must not get :latest.
+      - name: Published quickstart.sh matches the signed manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/readback"
+          gh release download "$REF_NAME" -R "$GITHUB_REPOSITORY" -p quickstart.sh -D "$RUNNER_TEMP/readback" --clobber
+          want=$(python3 -c 'import json; print(json.load(open("manifest.json"))["files"]["quickstart.sh"])')
+          got=$(sha256sum "$RUNNER_TEMP/readback/quickstart.sh" | cut -d' ' -f1)
+          [ "$want" = "$got" ] || { echo "::error::the published quickstart.sh is ${got}, but the signed manifest has ${want}; :latest was not moved"; exit 1; }
 
       # --- Move :latest LAST, only once the release is pullable, signed and published ---
       # Quick-start installs (*_VERSION=latest, `docker compose pull`) follow :latest, so it must never point
@@ -268,6 +310,10 @@ jobs:
           for img in $IMGS; do
             d=$(digest "ghcr.io/${O}/${img}:${VERSION}") || d=""
             [ -n "$d" ] || { echo "::error::cannot resolve ghcr.io/${O}/${img}:${VERSION}; no :latest was moved"; exit 1; }
+            # :VERSION must still be the digest the signed manifest pins (nothing re-pushed it since).
+            signed=$(python3 -c 'import json,sys; print(json.load(open("manifest.json"))["components"]["images"][sys.argv[1]])' "${img#mdmesh-}")
+            [ "$signed" = "ghcr.io/${O}/${img}@${d}" ] \
+              || { echo "::error::ghcr.io/${O}/${img}:${VERSION} is ${d}, but the signed manifest pins ${signed}; no :latest was moved"; exit 1; }
             want[$img]=$d
           done
           for img in $IMGS; do

@@ -1,0 +1,153 @@
+/* Toast stack (ui/toast.tsx): surface cards at --elev-2 with an outcome icon tile, bottom right of the page column.
+   --v2-savebar-offset: StickySaveBar's height while it shows (set on <html>), so the stack sits above Save. The stack
+   never takes more than half the screen and scrolls inside past that. */
+.v2 .toast-wrap {
+  position: fixed;
+  z-index: var(--z-toast);
+  display: flex;
+  flex-direction: column;
+  /* The page column's right edge (AppShell.css: the sidebar, then a left-anchored column up to --content-max wide
+     plus gutters), so the stack lines up with the cards and the save bar at every width. */
+  right: max(var(--page-gutter), 100% - var(--sidebar-w) - var(--content-max) - var(--page-gutter));
+  bottom: calc(var(--space-6) + var(--v2-savebar-offset, 0px));
+  gap: var(--space-2);
+  /* One width for every toast (not each its own content's), so their edges line up under the "N more" pill. */
+  width: min(380px, 100% - 2 * var(--page-gutter));
+  max-height: 50vh;
+  overflow-y: auto;
+  font-family: var(--font-sans);
+  font-size: var(--text-ui);
+  line-height: var(--lh-ui);
+}
+.v2 .toast-wrap:not(:has(.toast)) {
+  pointer-events: none;
+}
+.v2 .toast-region {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.v2 .toast-region:empty {
+  display: none;
+}
+.v2 .toast-more {
+  display: flex;
+  align-self: flex-end;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3);
+  background: var(--surface);
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-full);
+  box-shadow: var(--elev-2);
+  color: var(--text-2);
+  animation: v2-fade-in var(--dur-enter) var(--ease) both;
+}
+.v2 .toast-more .t-all {
+  min-height: var(--control-xs);
+  padding: 0 var(--space-2);
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-weight: var(--weight-medium);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.v2 .toast .t-count {
+  font-weight: var(--weight-medium);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+}
+/* Rises in from below (--pop-from) and drops out the same way (toast.tsx keeps a leaving one for its exit). */
+.v2 .toast {
+  --pop-from: var(--lift);
+
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-control);
+  box-shadow: var(--elev-2);
+  color: var(--text);
+  animation: v2-pop-in var(--dur-enter) var(--ease) both;
+}
+.v2 .toast[data-state='closed'] {
+  pointer-events: none;
+  animation: v2-pop-out var(--dur-exit) var(--ease) both;
+}
+/* The tile is one text line tall, so it centres on the title's first line. */
+.v2 .toast .t-ic {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: var(--lh-ui);
+  height: var(--lh-ui);
+  border-radius: var(--radius-chip);
+}
+.v2 .toast.ok .t-ic {
+  background: var(--ok-soft);
+  color: var(--ok-ink);
+}
+.v2 .toast.warn .t-ic {
+  background: var(--warn-soft);
+  color: var(--warn-ink);
+}
+.v2 .toast.err .t-ic {
+  background: var(--alert-soft);
+  color: var(--alert-ink);
+}
+.v2 .toast .t-main {
+  min-width: 0;
+}
+.v2 .toast .t-title {
+  font-size: var(--text-ui);
+  line-height: var(--lh-ui);
+  font-weight: var(--weight-medium);
+  color: var(--text);
+}
+.v2 .toast .t-body {
+  word-break: break-word;
+  font-size: var(--text-ui);
+  line-height: var(--lh-ui);
+  color: var(--secondary);
+}
+/* Dismiss: a 28px target (24px minimum, 2.5.8) in the toast's corner, centred on the title line. */
+.v2 .toast .t-close {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: var(--control-sm);
+  height: var(--control-sm);
+  margin: calc(var(--space-1) * -1) calc(var(--space-2) * -1) calc(var(--space-1) * -1) auto;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  transition-property: background-color, color;
+  transition-duration: var(--dur-micro);
+  transition-timing-function: var(--ease);
+}
+.v2 .toast .t-close:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+@media (max-width: 860px) {
+  /* The phone layout has no sidebar column: the content runs --page-gutter from each edge. */
+  .v2 .toast-wrap {
+    right: var(--page-gutter);
+  }
+}
+@media (max-width: 640px) {
+  .v2 .toast-wrap {
+    left: var(--page-gutter);
+    right: var(--page-gutter);
+    bottom: calc(var(--space-4) + var(--v2-savebar-offset, 0px));
+    width: auto;
+    max-height: 40vh;
+  }
+}

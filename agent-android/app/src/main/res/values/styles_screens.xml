@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Status screen pieces (v2 Card, Callout, status pill), hand-built on framework views. -->
+<resources>
+
+    <!-- v2 Card: flat surface, 1dp border, 16dp corners. -->
+    <style name="Widget.MdmAgent.Card" parent="">
+        <item name="android:background">@drawable/mdm_card_bg</item>
+        <item name="android:orientation">vertical</item>
+        <item name="android:paddingStart">@dimen/mdm_card_padding_h</item>
+        <item name="android:paddingEnd">@dimen/mdm_card_padding_h</item>
+        <item name="android:paddingTop">@dimen/mdm_card_padding_v</item>
+        <item name="android:paddingBottom">@dimen/mdm_card_padding_v</item>
+    </style>
+
+    <!-- 1dp line between card sections, 16dp of air on each side. -->
+    <style name="Widget.MdmAgent.Divider" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">1dp</item>
+        <item name="android:layout_marginTop">@dimen/mdm_space_16</item>
+        <item name="android:layout_marginBottom">@dimen/mdm_space_16</item>
+        <item name="android:background">@drawable/mdm_divider</item>
+        <item name="android:importantForAccessibility">no</item>
+    </style>
+
+    <!-- Status pill (v2 badge): 13/500 label, dot drawn at the start. -->
+    <style name="Widget.MdmAgent.Pill" parent="">
+        <item name="android:textAppearance">@style/TextAppearance.MdmAgent.Pill</item>
+        <item name="android:paddingStart">@dimen/mdm_space_8</item>
+        <item name="android:paddingEnd">10dp</item>
+        <item name="android:paddingTop">@dimen/mdm_space_4</item>
+        <item name="android:paddingBottom">@dimen/mdm_space_4</item>
+        <item name="android:drawablePadding">6dp</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:maxLines">1</item>
+    </style>
+
+    <style name="TextAppearance.MdmAgent.Pill" parent="TextAppearance.AppCompat">
+        <item name="android:textSize">13sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+    </style>
+
+    <!-- Callout title (14/500) and body (14/400), coloured by tone in code. -->
+    <style name="TextAppearance.MdmAgent.CalloutTitle" parent="TextAppearance.AppCompat">
+        <item name="android:textSize">14sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+    </style>
+
+    <style name="TextAppearance.MdmAgent.CalloutBody" parent="TextAppearance.AppCompat">
+        <item name="android:textSize">14sp</item>
+    </style>
+
+</resources>

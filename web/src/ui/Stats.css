@@ -1,0 +1,137 @@
+/* ---- stat cells (a two-column <dl>, a hairline between columns) ---- */
+.v2 .v2-statgrid {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4) 0;
+}
+.v2 .v2-stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: 0 var(--space-4);
+}
+.v2 .v2-stat:nth-child(odd) {
+  padding-left: 0;
+}
+.v2 .v2-stat:nth-child(even) {
+  border-left: var(--hairline) solid var(--line-soft);
+}
+.v2 .v2-stat dd {
+  margin: 0;
+}
+.v2 .v2-stat__label {
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
+  color: var(--secondary);
+}
+.v2 .v2-stat__label a {
+  color: inherit;
+}
+.v2 .v2-stat__value {
+  font-size: var(--text-page);
+  line-height: var(--lh-page);
+  font-weight: var(--weight-medium);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--track-tight);
+}
+.v2 .v2-stat__of {
+  font-size: var(--text-ui);
+  font-weight: var(--weight-regular);
+  letter-spacing: 0;
+  color: var(--secondary);
+}
+.v2 .v2-stat__note {
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
+}
+.v2 .v2-stat__note.is-alert {
+  color: var(--alert-ink);
+}
+.v2 .v2-stat__note.is-warn {
+  color: var(--warn-ink);
+}
+.v2 .v2-stat__note.is-ok {
+  color: var(--ok-ink);
+}
+.v2 .v2-stat__note.is-muted {
+  color: var(--secondary);
+}
+
+/* ---- fleet card ---- */
+.v2 .v2-fleet {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--card-pad);
+  background: var(--surface);
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-card);
+}
+.v2 .v2-fleet__title {
+  font-size: var(--text-title);
+  line-height: var(--lh-title);
+  font-weight: var(--weight-semibold);
+}
+.v2 .v2-fleet__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+  min-height: var(--lh-display);
+}
+.v2 .v2-fleet__total {
+  font-size: var(--text-display);
+  line-height: var(--lh-display);
+  font-weight: var(--weight-medium);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--track-tight);
+}
+.v2 .v2-fleet__caption {
+  color: var(--secondary);
+}
+.v2 .v2-fleet__track {
+  display: block;
+  height: var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--line-soft);
+}
+.v2 .v2-fleet__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-6);
+}
+.v2 .v2-fleet__item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  border-radius: var(--radius-chip);
+  text-decoration: none;
+  color: var(--text);
+}
+/* Hover changes colour only, never layout (it outranks the global link hover). */
+.v2 a.v2-fleet__item:hover {
+  text-decoration: none;
+  color: var(--text);
+}
+.v2 a.v2-fleet__item .v2-fleet__label {
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 0.2em;
+}
+.v2 a.v2-fleet__item:hover .v2-fleet__label {
+  text-decoration-color: currentColor;
+}
+.v2 .v2-fleet__label {
+  color: var(--text-2);
+}
+.v2 .v2-fleet__count {
+  font-weight: var(--weight-medium);
+  font-variant-numeric: tabular-nums;
+}
+.v2 .v2-fleet__pct {
+  font-size: var(--text-meta);
+  color: var(--secondary);
+  font-variant-numeric: tabular-nums;
+}

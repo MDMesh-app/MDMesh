@@ -10,12 +10,15 @@ import com.hmdm.persistence.domain.UserRole;
 import com.hmdm.persistence.mapper.CommonMapper;
 import com.hmdm.persistence.mapper.CustomerMapper;
 import com.hmdm.persistence.mapper.UserMapper;
+import com.hmdm.rest.filter.AuthFilter;
 import com.hmdm.rest.json.AuthOptionsResponse;
 import com.hmdm.rest.json.Response;
 import com.hmdm.rest.json.UserCredentials;
 import com.hmdm.rest.json.view.user.UserView;
 import com.hmdm.security.LoginThrottle;
 import com.hmdm.service.EmailService;
+import com.hmdm.service.RsaKeyService;
+import com.hmdm.testsupport.FakeSessions;
 import com.hmdm.testsupport.Fakes;
 import com.hmdm.util.BackgroundTaskRunnerService;
 import com.hmdm.util.PasswordResetTokens;
@@ -23,13 +26,14 @@ import org.junit.Before;
 import org.junit.Test;
 
 import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpSession;
 import java.lang.reflect.Proxy;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 /** POST /public/auth/login and GET /public/auth/options. */
@@ -72,16 +76,136 @@ public class AuthResourceTest {
         };
         EmailService email = new EmailService("smtp.example.com", 25, false, false, "", "", "", "", "mdm@localhost",
                 "", "", "", "");
-        resource = new AuthResource(unsecureDAO, null, unsecureDAO, tasks, email, null, false, auth, new LoginThrottle("", true,
-                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "https://mdm.example.com"));
+        newResource = rsa -> new AuthResource(unsecureDAO, null, unsecureDAO, tasks, email, rsa, rsa != null, auth,
+                new LoginThrottle("", true, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                        "https://mdm.example.com"));
+        resource = newResource.apply(null);
+    }
+
+    /** An AuthResource built as in {@link #setUp}; with an RSA key service, it takes passwords encrypted (transmit.password). */
+    private java.util.function.Function<RsaKeyService, AuthResource> newResource;
+
+    /** A 1024-bit key: answers "right" for any ciphertext and records each one it is asked to decrypt. */
+    private static class FakeRsa extends RsaKeyService {
+        final java.util.List<byte[]> decrypted = new java.util.ArrayList<>();
+
+        FakeRsa() {
+            super(".");
+        }
+
+        @Override
+        public int blockBytes() {
+            return 128;
+        }
+
+        @Override
+        public String decrypt(byte[] encrypted) {
+            decrypted.add(encrypted);
+            return "right";
+        }
+    }
+
+    private static String base64(int bytes) {
+        return java.util.Base64.getEncoder().encodeToString(new byte[bytes]);
+    }
+
+    private static String repeat(char c, int n) {
+        char[] chars = new char[n];
+        java.util.Arrays.fill(chars, c);
+        return new String(chars);
     }
 
     @Test
-    public void signupIsNeverOffered() {
-        Response response = resource.options();
+    public void anEncryptedPasswordOfOneBlockOfTheKeyIsDecrypted() throws Exception {
+        FakeRsa rsa = new FakeRsa();
+        resource = newResource.apply(rsa);
+        String block = base64(128);
+        assertEquals(172, block.length());
 
-        assertFalse(((AuthOptionsResponse) response.getData()).isSignup());
-        assertTrue("recovery is still offered with SMTP set", ((AuthOptionsResponse) response.getData()).isRecover());
+        Response response = login(credentials(block), request());
+
+        assertEquals(Response.ResponseStatus.OK, response.getStatus());
+        assertEquals(1, rsa.decrypted.size());
+        assertEquals(128, rsa.decrypted.get(0).length);
+    }
+
+    @Test
+    public void aBlockWithoutItsLeadingZeroByteIsDecrypted() throws Exception {
+        // Clients such as JSEncrypt drop a leading zero byte (about 1 sign-in in 128-256): 127 bytes, still 172
+        // characters, ending in "=="
+        FakeRsa rsa = new FakeRsa();
+        resource = newResource.apply(rsa);
+        String shortBlock = base64(127);
+        assertEquals(172, shortBlock.length());
+        assertTrue(shortBlock.endsWith("=="));
+
+        Response response = login(credentials(shortBlock), request());
+
+        assertEquals(Response.ResponseStatus.OK, response.getStatus());
+        assertEquals(1, rsa.decrypted.size());
+        assertEquals(127, rsa.decrypted.get(0).length);
+    }
+
+    @Test
+    public void anEncryptedPasswordNotOneBlockOfTheKeyIsRefusedBeforeItIsDecoded() throws Exception {
+        String block = base64(128);
+        String[] refused = {
+                repeat('A', 1024 * 1024),                       // well-formed base64, a megabyte
+                repeat('A', 128) + "=",                         // 129 characters
+                base64(126), base64(130),                       // 168 and 176 characters
+                base64(129),                                    // 172 characters, unpadded: 129 bytes
+                block.substring(0, 170) + "!=",                 // 172 characters, not all base64
+                block.substring(0, 170) + "-=",                 // base64url's alphabet
+                block.substring(0, 171) + " ",
+                base64(127).substring(0, 171) + "A",            // 127 bytes' length, padding replaced
+                base64(126) + "A==A",                           // 172 characters, padding in the middle
+                "=" + block.substring(1),
+                "not base64!", "", null};
+        for (int i = 0; i < refused.length; i++) {
+            FakeRsa rsa = new FakeRsa();
+            resource = newResource.apply(rsa);
+
+            Response response = login(credentials(refused[i]), request());
+
+            assertEquals("case " + i, Response.ResponseStatus.ERROR, response.getStatus());
+            assertTrue("case " + i, rsa.decrypted.isEmpty());
+        }
+    }
+
+    @Test
+    public void aKeyThatCannotBeReadDecryptsNothing() throws Exception {
+        FakeRsa rsa = new FakeRsa() {
+            @Override
+            public int blockBytes() {
+                return 0;
+            }
+        };
+        resource = newResource.apply(rsa);
+
+        Response response = login(credentials(base64(128)), request());
+
+        assertEquals(Response.ResponseStatus.ERROR, response.getStatus());
+        assertTrue(rsa.decrypted.isEmpty());
+    }
+
+    @Test
+    public void aRefusedEncryptedPasswordTakesAsLongAsAPasswordCheck() throws Exception {
+        // An unknown login pays one bcrypt check; a password refused for its shape must too, or the time tells the
+        // login exists. The two are timed in turn, so a slow moment of the machine weighs on both.
+        long check = Long.MAX_VALUE;
+        long refused = Long.MAX_VALUE;
+        for (int i = 0; i < 3; i++) {
+            long start = System.nanoTime();
+            com.hmdm.util.PasswordUtil.passwordMatch("not base64!", null);
+            check = Math.min(check, System.nanoTime() - start);
+
+            resource = newResource.apply(new FakeRsa());
+            start = System.nanoTime();
+            login(credentials("not base64!"), request());
+            refused = Math.min(refused, System.nanoTime() - start);
+        }
+
+        assertTrue("refused in " + refused + " ns, a check takes " + check + " ns", refused >= check / 2);
     }
 
     @Test
@@ -240,6 +364,101 @@ public class AuthResourceTest {
         assertEquals(byAddress.getMessage(), byAccount.getMessage());
     }
 
+    // ---- the session -------------------------------------------------------------------------------------------------
+
+    @Test
+    public void aSignInStartsAFreshSession() throws Exception {
+        FakeSessions sessions = new FakeSessions();
+        FakeSessions.Session before = sessions.existing("given-before-sign-in");
+        before.attributes.put("left-over", "x");
+
+        Response response = login(credentials("right"), request(sessions, "198.51.100.1"));
+
+        assertEquals(Response.ResponseStatus.OK, response.getStatus());
+        FakeSessions.Session after = sessions.current();
+        assertNotNull(after);
+        assertNotEquals("the session id changes at sign-in", "given-before-sign-in", after.id);
+        assertTrue("the session from before ends", before.invalidated);
+        assertSame("the new session holds the signed-in user", stored, after.attributes.get(AuthFilter.sessionCredentials));
+        assertFalse("nothing from before is carried over", after.attributes.containsKey("left-over"));
+    }
+
+    @Test
+    public void aSignInWithoutASessionOpensOne() throws Exception {
+        FakeSessions sessions = new FakeSessions();
+
+        login(credentials("right"), request(sessions, "198.51.100.1"));
+
+        assertEquals(1, sessions.created);
+        assertSame(stored, sessions.current().attributes.get(AuthFilter.sessionCredentials));
+    }
+
+    @Test
+    public void aPendingSecondFactorIsInTheNewSession() throws Exception {
+        settings.answer("getSettings", a -> {
+            com.hmdm.persistence.domain.Settings s = new com.hmdm.persistence.domain.Settings();
+            s.setTwoFactor(true);
+            return s;
+        });
+        FakeSessions sessions = new FakeSessions();
+        sessions.existing("given-before-sign-in");
+
+        login(credentials("right"), request(sessions, "198.51.100.1"));
+
+        FakeSessions.Session after = sessions.current();
+        assertNotEquals("given-before-sign-in", after.id);
+        assertEquals("true", after.attributes.get(AuthFilter.twoFactorNeeded));
+        assertSame(stored, after.attributes.get(AuthFilter.sessionCredentials));
+    }
+
+    @Test
+    public void aFailedSignInNeitherOpensNorEndsASession() throws Exception {
+        FakeSessions none = new FakeSessions();
+        login(credentials("wrong"), request(none, "198.51.100.1"));
+        assertEquals("a wrong password opens no session", 0, none.created);
+
+        FakeSessions unknown = new FakeSessions();
+        UserCredentials nobody = credentials("right");
+        nobody.setLogin("nobody");
+        login(nobody, request(unknown, "198.51.100.1"));
+        assertEquals("nor an unknown login", 0, unknown.created);
+
+        FakeSessions signedIn = new FakeSessions();
+        FakeSessions.Session mine = signedIn.existing("signed-in");
+        mine.attributes.put(AuthFilter.sessionCredentials, stored);
+        login(credentials("wrong"), request(signedIn, "198.51.100.1"));
+        assertFalse("a wrong password leaves a signed-in session alone", mine.invalidated);
+        assertSame(mine, signedIn.current());
+        assertSame(stored, mine.attributes.get(AuthFilter.sessionCredentials));
+    }
+
+    @Test
+    public void aRefusedSignInNeitherOpensNorEndsASession() throws Exception {
+        for (int i = 0; i < 10; i++) {
+            login(credentials("wrong"), request("203.0.113.7"));
+        }
+        FakeSessions sessions = new FakeSessions();
+        FakeSessions.Session mine = sessions.existing("signed-in");
+
+        Response refused = login(credentials("right"), request(sessions, "203.0.113.7"));
+
+        assertEquals(AuthResource.TOO_MANY_ATTEMPTS, refused.getMessage());
+        assertFalse(mine.invalidated);
+        assertEquals(0, sessions.created);
+    }
+
+    @Test
+    public void theLimitStillAppliesAcrossNewSessions() throws Exception {
+        // The limit is per address and account, not per session: a new session per guess changes nothing.
+        for (int i = 0; i < 10; i++) {
+            FakeSessions sessions = new FakeSessions();
+            sessions.existing("guess-" + i);
+            login(credentials("wrong"), request(sessions, "203.0.113.7"));
+        }
+        assertEquals(AuthResource.TOO_MANY_ATTEMPTS,
+                login(credentials("right"), request("203.0.113.7")).getMessage());
+    }
+
     private final java.util.List<String> setCookies = new java.util.ArrayList<>();
 
     private Response login(UserCredentials c, HttpServletRequest r) {
@@ -266,8 +485,10 @@ public class AuthResourceTest {
     }
 
     private static HttpServletRequest request(String peer, String... headers) {
-        HttpSession session = (HttpSession) Proxy.newProxyInstance(AuthResourceTest.class.getClassLoader(),
-                new Class<?>[]{HttpSession.class}, (proxy, method, args) -> null);
+        return request(new FakeSessions(), peer, headers);
+    }
+
+    private static HttpServletRequest request(FakeSessions sessions, String peer, String... headers) {
         java.util.Map<String, String> h = new java.util.HashMap<>();
         for (int i = 0; i < headers.length; i += 2) {
             h.put(headers[i], headers[i + 1]);
@@ -284,7 +505,7 @@ public class AuthResourceTest {
                             });
                             return cookies.isEmpty() ? null : cookies.toArray(new javax.servlet.http.Cookie[0]);
                         }
-                        case "getSession": return session;
+                        case "getSession": return sessions.getSession(args);
                         case "getRemoteAddr": return peer;
                         case "getHeader": return h.get((String) args[0]);
                         case "getHeaders": return h.containsKey((String) args[0])

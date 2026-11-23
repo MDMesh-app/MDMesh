@@ -1,0 +1,49 @@
+/* Floating layers that aren't menus or dialogs: tooltips and popovers. One surface (--elev-2), one motion. */
+.v2 .v2-tooltip {
+  z-index: var(--z-toast);
+  max-width: 280px;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-chip);
+  background: var(--ink);
+  color: var(--on-ink);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
+  box-shadow: var(--elev-2);
+  transform-origin: var(--radix-tooltip-content-transform-origin);
+}
+.v2 .v2-tooltip[data-state='delayed-open'],
+.v2 .v2-tooltip[data-state='instant-open'] {
+  animation: v2-fade-in var(--dur-enter) var(--ease);
+}
+.v2 .v2-tooltip[data-state='closed'] {
+  animation: v2-fade-out var(--dur-exit) var(--ease);
+}
+.v2 .v2-popover {
+  z-index: var(--z-overlay);
+  min-width: 240px;
+  max-width: min(360px, calc(100vw - 16px));
+  padding: var(--space-3);
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  box-shadow: var(--elev-2);
+  outline: none;
+  transform-origin: var(--radix-popover-content-transform-origin);
+}
+.v2 .v2-popover[data-state='open'] {
+  animation: v2-pop-in var(--dur-enter) var(--ease);
+}
+.v2 .v2-popover[data-state='closed'] {
+  animation: v2-pop-out var(--dur-exit) var(--ease);
+}
+.v2 .v2-popover[data-side='top'] {
+  --pop-from: var(--lift);
+}
+
+/* A Tooltip around a disabled control hangs on this wrapper (the control itself takes no pointer events). */
+.v2 .v2-tooltip-wrap {
+  display: inline-flex;
+}
+.v2 .v2-tooltip-wrap > :disabled {
+  pointer-events: none;
+}

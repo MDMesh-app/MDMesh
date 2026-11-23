@@ -37,7 +37,7 @@
 # Browser security headers, on every response the edge sends, the error fallback's included (handle_errors imports
 # this too). No MIME sniffing. No framing: nothing MDMesh serves is meant to be framed (the console, its QR view and
 # the recovery page are top-level pages, and the agent has no WebView). No Referer to other sites; the map's tile
-# images send just the origin, which OpenStreetMap requires (web/src/components/LocationMap.tsx). `defer` applies them
+# images send just the origin, which OpenStreetMap requires (web/src/ui/LocationMap.tsx). `defer` applies them
 # after the upstream's own headers, so these are the values the browser gets.
 # HSTS only where the browser is on HTTPS: Caddy's own TLS (own domain), or a proxy in front that says so in
 # X-Forwarded-Proto (Cloudflare tunnel, your own proxy). A browser ignores HSTS received over plain HTTP, so a forged

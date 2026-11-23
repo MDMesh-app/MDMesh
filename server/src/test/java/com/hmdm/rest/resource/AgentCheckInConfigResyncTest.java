@@ -1,6 +1,7 @@
 package com.hmdm.rest.resource;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hmdm.extension.DesiredConfigContributor;
 import com.hmdm.persistence.AgentCommandDAO;
 import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.AgentCommand;
@@ -8,16 +9,19 @@ import com.hmdm.persistence.domain.Application;
 import com.hmdm.persistence.domain.Configuration;
 import com.hmdm.persistence.domain.Device;
 import com.hmdm.persistence.domain.DeviceState;
+import com.hmdm.persistence.domain.ManagedAppPermission;
 import com.hmdm.rest.json.Response;
 import com.hmdm.rest.json.agent.AgentCapabilities;
 import com.hmdm.rest.json.agent.AgentCheckInRequest;
 import com.hmdm.rest.json.agent.AgentCheckInResponse;
 import com.hmdm.rest.json.agent.AgentCommandResult;
 import com.hmdm.rest.json.agent.AgentDeviceState;
+import com.hmdm.rest.resource.support.AppReconciler;
 import com.hmdm.rest.resource.support.ConfigReconciler;
 import com.hmdm.rest.resource.support.InstallHashes;
 import com.hmdm.rest.resource.support.KioskLockoutAlert;
 import com.hmdm.rest.resource.support.RolloutRequeuer;
+import com.hmdm.testsupport.Fakes;
 import com.hmdm.util.ConfigReconcileDecision;
 import com.hmdm.util.CryptoUtil;
 import com.hmdm.util.DesiredConfigBuilder;
@@ -39,9 +43,10 @@ import static org.junit.Assert.assertNull;
  */
 public class AgentCheckInConfigResyncTest {
 
+    private static final List<DesiredConfigContributor> NO_CONTRIBUTORS = Collections.emptyList();
     private static final String NUMBER = "d1";
     private static final String SECRET = "sek";
-    private static final String CAPS = "{\"device\":[\"configApply\"],\"policy\":[\"safeBoot\"]}";
+    private static final String CAPS = "{\"device\":[\"configApply\"],\"policy\":[\"safeBoot\"],\"appManagement\":[\"runtimePermissions\"]}";
 
     private static final class FakeUnsecureDAO extends UnsecureDAO {
         Device device;
@@ -57,6 +62,9 @@ public class AgentCheckInConfigResyncTest {
         @Override public List<Application> getPlainConfigurationAppsOptimized(Integer configurationId) {
             return apps;
         }
+        @Override public List<ManagedAppPermission> getManagedAppPermissions(Integer configurationId) {
+            return Collections.emptyList();
+        }
     }
 
     /** In-memory agentCommand + device_state with the production upsert/claim semantics. */
@@ -65,7 +73,66 @@ public class AgentCheckInConfigResyncTest {
         DeviceState state;
         String caps;
 
-        FakeCommandDAO() { super(null, null, null, null); }
+        /** device_state {kioskGeneration, kioskReturnGeneration (-1 = NULL)}, moved by the production DAO methods. */
+        final long[] kiosk;
+
+        FakeCommandDAO() { this(new long[]{0L, -1L}); }
+
+        private FakeCommandDAO(long[] kiosk) {
+            super(insertOnlyCommandMapper(), presentDevices(), kioskStateMapper(kiosk), eventsDiscardedMapper());
+            this.kiosk = kiosk;
+        }
+
+        /** The row is stored by {@link #insert}; the production insert runs on top for what it does besides. */
+        private static com.hmdm.persistence.mapper.AgentCommandMapper insertOnlyCommandMapper() {
+            return (com.hmdm.persistence.mapper.AgentCommandMapper) java.lang.reflect.Proxy.newProxyInstance(
+                    com.hmdm.persistence.mapper.AgentCommandMapper.class.getClassLoader(),
+                    new Class[]{com.hmdm.persistence.mapper.AgentCommandMapper.class}, (p, m, a) -> {
+                        if (!"insert".equals(m.getName())) {
+                            throw new AssertionError("unexpected AgentCommandMapper." + m.getName());
+                        }
+                        return null;
+                    });
+        }
+
+        /** The device exists: the kiosk-generation step locks its row first. */
+        private static com.hmdm.persistence.mapper.AgentDeviceMapper presentDevices() {
+            return (com.hmdm.persistence.mapper.AgentDeviceMapper) java.lang.reflect.Proxy.newProxyInstance(
+                    com.hmdm.persistence.mapper.AgentDeviceMapper.class.getClassLoader(),
+                    new Class[]{com.hmdm.persistence.mapper.AgentDeviceMapper.class}, (p, m, a) -> {
+                        if ("lockDeviceKeyShare".equals(m.getName())) return 1;
+                        throw new AssertionError("unexpected AgentDeviceMapper." + m.getName());
+                    });
+        }
+
+        /** Event rows go nowhere; the production event batch runs on top, for its kiosk-return statement. */
+        private static com.hmdm.persistence.mapper.DeviceEventMapper eventsDiscardedMapper() {
+            return (com.hmdm.persistence.mapper.DeviceEventMapper) java.lang.reflect.Proxy.newProxyInstance(
+                    com.hmdm.persistence.mapper.DeviceEventMapper.class.getClassLoader(),
+                    new Class[]{com.hmdm.persistence.mapper.DeviceEventMapper.class}, (p, m, a) -> {
+                        if (!"insertAll".equals(m.getName()) && !"insert".equals(m.getName())) {
+                            throw new AssertionError("unexpected DeviceEventMapper." + m.getName());
+                        }
+                        return null;
+                    });
+        }
+
+        /** The two kiosk-generation statements with their SQL semantics; the other state calls are overridden. */
+        private static com.hmdm.persistence.mapper.DeviceStateMapper kioskStateMapper(final long[] kiosk) {
+            return (com.hmdm.persistence.mapper.DeviceStateMapper) java.lang.reflect.Proxy.newProxyInstance(
+                    com.hmdm.persistence.mapper.DeviceStateMapper.class.getClassLoader(),
+                    new Class[]{com.hmdm.persistence.mapper.DeviceStateMapper.class}, (p, m, a) -> {
+                        if ("advanceKioskGeneration".equals(m.getName())) {
+                            kiosk[0]++;          // kioskGeneration + 1
+                            kiosk[1] = -1L;      // kioskReturnGeneration = NULL
+                        } else if ("recordKioskReturn".equals(m.getName())) {
+                            kiosk[1] = kiosk[0]; // kioskReturnGeneration = kioskGeneration
+                        } else {
+                            throw new AssertionError("unexpected DeviceStateMapper." + m.getName());
+                        }
+                        return null;
+                    });
+        }
 
         @Override public String getDeviceSecretHash(String n) { return CryptoUtil.getSHA256String(SECRET); }
         @Override public void touchLastUpdate(String n) { }
@@ -112,6 +179,7 @@ public class AgentCheckInConfigResyncTest {
             }
             c.setId(commands.size() + 1);
             commands.add(c);
+            super.insert(c);
         }
         @Override public List<AgentCommand> listPending(String n) {
             List<AgentCommand> out = new ArrayList<>();
@@ -172,6 +240,7 @@ public class AgentCheckInConfigResyncTest {
 
     private FakeCommandDAO commandDAO;
     private FakeUnsecureDAO unsecureDAO;
+    private ConfigReconciler reconciler;
     private AgentResource resource;
     private String revision;
     /** Results the "agent" sends on its next check-in. */
@@ -188,16 +257,18 @@ public class AgentCheckInConfigResyncTest {
         Configuration cfg = new Configuration();
         cfg.setId(3);
         cfg.setDisableSafeBoot(true);
+        cfg.setManagedAppPermissions(Collections.<ManagedAppPermission>emptyList());
         unsecureDAO.configuration = cfg;
-        revision = DesiredConfigBuilder.build(cfg, Collections.<Application>emptyList()).getRevision();
+        revision = DesiredConfigBuilder.build(cfg, Collections.<Application>emptyList(), NO_CONTRIBUTORS).getRevision();
 
         commandDAO = new FakeCommandDAO();
         RolloutRequeuer noRollout = new RolloutRequeuer(null) {
             @Override public boolean requeue(Device d, long now) { return false; }
         };
-        resource = new AgentResource(unsecureDAO, null, commandDAO, null,
-                new ConfigReconciler(unsecureDAO, commandDAO), noRollout,
-                new InstallHashes(null, unsecureDAO), new KioskLockoutAlert(null, null, null));
+        reconciler = new ConfigReconciler(unsecureDAO, commandDAO, Fakes.noExtensionPoints());
+        resource = new AgentResource(unsecureDAO, null, commandDAO, null, reconciler,
+                new AppReconciler(null, null, null, null), noRollout,
+                new InstallHashes(null, unsecureDAO), new KioskLockoutAlert(null, null, null), null);
     }
 
     /** One agent check-in; the agent acks every command it receives as done on the following check-in. */
@@ -329,6 +400,83 @@ public class AgentCheckInConfigResyncTest {
         assertEquals(2, configApplies());
     }
 
+    // --- Retry apply (the console) ------------------------------------------------------------------------------
+
+    /** The first config.apply comes back failed; returns it. */
+    private AgentCommand applyFails() throws Exception {
+        assertEquals(1, checkIn("0.5.0", null).size());
+        outbox.get(0).setStatus("failed");
+        assertEquals(0, checkIn("0.5.0", null).size()); // carries the failure
+        AgentCommand failed = commandDAO.commands.get(0);
+        assertEquals("failed", failed.getStatus());
+        return failed;
+    }
+
+    private ConfigReconciler.Retry retry() {
+        return reconciler.retryNow(unsecureDAO.device, System.currentTimeMillis());
+    }
+
+    @Test
+    public void retry_apply_sends_the_configuration_at_once_after_a_failure() throws Exception {
+        applyFails();
+        assertEquals("automatic: the hour's backoff", 0, checkIn("0.5.0", null).size());
+
+        assertEquals(ConfigReconciler.Retry.QUEUED, retry());
+        List<com.hmdm.rest.json.agent.AgentCommand> got = checkIn("0.5.0", null);
+        assertEquals("the next check-in (the wake) gets it", 1, got.size());
+        assertEquals(DesiredConfigBuilder.COMMAND_TYPE, got.get(0).getType());
+        checkIn("0.5.0", revision); // acked done
+        assertEquals(0, checkIn("0.5.0", revision).size());
+        assertEquals(2, configApplies());
+    }
+
+    @Test
+    public void a_retry_that_fails_again_keeps_the_automatic_backoff() throws Exception {
+        applyFails();
+        assertEquals(ConfigReconciler.Retry.QUEUED, retry());
+        assertEquals(1, checkIn("0.5.0", null).size());
+        outbox.get(0).setStatus("failed");
+        for (int i = 0; i < 3; i++) assertEquals(0, checkIn("0.5.0", null).size());
+        assertEquals(2, configApplies());
+    }
+
+    @Test
+    public void retrying_again_and_again_queues_one_at_a_time() throws Exception {
+        applyFails();
+        assertEquals(ConfigReconciler.Retry.QUEUED, retry());
+        for (int i = 0; i < 5; i++) assertEquals(ConfigReconciler.Retry.ALREADY_QUEUED, retry());
+        assertEquals(1, checkIn("0.5.0", null).size());
+        assertEquals("delivered, the device may be applying it: still not another", ConfigReconciler.Retry.ALREADY_QUEUED,
+                retry());
+        assertEquals(2, configApplies());
+    }
+
+    @Test
+    public void a_retry_racing_a_check_in_that_queued_first_queues_nothing_more() throws Exception {
+        applyFails();
+        commandDAO.nextInsertIsDuplicate = true; // the one-open-config.apply index refuses the second insert
+        assertEquals(ConfigReconciler.Retry.ALREADY_QUEUED, retry());
+        assertEquals(1, configApplies());
+    }
+
+    @Test
+    public void a_retry_on_a_device_in_sync_queues_nothing() throws Exception {
+        checkIn("0.5.0", null);
+        checkIn("0.5.0", revision);
+        assertEquals(ConfigReconciler.Retry.IN_SYNC, retry());
+        assertEquals(1, configApplies());
+    }
+
+    @Test
+    public void a_retry_for_an_agent_without_configurations_queues_nothing() {
+        commandDAO.caps = "{\"device\":[\"lock\"]}";
+        assertEquals(ConfigReconciler.Retry.UNSUPPORTED, retry());
+        unsecureDAO.device.setConfigurationId(null);
+        commandDAO.caps = CAPS;
+        assertEquals(ConfigReconciler.Retry.NO_CONFIGURATION, retry());
+        assertEquals(0, configApplies());
+    }
+
     @Test
     public void same_agent_version_in_sync_sends_nothing() throws Exception {
         checkIn("0.3.3", null);
@@ -371,7 +519,7 @@ public class AgentCheckInConfigResyncTest {
 
     private String changeConfiguration() {
         unsecureDAO.configuration.setDisableSafeBoot(false);
-        return DesiredConfigBuilder.build(unsecureDAO.configuration, Collections.<Application>emptyList()).getRevision();
+        return DesiredConfigBuilder.build(unsecureDAO.configuration, Collections.<Application>emptyList(), NO_CONTRIBUTORS).getRevision();
     }
 
     private String revisionOf(com.hmdm.rest.json.agent.AgentCommand c) {
@@ -497,7 +645,7 @@ public class AgentCheckInConfigResyncTest {
     public void an_app_linked_to_a_kiosk_configuration_reaches_the_device_on_its_next_check_in() throws Exception {
         // What the wake after an Apps-page link edit leads to: the kiosk's allowed apps are part of the revision.
         unsecureDAO.configuration.setKioskMode(true);
-        String kiosk = DesiredConfigBuilder.build(unsecureDAO.configuration, unsecureDAO.apps).getRevision();
+        String kiosk = DesiredConfigBuilder.build(unsecureDAO.configuration, unsecureDAO.apps, NO_CONTRIBUTORS).getRevision();
         checkIn("0.3.5", null);
         assertEquals(0, checkIn("0.3.5", kiosk).size());
 
@@ -552,5 +700,74 @@ public class AgentCheckInConfigResyncTest {
         unsecureDAO.configuration = null;
         checkInWithLocation(CAPS);
         assertEquals(1, commandDAO.locations.size());
+    }
+
+    /** An admin action queued from the console, not yet delivered. */
+    private AgentCommand queue(String type) {
+        AgentCommand c = new AgentCommand();
+        c.setDeviceNumber(NUMBER);
+        c.setType(type);
+        c.setStatus("pending");
+        c.setCreatedAt(System.currentTimeMillis());
+        commandDAO.insert(c);
+        return c;
+    }
+
+    /** One check-in carrying a kioskReturn the agent buffered while it was offline. */
+    private List<com.hmdm.rest.json.agent.AgentCommand> checkInWithKioskReturn() throws Exception {
+        AgentCheckInRequest req = new AgentCheckInRequest();
+        req.setDeviceId(NUMBER);
+        req.setCapabilities(new AgentCapabilities(new ObjectMapper().readTree(CAPS)));
+        AgentDeviceState s = new AgentDeviceState();
+        s.setAgentVersion("0.5.0");
+        s.setAppliedConfigRevision(revision);
+        req.setState(s);
+        com.hmdm.rest.json.agent.AgentTelemetryEvent e = new com.hmdm.rest.json.agent.AgentTelemetryEvent();
+        e.setType("kioskReturn");
+        e.setTs(1L); // an offline device's clock: never used for ordering
+        req.setEvents(Collections.singletonList(e));
+        Response r = resource.checkin("Bearer " + SECRET, null, req);
+        assertEquals(Response.ResponseStatus.OK, r.getStatus());
+        return ((AgentCheckInResponse) r.getData()).getCommands();
+    }
+
+    private boolean returnIsCurrent() {
+        return commandDAO.kiosk[1] == commandDAO.kiosk[0];
+    }
+
+    @Test
+    public void a_buffered_kiosk_return_does_not_cover_a_custom_kiosk_queued_while_the_device_was_offline() throws Exception {
+        checkIn("0.5.0", null);
+        checkIn("0.5.0", revision);
+        // Offline, staff return to the configured kiosk on the device; meanwhile an admin queues a custom kiosk.
+        queue("kiosk.enter");
+
+        List<com.hmdm.rest.json.agent.AgentCommand> got = checkInWithKioskReturn();
+
+        assertEquals(1, got.size());
+        assertEquals("kiosk.enter", got.get(0).getType());
+        assertEquals("the custom kiosk was handed over after the return: Return is offered again", false,
+                returnIsCurrent());
+    }
+
+    @Test
+    public void a_kiosk_return_after_a_delivered_custom_kiosk_is_current() throws Exception {
+        checkIn("0.5.0", null);
+        checkIn("0.5.0", revision);
+        queue("kiosk.enter");
+        assertEquals(1, checkIn("0.5.0", revision).size());
+        assertEquals(false, returnIsCurrent());
+
+        // The device ran the custom kiosk, then staff returned to the configured one on the device.
+        assertEquals(0, checkInWithKioskReturn().size());
+        assertEquals(true, returnIsCurrent());
+
+        // A later kiosk exit invalidates it again; a command that does not change the kiosk does not.
+        queue("ring");
+        checkIn("0.5.0", revision);
+        assertEquals(true, returnIsCurrent());
+        queue("kiosk.exit");
+        checkIn("0.5.0", revision);
+        assertEquals(false, returnIsCurrent());
     }
 }

@@ -42,6 +42,14 @@ public interface UserMapper {
 
     User findById(@Param("userId") Integer userId);
 
+    /**
+     * Locks the account's row until the transaction ends: a change to it committed meanwhile is seen by the next read,
+     * and one started after waits. An admin's edit of the account (UserDAO.updateUserMainDetails) updates the row
+     * before its access, so it holds the same lock.
+     */
+    @Select("SELECT id FROM users WHERE id = #{id} FOR UPDATE")
+    Integer lockById(@Param("id") Integer id);
+
     List<User> findAll(@Param("customerId") Integer customerId);
 
     User findFirstByRole(@Param("customerId") Integer customerId, @Param("roleId") Integer roleId);
@@ -70,6 +78,14 @@ public interface UserMapper {
             "WHERE id=#{id} AND customerId=#{customerId}"})
     void updateUserMainDetails(User user);
 
+    /**
+     * Writes an account's login, name and email, and nothing else: its role and access stay as they are in the row.
+     * Call through UserDAO.updateUserIdentity, which locks the row first.
+     */
+    @Update({"UPDATE users SET login=#{login}, name=#{name}, email=#{email} " +
+            "WHERE id=#{id} AND customerId=#{customerId}"})
+    void updateIdentity(User user);
+
     /** Sets a password. Call through UserDAO.updatePassword, which also gives the user a new authToken. */
     @Update({"UPDATE users SET password=#{password}, passwordReset=#{passwordReset}, " +
             "authToken=#{authToken}, passwordResetToken=#{passwordResetToken}, " +
@@ -86,6 +102,16 @@ public interface UserMapper {
             "authToken=#{authToken}, passwordResetToken=#{passwordResetToken}, " +
             "passwordResetTokenTime=#{passwordResetTokenTime} WHERE id=#{id}"})
     void setNewPassword(User user);
+
+    /**
+     * Replaces a stored password hash with the same password in the current format, at sign-in
+     * (UnsecureDAO.checkPasswordUnsecure). Only the hash changes: sessions, JWTs and the reset state stay. Changes the
+     * row only while it still holds {@code oldHash}, so a password changed in the meantime is never overwritten.
+     *
+     * @return the number of rows changed (0 or 1).
+     */
+    @Update({"UPDATE users SET password=#{newHash} WHERE id=#{id} AND password=#{oldHash}"})
+    int upgradePasswordHash(@Param("id") Integer id, @Param("oldHash") String oldHash, @Param("newHash") String newHash);
 
     /** Stores the session/JWT binding token alone (a first sign-in, impersonation); the password is untouched. */
     @Update({"UPDATE users SET authToken=#{authToken} WHERE id=#{id}"})
@@ -124,6 +150,16 @@ public interface UserMapper {
     void removeConfigurationAccessByUserId(@Param("customerId") int customerId, @Param("id") Integer userId);
 
     void insertUserConfigurationAccess(@Param("id") Integer userId, @Param("configurations") List<Integer> configurations);
+
+    /** Those of {@code ids} that are device groups of the customer. */
+    @Select({"<script>SELECT id FROM groups WHERE customerId = #{customerId} AND id IN " +
+            "<foreach item='i' collection='ids' open='(' separator=',' close=')'>#{i}</foreach></script>"})
+    List<Integer> findCustomerGroupIds(@Param("customerId") int customerId, @Param("ids") List<Integer> ids);
+
+    /** Those of {@code ids} that are configurations of the customer. */
+    @Select({"<script>SELECT id FROM configurations WHERE customerId = #{customerId} AND id IN " +
+            "<foreach item='i' collection='ids' open='(' separator=',' close=')'>#{i}</foreach></script>"})
+    List<Integer> findCustomerConfigurationIds(@Param("customerId") int customerId, @Param("ids") List<Integer> ids);
 
     @Select("SELECT hintKey FROM userHints WHERE userId = #{id}")
     List<String> getShownHints(@Param("id") Integer userId);

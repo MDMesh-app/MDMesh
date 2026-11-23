@@ -56,5 +56,8 @@ public interface UserRoleMapper {
             "WHERE roleid=#{id} "})
     void deletePermissions(@Param("id") Integer roleId);
 
+    @Select("SELECT count(*) FROM users WHERE userRoleId=#{id}")
+    int countUsers(@Param("id") Integer roleId);
+
     void insertPermissions(@Param("id") Integer roleId, @Param("permissions") List<Integer> permissions);
 }

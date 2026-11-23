@@ -42,7 +42,7 @@ body:
     id: version
     attributes:
       label: MDMesh version / commit
-      description: Console version (Settings → Server & connection) or the git commit.
+      description: Console version (Settings → Server → Server and console) or the git commit.
     validations:
       required: true
   - type: textarea

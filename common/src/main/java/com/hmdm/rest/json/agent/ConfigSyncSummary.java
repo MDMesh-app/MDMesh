@@ -27,7 +27,8 @@ import lombok.Setter;
 
 /**
  * Per-configuration desired-state sync counts across a customer's devices, as of the current
- * configuration revision.
+ * configuration revision. {@link #inSync}, {@link #outOfSync}, {@link #unsupported} and {@link #neverSeen} are disjoint
+ * and add up to {@link #total}.
  */
 @Getter
 @Setter
@@ -41,4 +42,6 @@ public class ConfigSyncSummary {
     private int neverSeen;
     /** Of {@link #inSync}: devices whose latest config.apply deferred some settings. */
     private int deferred;
+    /** Wiped devices still on this configuration: outside {@link #total}, but they do block deleting it. */
+    private int wiped;
 }

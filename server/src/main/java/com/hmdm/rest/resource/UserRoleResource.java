@@ -31,6 +31,7 @@ import com.hmdm.persistence.domain.UserRolePermission;
 import com.hmdm.rest.json.LookupItem;
 import com.hmdm.rest.json.Response;
 import com.hmdm.security.SecurityContext;
+import com.hmdm.security.SecurityException;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
@@ -78,6 +79,7 @@ public class UserRoleResource {
     @Path("/permissions")
     @Produces(MediaType.APPLICATION_JSON)
     public Response getPermissions() {
+        if (!userRoleDAO.hasAccess()) return Response.PERMISSION_DENIED();
         return Response.OK(this.userRoleDAO.getPermissionsList());
     }
 
@@ -92,6 +94,7 @@ public class UserRoleResource {
     @Path("/all")
     @Produces(MediaType.APPLICATION_JSON)
     public Response getAllRoles() {
+        if (!userRoleDAO.hasAccess()) return Response.PERMISSION_DENIED();
         return Response.OK(this.userRoleDAO.findAll());
     }
 
@@ -110,17 +113,22 @@ public class UserRoleResource {
             return Response.PERMISSION_DENIED();
         }
 
-        UserRole dbUserRole = this.userRoleDAO.findByName(userRole.getName());
-        if (dbUserRole != null && !dbUserRole.getId().equals(userRole.getId())) {
-            return Response.DUPLICATE_ENTITY("error.duplicate.role");
-        } else {
-            if (userRole.getId() == null) {
+        try {
+            if (userRole != null && userRole.getId() == null) {
                 this.userRoleDAO.insert(userRole);
             } else {
                 this.userRoleDAO.update(userRole);
             }
-
             return Response.OK();
+        } catch (SecurityException e) {
+            log.warn("Refused to store user role {} for user {}: {}", userRole.getId(),
+                    SecurityContext.get().getCurrentUserName(), e.getMessage());
+            return Response.PERMISSION_DENIED();
+        } catch (IllegalArgumentException e) {
+            return Response.ERROR(e.getMessage());
+        } catch (Exception e) {
+            log.error("Failed to save user role", e);
+            return Response.ERROR("error.role.save");
         }
     }
 
@@ -138,7 +146,14 @@ public class UserRoleResource {
                     SecurityContext.get().getCurrentUserName());
             return Response.PERMISSION_DENIED();
         }
-        this.userRoleDAO.delete(id);
-        return Response.OK();
+        try {
+            this.userRoleDAO.delete(id);
+            return Response.OK();
+        } catch (IllegalArgumentException e) {
+            return Response.ERROR(e.getMessage());
+        } catch (Exception e) {
+            log.error("Failed to delete user role", e);
+            return Response.ERROR("error.role.delete");
+        }
     }
 }

@@ -42,6 +42,19 @@ public class AgentEnrollRequest {
     /** Stable, permission-free device identifier (enrollment-specific id / ANDROID_ID). */
     private String hardwareId;
 
+    /**
+     * Optional (agents from 0.5): a random id the agent keeps until its first check-in succeeds, sent again on every
+     * retry of the same enrollment. A retry whose response was lost gets the device the first request created.
+     */
+    private String enrollAttempt;
+
+    /**
+     * Optional (agents from 0.5): true on the agent's credential recovery. The server then only resumes the device
+     * {@link #enrollAttempt} already created and has not checked in yet; otherwise it answers
+     * {@code error.agent.enrollment.notResumable} and takes no use of the code.
+     */
+    private Boolean resumeOnly;
+
     private AgentInfo agent;
 
     private AgentDeviceInfo device;

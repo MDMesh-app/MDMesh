@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Card: flat surface, 16dp corners, 1dp border (v2 Card). For the status screen redesign. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:shape="rectangle"
+    tools:ignore="UnusedResources">
+    <corners android:radius="@dimen/mdm_radius_lg" />
+    <solid android:color="@color/mdm_surface" />
+    <stroke android:width="1dp" android:color="@color/mdm_border" />
+</shape>

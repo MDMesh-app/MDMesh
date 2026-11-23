@@ -19,16 +19,30 @@ Advertised only when the device has a working strategy for it (`CapabilityRegist
 | `wifiRadio` | switch the Wi-Fi radio on/off | 24 | 1.4. `WifiManager.setWifiEnabled` (Device Owner is exempt from the API 29 restriction). Off is deferred (outcome `deferred: <reason>`, does not block the document) while Wi-Fi is the only validated non-VPN network, and only tried again on the next config.apply or boot re-apply (a configuration change, reboot or agent update), so devices whose OEM drops mobile data while Wi-Fi is connected never apply it; on API 33+ off also adds `DISALLOW_CHANGE_WIFI_STATE`, on lifts it, and so does the key becoming unmanaged (radio left as is). Self-heal: if no check-in reaches the server for 30 minutes after Off turned Wi-Fi off (checked on the agent heartbeat), the agent turns Wi-Fi back on, lifts the restriction and holds Wi-Fi on until a document with a revision other than the last delivered one arrives (Off reports `deferred: no connection to the server ...`). It then reports `appliedConfigRevision` = 64 zeros, which matches no configuration, so the server re-sends config.apply after its normal backoff. Device Owner only. |
 | `bluetooth` | toggle/lock Bluetooth | 24 | BLUETOOTH_SCAN auto-grant fails if target app targetSdk<=30 |
 | `usbStorage` | block USB mass storage | 24 | |
-| `camera` | disable camera | 24 | |
+| `camera` | allow/block all camera access | 24 | `false` disables every camera for the managed user; `true` restores access. From agent 0.5.0, omitting the key after a block also restores access; older agents keep a prior block, so send `true` (Allow) to lift it. Device Owner only. |
+| `locationServices` | turn Android Location services on/off | 30 | Device Owner only. While managed, MDMesh also blocks the user from changing the global Location setting; when it becomes unmanaged it restores that Settings control but leaves the current on/off state. This is separate from the `location` telemetry section. |
 | `screenshots` | disable screenshots | 24 | |
-| `factoryReset` | block/restore the user-initiated factory reset | 24 | `UserManager.DISALLOW_FACTORY_RESET`; Device Owner only; does **not** cover a wipe from recovery mode or fastboot. Not to be confused with `factoryResetProtection` below. |
+| `factoryReset` | block/restore the user-initiated factory reset | 24 | `UserManager.DISALLOW_FACTORY_RESET`; Device Owner only; does **not** cover a wipe from recovery mode or fastboot. `device.wipe` lifts it first, since some vendor recoveries enforce it (#222). Not to be confused with `factoryResetProtection` below. |
 | `safeBoot` | block/restore rebooting into Safe Mode | 24 | `UserManager.DISALLOW_SAFE_BOOT` (API 23); Device Owner only. Closes the Safe-Mode escape from a kiosk. From agent 0.3.7 the kiosk also blocks Safe Mode itself while in kiosk unless the configuration sends `true`, and every `config.apply` re-checks it last, so a block nothing asks for is lifted (a `policy.apply` block lasts until the next `config.apply`, which includes the re-apply at boot). |
-| `gps` | location toggle | 24 | Planned: not advertised yet. |
+| `gps` | legacy location toggle | 24 | Planned: not advertised. Use `locationServices` for the modern Android Location-services policy. |
 | `mobileData` | mobile data toggle | 24 | Planned: not advertised yet. |
 | `kioskLockTask` | COSU lock-task kiosk | 24 | Planned: not advertised; kiosk commands are ungated (see below). |
 | `passwordComplexity` | password policy | 31 | Planned: not advertised yet. setRequiredPasswordComplexity (setPasswordQuality deprecated @26) |
 | `systemUpdatePolicy` | OS update windows | 24 | Planned: not advertised yet. |
-| `factoryResetProtection` | Enhanced FRP (EFRP) policy | 30 | 1.5. `DevicePolicyManager.setFactoryResetProtectionPolicy`; does not *prevent* a wipe, it decides whether a wiped device demands an authorized Google account and which accounts may unlock it. Device Owner only. Not a boolean `policy.apply` key: `config.apply` carries it as the `factoryResetProtection` section `{ enabled, accounts[] }`, and the policy is cleared back to the platform default when a configuration stops managing it. Not to be confused with `factoryReset` above. |
+| `factoryResetProtection` | Enhanced FRP (EFRP) policy | 30 | 1.13. `DevicePolicyManager.setFactoryResetProtectionPolicy`; does not *prevent* a wipe, it decides whether a wiped device demands an authorized Google account and which accounts may unlock it. Device Owner only. Not a boolean `policy.apply` key: `config.apply` carries it as the `factoryResetProtection` section `{ enabled, accounts[] }`, and the policy is cleared back to the platform default when a configuration stops managing it. Not to be confused with `factoryReset` above. |
+
+A config.apply document can also carry a server plugin's keys, `x.<pluginId>.<key>` (`policies.x.netaccess.vpn`,
+from a `DesiredConfigContributor`, web/EXTENDING.md). They are not capability keys: an agent without a toggle
+for one reports it `unsupported` and applies the rest, as for any key it doesn't know. A fork that enforces one adds
+the toggle to its agent.
+
+Their values are booleans only, as every other policy: `policies` is a map of booleans on the wire, and the agent
+decodes the document strictly, so one value of another type would fail the whole document, not just the key (the
+server refuses such a value as the plugin's failure, and sends nothing). Plugin settings that aren't booleans (a
+hostname, a VPN profile) are planned as a new top-level section of the document, for example
+`"x": {"<pluginId>": {…}}`, filled by a new default method on `DesiredConfigContributor`, so existing plugins keep
+working. Old agents ignore an unknown section silently instead of reporting it `unsupported`, so that section comes
+with a protocol bump, a capability token and a per-section outcome, in the release that ships it.
 
 ### appManagement
 | key | meaning | notes |
@@ -37,6 +51,7 @@ Advertised only when the device has a working strategy for it (`CapabilityRegist
 | `silentUninstall` | silent uninstall | Planned: not advertised yet. |
 | `splitApk` | split/.xapk install | Planned key: not advertised; `app.install` already takes split `parts`. |
 | `fdroidCatalog` | can pull from an F-Droid repo | Planned: not advertised yet. |
+| `runtimePermissions` | per-app runtime permission grant, denial, and release | 1.7. Device Owner and API 23+. The optional `config.apply.appPermissions` section is sent only to agents advertising `app.runtimePermissions`; omission is legacy/no management and an empty array releases MDMesh overrides. |
 
 ### remoteControl
 Advertised as an object (`tier`, `screenCapture`, `inputInjection`, `transport`). See README. The agent
@@ -47,7 +62,7 @@ advertises `tier: "none"` until the `:remote` module is implemented, so no `remo
 
 ### device
 Device actions (`DeviceAction.ADVERTISED_KEYS`). For each, the command type and the token are the same
-string, except `configApply`.
+string, except `configApply` and `kioskClearPinLockout`.
 
 | key | token | command |
 |-----|-------|---------|
@@ -63,6 +78,7 @@ string, except `configApply`.
 | `locationMode` | `device.locationMode` | `device.locationMode` |
 | `configApply` | `device.configApply` | `config.apply` |
 | `locationOff` | `device.locationOff` | `device.locationMode` with `mode: "off"` (1.4: the agent honours `off`; older agents read it as passive) |
+| `kioskClearPinLockout` | `device.kioskClearPinLockout` | `kiosk.clearPinLockout` (1.11, agent 0.5.0) |
 
 ## Command types
 
@@ -71,14 +87,15 @@ string, except `configApply`.
 | type | requiresCapability | payload (sketch) |
 |------|--------------------|------------------|
 | `config.sync` | — | none (triggers a full reconcile); no console or server sender yet |
-| `config.apply` | `device.configApply` | desired-state document (policies, kiosk, location, `factoryResetProtection`), see `payloads/config-apply.schema.json`; result detail is `payloads/config-apply-result.schema.json` |
+| `config.apply` | `device.configApply` | desired-state document (policies, kiosk, location, `connectivity`, `appPermissions`, `factoryResetProtection`), see `payloads/config-apply.schema.json`; result detail is `payloads/config-apply-result.schema.json`; the `connectivity` section (1.5) sets the same modes as `device.powerMode` for a whole configuration |
 | `policy.apply` | `policy.<key>` (e.g. `policy.wifi`) | `{ policy: "wifi", value: false }` |
 | `app.install` | `app.silentInstall` | `{ url, packageName, versionCode, sha256, runAfterInstall }`, or `parts: [{ url, sha256 }]` instead of `url`/`sha256` for a split APK; `sha256` (hex) is required while the check-in says `installIntegrity: "required"` (1.3) |
 | `app.uninstall` | — | `{ packageName }`; no console or server sender yet |
 | `apps.scan` | — | none; result detail is `{ apps: [...] }` |
 | `apps.icons` | — | `{ packages: [...] }`; result detail is `{ icons: [{ pkg, pngBase64 }] }` |
-| `kiosk.enter` | — | `{ mode, allowedPackages, pinPackage, features, exitMode, password, theme }` (`KioskApplyPayload`); `features.lockButtons` blocks the power menu, `features.lockVolume` (1.4) blocks volume changes and mutes while in kiosk |
+| `kiosk.enter` | — | `{ mode, allowedPackages, pinPackage, features, exitMode, password, theme }` (`KioskApplyPayload`); `features.lockButtons` blocks the power menu, `features.lockVolume` (1.4) blocks volume changes and mutes while in kiosk; `theme.backgroundImage` `{ url, sha256 }` (agent 0.5.0) is an image the agent downloads only over HTTPS (an `http://` URL, which the server queues as-is on an HTTP-only install, is refused and the agent keeps `theme.backgroundColor`), checks by SHA-256 (at most 10 MB and 16 megapixels) and draws behind the launcher, keeping `theme.backgroundColor` on any failure; 1.10 adds optional `fit` (`fit`) and `focalX`/`focalY` (0..1), sent only when not the default (fill, centre); the server refuses a `password` that isn't 6 to 12 digits (or empty), and replaces `"configuredPin": true` (an admin request, never sent to the agent) with the target device's own configuration PIN |
 | `kiosk.exit` | — | none |
+| `kiosk.clearPinLockout` | `device.kioskClearPinLockout` | none (1.11): clears the exit PIN's wrong-PIN count and any lockout; the device stays in kiosk. Result `done` with a detail saying what it cleared (also when there was nothing), `failed` when the cleared count couldn't be saved |
 | `device.lock` | `device.lock` | none |
 | `device.reboot` | `device.reboot` | none (DO) |
 | `device.lockscreenMessage` | `device.lockscreenMessage` | `{ message }` (empty clears it) |

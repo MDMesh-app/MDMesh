@@ -9,7 +9,7 @@ you edit it, run `docker compose up -d`.
 
 **Native:** pass a setting to `sudo ./setup.sh --native` in its environment. The installer writes it to
 `/opt/mdmesh-tc/conf/Catalina/localhost/ROOT.xml` or `/etc/mdmesh/supervisor.env`. Later runs keep `BASE_URL`,
-`SMTP_*`, `LEGACY_DEVICE_API`, `GITHUB_REPO` and `GITHUB_TOKEN` until you pass a new value. `HTTP_PORT` follows the
+`SMTP_*`, `LEGACY_DEVICE_API`, `PROXY_ADDRESSES`, `GITHUB_REPO` and `GITHUB_TOKEN` until you pass a new value. `HTTP_PORT` follows the
 port the install serves on, `REPLACE_DATA` applies to one run, and the rest of `supervisor.env` is rewritten on every
 run: only `GITHUB_REPO` and `GITHUB_TOKEN` survive a hand edit there (a hand-edited `GITHUB_REPO` also needs
 `GITHUB_REPO_FROM=setting`, or the next run follows `origin` again).
@@ -18,18 +18,19 @@ run: only `GITHUB_REPO` and `GITHUB_TOKEN` survive a hand edit there (a hand-edi
 
 | Setting | Where | Default | Meaning |
 |---------|-------|---------|---------|
-| `BASE_URL` | `.env`; native: env or prompt → `ROOT.xml` | none | Public address of the server, also put in the enrollment QR ([rules](#base-url-and-hostname-rules)). |
+| `BASE_URL` | `.env`; native: env or prompt → `ROOT.xml` | none | Public address of the server ([rules](#base-url-and-hostname-rules)). Open the console there to make enrollment QR codes: a code carries the address the console is open at, and Enroll warns when that isn't `BASE_URL`. |
 | `HTTP_PORT` | native env | current port; fresh install `8080` | Tomcat's HTTP port. |
 | `REPLACE_DATA` | native env | asks; `-y`: keep | `yes` erases existing data on a re-run. |
-| `DB_PASSWORD`, `HASH_SECRET` | `.env`; native: `ROOT.xml` | generated | Don't change them: the database keeps its original password, and a new `HASH_SECRET` invalidates every enrolled device's token. |
+| `DB_PASSWORD`, `HASH_SECRET` | `.env`; native: `ROOT.xml` | generated | Don't change them: the database keeps its original password, and a new `HASH_SECRET` breaks devices running the legacy Headwind launcher (MDMesh agents don't use it). |
 | `SERVER_JWT_SECRET` | `.env`; native: `ROOT.xml` `jwt.secretkey` | generated | API token signing key ([details](#api-signing-key-jwt)). |
-| `SERVER_JAVA_OPTS` | `.env` (native: `JAVA_OPTS` in a `systemctl edit mdmesh-server` drop-in) | empty | Extra JVM flags, e.g. `-Xmx1g`. |
-| `LEGACY_DEVICE_API` | `.env`; native env → `ROOT.xml` | `0` | `1` re-enables the Headwind launcher's device routes. |
+| `SERVER_JAVA_OPTS` | `.env` (native: `JAVA_OPTS` in a `systemctl edit mdmesh-server` drop-in) | empty | Extra JVM flags, e.g. `-Xmx1g`. The server always adds `-XX:-UseBASE64Intrinsics` after them (CVE-2026-114938, OpenJDK). |
+| `LEGACY_DEVICE_API` | `.env`; native env → `ROOT.xml` | `0` | `1` re-enables the Headwind launcher's device routes. Launcher devices need a configuration that no MDMesh agent device uses and no agent enrollment code enrolls into (a code without a configuration enrolls into the default one for new devices); in any other, the launcher gets an error. The routes answer requests for an agent device with the launcher's device-not-found error. |
 | `SECURE_ENROLLMENT` | `.env`; native: always `0` | `0` | Legacy Headwind setting. Leave it at `0`: `1` blocks agent downloads. |
 | `SMTP_HOST`, `SMTP_PORT` | `.env`; native env → `ROOT.xml` | empty, `25` | Mail server for password recovery and kiosk alerts. Empty host: no email. |
 | `SMTP_FROM` | same | `mdm@<hostname>` (Docker), `mdm@localhost` (native) | Sender address. |
 | `SMTP_USERNAME`, `SMTP_PASSWORD` | same | empty | Mail login. |
 | `SMTP_SSL`, `SMTP_STARTTLS` | same | `false` | `SMTP_SSL=true` for port 465, `SMTP_STARTTLS=true` for 587. |
+| `PROXY_ADDRESSES` | native env → `ROOT.xml` `proxy.addresses` | empty | Reverse proxies on other hosts whose `X-Forwarded-For` the server believes, comma-separated ([details](#the-client-address)). |
 
 **Kiosk alerts.** When too many wrong exit PINs lock a device's kiosk exit (agent 0.3.6 or later), the server emails
 the users of that device's customer who have an email address, may edit devices (or are super-admins) and can see the
@@ -47,11 +48,12 @@ The wizard writes `SITE_ADDRESS`, `ACME_EMAIL` and `TUNNEL_TOKEN` for the hostin
 | `POLL_INTERVAL_HOURS` | `.env` (native: always `6`) | `6` | How often to check. |
 | `GITHUB_TOKEN` | `.env`; native env → `supervisor.env` | empty | Needed for a private repo; raises rate limits. See note. |
 | `IMAGE_OWNER` | `.env` | quick start `mdmesh-app`; from source `local` | GHCR owner (lowercase). `local` means built from the clone. |
-| `SERVER_VERSION`, `WEB_VERSION` | `.env` | the installed release | Image tags, without the `v` (`0.3.2`). Updates set them. |
+| `SERVER_VERSION`, `WEB_VERSION` | `.env` | the installed release | Image tags, without the `v` (`0.3.2`), or pinned by digest (`0.5.0@sha256:…`). Updates set them to the signed digests. |
 | `CURRENT_VERSION` | `.env`; native: `supervisor.env` | `0.0.0` | Running release, compared with GitHub's latest. Updates and rollbacks set it. |
-| `SUPERVISOR_VERSION` | `.env` | quick start `latest` | Supervisor image tag. Updates never change it. |
+| `SUPERVISOR_VERSION` | `.env` | quick start: the installed release by digest | Supervisor image tag. When it is `latest` or a digest pin, each update moves it to the release's signed digest; `docker compose up -d` then starts that supervisor. Any other value is left alone. |
 | `APPLY_SUPPORTED` | `.env` (native: always `0`) | `1` with a registry `IMAGE_OWNER`, else `0` | `1` shows one-click **Update**, `0` shows manual steps. |
 | `AUTO_UPDATE` | `.env` | `0` | `1` applies releases unattended ([details](UPGRADING.md#quick-start-installs)). |
+| `HEALTH_TIMEOUT` | `.env` (not on native) | `180` | Seconds a new server gets to answer after an update or a rollback before it counts as failed (an update is then rolled back). At least `30`: a smaller value, `0` included (it doesn't mean "no limit"), is ignored and the supervisor's log says so. Raise it when a release's database update may take longer on your data. Read from `.env` when an update starts, so adding a line there is enough; supervisors before this release ignore it ([Upgrading](UPGRADING.md#unreleased)). |
 
 `./setup.sh` rewrites the version variables and `APPLY_SUPPORTED` from the clone on every run
 ([Upgrading](UPGRADING.md#from-source-docker-installs)).
@@ -121,8 +123,25 @@ The server logs to stdout at INFO:
 - **Docker:** `docker compose logs -f server`
 - **Native:** `journalctl -u mdmesh-server -f`
 
-Audit events (sign-ins, password changes, edits) are logged by `AuditLogger`, for example
-`docker compose logs server | grep AuditLogger`. They are also stored in the `plugin_audit_log` table.
+Audit events (sign-ins, password changes and resets, account and role changes, signing in as another account, edits,
+commands sent to devices) are logged by `AuditLogger`, for example `docker compose logs server | grep AuditLogger`.
+They are also stored in the `plugin_audit_log` table. A configuration or device change keeps only the fields that
+hold no secret; every other body has its passwords, tokens, PINs and signed-URL parameters masked. A body that can't be
+read as JSON, or is over 1 MB, is not stored. For an action in a session signed in as another account, the record also
+holds the admin who signed in (`impersonatedBy`, in the table and the audit API). A sign-in (`/rest/public/auth/login`, `/rest/public/jwt/login`)
+keeps at most its first 8 KB, masked, then "(truncated)"; its login is cut to 100 characters.
+
+After an upgrade to 0.5.1 the server scrubs the audit records older releases stored, in the background
+([UPGRADING](UPGRADING.md#v051)). After an error it tries again later, waiting up to 5 minutes. A fatal JVM error (out of
+memory) stops it until the next restart, logged at ERROR as "Audit record scrub stopped"; it goes on from where it
+stopped after the restart. After running 0.5.0 again without restoring its backup, see [UPGRADING, v0.5.1](UPGRADING.md#v051) for the SQL
+that makes the scrub take in what 0.5.0 wrote.
+
+The enrollment QR's key is part of its URL (`/rest/public/qr/<key>`), so the access logs of Tomcat and of a reverse
+proxy record it, and the key fetches the QR, Wi-Fi password included. Keep those logs as private as the database.
+
+While the account `admin` (or `superadmin`, on a multi-customer install) still has the password `admin`, the server
+logs a warning at every start.
 
 Tomcat's own files (`catalina.<date>.log` and the access log) are in `/usr/local/tomcat/logs` (container) or
 `/opt/mdmesh-tc/logs` (native).
@@ -209,7 +228,8 @@ Your proxy must also set the headers itself and not pass on what the device sent
   from Cloudflare. Otherwise a client that bypasses Cloudflare can set it.
 - Overwrite `X-Real-IP` the same way. Code inherited from Headwind reads it from a proxy on the same host (or one
   listed in `proxy.addresses`): the IP allowlists `ui.allowed.address` and `device.allowed.address`, and the audit log.
-  An allowlist blocks a request whose `X-Real-IP` isn't an IP address.
+  An allowlist blocks a request whose `X-Real-IP` isn't an IP address. When the proxy sends no `X-Real-IP`, the audit
+  log takes the last `X-Forwarded-For` entry, as the sign-in limit does.
 - Behind a load balancer, have nginx take the client's address from it first (`set_real_ip_from <balancer address>;`
   and `real_ip_header X-Forwarded-For;`), so `$remote_addr` below is the client, not the balancer.
 
@@ -234,9 +254,21 @@ reverse_proxy 127.0.0.1:8080 {
 ## Sign-in limits
 
 Failed sign-ins are limited, for the console (`/rest/public/auth/login`), API clients (`/rest/public/jwt/login`) and
-the current-password check of a password or e-mail change (`/rest/private/users`), all together. A refused attempt
-isn't checked, even with the right password. Every refusal looks the same, whichever limit refused: the console says
-"Too many failed sign-ins"; the API answers `429` with `Retry-After: 900` (the 15-minute window; try again then).
+the current-password check of account changes, all together. Those are creating or deleting an account or customer and
+changing another account's password or e-mail: `/rest/private/users` (including `/users/details` and
+`/users/superadmin/password`) and `/rest/private/customers`, and your own password or e-mail. A refused attempt
+isn't checked, even with the right password. A refusal looks the same whichever limit refused:
+
+- The console says "Too many failed sign-ins".
+- `/rest/public/jwt/login` answers `429` with `Retry-After: 900` (the 15-minute window; try again then).
+- `/rest/private/users` and `/rest/private/customers` answer HTTP `200` with
+  `{"status":"ERROR","message":"error.auth.too.many.attempts"}` and no `Retry-After`: a script has to read `message`.
+
+A wrong `oldPassword` is a failed sign-in for the caller's own account, not for the account being changed, so a script
+should stop at the first `error.password.wrong` rather than retry. The cookie below goes only to `/rest/public`, so
+these checks on `/rest/private` never count as a known browser: they count under a known address, or else as
+anything else. A session signed in as another account is refused these changes outright
+(`error.password.impersonated`), and nothing is counted.
 
 Each attempt is counted under the first of these that applies:
 
@@ -334,6 +366,25 @@ limit. Nothing logs this. If your domain has an AAAA record, either turn on IPv6
 (Docker's [IPv6 guide](https://docs.docker.com/engine/daemon/ipv6/)), or remove the AAAA record so clients use IPv4.
 The Cloudflare tunnel mode is not affected.
 
+## Enrollment under load
+
+Each enrollment is one database transaction that waits for its code's lock (and, on an install with several
+customers and a device limit, the customer's), at most 15 s, holding one of the server's 30 database connections
+meanwhile. A burst on one code (a batch of devices switched on together) runs one enrollment at a time; past 8 at once
+per code the server answers the rest "try again" at once, and the agents retry with backoff. That limit is per server
+instance: with several behind a load balancer each allows 8 per code. Nothing is kept from an enrollment that had to
+retry.
+
+### Enrollment key
+
+An agent that enrolls with an attempt id (MDMesh agent 0.5.0 and later) gets a device secret derived from that attempt
+with a key only the server has: 32 random bytes the server makes the first time a device enrolls, kept in the
+database (table `agentEnrollmentKey`, one row) and in its backups. It is in no setting, file, log or API answer.
+Deriving it this way gives every retry of one enrollment the same secret, so a late duplicate of a request can't lock
+a device out. To rotate it, delete the row and restart the server: devices already enrolled keep working; one still
+inside its 24 h retry window gets a secret derived with the new key on its next retry (or recovers it, on a refused
+check-in).
+
 ## Backups and restore
 
 **Docker.** One-click updates dump the database first, and a rollback restores that dump
@@ -348,22 +399,36 @@ To go back to it, stop the server, restore, then build the release the dump was 
 
 ```bash
 docker compose stop server
-docker compose exec -T postgres pg_restore -U mdmesh -d mdmesh -c --if-exists < mdmesh-pre-upgrade.dump
+{ docker compose exec -T postgres pg_restore -f - < mdmesh-pre-upgrade.dump && printf 'COMMIT;\n\\echo Restored.\n'; } \
+  | docker compose exec -T postgres psql -X -q -v ON_ERROR_STOP=1 -o /dev/null -U mdmesh -d mdmesh -c BEGIN \
+      -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO PUBLIC" -f -
 git checkout vX.Y.Z && ./setup.sh      # the release you upgraded from
 ```
+
+The restore empties the database and loads the dump in one transaction, and prints `Restored.` when it committed.
+Anything else (an error, or no `Restored.`) means nothing changed: the database is as it was. Don't use
+`pg_restore -c` instead: it drops only what the dump has, so a table the upgrade added that refers to one of those
+(0.5.0 adds one) makes it fail, and without a transaction it stops halfway.
 
 With a registry `IMAGE_OWNER`, add `--allow-downgrade` to that `./setup.sh`.
 
 **Native.** The installer writes a dump to `/opt/mdmesh/backups/` before each upgrade. The uninstaller writes one to
 `/root`. Restore **as the `mdmesh` role, never as `postgres`**: a superuser restore runs any function defined in the
-dump, so a tampered database could gain superuser rights. With the install present, as root:
+dump, so a tampered database could gain superuser rights. This needs PostgreSQL 15 or newer (before 15, `postgres`
+owns the `public` schema). With the install present, as root:
 
 ```bash
-PGPASSWORD="$(setpriv --reuid=mdmesh --regid=mdmesh --init-groups \
-  sed -n 's/.*name="JDBC.password" value="\([^"]*\)".*/\1/p' \
-  /opt/mdmesh-tc/conf/Catalina/localhost/ROOT.xml | head -n1)" \
-  pg_restore -h 127.0.0.1 -p 5432 -U mdmesh -d mdmesh -c --if-exists <dump-file>
+systemctl stop mdmesh-server
+{ pg_restore -f - <dump-file> && printf 'COMMIT;\n\\echo Restored.\n'; } \
+  | PGPASSWORD="$(setpriv --reuid=mdmesh --regid=mdmesh --init-groups \
+      sed -n 's/.*name="JDBC.password" value="\([^"]*\)".*/\1/p' \
+      /opt/mdmesh-tc/conf/Catalina/localhost/ROOT.xml | head -n1)" \
+    psql -h 127.0.0.1 -p 5432 -U mdmesh -d mdmesh -X -q -v ON_ERROR_STOP=1 -o /dev/null -c BEGIN \
+      -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public AUTHORIZATION pg_database_owner; GRANT USAGE ON SCHEMA public TO PUBLIC" -f -
+systemctl start mdmesh-server
 ```
+
+As on Docker, it prints `Restored.` when it committed; anything else means nothing changed.
 
 The installer and uninstaller print this command next to each dump they write. To restore an uninstall dump, install
 again first.
@@ -491,10 +556,17 @@ It never touches apt packages, your proxy or the git checkout.
 - The admin must set a new password at first sign-in. A database the server created without an installer run has an
   admin no password works for, until an installer (or `scripts/dev-seed.sh`) sets one.
 - The Headwind launcher endpoints are off by default (404). MQTT push is off; agents are woken over a WebSocket.
-- The supervisor mounts the Docker socket, so it is trusted. It acts only on minisign-verified manifests and on
-  authorized callers (the recovery token, or the session of an admin who may update: a super-admin, or the org admin
-  of a single-customer install). Apply and rollback only recreate `server` and `caddy`.
+- The supervisor mounts the Docker socket, so it is trusted. It acts only on minisign-verified manifests, runs only
+  the images they pin by digest, and answers only authorized callers (the recovery token, or the session of an admin
+  who may update: a super-admin, or the org admin of a single-customer install). Apply and rollback only recreate
+  `server` and `caddy`.
 - Setting a password ends that account's other sessions and API tokens. Password reset links work once, for 24 hours.
+- Enrollment codes are stored hashed. A code for a batch enrolls devices for anyone who has it until it expires or
+  its devices are used up. If one is shared further than meant, use **Stop all codes** on the Enroll page (or
+  `POST /rest/private/agent/v1/token/revoke-all`): every code of the customer that still works stops, and enrolled
+  devices stay enrolled. The server log names the token that enrolled each device, and logs each refused enrollment
+  with its reason (unknown, expired, used up or stopped code; never the code itself). The audit log records making
+  and stopping codes.
 - The console session cookie is `SameSite=Lax`, and `Secure` when `BASE_URL` is https.
 - Failed sign-ins are limited per address and per account ([Sign-in limits](#sign-in-limits)).
 - Responses carry no-framing, `nosniff`, `Referrer-Policy` and, on https, HSTS headers. A request path with a `;` or

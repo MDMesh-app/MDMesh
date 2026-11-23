@@ -24,9 +24,12 @@ package com.hmdm.plugins.audit.rest.filter;
 import javax.servlet.FilterChain;
 import javax.servlet.ServletRequest;
 import javax.servlet.ServletResponse;
-import java.awt.image.ImagingOpException;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Optional;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
@@ -37,16 +40,17 @@ import java.util.stream.Stream;
 public enum ResourceAuditInfo {
     LOGIN("POST", "/rest/public/auth/login", true, "plugin.audit.action.user.login", true, true),
     JWT_LOGIN("POST", "/rest/public/jwt/login", true, "plugin.audit.action.jwt.login", true, false),
-    UPDATE_DEVICE("PUT", "/rest/private/devices", true, "plugin.audit.action.update.device", true, true),
+    UPDATE_DEVICE("PUT", "/rest/private/devices", true, "plugin.audit.action.update.device", AuditBody.DEVICE, true),
     REMOVE_DEVICE("DELETE", "/rest/private/devices", false, "plugin.audit.action.remove.device", true, true),
-    UPDATE_CONFIG("PUT", "/rest/private/configurations", true, "plugin.audit.action.update.configuration", true, true),
-    COPY_CONFIG("PUT", "/rest/private/configurations/copy", true, "plugin.audit.action.copy.configuration", true, true),
+    UPDATE_CONFIG("PUT", "/rest/private/configurations", true, "plugin.audit.action.update.configuration", AuditBody.CONFIGURATION, true),
+    COPY_CONFIG("PUT", "/rest/private/configurations/copy", true, "plugin.audit.action.copy.configuration", AuditBody.CONFIGURATION, true),
     REMOVE_CONFIG("DELETE", "/rest/private/configurations", false, "plugin.audit.action.remove.configuration", true, true),
     UPDATE_APP("PUT", "/rest/private/applications/android", true, "plugin.audit.action.update.application", true, true),
     UPDATE_WEBAPP("PUT", "/rest/private/applications/web", true, "plugin.audit.action.update.webapp", true, true),
+    // Before REMOVE_APP, whose prefix also matches a version's URI: the first rule that matches is the one recorded.
+    REMOVE_APP_VERSION("DELETE", "/rest/private/applications/versions", false, "plugin.audit.action.remove.version", true, true),
     REMOVE_APP("DELETE", "/rest/private/applications", false, "plugin.audit.action.remove.application", true, true),
     UPDATE_APP_VERSION("PUT", "/rest/private/applications/versions", true, "plugin.audit.action.update.version", true, true),
-    REMOVE_APP_VERSION("DELETE", "/rest/private/applications/versions", false, "plugin.audit.action.remove.version", true, true),
     UPDATE_FILE("POST", "/rest/private/web-ui-files/move", true, "plugin.audit.action.update.file", true, true),
     REMOVE_FILE("POST", "/rest/private/web-ui-files/remove", true, "plugin.audit.action.remove.file", true, true),
     UPDATE_APP_CONFIG("POST", "/rest/private/applications/configurations", true, "plugin.audit.action.update.app.config", true, true),
@@ -56,13 +60,32 @@ public enum ResourceAuditInfo {
     UPDATE_LANGUAGE("POST", "/rest/private/settings/lang", true, "plugin.audit.action.update.language", true, true),
     UPDATE_PLUGINS("POST", "/rest/plugin/main/private/disabled", true, "plugin.audit.action.update.plugins", true, true),
     UPDATE_USER("PUT", "/rest/private/users", true, "plugin.audit.action.update.user", true, true),
+    UPDATE_USER_DETAILS("PUT", "/rest/private/users/details", true, "plugin.audit.action.update.user.details", true, true),
+    SUPERADMIN_PASSWORD("PUT", "/rest/private/users/superadmin/password", true, "plugin.audit.action.password.superadmin", true, true),
+    UPDATE_CUSTOMER("PUT", "/rest/private/customers", true, "plugin.audit.action.update.customer", true, true),
+    REMOVE_CUSTOMER("DELETE", "/rest/private/customers", false, "plugin.audit.action.remove.customer", true, true),
     REMOVE_USER("DELETE", "/rest/private/users", false, "plugin.audit.action.remove.user", true, true),
+    // The record names the admin who signed in as the account (ResourceAuditor.IMPERSONATIONS); the URI names the account.
+    IMPERSONATE_USER("POST", Pattern.compile("/rest/private/users/impersonate/[^/]+/?"), "plugin.audit.action.impersonate.user", true, false, true),
+    IMPERSONATE_CUSTOMER("POST", Pattern.compile("/rest/private/customers/impersonate/[^/]+/?"), "plugin.audit.action.impersonate.customer", true, false, true),
+    // No body: it holds the reset token and the new password. The resource names the account (UserCredentials.REQUEST_LOGIN).
+    PASSWORD_RESET_BY_LINK("POST", "/rest/public/passwordReset/reset", true, "plugin.audit.action.password.reset.link", false, true),
+    UPDATE_ROLE("PUT", "/rest/private/roles", true, "plugin.audit.action.update.role", true, true),
+    REMOVE_ROLE("DELETE", "/rest/private/roles", false, "plugin.audit.action.remove.role", true, true),
     UPDATE_GROUP("PUT", "/rest/private/groups", true, "plugin.audit.action.update.group", true, true),
     REMOVE_GROUP("DELETE", "/rest/private/groups", false, "plugin.audit.action.remove.group", true, true),
     PASSWORD_CHANGED("PUT", "/rest/private/users/current", true, "plugin.audit.action.password.changed", true, true),
-    DEVICE_PASSWORD_RESET("PUT", "/rest/plugins/devicereset/private/password", true, "plugin.audit.action.password.reset", true, true),
+    // No body: it is the device's new password.
+    DEVICE_PASSWORD_RESET("PUT", "/rest/plugins/devicereset/private/password", true, "plugin.audit.action.password.reset", false, true),
     DEVICE_FACTORY_RESET("PUT", "/rest/plugins/devicereset/private/reset", false, "plugin.audit.action.device.reset", false, true),
-    DEVICE_LOCK("PUT", "/rest/plugins/devicereset/private/lock", true, "plugin.audit.action.device.lock", true, true);
+    DEVICE_LOCK("PUT", "/rest/plugins/devicereset/private/lock", true, "plugin.audit.action.device.lock", true, true),
+    DEVICE_COMMAND("POST", Pattern.compile("/rest/private/agent/v1/devices/[^/]+/commands/?"), "plugin.audit.action.device.command", true, true, true),
+    BULK_DEVICE_COMMAND("POST", Pattern.compile("/rest/private/agent/v1/bulk/commands/?"), "plugin.audit.action.device.bulk.command", true, true, true),
+    SYNC_DEVICE_APPS("POST", Pattern.compile("/rest/private/agent/v1/devices/[^/]+/syncApps/?"), "plugin.audit.action.device.sync.apps", true, false, true),
+    RETRY_DEVICE_CONFIG("POST", Pattern.compile("/rest/private/agent/v1/devices/[^/]+/retryConfig/?"), "plugin.audit.action.device.retry.config", true, false, true),
+    // The request (configuration, devices, validity) is saved; the response, which holds the code, never is.
+    MINT_ENROLL_TOKEN("POST", "/rest/private/agent/v1/token", true, "plugin.audit.action.enroll.token.mint", true, true),
+    REVOKE_ENROLL_TOKENS("POST", "/rest/private/agent/v1/token/revoke-all", true, "plugin.audit.action.enroll.token.revoke.all", false, true);
 
     /**
      * <p>Method for the REST resource to track audit log for.</p>
@@ -81,6 +104,12 @@ public enum ResourceAuditInfo {
     private final boolean uriExactMatch;
 
     /**
+     * <p>A pattern the whole resource URI must match, for URIs with a path parameter in the middle (a device ID).
+     * When set, it replaces {@link #uri} and {@link #uriExactMatch}.</p>
+     */
+    private final Pattern uriPattern;
+
+    /**
      * <p>A key in message resource bundle referring to description of action mapped to audited request.</p>
      */
     private final String auditLogAction;
@@ -89,6 +118,9 @@ public enum ResourceAuditInfo {
      * <p>A flag indicating if request data must be saved as a payload.</p>
      */
     private final boolean payload;
+
+    /** <p>How the request body is stored when {@link #payload} is set: every body is masked one way or another.</p> */
+    private final AuditBody body;
 
     /**
      * <p>A flag indicating if response is in Headwind MDM standard format and should be checked for errors.</p>
@@ -102,8 +134,40 @@ public enum ResourceAuditInfo {
         this.method = method;
         this.uri = uri;
         this.uriExactMatch = uriExactMatch;
+        this.uriPattern = null;
         this.auditLogAction = auditLogAction;
         this.payload = payload;
+        this.body = AuditBody.MASKED;
+        this.checkResponse = checkResponse;
+    }
+
+    /**
+     * <p>Constructs new <code>ResourceAuditInfo</code> instance whose request body is stored the given way.</p>
+     */
+    ResourceAuditInfo(String method, String uri, boolean uriExactMatch, String auditLogAction, AuditBody body,
+                      boolean checkResponse) {
+        this.method = method;
+        this.uri = uri;
+        this.uriExactMatch = uriExactMatch;
+        this.uriPattern = null;
+        this.auditLogAction = auditLogAction;
+        this.payload = true;
+        this.body = body;
+        this.checkResponse = checkResponse;
+    }
+
+    /**
+     * <p>Constructs new <code>ResourceAuditInfo</code> instance matching the request URI against a pattern.</p>
+     */
+    ResourceAuditInfo(String method, Pattern uriPattern, String auditLogAction, boolean payload,
+                      boolean maskCommandPayload, boolean checkResponse) {
+        this.method = method;
+        this.uri = null;
+        this.uriExactMatch = false;
+        this.uriPattern = uriPattern;
+        this.auditLogAction = auditLogAction;
+        this.payload = payload;
+        this.body = maskCommandPayload ? AuditBody.COMMAND : AuditBody.MASKED;
         this.checkResponse = checkResponse;
     }
 
@@ -117,7 +181,42 @@ public enum ResourceAuditInfo {
      */
     public ResourceAuditor getResourceAuditor(ServletRequest request, ServletResponse response, FilterChain chain,
                                               String proxyIps, String ipHeader) throws IOException {
-        return new ResourceAuditor(auditLogAction, request, response, chain, payload, checkResponse, proxyIps, ipHeader);
+        return getResourceAuditor(request, response, chain, proxyIps, ipHeader, ResourceAuditor.proxyList(proxyIps),
+                false);
+    }
+
+    /**
+     * <p>Gets the auditor for the specified request/response chain.</p>
+     *
+     * @param trustedProxies         {@code proxy.addresses}, split ({@link ResourceAuditor#proxyList}).
+     * @param privatePeersAreProxies {@code proxy.private.networks}: any private-network peer is the install's proxy.
+     */
+    public ResourceAuditor getResourceAuditor(ServletRequest request, ServletResponse response, FilterChain chain,
+                                              String proxyIps, String ipHeader, List<String> trustedProxies,
+                                              boolean privatePeersAreProxies) throws IOException {
+        return new ResourceAuditor(auditLogAction, request, response, chain, payload ? body : null,
+                isPublicSignIn() ? AuditBody.PUBLIC_BODY_CAP : 0, checkResponse,
+                proxyIps, ipHeader, trustedProxies, privatePeersAreProxies);
+    }
+
+    /** The key of the action this rule records. */
+    public String getAuditLogAction() {
+        return auditLogAction;
+    }
+
+    /** A rule anyone can reach without signing in that keeps a masked body: the sign-in routes. */
+    boolean isPublicSignIn() {
+        return payload && body == AuditBody.MASKED && uri != null && uri.startsWith("/rest/public/");
+    }
+
+    /** How the request body is stored, when {@link #storesBody}. */
+    AuditBody body() {
+        return body;
+    }
+
+    /** Whether the record holds the request (method, URI, masked body, User-Agent). */
+    boolean storesBody() {
+        return payload;
     }
 
     /**
@@ -129,6 +228,9 @@ public enum ResourceAuditInfo {
     private boolean matches(String requestMethod, String requestUri) {
         if (!this.method.equalsIgnoreCase(requestMethod)) {
             return false;
+        }
+        if (this.uriPattern != null) {
+            return this.uriPattern.matcher(requestUri).matches();
         }
         if (this.uriExactMatch) {
             return this.uri.equals(requestUri);
@@ -144,8 +246,64 @@ public enum ResourceAuditInfo {
      * @return the details for audit process to apply to processed request.
      */
     public static Optional<ResourceAuditInfo> findAuditInfo(String requestMethod, String requestUri) {
+        final String path = routedPath(requestUri);
         return Stream.of(ResourceAuditInfo.values())
-                .filter(info -> info.matches(requestMethod, requestUri))
-                .findAny();
+                .filter(info -> info.matches(requestMethod, path))
+                .findFirst();
+    }
+
+    /**
+     * <p>The raw request path (below the context path) reduced to the one spelling the rules are written in, so that
+     * every spelling Jersey routes to an audited method matches its rule: path parameters ({@code ;x=y}) dropped,
+     * percent-escapes decoded (UTF-8, a {@code +} stays a {@code +}), and a trailing {@code /} dropped (Jersey routes
+     * {@code /rest/public/auth/login/} to the login method). Jersey itself doesn't route a percent-escaped literal,
+     * and AmbiguousPathFilter refuses path parameters, encoded separators and dot segments before any filter runs;
+     * this reads them the way the resource would anyway, so a rule never depends on those staying true. Matching
+     * more spellings than Jersey routes only records an extra (failed) attempt.</p>
+     *
+     * @param requestUri the raw request URI below the context path, without the query string.
+     * @return the path the audit rules are matched against.
+     */
+    static String routedPath(String requestUri) {
+        if (requestUri == null) {
+            return "";
+        }
+        StringBuilder out = new StringBuilder(requestUri.length());
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        boolean inParameter = false;
+        for (int i = 0; i < requestUri.length(); i++) {
+            char c = requestUri.charAt(i);
+            if (c == '/') {
+                inParameter = false;
+            } else if (c == ';') {
+                inParameter = true;
+            }
+            if (inParameter) {
+                continue;
+            }
+            if (c == '%' && i + 2 < requestUri.length()) {
+                int hi = Character.digit(requestUri.charAt(i + 1), 16);
+                int lo = Character.digit(requestUri.charAt(i + 2), 16);
+                if (hi >= 0 && lo >= 0) {
+                    bytes.write((hi << 4) + lo);
+                    i += 2;
+                    continue;
+                }
+            }
+            flush(bytes, out);
+            out.append(c);
+        }
+        flush(bytes, out);
+        while (out.length() > 1 && out.charAt(out.length() - 1) == '/') {
+            out.setLength(out.length() - 1);
+        }
+        return out.toString();
+    }
+
+    private static void flush(ByteArrayOutputStream bytes, StringBuilder out) {
+        if (bytes.size() > 0) {
+            out.append(new String(bytes.toByteArray(), StandardCharsets.UTF_8));
+            bytes.reset();
+        }
     }
 }

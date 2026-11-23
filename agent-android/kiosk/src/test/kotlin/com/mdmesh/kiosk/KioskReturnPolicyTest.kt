@@ -77,4 +77,106 @@ class KioskReturnPolicyTest {
         assertEquals(-1L, store.lastFaultTime)
         assertFalse(guard.isCrashLoopDetected())
     }
+
+    // --- The hold is persisted (F2): it survives a new policy (activity recreation, process restore) at any age ---
+
+    private val holds = InMemoryHoldStore()
+    private var boot = 1L
+    private fun policy() = KioskReturnPolicy(CrashLoopGuard(store) { nowMs }, holds, boot = { boot })
+
+    @Test
+    fun `a hold survives recreation long after the guard window`() {
+        val first = policy()
+        repeat(CrashLoopGuard.LOOP_CRASHES + 1) { nowMs += 1_000; first.onReturned() }
+        assertTrue(first.held)
+        nowMs += 10 * CrashLoopGuard.LOOP_TIME_SPAN
+        val recreated = policy()
+        assertTrue(recreated.held)
+        assertEquals(Action.HOLD, recreated.onApplied(changed = false))
+        assertEquals(Action.HOLD, recreated.onReturned())
+    }
+
+    @Test
+    fun `open again clears the saved hold`() {
+        val first = policy()
+        repeat(CrashLoopGuard.LOOP_CRASHES + 1) { first.onReturned() }
+        first.retry()
+        assertFalse(policy().held)
+    }
+
+    @Test
+    fun `a reboot ends a hold older than the guard window`() {
+        val first = policy()
+        repeat(CrashLoopGuard.LOOP_CRASHES + 1) { first.onReturned() }
+        nowMs += 10 * CrashLoopGuard.LOOP_TIME_SPAN
+        boot = 2L
+        assertEquals(Action.REOPEN, policy().onApplied(changed = false))
+    }
+
+    @Test
+    fun `a reboot right after the loop still holds`() {
+        val first = policy()
+        repeat(CrashLoopGuard.LOOP_CRASHES + 1) { first.onReturned() }
+        boot = 2L
+        assertEquals(Action.HOLD, policy().onApplied(changed = false))
+    }
+
+    @Test
+    fun `a different kiosk clears the saved hold`() {
+        val first = policy()
+        repeat(CrashLoopGuard.LOOP_CRASHES + 1) { first.onReturned() }
+        assertEquals(Action.REOPEN, policy().onApplied(changed = true))
+        assertFalse(policy().held)
+    }
+
+    // --- N2: no boot count on this ROM: uptime tells boots apart ---
+
+    private var uptime = 500_000L
+    private fun noBootCount() = KioskReturnPolicy(CrashLoopGuard(store) { nowMs }, holds, { 0L }) { uptime }
+
+    @Test
+    fun `without a boot count a recreation in the same boot keeps the hold`() {
+        val first = noBootCount()
+        repeat(CrashLoopGuard.LOOP_CRASHES + 1) { first.onReturned() }
+        nowMs += 10 * CrashLoopGuard.LOOP_TIME_SPAN
+        uptime += 10 * CrashLoopGuard.LOOP_TIME_SPAN
+        assertEquals(Action.HOLD, noBootCount().onApplied(changed = false))
+    }
+
+    @Test
+    fun `without a boot count a reboot (uptime back near zero) ends an old hold`() {
+        val first = noBootCount()
+        repeat(CrashLoopGuard.LOOP_CRASHES + 1) { first.onReturned() }
+        nowMs += 10 * CrashLoopGuard.LOOP_TIME_SPAN
+        uptime = 30_000L
+        assertEquals(Action.REOPEN, noBootCount().onApplied(changed = false))
+    }
+
+    /**
+     * PR #192 N3: the launcher calls retry() on every no-kiosk delivery, on the main thread; with nothing counted or
+     * held it must write nothing (each write is a synchronous commit).
+     */
+    @Test
+    fun `retry with nothing counted or held writes nothing`() {
+        var writes = 0
+        val faults = object : FaultStore by store {
+            override fun write(counter: Int, lastFaultTime: Long) { writes++; store.write(counter, lastFaultTime) }
+        }
+        val holdStore = InMemoryHoldStore()
+        val holds = object : HoldStore by holdStore {
+            override fun writeHeld(boot: Long?, elapsed: Long) { writes++; holdStore.writeHeld(boot, elapsed) }
+        }
+        val p = KioskReturnPolicy(CrashLoopGuard(faults) { nowMs }, holds)
+        repeat(3) { p.retry() }
+        assertEquals("idle deliveries write nothing", 0, writes)
+        repeat(CrashLoopGuard.LOOP_CRASHES + 1) { nowMs += 1_000; p.onReturned() }
+        assertTrue(p.held)
+        writes = 0
+        p.retry()
+        assertFalse(p.held)
+        assertEquals("one reset, one hold cleared", 2, writes)
+        writes = 0
+        p.retry()
+        assertEquals(0, writes)
+    }
 }

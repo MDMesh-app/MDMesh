@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Keyboard and D-pad focus: a 2dp ring in the focus colour on the button's drawn 40dp shape (inside its 48dp
+     target). Drawn over outlined, ghost and danger buttons; nothing when not focused. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true">
+        <inset android:insetTop="4dp" android:insetBottom="4dp">
+            <shape android:shape="rectangle">
+                <corners android:radius="@dimen/mdm_radius_sm" />
+                <stroke android:width="2dp" android:color="@color/mdm_focus" />
+            </shape>
+        </inset>
+    </item>
+</selector>

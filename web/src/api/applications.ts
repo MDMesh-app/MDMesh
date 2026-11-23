@@ -24,6 +24,8 @@ export interface Application {
   hasApkHash?: boolean;
   /** Owned by the master customer; only a super-admin can delete it. */
   commonApplication?: boolean;
+  /** Library list only: some configuration links one of its versions (the server then refuses to delete it). */
+  deletionProhibited?: boolean;
   /** Split-bundle parts as a raw JSON string `[{url,sha256,name}]` (server stores it as text);
    *  present only for multi-part bundles. Use JSON.parse to read, JSON.stringify to send. */
   parts?: string;
@@ -145,6 +147,13 @@ export async function uploadApk(file: File): Promise<FileUploadResult> {
   return apiClient.postForm<FileUploadResult>('/private/web-ui-files', form);
 }
 
+/** Upload a non-APK file into the server's temporary customer-owned area. */
+export async function uploadRawFile(file: File): Promise<FileUploadResult> {
+  const form = new FormData();
+  form.append('file', file, file.name);
+  return apiClient.postForm<FileUploadResult>('/private/web-ui-files/raw', form);
+}
+
 // --- Split-APK bundle upload (.xapk/.apks/.apkm/.zip) ------------------------
 // The server unpacks the bundle, hosts each split, and returns the parts to
 // install together in one session. See the /bundle endpoint on FilesResource.
@@ -155,6 +164,18 @@ export interface BundleUploadResult {
   version?: string;
   versionCode: number;
   parts: { url: string; sha256: string; name: string }[];
+}
+
+const bundleMessages: Record<string, string> = {
+  'error.bundle.noApks': 'The file has no APKs in it. An encrypted .apkm bundle can’t be unpacked.',
+  'error.bundle.unreadable': 'The server could not read the package name and version from the APKs.',
+  'error.bundle.tooLarge': 'The bundle’s APKs unpack to more than 4 GB.',
+  'error.bundle.unpack': 'The server could not unpack the bundle. It may be damaged.',
+};
+/** What a failed bundle upload says, by the server's error key. */
+export function bundleErrorText(e: unknown): string {
+  const message = e instanceof Error ? e.message : '';
+  return bundleMessages[message] ?? message;
 }
 
 /** Upload a split-APK bundle; the server unpacks it and returns the hosted parts. */

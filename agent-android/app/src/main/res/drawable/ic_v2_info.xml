@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- v2 IconInfo (web/src/ui/icons.tsx), white: tinted where it is used. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="16"
+    android:viewportHeight="16">
+    <path
+        android:pathData="M14,8a6,6 0,1 1,-12 0a6,6 0,1 1,12 0z"
+        android:strokeWidth="1.5"
+        android:strokeColor="#FFFFFFFF" />
+    <path
+        android:pathData="M8,7v4M8,5v0.01"
+        android:strokeWidth="1.5"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round" />
+</vector>

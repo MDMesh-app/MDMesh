@@ -23,11 +23,18 @@ export interface UpdateStatus {
   error: string | null;
   apply: ApplyState | null;
   auto: boolean;
+  /** The release automatic updates will not apply again (its update failed or was rolled back), from the
+   *  supervisor's auto.json `skipVersion`. A manual Update still applies it; a newer release still auto-applies. */
+  autoSkipped?: string | null;
   /** False on deployments that can't self-apply (native installs) — hide apply/auto controls.
    *  Absent (older supervisor) means supported. */
   applySupported?: boolean;
   /** The mirrored agent APK for the latest verified release (for device rollouts), or null. */
   apk: { version: string; versionCode: number; sha256: string; available: boolean } | null;
+  /** The security releases the offered update skips over (newer than `current`, older than `latest`), oldest first,
+   *  from the verified manifest's securityReleases. Empty when nothing is skipped or the manifest isn't verified;
+   *  absent from a supervisor before 0.5.0. */
+  missedSecurity?: string[];
   /** Release notes / link / date for the picked release, or null when there's no release. */
   release: { notes: string | null; url: string | null; publishedAt: string | null } | null;
 }

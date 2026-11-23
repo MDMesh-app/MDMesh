@@ -3033,4 +3033,284 @@
         <rollback>ALTER TABLE users DROP COLUMN passwordResetTokenTime;</rollback>
     </changeSet>
 
+    <changeSet id="26.10.22-configurations-extensions" author="lunacy" context="common">
+        <comment>Column,new: configurations#extensions, server plugins' and console extensions' data by namespace (an
+            extension id, or id.name), each a JSON object (com.hmdm.extension.ConfigurationExtensions). Existing rows
+            get the empty object, which changes no config.apply revision. The CHECK keeps a direct SQL write from
+            storing anything but an object, which every read of the configuration would fail on.</comment>
+        <sql>ALTER TABLE configurations ADD COLUMN extensions JSONB NOT NULL DEFAULT '{}'::jsonb
+            CONSTRAINT configurations_extensions_object CHECK (jsonb_typeof(extensions) = 'object');</sql>
+        <rollback>ALTER TABLE configurations DROP COLUMN extensions;</rollback>
+    </changeSet>
+
+    <changeSet id="26.10.27-configurations-connectivityMode" author="Przemek-Magic" context="common">
+        <comment>Column,new: configurations#connectivityMode (sent as connectivity.mode in config.apply, protocol 1.5):
+            adaptive (battery-saver) or alwaysOn (keep the live connection up). No DEFAULT: NULL = unmanaged, so each
+            device keeps its own setting and existing configurations keep their revision.</comment>
+        <sql>ALTER TABLE configurations ADD COLUMN connectivityMode VARCHAR(16);</sql>
+        <rollback>ALTER TABLE configurations DROP COLUMN connectivityMode;</rollback>
+    </changeSet>
+
+    <changeSet id="26.10.29-configurationApplications-configurationId-idx" author="lunacy" context="common">
+        <comment>Index,new: configurationApplications (configurationId). Every check-in of an agent that installs apps
+            reads its configuration's install set (com.hmdm.rest.resource.support.AppReconciler); one index lookup
+            instead of a scan of every configuration's apps. IF NOT EXISTS: safe on fresh and upgraded databases.</comment>
+        <sql>CREATE INDEX IF NOT EXISTS configurationApplications_configurationId_idx ON configurationApplications (configurationId);</sql>
+        <rollback>DROP INDEX IF EXISTS configurationApplications_configurationId_idx;</rollback>
+    </changeSet>
+
+    <changeSet id="26.10.29-deviceState-appsRevision" author="lunacy" context="common">
+        <comment>Column,new: device_state#appsRevision, the configuration install set the device's apps were last
+            reconciled to at check-in: the configuration id, ':', then its action=install applicationVersions ids,
+            distinct, in numeric order, comma-separated ('5:10,12'; '5:' for none; com.hmdm.util.AppReconcileDecision
+            builds the same text). Each device on a configuration gets its current set here, so the update queues no
+            installs for apps a configuration already has, and an app added after it installs at the next check-in
+            even on a device that was offline during the update. Devices without a configuration stay NULL.</comment>
+        <sql>ALTER TABLE device_state ADD COLUMN appsRevision TEXT;
+            UPDATE device_state ds SET appsRevision = d.configurationId || ':' || COALESCE((
+                SELECT string_agg(s.v::text, ',' ORDER BY s.v) FROM (
+                    SELECT DISTINCT ca.applicationVersionId AS v FROM configurationApplications ca
+                    WHERE ca.configurationId = d.configurationId AND ca.action = 1
+                    AND ca.applicationVersionId IS NOT NULL) s), '')
+            FROM devices d WHERE d.number = ds.deviceNumber AND d.configurationId IS NOT NULL;</sql>
+        <rollback>ALTER TABLE device_state DROP COLUMN appsRevision;</rollback>
+    </changeSet>
+
+    <changeSet id="26.11.04-devices-wipedAt" author="Przemek-Magic" context="common">
+        <comment>Column,new: devices#wipedAt, epoch millis: when a device.wipe command was delivered to the device. The
+            device erases itself before it can report, so this is what tells a wiped device from one that is switched
+            off. Cleared when the device reports the wipe failed, or checks in again later. NULL = not wiped; existing
+            devices stay NULL.</comment>
+        <sql>ALTER TABLE devices ADD COLUMN wipedAt BIGINT;</sql>
+        <rollback>ALTER TABLE devices DROP COLUMN wipedAt;</rollback>
+    </changeSet>
+
+    <changeSet id="26.11.08-configurations-camera" author="letter-number" context="common">
+        <comment>Column,new: configurations#camera — null = not managed, true = allow and false = block,
+            sent as policies.camera. No DEFAULT preserves existing configurations and avoids a fleet-wide change.</comment>
+        <sql>ALTER TABLE configurations ADD COLUMN camera BOOLEAN;</sql>
+        <rollback>ALTER TABLE configurations DROP COLUMN camera;</rollback>
+    </changeSet>
+
+    <changeSet id="26.11.07-agentEnrollmentToken-maxUses" author="nexi-space" context="common">
+        <comment>Columns,new: agentEnrollmentToken#maxUses, #useCount: a token enrolls up to maxUses devices, and
+            useCount counts those enrolled; used turns true with the last. Existing tokens get maxUses 1 (single use,
+            as before) and useCount 1 when already used.</comment>
+        <sql>
+            ALTER TABLE agentEnrollmentToken ADD COLUMN maxUses INT NOT NULL DEFAULT 1;
+            ALTER TABLE agentEnrollmentToken ADD COLUMN useCount INT NOT NULL DEFAULT 0;
+            UPDATE agentEnrollmentToken SET useCount = 1 WHERE used = true;
+        </sql>
+        <rollback>
+            ALTER TABLE agentEnrollmentToken DROP COLUMN useCount;
+            ALTER TABLE agentEnrollmentToken DROP COLUMN maxUses;
+        </rollback>
+    </changeSet>
+
+    <changeSet id="26.11.08-agentEnrollmentToken-revokedAt-hash" author="lunacy" context="common">
+        <comment>Column,new: agentEnrollmentToken#revokedAt (an admin stopped every code: the claim refuses a token
+            with it set). The token column now holds the uppercase hex SHA-256 of the token, as devices' secrets
+            are stored: existing tokens are hashed in place, so a code already printed or in a QR keeps working.
+            sha256() needs PostgreSQL 11+; on an older server the existing tokens are marked used instead (each is a
+            24 h single-use code, made again on the Enroll page). The rollback keeps the hashes: an older server
+            finds none of them, so a code made before the downgrade stops working, which fails safe.</comment>
+        <sql splitStatements="false">
+            ALTER TABLE agentEnrollmentToken ADD COLUMN revokedAt BIGINT;
+            DO $$
+            BEGIN
+                IF current_setting('server_version_num')::int &gt;= 110000 THEN
+                    EXECUTE $q$UPDATE agentEnrollmentToken
+                        SET token = upper(encode(sha256(convert_to(token, 'UTF8')), 'hex'))$q$;
+                ELSE
+                    EXECUTE $q$UPDATE agentEnrollmentToken SET token = 'unhashed-' || id, used = true$q$;
+                END IF;
+            END $$;
+        </sql>
+        <rollback>ALTER TABLE agentEnrollmentToken DROP COLUMN revokedAt;</rollback>
+    </changeSet>
+
+    <changeSet id="26.11.09-deviceState-kioskReturnGeneration" author="letter-number" context="common">
+        <comment>Columns,new: device_state kiosk command generation and durable on-device kiosk-return evidence</comment>
+        <sql>ALTER TABLE device_state ADD COLUMN kioskGeneration BIGINT NOT NULL DEFAULT 0;
+            ALTER TABLE device_state ADD COLUMN kioskReturnGeneration BIGINT;</sql>
+        <rollback>ALTER TABLE device_state DROP COLUMN kioskReturnGeneration;
+            ALTER TABLE device_state DROP COLUMN kioskGeneration;</rollback>
+    </changeSet>
+
+    <changeSet id="26.11.09-configurations-locationServices" author="letter-number" context="common">
+        <comment>Column,new: configurations#locationServices (sent as policies.locationServices): Device Owner turns
+            Android location services on or off and locks the setting while managed. No DEFAULT: NULL = not managed,
+            so existing configurations keep their revision and device state on upgrade.</comment>
+        <sql>ALTER TABLE configurations ADD COLUMN locationServices BOOLEAN;</sql>
+        <rollback>ALTER TABLE configurations DROP COLUMN locationServices;</rollback>
+    </changeSet>
+
+    <changeSet id="26.11.06-configurations-backgroundImageAsset" author="letternumber" context="common">
+        <comment>Configuration kiosk background image: an optional customer-owned uploaded file and the SHA-256 of its
+            immutable selected bytes. NULL keeps the color-only kiosk theme. The URL remains derived from the hosted
+            uploaded-file record rather than being trusted from a browser request.</comment>
+        <sql>ALTER TABLE configurations ADD COLUMN backgroundImageFileId INTEGER;
+            ALTER TABLE configurations ADD COLUMN backgroundImageSha256 VARCHAR(64);
+            CREATE INDEX IF NOT EXISTS configurations_backgroundImageFileId_idx ON configurations (backgroundImageFileId);</sql>
+        <rollback>DROP INDEX IF EXISTS configurations_backgroundImageFileId_idx;
+            ALTER TABLE configurations DROP COLUMN backgroundImageSha256;
+            ALTER TABLE configurations DROP COLUMN backgroundImageFileId;</rollback>
+    </changeSet>
+
+    <changeSet id="26.11.09-configurationAppPermissions" author="letter-number" context="common">
+        <comment>Configuration-owned explicit runtime permission overrides. Absence is Default; the modern agent
+            releases a prior override when its configuration's desired document no longer lists it.</comment>
+        <sql>CREATE TABLE configurationAppPermissions (
+            configurationId INTEGER NOT NULL REFERENCES configurations(id) ON DELETE CASCADE,
+            applicationId INTEGER NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+            permission TEXT NOT NULL,
+            state VARCHAR(8) NOT NULL CHECK (state IN ('grant', 'deny')),
+            PRIMARY KEY (configurationId, applicationId, permission));</sql>
+        <rollback>DROP TABLE configurationAppPermissions;</rollback>
+    </changeSet>
+
+    <changeSet id="26.11.10-applicationVersions-requestedPermissions" author="letter-number" context="common">
+        <comment>APK manifest permissions cached per application version. NULL means the server has no local APK to
+            inspect; an empty string means the APK declared no Android permissions relevant to runtime controls.</comment>
+        <sql>ALTER TABLE applicationVersions ADD COLUMN requestedPermissions TEXT;</sql>
+        <rollback>ALTER TABLE applicationVersions DROP COLUMN requestedPermissions;</rollback>
+    </changeSet>
+
+    <changeSet id="26.11.10-devices-agentEnrollAttemptHash" author="lunacy" context="common">
+        <comment>Column,new: devices#agentEnrollAttemptHash — SHA-256 of (enrollment token id, the agent's random enroll
+            attempt id). An agent whose enroll response was lost retries with the same attempt id and gets this device
+            back with the same secret, instead of the code being used up. Cleared at the device's first check-in. NULL for
+            existing devices and for agents that don't send an attempt id.</comment>
+        <sql>
+            ALTER TABLE devices ADD COLUMN agentEnrollAttemptHash VARCHAR(64);
+            CREATE INDEX devices_agentEnrollAttemptHash_idx ON devices (agentEnrollAttemptHash)
+                WHERE agentEnrollAttemptHash IS NOT NULL;
+        </sql>
+        <rollback>
+            DROP INDEX IF EXISTS devices_agentEnrollAttemptHash_idx;
+            ALTER TABLE devices DROP COLUMN agentEnrollAttemptHash;
+        </rollback>
+    </changeSet>
+
+    <changeSet id="26.11.10-devices-customerId-enrollTime-idx" author="lunacy" context="common">
+        <comment>Index,new: devices (customerId, enrollTime), for the Enroll page's "devices enrolled since this code
+            was made" (a bounded, newest-first read it repeats every few seconds while a code is shown).</comment>
+        <sql>CREATE INDEX devices_customerId_enrollTime_idx ON devices (customerId, enrollTime);</sql>
+        <rollback>DROP INDEX IF EXISTS devices_customerId_enrollTime_idx;</rollback>
+    </changeSet>
+
+    <changeSet id="26.11.11-agentEnrollmentKey" author="lunacy" context="common">
+        <comment>Table,new: agentEnrollmentKey, one row: the server-only key agent enrollment secrets are derived with
+            (32 random bytes as hex). The server makes it on first use; nothing to set. Deleting the row (then restarting)
+            rotates it, which only affects enrollments still inside their 24 h retry window.</comment>
+        <sql>
+            CREATE TABLE agentEnrollmentKey (
+                id INT PRIMARY KEY CHECK (id = 1),
+                keyHex VARCHAR(64) NOT NULL,
+                createdAt BIGINT NOT NULL
+            );
+        </sql>
+        <rollback>DROP TABLE agentEnrollmentKey;</rollback>
+    </changeSet>
+
+    <changeSet id="26.11.11-configurations-backgroundImageFitFocal" author="letter-number" context="common">
+        <validCheckSum>9:cb0e74fa797947549547ac1d31d0a37f</validCheckSum>
+        <comment>Kiosk background image fit (fill = cropped, the default; fit = whole, letterboxed) and focal point
+            (0..1 of the image, what a fill crop keeps in view). NULL = the default (fill, centre), so existing
+            configurations keep their document and revision; older agents ignore the new fields. IF NOT EXISTS: a
+            database that ran an earlier build of this change (recorded under another author) has the columns.
+            validCheckSum: builds 2f60d172 to ba627ad1 recorded this changeSet with the SQL before IF NOT EXISTS.</comment>
+        <sql>ALTER TABLE configurations ADD COLUMN IF NOT EXISTS backgroundImageFit VARCHAR(8) DEFAULT NULL
+                CHECK (backgroundImageFit IS NULL OR backgroundImageFit IN ('fill', 'fit'));
+            ALTER TABLE configurations ADD COLUMN IF NOT EXISTS backgroundImageFocalX DOUBLE PRECISION DEFAULT NULL
+                CHECK (backgroundImageFocalX IS NULL OR (backgroundImageFocalX &gt;= 0 AND backgroundImageFocalX &lt;= 1));
+            ALTER TABLE configurations ADD COLUMN IF NOT EXISTS backgroundImageFocalY DOUBLE PRECISION DEFAULT NULL
+                CHECK (backgroundImageFocalY IS NULL OR (backgroundImageFocalY &gt;= 0 AND backgroundImageFocalY &lt;= 1));</sql>
+        <rollback>ALTER TABLE configurations DROP COLUMN IF EXISTS backgroundImageFocalY;
+            ALTER TABLE configurations DROP COLUMN IF EXISTS backgroundImageFocalX;
+            ALTER TABLE configurations DROP COLUMN IF EXISTS backgroundImageFit;</rollback>
+    </changeSet>
+
+    <changeSet id="26.11.16-configurations-backgroundMode-description" author="lunacy" context="common">
+        <comment>Replace the Headwind wording in the description the old installer seed gave its Background (Agent) Mode
+            configuration, as install/sql/post_seed.sql does. Only the row still holding that exact seed text changes,
+            so a description an admin wrote is kept. The description is not part of the agent's desired-state
+            revision, so devices see no change. A no-op on a fresh database (the seed is loaded after the first start
+            and carries the new text) and on a second run.</comment>
+        <sql>UPDATE configurations
+            SET description = 'The MDMesh agent runs in the background to install apps and report device status. The user can use the device freely (permissive mode).'
+            WHERE id = 3 AND name = 'Background (Agent) Mode'
+              AND description = 'Headwind MDM is running in the background, it is used to install apps and track the device status. User can do everything (permissive mode).';</sql>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="26.11.16-users-password-bcrypt" author="lunacy" context="common">
+        <comment>users#password: varchar(40) to varchar(100), for the bcrypt hashes passwords are now stored as
+            ("$2a$11$...", 60 characters, com.hmdm.util.PasswordUtil). Widening keeps every value: the 40-character
+            legacy hashes stay and keep working until each is replaced at its owner's next sign-in. No rollback: a
+            narrower column would not hold the bcrypt rows (going back to an older release restores its backup).</comment>
+        <sql>ALTER TABLE users ALTER COLUMN password TYPE varchar(100);</sql>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="26.11.20-device-history-fk" author="lunacy" context="common">
+        <comment>The agent history tables (agentCommand, device_state, device_event, device_location, agentRolloutCanary)
+            are keyed by device number, with no foreign key: a deleted device left its rows behind, and a device later
+            added with the number (the console, an import, on-demand creation) showed them as its own. Each now
+            references devices(number), which is unique: deleting a device deletes its history, renaming it carries
+            the history to the new number, and no row can name a number no device has. NOT VALID: checked for new rows
+            from now on, without reading the existing ones, so this takes its locks only for a moment. The next two
+            changesets delete the rows of devices already gone, then check the rest.</comment>
+        <sql>
+            ALTER TABLE agentCommand ADD CONSTRAINT agentCommand_device_fk FOREIGN KEY (deviceNumber)
+                REFERENCES devices (number) ON UPDATE CASCADE ON DELETE CASCADE NOT VALID;
+            ALTER TABLE device_state ADD CONSTRAINT device_state_device_fk FOREIGN KEY (deviceNumber)
+                REFERENCES devices (number) ON UPDATE CASCADE ON DELETE CASCADE NOT VALID;
+            ALTER TABLE device_event ADD CONSTRAINT device_event_device_fk FOREIGN KEY (deviceNumber)
+                REFERENCES devices (number) ON UPDATE CASCADE ON DELETE CASCADE NOT VALID;
+            ALTER TABLE device_location ADD CONSTRAINT device_location_device_fk FOREIGN KEY (deviceNumber)
+                REFERENCES devices (number) ON UPDATE CASCADE ON DELETE CASCADE NOT VALID;
+            ALTER TABLE agentRolloutCanary ADD CONSTRAINT agentRolloutCanary_device_fk FOREIGN KEY (deviceNumber)
+                REFERENCES devices (number) ON UPDATE CASCADE ON DELETE CASCADE NOT VALID;
+            CREATE INDEX IF NOT EXISTS agentRolloutCanary_deviceNumber_idx ON agentRolloutCanary (deviceNumber);
+        </sql>
+        <rollback>
+            DROP INDEX IF EXISTS agentRolloutCanary_deviceNumber_idx;
+            ALTER TABLE agentRolloutCanary DROP CONSTRAINT IF EXISTS agentRolloutCanary_device_fk;
+            ALTER TABLE device_location DROP CONSTRAINT IF EXISTS device_location_device_fk;
+            ALTER TABLE device_event DROP CONSTRAINT IF EXISTS device_event_device_fk;
+            ALTER TABLE device_state DROP CONSTRAINT IF EXISTS device_state_device_fk;
+            ALTER TABLE agentCommand DROP CONSTRAINT IF EXISTS agentCommand_device_fk;
+        </rollback>
+    </changeSet>
+
+    <changeSet id="26.11.20-device-history-orphans" author="lunacy" context="common">
+        <comment>Delete the history rows of devices deleted before the foreign keys above (rows whose number no device
+            has, and agentCommand rows with no number): no screen shows them, and a device later added with the number
+            would have. An anti-join per table, one pass over it. Runs after the keys are in place, in its own
+            transaction. The server serves nothing while its changesets run, so no request writes meanwhile; even so,
+            the keys would refuse a new such row.</comment>
+        <sql>
+            DELETE FROM agentCommand h WHERE NOT EXISTS (SELECT 1 FROM devices d WHERE d.number = h.deviceNumber);
+            DELETE FROM device_state h WHERE NOT EXISTS (SELECT 1 FROM devices d WHERE d.number = h.deviceNumber);
+            DELETE FROM device_event h WHERE NOT EXISTS (SELECT 1 FROM devices d WHERE d.number = h.deviceNumber);
+            DELETE FROM device_location h WHERE NOT EXISTS (SELECT 1 FROM devices d WHERE d.number = h.deviceNumber);
+            DELETE FROM agentRolloutCanary h WHERE NOT EXISTS (SELECT 1 FROM devices d WHERE d.number = h.deviceNumber);
+        </sql>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="26.11.20-device-history-fk-validate" author="lunacy" context="common">
+        <comment>Check the existing history rows against the foreign keys added above, now that the rows of deleted
+            devices are gone. VALIDATE reads each table a second time; it would block no writes to it.</comment>
+        <sql>
+            ALTER TABLE agentCommand VALIDATE CONSTRAINT agentCommand_device_fk;
+            ALTER TABLE device_state VALIDATE CONSTRAINT device_state_device_fk;
+            ALTER TABLE device_event VALIDATE CONSTRAINT device_event_device_fk;
+            ALTER TABLE device_location VALIDATE CONSTRAINT device_location_device_fk;
+            ALTER TABLE agentRolloutCanary VALIDATE CONSTRAINT agentRolloutCanary_device_fk;
+        </sql>
+        <rollback/>
+    </changeSet>
+
 </databaseChangeLog>

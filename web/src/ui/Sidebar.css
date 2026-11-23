@@ -1,0 +1,239 @@
+/* Sidebar: --sidebar-w wide, --nav-item rows at the UI size with --icon-nav icons; footer = update card + account row. */
+.v2 .v2-sidebar {
+  height: 100%;
+  min-height: 100%;
+  padding: var(--space-3) var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.v2 .v2-sidebar__brand {
+  display: flex;
+  align-items: center;
+  height: var(--control-md);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-control);
+  text-decoration: none;
+  color: var(--ink);
+}
+/* Hover changes colour only, never layout (it outranks the global link hover). */
+.v2 .v2-sidebar__brand:hover {
+  text-decoration: none;
+  color: var(--ink);
+}
+
+.v2 .v2-wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--ink);
+  font-weight: var(--weight-semibold);
+  font-size: var(--text-title);
+  line-height: var(--lh-title);
+  letter-spacing: var(--track-tight);
+}
+.v2 .v2-wordmark__mark {
+  width: var(--space-2);
+  height: var(--space-2);
+  background: var(--ink);
+}
+.v2 .v2-wordmark--18 .v2-wordmark__mark {
+  width: calc(var(--space-2) + var(--space-1) / 2);
+  height: calc(var(--space-2) + var(--space-1) / 2);
+}
+.v2 .v2-wordmark__esh {
+  font-weight: var(--weight-regular);
+  color: var(--secondary);
+}
+
+.v2 .v2-sidebar__nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hairline);
+}
+.v2 .v2-navitem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: var(--nav-item);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-control);
+  font-size: var(--text-ui);
+  line-height: var(--lh-ui);
+  text-decoration: none;
+  background: transparent;
+  color: var(--text-2);
+  font-weight: var(--weight-regular);
+  transition-property: background-color, color;
+  transition-duration: var(--dur-micro);
+  transition-timing-function: var(--ease);
+}
+/* Hover changes colour only, never layout (it outranks the global link hover). */
+.v2 .v2-navitem:hover {
+  text-decoration: none;
+  background: transparent;
+  color: var(--text-2);
+}
+.v2 .v2-navitem > svg {
+  flex: 0 0 auto;
+  width: var(--icon-nav);
+  height: var(--icon-nav);
+  color: var(--secondary);
+}
+.v2 .v2-navitem:not(.is-active):hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+/* The current page: a fill, ink text and icon, and the medium weight (no outline). */
+.v2 .v2-navitem.is-active {
+  background: var(--surface-2);
+  color: var(--ink);
+  font-weight: var(--weight-medium);
+}
+.v2 .v2-navitem.is-active > svg {
+  color: var(--ink);
+}
+.v2 .v2-navitem__label {
+  flex: 1 1 auto;
+}
+@media (max-width: 860px) {
+  .v2 .v2-navitem {
+    min-height: var(--touch);
+  }
+}
+@media (forced-colors: active) {
+  .v2 .v2-navitem.is-active {
+    outline: var(--indicator) solid Highlight;
+    outline-offset: calc(var(--indicator) * -1);
+  }
+}
+
+.v2 .v2-sidebar__foot {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* Server-update card: a compact inset card above the account row. */
+.v2 .v2-updcard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  margin: 0 var(--space-1) var(--space-2);
+  padding: var(--space-3);
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-sunken);
+  color: var(--text);
+  text-decoration: none;
+  transition: border-color var(--dur-micro) var(--ease);
+}
+/* Hover changes colour only, never layout (it outranks the global link hover). */
+.v2 .v2-updcard:hover {
+  background: var(--surface-sunken);
+  color: var(--text);
+  text-decoration: none;
+}
+.v2 .v2-updcard:hover {
+  border-color: var(--border-strong);
+}
+.v2 .v2-updcard__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: var(--weight-medium);
+}
+.v2 .v2-updcard__dot {
+  flex: 0 0 auto;
+  width: var(--dot);
+  height: var(--dot);
+  border-radius: var(--radius-full);
+  background: var(--online);
+}
+.v2 .v2-updcard__dot.is-warn {
+  background: var(--warn);
+}
+.v2 .v2-updcard__dot.is-alert {
+  background: var(--alert);
+}
+.v2 .v2-updcard__text {
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
+  color: var(--secondary);
+  text-wrap: pretty;
+}
+/* The card is the link; its action is drawn as a small secondary button. */
+.v2 .v2-updcard__action {
+  display: inline-flex;
+  align-items: center;
+  height: var(--control-sm);
+  margin-top: var(--space-1);
+  padding: 0 var(--space-3);
+  border: var(--hairline) solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: var(--weight-medium);
+  transition: background-color var(--dur-micro) var(--ease);
+}
+.v2 .v2-updcard:hover .v2-updcard__action {
+  background: var(--hover);
+}
+
+/* Account row: avatar initial, login, chevron; its menu holds the theme switch and Sign out. */
+.v2 .v2-account {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  height: var(--control-md);
+  padding: 0 var(--space-2) 0 var(--space-1);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-2);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--dur-micro) var(--ease);
+}
+.v2 .v2-account:hover,
+.v2 .v2-account[data-state='open'] {
+  background: var(--hover);
+  color: var(--ink);
+}
+.v2 .v2-account__avatar {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-xs);
+  height: var(--control-xs);
+  border-radius: var(--radius-full);
+  background: var(--surface-2);
+  border: var(--hairline) solid var(--border);
+  color: var(--text-2);
+  font-size: var(--text-caps);
+  line-height: var(--lh-caps);
+  font-weight: var(--weight-medium);
+}
+.v2 .v2-account__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.v2 .v2-account > svg {
+  flex: 0 0 auto;
+  color: var(--secondary);
+}
+@media (max-width: 860px) {
+  .v2 .v2-account {
+    min-height: var(--touch);
+  }
+}

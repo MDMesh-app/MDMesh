@@ -24,6 +24,11 @@ MDMesh is a monorepo with four planes (full map in **[STRUCTURE.md](STRUCTURE.md
 Read the relevant ADR in [`docs/adr/`](docs/adr) before changing a load-bearing area (signing, device IDs, the
 agent contract, etc.).
 
+**Maintaining a fork?** Add console pages, tabs and sections in `web/src/extensions/` and server plugins in
+`plugins/fork/`, so you never edit core files: [web/EXTENDING.md](web/EXTENDING.md) is the guide. A change to
+`@mdmesh/console` or a slot contract in core follows its stability rules (one release of deprecation, a CHANGELOG
+line).
+
 ---
 
 ## Build and test
@@ -33,7 +38,7 @@ stack.
 
 | Plane | Run from | Test | Type-check / build |
 |-------|----------|------|--------------------|
-| Console | `web/` | — (see [the runtime check](#dependency-updates)) | `npx tsc -b --noEmit` · `npm run build` |
+| Console | `web/` | `npm test` (vitest; also [the runtime check](#dependency-updates)) | `npx tsc -b --noEmit` · `npm run build` |
 | Server | repo root | `mvn -pl common test` (fast, DB-free) | `mvn -pl server -am compile` · `mvn -pl server -am package -DskipTests` (the WAR) |
 | Agent | `agent-android/` | `./gradlew :proto:test :core:test` · `./gradlew detekt` | `./gradlew :app:compileDebugKotlin` · `./gradlew :app:assembleDebug` (debug APK) |
 | Supervisor | `supervisor/` | `node --test` | the image + smoke test, below |
@@ -73,7 +78,8 @@ stack.
 | **T2** | `t2-native.yml` | The [native rig](docs/DEV.md#t2-native-rig-native-install--upgrade): fresh install, upgrade, killed upgrade, on Debian 12, Debian 13 and Ubuntu 24.04 | PRs that touch the installers or the rig; nightly; by hand; before every release ([RELEASING.md](RELEASING.md)) |
 
 The exact triggers are the path filters in each workflow under `.github/workflows/` (the `paths` job in T0/T1,
-`on.pull_request.paths` in T2). In T0 and T1, a change under `.github/`, to a compose file, a lockfile or a `Dockerfile*` runs everything.
+`on.pull_request.paths` in T2). In T0 and T1, a change under `.github/`, to a compose file, a lockfile, a `package.json`, a `tsconfig*.json` or a
+file named `Dockerfile*` runs everything (`docker/*.Dockerfile` goes through each plane's own filter).
 New Kotlin must pass detekt; old findings are in `agent-android/config/detekt/baseline.xml`. A failed T1 uploads its
 logs as the `t1-e2e-logs` artifact, and a red T1 on `main` opens a tracking issue.
 
@@ -112,7 +118,8 @@ Dependabot opens grouped PRs every Monday ([`.github/dependabot.yml`](.github/de
   moves in one PR, a few months after the next even line becomes LTS.
 - **Base images float**, so rebuilds pick up patches. The edge's `caddy` image is pinned, so the Caddyfile parser only
   changes through a Dependabot PR that T0's `edge` check has passed.
-- **Vendored CI actions** (`.github/actions/ci-kit/`) change only by re-running ci-kit's `scripts/vendor.sh`.
+- **Vendored CI actions** (`.github/actions/ci-kit/`) change only by re-running `scripts/vendor.sh` in the
+  upstream ci-kit repository (see `.github/actions/ci-kit/VENDORED.txt`).
 
 ---
 
@@ -137,14 +144,23 @@ New here? Look for **good first issue**, or open a discussion before a large cha
 
 ## Regenerating the docs screenshots
 
-The README screenshots come from the real SPA against sample data:
+Every screenshot and diagram in the README comes from `docs/readme/`, and
+[scripts/readme/README.md](scripts/readme/README.md) is the one place that says how they are made. In short:
+`scripts/readme/generate.sh --build` builds the console and captures it against sample data.
+
+Both that generator and the full-page screenshots in `docs/screenshots/` (which the README doesn't use) render the
+real console through the harness in `scripts/shots/`. To redo the full-page ones:
 
 ```bash
 cd web && npm run build          # build the SPA first
 cd ../scripts/shots && npm install && npx playwright install chromium && node capture.mjs
 ```
 
-Output lands in `docs/screenshots/`; the harness and fixtures are in `scripts/shots/`.
+They come out in the light theme (`node capture.mjs --theme dark` for dark). Behaviour checks for every page run
+against the same fixtures: `node scripts/shots/v2-parity/run.mjs --build` from the repo root. `--with-fixture` adds a
+check of every extension slot in a build that has the test fixture extension (`web/src/ext/__fixtures__/demo`) as a
+fork's folder: `node scripts/shots/v2-parity/run.mjs --with-fixture extensions` runs only that one. The normal build
+never has the fixture.
 
 ---
 

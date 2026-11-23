@@ -37,4 +37,5 @@ public class DesiredKioskTheme {
     private String backgroundColor;
     private String textColor;
     private String iconSize;
+    private DesiredKioskBackgroundImage backgroundImage;
 }

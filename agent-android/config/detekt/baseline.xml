@@ -10,7 +10,6 @@
     <ID>ForbiddenComment:InputInjectionService.kt$InputInjectionService$// TODO: dispatchGesture(...) wiring lands with the remote-control input channel.</ID>
     <ID>InstanceOfCheckForException:CheckInCoordinator.kt$CheckInCoordinator$t !is CancellationException</ID>
     <ID>LongParameterList:CapabilityCollector.kt$CapabilityCollector$( private val agentVersion: String, private val agentPackage: String, private val isDeviceOwner: () -&gt; Boolean, private val policyKeys: () -&gt; List&lt;String&gt;, private val remoteControl: () -&gt; RemoteControlCapability, private val oem: () -&gt; OemCapability, private val deviceOwnerAppManagementKeys: List&lt;String&gt; = emptyList(), private val deviceActionKeys: List&lt;String&gt; = emptyList(), private val buildInfo: BuildInfo = BuildInfo.fromAndroid(), )</ID>
-    <ID>LongParameterList:CheckInCoordinator.kt$CheckInCoordinator$( private val api: MdmApi, private val enrollment: EnrollmentManager, private val identity: DeviceIdentity, private val capabilitySource: CapabilitySource, private val dispatcher: CommandDispatcher, private val pending: PendingResults, private val stateSource: DeviceStateSource, private val telemetrySource: TelemetrySource, private val eventSink: EventSink, private val installIntegrity: InstallIntegrityPolicy, private val hardwareIdSource: HardwareIdSource = HardwareIdSource { null }, private val syncStatus: SyncStatus = SyncStatus(), )</ID>
     <ID>LoopWithTooManyJumpStatements:KioskLauncherActivity.kt$KioskLauncherActivity$for</ID>
     <ID>MagicNumber:AppInventoryCollector.kt$AppInventoryCollector$100</ID>
     <ID>MagicNumber:CheckInService.kt$CheckInService$1000L</ID>
@@ -122,7 +121,6 @@
     <ID>ReturnCount:InstallManager.kt$InstallManager$suspend fun install(req: InstallRequest): InstallOutcome</ID>
     <ID>ReturnCount:LocationCollector.kt$LocationCollector$@SuppressLint("MissingPermission") // gated by collect()'s hasPermission() check private fun currentFix(lm: LocationManager): Location?</ID>
     <ID>ReturnCount:LocationCollector.kt$LocationCollector$fun collect(): LocationDto?</ID>
-    <ID>ReturnCount:LockTaskKioskController.kt$LockTaskKioskController$override fun allowedPackages(): List&lt;String&gt;</ID>
     <ID>ReturnCount:PolicyApplyHandler.kt$PolicyApplyHandler$override suspend fun handle(command: CommandEnvelope): CommandResult</ID>
     <ID>ReturnCount:PolicyManager.kt$PolicyManager$fun applyRestriction(key: String, enabled: Boolean): PolicyOutcome</ID>
     <ID>ReturnCount:PolicyManager.kt$PolicyManager$fun setKeyguardDisabled(disabled: Boolean): PolicyOutcome</ID>
@@ -131,7 +129,6 @@
     <ID>ReturnCount:PolicyManager.kt$PolicyManager$fun setSystemUpdateAutomatic(): PolicyOutcome</ID>
     <ID>ReturnCount:ResetPasswordTokenStore.kt$ResetPasswordTokenStore$fun ensureToken(): ByteArray</ID>
     <ID>ReturnCount:VersionPolicy.kt$VersionPolicy$fun shouldInstall(installedVersionCode: Long?, requestedVersionCode: Long?): Decision</ID>
-    <ID>SwallowedException:LockTaskKioskController.kt$LockTaskKioskController$t: Throwable</ID>
     <ID>TooGenericExceptionCaught:CheckInCoordinator.kt$CheckInCoordinator$t: Throwable</ID>
     <ID>TooGenericExceptionCaught:InstallManager.kt$InstallManager$e: Exception</ID>
     <ID>TooGenericExceptionCaught:KeepAliveReceiver.kt$KeepAliveReceiver$e: Exception</ID>

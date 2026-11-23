@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- v2 radii and sizes (web/src/tokens.css). -->
+<resources>
+    <dimen name="mdm_radius_sm">10dp</dimen>   <!-- -radius-sm: buttons, fields, callouts -->
+    <dimen name="mdm_radius_lg">16dp</dimen>   <!-- -radius-lg: cards, dialogs -->
+    <dimen name="mdm_touch_target">48dp</dimen>
+    <dimen name="mdm_field_padding_h">12dp</dimen>  <!-- text field: typed text and its error line start here -->
+    <dimen name="mdm_dialog_padding">24dp</dimen>
+    <dimen name="mdm_dialog_inset">16dp</dimen>
+    <dimen name="mdm_dialog_max_width">560dp</dimen>  <!-- M3 dialog maximum, phone landscape and tablets -->
+    <!-- Dialog layout (mdm_dialog.xml), M3 dialog metrics: 24dp around, 16dp title to message and message to
+         body, buttons 24dp below the content and 24dp above the edge (20dp padding + the button's 4dp inset). -->
+    <dimen name="mdm_dialog_title_gap">16dp</dimen>
+    <dimen name="mdm_dialog_icon_gap">12dp</dimen>
+    <dimen name="mdm_dialog_bar_padding_v">20dp</dimen>
+    <dimen name="mdm_dialog_button_gap">8dp</dimen>
+    <!-- bodyMedium line height 1.5 (v2 -lh-body): 14sp text, about 21sp lines. -->
+    <dimen name="mdm_body_line_extra">4sp</dimen>
+    <!-- Scrim behind dialogs: -backdrop alpha (0.35 light, 0.6 dark). -->
+    <item name="mdm_dim_amount" format="float" type="dimen">0.35</item>
+</resources>

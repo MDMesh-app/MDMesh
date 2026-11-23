@@ -1,0 +1,62 @@
+/* Skeletons: --skeleton blocks at the content's own size, fading in after a short delay, with a slow sheen. */
+.v2 .v2-skel {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: var(--lh-ui);
+  overflow: hidden;
+  border-radius: var(--radius-chip);
+  background: var(--skeleton);
+  animation: v2-fade-in var(--dur-enter) var(--ease) var(--skeleton-delay) backwards;
+}
+.v2 .v2-skel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, var(--skeleton-shine), transparent);
+  animation: v2-shimmer var(--skeleton-sweep) var(--ease) infinite;
+}
+.v2 .v2-skel--line {
+  height: var(--space-3);
+  margin-block: var(--space-1);
+}
+.v2 .v2-skel--title {
+  height: var(--space-4);
+  margin-block: var(--space-1);
+}
+.v2 .v2-skel--control {
+  height: var(--control-md);
+}
+.v2 .v2-skel--row {
+  height: var(--row);
+}
+.v2 .v2-skel--full {
+  border-radius: var(--radius-full);
+}
+.v2 .v2-skelrows__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-6);
+  height: var(--row);
+  padding: 0 var(--card-pad);
+  border-top: var(--hairline) solid var(--line-soft);
+}
+.v2 .v2-skelrows--compact .v2-skelrows__row {
+  height: var(--row-compact);
+}
+.v2 .v2-skelfacts {
+  display: flex;
+  flex-direction: column;
+}
+.v2 .v2-skelfacts__row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding-block: var(--space-1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .v2 .v2-skel::after {
+    display: none;
+  }
+}

@@ -1,9 +1,14 @@
 package com.hmdm.testsupport;
 
+import com.hmdm.extension.ConfigurationExtensionValidator;
+import com.hmdm.extension.DesiredConfigContributor;
 import com.hmdm.persistence.domain.User;
 import com.hmdm.persistence.domain.UserRole;
 import com.hmdm.persistence.domain.UserRolePermission;
+import com.hmdm.plugin.persistence.mapper.PluginMapper;
+import com.hmdm.plugin.service.PluginStatusCache;
 import com.hmdm.rest.json.LookupItem;
+import com.hmdm.rest.resource.support.ExtensionPoints;
 import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Select;
@@ -13,12 +18,15 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.BiPredicate;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -114,6 +122,31 @@ public final class Fakes {
         String s = sql.replaceAll("\\s+", " ").toLowerCase();
         int i = s.indexOf(" where ");
         return i < 0 ? "" : s.substring(i);
+    }
+
+    /**
+     * The server plugins' state without a database: every plugin is on for every customer, except where {@code off}
+     * says it is off (plugin id, customer id).
+     */
+    public static PluginStatusCache pluginStatus(BiPredicate<String, Integer> off) {
+        return new PluginStatusCache(new FakeMapper<>(PluginMapper.class).mapper) {
+            @Override public boolean isPluginDisabled(String pluginIdentifier, Integer customerId) {
+                return off.test(pluginIdentifier, customerId);
+            }
+        };
+    }
+
+    /** The extension points with these plugins' validators and contributors, every plugin on for every customer. */
+    public static ExtensionPoints extensionPoints(Collection<ConfigurationExtensionValidator> validators,
+                                                  Collection<DesiredConfigContributor> contributors) {
+        return new ExtensionPoints(new LinkedHashSet<>(validators), new LinkedHashSet<>(contributors),
+                pluginStatus((plugin, customer) -> false));
+    }
+
+    /** Core's extension points: no plugin adds to them. */
+    public static ExtensionPoints noExtensionPoints() {
+        return extensionPoints(Collections.<ConfigurationExtensionValidator>emptySet(),
+                Collections.<DesiredConfigContributor>emptySet());
     }
 
     public static User user(int id, int customerId, String... permissions) {

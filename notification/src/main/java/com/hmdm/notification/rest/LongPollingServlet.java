@@ -27,6 +27,7 @@ import com.hmdm.notification.PushSenderPolling;
 import com.hmdm.notification.persistence.NotificationDAO;
 import com.hmdm.notification.persistence.domain.PushMessage;
 import com.hmdm.notification.rest.json.PlainPushMessage;
+import com.hmdm.persistence.LegacyDevice;
 import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.Device;
 import com.hmdm.rest.filter.PublicIPFilter;
@@ -137,12 +138,13 @@ public class LongPollingServlet extends HttpServlet {
             }
         }
 
-        Device device = unsecureDAO.getDeviceByNumber(deviceNumber);
-        if (device == null) {
+        LegacyDevice found = unsecureDAO.findLegacyDevice(deviceNumber, LegacyDevice.Lookup.NUMBER);
+        if (!found.isServed()) {
             log.warn("No device with number: " + deviceNumber);
             resp.sendError(404);
             return;
         }
+        final Device device = found.getDevice();
 
         // Unfortunately the output buffer can't be disabled or reduced (the minimal buffer size is 8192)
         // Even setting in server.xml: <Connector ... socket.appWriteBufSize="1" /> doesn't change anything!

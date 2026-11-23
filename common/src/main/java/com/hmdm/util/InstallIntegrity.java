@@ -77,6 +77,17 @@ public final class InstallIntegrity {
     /** What the admin can do about an APK without a known SHA-256. */
     public static final String ADD_HASH = "Add the APK's SHA-256 in the Library (SHA-256\u2026 button) or upload the APK.";
 
+    /**
+     * The longest hash input read: the longest form of a SHA-256 (64 hex characters) with as many blanks around it.
+     * Anything longer is refused before it is trimmed, matched or decoded.
+     */
+    static final int MAX_HASH_INPUT = 128;
+
+    /** A SHA-256 in hex, and in base64 with its padding (43 characters without it). */
+    private static final int HEX_LENGTH = 64;
+    private static final int BASE64_LENGTH = 44;
+    private static final String HEX_PATTERN = "[0-9a-fA-F]{64}";
+
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private InstallIntegrity() {}
@@ -149,15 +160,20 @@ public final class InstallIntegrity {
 
     /**
      * A SHA-256 as lowercase hex: accepts 64 hex characters, or the base64/base64url encoding of 32 bytes (the form
-     * QR provisioning stores in {@code applicationVersions.apkHash}). Anything else is null.
+     * QR provisioning stores in {@code applicationVersions.apkHash}): 43 characters, or 44 with its {@code =}. Blanks
+     * around it are ignored. Anything else, and anything over {@link #MAX_HASH_INPUT} characters, is null; only a value
+     * of a hash's length is ever decoded.
      */
     public static String normalizeHex(String value) {
-        if (value == null) {
+        if (value == null || value.length() > MAX_HASH_INPUT) {
             return null;
         }
         String v = value.trim();
-        if (v.matches("[0-9a-fA-F]{64}")) {
-            return v.toLowerCase(Locale.ROOT);
+        if (v.length() == HEX_LENGTH) {
+            return v.matches(HEX_PATTERN) ? v.toLowerCase(Locale.ROOT) : null;
+        }
+        if (v.length() != BASE64_LENGTH && v.length() != BASE64_LENGTH - 1) {
+            return null;
         }
         byte[] bytes = decode(Base64.getUrlDecoder(), v);
         if (bytes == null) {
@@ -175,11 +191,11 @@ public final class InstallIntegrity {
      * decodes as base64 of 32 bytes and would be stored as a different digest.
      */
     public static String hexOnly(String value) {
-        if (value == null) {
+        if (value == null || value.length() > MAX_HASH_INPUT) {
             return null;
         }
         String v = value.trim();
-        return v.matches("[0-9a-fA-F]{64}") ? v.toLowerCase(Locale.ROOT) : null;
+        return v.length() == HEX_LENGTH && v.matches(HEX_PATTERN) ? v.toLowerCase(Locale.ROOT) : null;
     }
 
     /** {@code applicationVersions.apkHash} form (base64url, as QR provisioning computes it) of a hex SHA-256. */

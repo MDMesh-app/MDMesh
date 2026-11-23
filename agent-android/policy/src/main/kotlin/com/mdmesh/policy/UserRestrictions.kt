@@ -1,3 +1,26 @@
+/*
+ * Headwind MDM: Open Source Android MDM Software
+ * https://h-mdm.com
+ *
+ * The USB restriction pair is based on lockUsbStorage in hmdm-android Utils.java and
+ * changed for MDMesh: rewritten in Kotlin as a key lookup; the rest is new.
+ *
+ * Copyright (C) 2019 Headwind Solutions LLC (http://h-sms.com)
+ * Modifications Copyright (C) 2026 the MDMesh contributors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.mdmesh.policy
 
 /**
@@ -22,6 +45,7 @@ object UserRestrictions {
     const val DISALLOW_MOUNT_PHYSICAL_MEDIA = "no_physical_media"
     const val DISALLOW_FACTORY_RESET = "no_factory_reset"
     const val DISALLOW_SAFE_BOOT = "no_safe_boot"
+    const val DISALLOW_CONFIG_LOCATION = "no_config_location"
 
     /** API 33. Used by the `wifiRadio` policy (not by [forKey]: it is added only on "off"). */
     const val DISALLOW_CHANGE_WIFI_STATE = "no_change_wifi_state"

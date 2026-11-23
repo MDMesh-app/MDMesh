@@ -32,6 +32,7 @@ class ConfigApplyHandlerTest {
             KioskApplier(StubKioskController(), InMemoryKioskStateStore(), NoHome, ComponentName("a", "b")) { false },
             {},
             InMemoryConfigStateStore(),
+            setPowerMode = {},
         ),
     )
     private fun cmd(payload: kotlinx.serialization.json.JsonObject?) = CommandEnvelope(commandId = "9", issuedAt = "2026-01-01T00:00:00Z", type = "config.apply", payload = payload)

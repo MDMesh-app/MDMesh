@@ -12,6 +12,7 @@ import com.hmdm.persistence.mapper.UserMapper;
 import com.hmdm.rest.json.Response;
 import com.hmdm.rest.json.agent.AgentCheckInRequest;
 import com.hmdm.rest.json.agent.AgentTelemetryEvent;
+import com.hmdm.rest.resource.support.AppReconciler;
 import com.hmdm.rest.resource.support.ConfigAppInstaller;
 import com.hmdm.rest.resource.support.ConfigReconciler;
 import com.hmdm.rest.resource.support.InstallHashes;
@@ -64,6 +65,9 @@ public class AgentCheckInKioskAlertTest {
         @Override public String getDeviceCapabilities(String n) { return null; }
         @Override public List<AgentCommand> listPending(String n) { return Collections.emptyList(); }
         @Override public void insertEvent(String n, String type, Long ts, String detail) { events.add(type); }
+        @Override public void insertEvents(String n, List<com.hmdm.persistence.domain.DeviceEvent> rows) {
+            for (com.hmdm.persistence.domain.DeviceEvent row : rows) events.add(row.getType());
+        }
     }
 
     private static final class FakeEmail extends EmailService {
@@ -94,12 +98,13 @@ public class AgentCheckInKioskAlertTest {
                 executor, new KioskAlertLimits(System::currentTimeMillis), System::currentTimeMillis);
         return new AgentResource(new FakeUnsecureDAO(), null, commands,
                 new ConfigAppInstaller(null, null, null, null),
-                new ConfigReconciler(null, null) {
+                new ConfigReconciler(null, null, Fakes.noExtensionPoints()) {
                     @Override public boolean reconcile(Device d, Set<String> t, String rev, String av, String cav,
                                                        long now, long receivedAt) { return false; }
                 },
+                new AppReconciler(null, null, null, null),
                 new RolloutRequeuer(null) { @Override public boolean requeue(Device d, long now) { return false; } },
-                new InstallHashes(null, null), alert);
+                new InstallHashes(null, null), alert, null);
     }
 
     @Before

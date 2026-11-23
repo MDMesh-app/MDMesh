@@ -9,7 +9,7 @@ import com.mdmesh.agent.service.CheckInService
 import com.mdmesh.core.action.ResetPasswordTokenStore
 import com.mdmesh.core.config.ServerConfigStore
 import com.mdmesh.core.location.LocationPermissions
-import com.mdmesh.core.store.EnrollTokenStore
+import com.mdmesh.core.store.AgentDataStores
 import com.mdmesh.core.sync.CheckInWorker
 import com.mdmesh.policy.PolicyManager
 import com.mdmesh.policy.wifi.DpmHandle
@@ -35,6 +35,9 @@ class AdminPolicyComplianceActivity : Activity() {
         // Server URL first (synchronous SharedPreferences), so no check-in scheduled below can
         // ever run against the baked fallback. save() is a no-op for an absent/blank extra.
         ServerConfigStore(ctx).save(extrasString(AdminReceiver.EXTRA_SERVER_URL))
+        // Before the first enroll: it reports the enrollment-specific id, which needs the org id. On Android 12+ this
+        // activity can run before the admin receiver's callbacks that also set it.
+        AdminReceiver.setStableOrganizationId(ctx)
         CheckInWorker.schedule(ctx) // periodic reconcile
         applyBaselinePolicy(ctx)
 
@@ -43,11 +46,16 @@ class AdminPolicyComplianceActivity : Activity() {
             // Independent scope so the save completes even though we finish() immediately;
             // the check-in is scheduled only after the token persists (avoids a race).
             CoroutineScope(Dispatchers.IO).launch {
-                EnrollTokenStore(ctx).save(token)
-                CheckInWorker.scheduleNow(ctx)
-                // Open the instant channel now that the token is saved (its first sync enrolls); otherwise it only
-                // started from the app's screens or a reboot, and commands waited for the periodic check-in.
-                CheckInService.start(ctx)
+                try {
+                    AgentDataStores.stores(ctx).enrollTokenStore().save(token)
+                } finally {
+                    // Even if the save failed: the check-in then reports "no enrollment code" on the device's screen
+                    // instead of nothing happening at all.
+                    CheckInWorker.scheduleNow(ctx)
+                    // Open the instant channel now that the token is saved (its first sync enrolls); otherwise it
+                    // only started from the app's screens or a reboot, and commands waited for the periodic check-in.
+                    CheckInService.start(ctx)
+                }
             }
         } else {
             CheckInWorker.scheduleNow(ctx)
@@ -71,9 +79,16 @@ class AdminPolicyComplianceActivity : Activity() {
             // Silently grant the telemetry runtime permissions as Device Owner.
             // Location includes background (Android 10+): on this QR path nothing else grants it while the agent is
             // Device Owner. The collector repairs it later too (LocationPermissionAccess).
+            // POST_NOTIFICATIONS (Android 13+) likewise, so alerts and the "MDMesh active" notification show. Best
+            // effort: this can run before the agent reads as Device Owner (see CapabilityCollector). If it doesn't
+            // take, NotificationPermissionAccess grants it when the next alert is shown or CheckInService next starts.
             (
                 listOf(android.Manifest.permission.READ_PHONE_STATE, android.Manifest.permission.READ_PHONE_NUMBERS) +
-                    LocationPermissions.forThisDevice()
+                    LocationPermissions.forThisDevice() +
+                    listOfNotNull(
+                        android.Manifest.permission.POST_NOTIFICATIONS
+                            .takeIf { android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU },
+                    )
             ).forEach { perm ->
                 runCatching {
                     dpm.setPermissionGrantState(

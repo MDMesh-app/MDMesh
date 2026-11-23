@@ -1,0 +1,261 @@
+// The kiosk launcher's grid screen in dp, as the agent lays it out (agent ui/KioskRenderer, AppGridLayout, KioskViews),
+// with the plate geometry and label lines of docs/kiosk-background-scrim.md (3.5). The console's preview draws from it and
+// computes the dim and the plates over exactly these boxes, so a label is cut where the device cuts it.
+import { cachedLabelLines, capLabel, labelDirection } from './kioskLabelLines';
+import type { Box, LegibilityElement } from './kioskScrim';
+
+/** Plate padding: 8 dp left and right, 4 dp top and bottom. */
+export const PLATE_PAD_X = 8;
+export const PLATE_PAD_Y = 4;
+/** Plate corner radius: the console's small radius. */
+export const PLATE_RADIUS = 10;
+
+const TITLE_SP = 20;
+const LABEL_SP = 14;
+const EXIT_SP = 14;
+/** App labels: two lines at the default font size. */
+export const LABEL_LINES = 2;
+const LABEL_GAP = 8;
+const CELL_PAD_H = 8;
+/** Space kept between neighbouring label plates: a row plate is at most the cell width less this. */
+export const PLATE_GAP = 8;
+const CELL_PAD_V = 12;
+const ICON_SIDE_SPACE = 24;
+const LABEL_MIN = 80;
+const BUTTON_MIN_WIDTH = 120;
+const BUTTON_PAD_H = 16;
+const BUTTON_HEIGHT = 40;
+const BUTTON_INSET = 4;
+/** Space between the Exit button and the bottom of the content area. */
+const EXIT_MARGIN = 24;
+/** Air between the grid's last row and the Exit button at the end of the scroll. */
+const EXIT_AIR = 8;
+/** The grid's bottom padding without an Exit button. */
+const GRID_BOTTOM = 24;
+/** A TextView's line height, from its text size. */
+const lineHeight = (sp: number) => Math.round(sp * 1.33);
+const ICON: Record<string, number> = { SMALL: 56, MEDIUM: 72, LARGE: 96 };
+
+/** Width in dp of `text` at `size` sp and `weight`. */
+export type Measure = (text: string, size: number, weight: number) => number;
+
+export interface LauncherCell {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  name: string;
+  icon: Box;
+  /** The label's text view (cell width less padding, its laid-out lines). */
+  label: Box;
+  lines: string[];
+  /** The label's one direction, from its first strong character (Label lines, 6), for every line. */
+  dir: 'ltr' | 'rtl';
+  /** The widest laid-out line. */
+  lineWidth: number;
+}
+
+export interface LauncherLayout {
+  window: { w: number; h: number };
+  header: Box & { text: string; size: number };
+  headerPlate: Box;
+  columns: number;
+  cells: LauncherCell[];
+  /** One per cell, same order. */
+  labelPlates: Box[];
+  labelSize: number;
+  labelLineHeight: number;
+  /**
+   * The Exit button, outlined: background-colour fill, 1 dp border and label in the text colour. No plate; its box is
+   * its region for the dim, which brings the border to 3:1.
+   */
+  exit: { button: Box; size: number } | null;
+  /**
+   * What kioskLegibility protects: the header, each label and the Exit button that are on screen at this scroll,
+   * clipped to the window (the image is under the window only).
+   */
+  elements: LegibilityElement[];
+  /** The scrolling content's height: the grid's rows, then room for the Exit button (or 24 dp without one). */
+  contentHeight: number;
+  /** How far the grid scrolls (0 when it fits), and where this layout is scrolled to (dp). */
+  maxScroll: number;
+  scrollY: number;
+}
+
+/**
+ * The label plates of one grid row, horizontally: one width for the row, the widest text line plus padding but at most
+ * the cell width less PLATE_GAP; each centred under its icon (`centres`), then moved inward to stay within the grid's
+ * content edges: `x = min(max(centre - w / 2, contentLeft), contentRight - w)`.
+ */
+export function rowPlates(
+  centres: readonly number[],
+  textWidths: readonly number[],
+  cellW: number,
+  contentLeft: number,
+  contentRight: number,
+): { x: number; w: number }[] {
+  const w = Math.min(Math.max(0, ...textWidths) + 2 * PLATE_PAD_X, cellW - PLATE_GAP);
+  return centres.map((c) => ({ x: Math.min(Math.max(c - w / 2, contentLeft), contentRight - w), w }));
+}
+
+export function launcherLayout(
+  window: { w: number; h: number },
+  apps: readonly string[],
+  opts: { iconSize?: string | null; exitVisible: boolean; scrollY?: number },
+  measure: Measure,
+): LauncherLayout {
+  const { w: W, h: H } = window;
+  // values-sw600dp: tablets get the wider gutter.
+  const gutter = Math.min(W, H) >= 600 ? 24 : 16;
+  const icon = ICON[(opts.iconSize ?? 'SMALL').toUpperCase()] ?? ICON.SMALL;
+  const slot = Math.max(icon + ICON_SIDE_SPACE, LABEL_MIN);
+  const side = gutter - 8;
+  const inner = Math.max(0, W - 2 * side);
+  const columns = Math.max(2, Math.floor(inner / slot));
+  const cellW = Math.floor(inner / columns);
+  const cellLeft = (col: number) => side + Math.floor((inner - cellW * columns) / 2) + col * cellW;
+  const iconStart = cellLeft(0) + Math.floor((cellW - icon) / 2);
+
+  const headerText = 'MDMesh Kiosk';
+  const header = {
+    x: iconStart,
+    y: 24,
+    w: Math.min(measure(headerText, TITLE_SP, 500), W - 2 * iconStart),
+    h: lineHeight(TITLE_SP),
+    text: headerText,
+    size: TITLE_SP,
+  };
+  const headerPlate = { x: header.x - PLATE_PAD_X, y: header.y - PLATE_PAD_Y, w: header.w + 2 * PLATE_PAD_X, h: header.h + 2 * PLATE_PAD_Y };
+
+  // The plate is at most the cell less the gap, and the text box is the plate less its padding.
+  const plateMax = cellW - PLATE_GAP;
+  const labelW = Math.min(cellW - 2 * CELL_PAD_H, plateMax - 2 * PLATE_PAD_X);
+  const labelLine = lineHeight(LABEL_SP);
+  const measureLabel = (s: string) => measure(s, LABEL_SP, 400);
+  const laid = apps.map((name) => {
+    const lines = cachedLabelLines(measure, LABEL_SP, 400, name, labelW, LABEL_LINES);
+    return { name, lines, dir: labelDirection(capLabel(name)), lineWidth: Math.min(labelW, Math.max(0, ...lines.map(measureLabel))) };
+  });
+  const gridY = header.y + header.h + 8;
+  const cells: LauncherCell[] = [];
+  let rowY = gridY;
+  for (let r = 0; r * columns < laid.length; r++) {
+    const row = laid.slice(r * columns, (r + 1) * columns);
+    const rowH = Math.max(...row.map((a) => CELL_PAD_V + icon + LABEL_GAP + a.lines.length * labelLine + CELL_PAD_V));
+    row.forEach((a, c) => {
+      const x = cellLeft(c);
+      cells.push({
+        x,
+        y: rowY,
+        w: cellW,
+        h: rowH,
+        name: a.name,
+        icon: { x: x + Math.floor((cellW - icon) / 2), y: rowY + CELL_PAD_V, w: icon, h: icon },
+        label: { x: x + (cellW - labelW) / 2, y: rowY + CELL_PAD_V + icon + LABEL_GAP, w: labelW, h: a.lines.length * labelLine },
+        lines: a.lines,
+        dir: a.dir,
+        lineWidth: a.lineWidth,
+      });
+    });
+    rowY += rowH;
+  }
+  // One width per grid row (docs/kiosk-background-scrim.md, Plate geometry): the widest label line plus padding, at
+  // most the cell width less the gap; each centred under its icon, kept inside the grid's content edges.
+  const contentLeft = cellLeft(0);
+  const contentRight = cellLeft(columns - 1) + cellW;
+  const labelPlates: Box[] = [];
+  for (let r = 0; r * columns < cells.length; r++) {
+    const row = cells.slice(r * columns, (r + 1) * columns);
+    const boxes = rowPlates(
+      row.map((c) => c.icon.x + c.icon.w / 2),
+      row.map((c) => c.lineWidth),
+      cellW,
+      contentLeft,
+      contentRight,
+    );
+    boxes.forEach((b, k) => labelPlates.push({ x: b.x, y: row[k].label.y - PLATE_PAD_Y, w: b.w, h: row[k].label.h + 2 * PLATE_PAD_Y }));
+  }
+
+  let exit: LauncherLayout['exit'] = null;
+  if (opts.exitVisible) {
+    // At the width the device gives it: the content width less its own 24 dp side margins (spec 3.5, Drawing).
+    const bw = Math.min(Math.max(BUTTON_MIN_WIDTH, measure('Exit kiosk', EXIT_SP, 500) + 2 * BUTTON_PAD_H), Math.max(0, W - 2 * EXIT_MARGIN));
+    // 40 dp visible inside the 48 dp target, 24 dp above the bottom edge.
+    const button = { x: W / 2 - bw / 2, y: H - EXIT_MARGIN - BUTTON_INSET - BUTTON_HEIGHT, w: bw, h: BUTTON_HEIGHT };
+    exit = { button, size: EXIT_SP };
+  }
+
+  // The scrolling content ends with room for the Exit button: its laid-out height (the 48 dp target) + 24 + 8 dp
+  // (docs/kiosk-background-scrim.md, Drawing). So at the end of the scroll no label or plate is under it.
+  const contentHeight = rowY + (exit ? BUTTON_HEIGHT + 2 * BUTTON_INSET + EXIT_MARGIN + EXIT_AIR : GRID_BOTTOM);
+  const maxScroll = Math.max(0, contentHeight - H);
+  // Everything scrolls with the grid (the header too); the image, the dim and the Exit button stay.
+  const shift = Math.min(Math.max(0, opts.scrollY ?? 0), maxScroll);
+  if (shift > 0) {
+    const up = <B extends Box>(b: B): B => ({ ...b, y: b.y - shift });
+    header.y -= shift;
+    Object.assign(headerPlate, up(headerPlate));
+    cells.forEach((c) => {
+      c.y -= shift;
+      c.icon = up(c.icon);
+      c.label = up(c.label);
+    });
+    labelPlates.forEach((p, i) => (labelPlates[i] = up(p)));
+  }
+
+  // Only what is on screen, clipped to the window: the image is under the window only.
+  const onScreen = (b: Box): Box | null => {
+    const top = Math.max(0, b.y);
+    const bottom = Math.min(H, b.y + b.h);
+    return bottom > top ? { x: b.x, y: top, w: b.w, h: bottom - top } : null;
+  };
+  const elements: LegibilityElement[] = [];
+  const headerBox = onScreen(headerPlate);
+  if (headerBox) elements.push({ id: 'header', kind: 'text', box: headerBox });
+  labelPlates.forEach((p, i) => {
+    const box = onScreen(p);
+    if (box) elements.push({ id: `label-${i}`, kind: 'text', row: `row-${Math.floor(i / columns)}`, box });
+  });
+  if (exit) elements.push({ id: 'exit', kind: 'control', box: exit.button });
+  return {
+    window,
+    header,
+    headerPlate,
+    columns,
+    cells,
+    labelPlates,
+    labelSize: LABEL_SP,
+    labelLineHeight: labelLine,
+    exit,
+    elements,
+    contentHeight,
+    maxScroll,
+    scrollY: shift,
+  };
+}
+
+/**
+ * The kiosk preview's font: Roboto, Android's default (pages/configurations/kioskFonts.css), then the browser's fonts
+ * for other scripts. The preview's screen draws with the same stack.
+ */
+export const KIOSK_FONT = `"Kiosk Roboto", system-ui, sans-serif`;
+/** Before the preview is shown: the browser's fonts, so measuring loads nothing. */
+export const FALLBACK_FONT = 'system-ui, sans-serif';
+
+/**
+ * Text width from the font when the browser can measure it, else an estimate (jsdom). Unrounded, as Android's
+ * Paint.measureText, which the agent's label lines use.
+ */
+export function browserMeasure(font: string = KIOSK_FONT): Measure {
+  let ctx: OffscreenCanvasRenderingContext2D | null = null;
+  try {
+    ctx = typeof OffscreenCanvas === 'function' ? new OffscreenCanvas(1, 1).getContext('2d') : null;
+  } catch {
+    ctx = null;
+  }
+  return (text, size, weight) => {
+    if (!ctx) return Math.ceil(text.length * size * 0.55);
+    ctx.font = `${weight} ${size}px ${font}`;
+    return ctx.measureText(text).width;
+  };
+}

@@ -22,6 +22,8 @@
 package com.hmdm.rest.json;
 
 import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * <p>$</p>
@@ -56,6 +58,9 @@ public class APKFileDetails implements Serializable {
      * <p>Application name.</p>
      */
     private String name;
+
+    /** Permissions declared by the APK manifest. Stored with a library version so the console need not guess. */
+    private List<String> requestedPermissions = new ArrayList<>();
 
     /**
      * <p>Constructs new <code>APKFileDetails</code> instance. This implementation does nothing.</p>
@@ -101,6 +106,14 @@ public class APKFileDetails implements Serializable {
 
     public void setArch(String arch) {
         this.arch = arch;
+    }
+
+    public List<String> getRequestedPermissions() {
+        return requestedPermissions;
+    }
+
+    public void setRequestedPermissions(List<String> requestedPermissions) {
+        this.requestedPermissions = requestedPermissions == null ? new ArrayList<>() : new ArrayList<>(requestedPermissions);
     }
 
     @Override

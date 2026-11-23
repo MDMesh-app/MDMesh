@@ -1,4 +1,4 @@
-import { apiClient } from './client';
+import { ApiError, apiClient } from './client';
 
 // Endpoint (see server: com.hmdm.rest.resource.DeviceResource#getAllDevices):
 //   POST /rest/private/devices/search   body: DeviceSearchRequest
@@ -51,6 +51,9 @@ export interface DeviceView {
   oldNumber?: string;
   launcherPkg?: string;
   groups?: { id: number; name: string }[];
+  /** When the server delivered a factory reset (device.wipe) to it, ms since epoch; absent when it was not wiped.
+   *  The device erases itself before it can report, so it never checks in again under this record. */
+  wipedAt?: number;
 }
 
 /** Configuration lookup entry — see ConfigurationView. */
@@ -78,9 +81,36 @@ export async function bulkSetConfiguration(
   await apiClient.put('/private/devices', { ids, configurationId });
 }
 
-/** Delete devices in bulk — POST /private/devices/deleteBulk {ids}. */
+/** Bulk delete deleted some devices, not all (DeviceResource.BULK_DELETE_PARTIAL); data says which. */
+export const BULK_DELETE_PARTIAL = 'error.device.delete.partial';
+
+/** Delete devices in bulk — POST /private/devices/deleteBulk {ids}. Refused for all when the user can't reach one;
+ *  otherwise each is deleted on its own, and an ApiError {@link BULK_DELETE_PARTIAL} lists any not deleted. */
 export async function deleteDevicesBulk(ids: number[]): Promise<void> {
   await apiClient.post('/private/devices/deleteBulk', { ids });
+}
+
+/** When a bulk delete left some devices: the ids deleted and the ids not deleted, else null. */
+export function bulkDeletePartial(e: unknown): { deleted: number[]; notDeleted: number[] } | null {
+  if (!(e instanceof ApiError) || e.message !== BULK_DELETE_PARTIAL) return null;
+  const data = (e.data ?? {}) as { deleted?: unknown; notDeleted?: unknown };
+  const ids = (v: unknown) => (Array.isArray(v) ? v.filter((id): id is number => typeof id === 'number') : []);
+  return { deleted: ids(data.deleted), notDeleted: ids(data.notDeleted) };
+}
+
+const bulkMessages: Record<string, string> = {
+  'error.permission.denied': 'You can’t change one or more of these devices, so nothing was changed.',
+  'error.device.configuration.required': 'Choose a configuration to move the devices to.',
+  [BULK_DELETE_PARTIAL]: 'Some devices weren’t deleted. Try again.',
+};
+/** What a refused bulk device change says, by the server's error key; other messages as they are. A change to a
+ *  configuration can also be refused for the configuration, so its refusal says so. */
+export function bulkErrorText(e: unknown, change: 'devices' | 'configuration' = 'devices'): string {
+  const message = e instanceof Error ? e.message : '';
+  if (change === 'configuration' && message === 'error.permission.denied') {
+    return 'You can’t change one or more of these devices, or use this configuration, so nothing was changed.';
+  }
+  return bulkMessages[message] ?? message;
 }
 
 /** Rename a device's friendly description — POST /private/devices/{id}/description
@@ -106,4 +136,21 @@ export async function searchDevices(
     ...req,
   };
   return apiClient.post<DeviceListView>('/private/devices/search', body);
+}
+
+/** The server's answer when no accessible device has the number (Response.DEVICE_NOT_FOUND_ERROR). */
+const DEVICE_NOT_FOUND = 'error.notfound.device';
+
+/** The device with exactly this number (GET /private/devices/number/{number}, DeviceResource#getDevice), or null
+ *  when no accessible device has it. Any other failure throws, so a caller never mistakes a server error for "no
+ *  such number" and falls back to another device. */
+export async function getDeviceByNumber(number: string): Promise<DeviceView | null> {
+  try {
+    const d = await apiClient.get<DeviceView | null>(`/private/devices/number/${encodeURIComponent(number)}`);
+    return d && typeof d === 'object' && !Array.isArray(d) && d.number === number ? d : null;
+  } catch (e) {
+    // Not found, or a number the server can't route at all (one with "/" is rejected before the resource).
+    if (e instanceof ApiError && (e.message === DEVICE_NOT_FOUND || e.httpStatus === 400 || e.httpStatus === 404)) return null;
+    throw e;
+  }
 }

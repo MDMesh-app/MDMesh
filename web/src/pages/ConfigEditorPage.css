@@ -1,0 +1,323 @@
+/* Configuration editor: a single column of section cards (SectionLayout's --grid-gap between them), setting rows
+   (ui/Field FieldRow) inside, help on one line with "Learn more" for the rest. */
+.v2 .v2-cfged-h2 {
+  margin: 0;
+  font-size: var(--text-title);
+  line-height: var(--lh-title);
+  font-weight: var(--weight-semibold);
+}
+.v2 .v2-cfged-tags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.v2 .v2-cfged-devlink {
+  font-weight: var(--weight-medium);
+}
+
+/* Identity: Name and Description side by side (two equal fields, wrapping under each other when narrow) */
+.v2 .v2-cfged-identity {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  align-items: start;
+  gap: var(--space-4);
+}
+.v2 .v2-cfged-labelline {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+}
+
+/* Sub-group heading row inside a section card */
+.v2 .v2-cfged-eyebrow {
+  padding: var(--space-4) 0 var(--space-1);
+  border-top: var(--hairline) solid var(--line-soft);
+}
+
+/* Controls in setting rows */
+.v2 .v2-cfged-ctl {
+  min-width: 0;
+}
+.v2 .v2-cfged-ctl--wide {
+  width: min(320px, 100%);
+}
+.v2 .v2-cfged-ctl--num {
+  width: 120px;
+}
+.v2 .v2-cfged-row--wide .v2-fieldrow__control {
+  flex: 1 1 320px;
+}
+.v2 .v2-cfged-row--wide .v2-cfged-ctl--wide {
+  width: 100%;
+}
+.v2 .v2-cfged-secret {
+  display: flex;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.v2 .v2-cfged-secret__input {
+  width: 200px;
+  min-width: 0;
+}
+/* the exit PIN: mono, letter-spaced, sized for about 10 characters */
+.v2 .v2-cfged-secret__input--pin {
+  width: 120px;
+  letter-spacing: var(--track-caps);
+}
+
+/* "Learn more": a quiet inline link-button after the one-line help, the rest of the explanation under it */
+.v2 .v2-cfged-more {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.v2 .v2-cfged-more:hover {
+  color: var(--text);
+}
+.v2 .v2-cfged-moretext {
+  display: block;
+  margin-top: var(--space-1);
+  max-width: 80ch;
+}
+
+/* Apps: main app row and the app table */
+.v2 .v2-cfged-mainrow .v2-fieldrow__control {
+  flex: 0 1 320px;
+}
+.v2 .v2-cfged-appselect {
+  width: 100%;
+  min-width: 0;
+}
+.v2 .v2-fieldrow__control .v2-cfged-appselect {
+  max-width: 320px;
+}
+/* Search, On devices filter and sort over a long app list */
+.v2 .v2-cfged-appsbar {
+  /* containing block for its visually hidden result count */
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) 0;
+  border-top: var(--hairline) solid var(--line-soft);
+}
+.v2 .v2-cfged-appsbar__search {
+  flex: 1 1 200px;
+  max-width: 320px;
+}
+.v2 .v2-cfged-apps,
+.v2 .v2-cfged-apps__loading {
+  border-top: var(--hairline) solid var(--line-soft);
+}
+.v2 .v2-cfged-apps .v2-table {
+  min-width: 600px; /* below it the table scrolls sideways; phones stack the rows instead (below) */
+}
+.v2 .v2-cfged-apps .v2-table td {
+  padding-block: var(--space-1);
+}
+.v2 .v2-cfged-app {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.v2 .v2-cfged-app__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.v2 .v2-cfged-app__name {
+  font-weight: var(--weight-medium);
+}
+.v2 .v2-cfged-app__ver {
+  font-size: var(--text-meta);
+  font-weight: var(--weight-regular);
+  color: var(--secondary);
+}
+.v2 .v2-cfged-app__pkg {
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
+  color: var(--secondary);
+  overflow-wrap: anywhere;
+}
+.v2 .v2-cfged-app__kiosk {
+  gap: var(--space-2);
+  white-space: nowrap;
+}
+.v2 .v2-cfged-app__kiosk.is-on {
+  color: var(--text);
+}
+.v2 .v2-cfged-app__kiosk.is-hidden {
+  color: var(--secondary);
+}
+/* disabled (not installed / removed): faint is allowed on disabled controls */
+.v2 .v2-cfged-app__kiosk.is-off {
+  color: var(--faint);
+}
+/* the On devices explanation, folded under the table */
+.v2 .v2-cfged-apps__note {
+  padding: var(--space-3) 0;
+  border-top: var(--hairline) solid var(--line-soft);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
+  color: var(--secondary);
+}
+.v2 .v2-cfged-apps__note > summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--text-2);
+}
+.v2 .v2-cfged-apps__note > p {
+  margin: var(--space-2) 0 0;
+  max-width: 80ch;
+}
+
+.v2 .v2-cfged-app__details {
+  margin-top: var(--space-1);
+}
+.v2 .v2-cfged-permission-app {
+  max-width: 440px;
+}
+.v2 .v2-cfged-permission-app summary {
+  width: fit-content;
+  padding-bottom: var(--space-1);
+  cursor: pointer;
+  color: var(--secondary);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
+}
+.v2 .v2-cfged-permission-app > p {
+  margin: 0 0 var(--space-2);
+  color: var(--secondary);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
+}
+.v2 .v2-cfged-permission-app__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-1) 0;
+}
+
+/* Legacy launcher settings: dashed card, collapsed by default */
+.v2 .v2-cfged-hw__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-4);
+  padding: var(--card-pad);
+}
+.v2 .v2-cfged-hw__text {
+  flex: 1 1 320px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.v2 .v2-cfged-hw__count {
+  font-size: var(--text-ui);
+  font-weight: var(--weight-regular);
+  color: var(--secondary);
+}
+.v2 .v2-cfged-hw__sub {
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
+  color: var(--secondary);
+}
+.v2 .v2-cfged-hw__body {
+  padding: 0 var(--card-pad) var(--space-2);
+}
+.v2 .v2-cfged-hw__note {
+  margin: 0;
+  padding: var(--space-3) 0;
+  border-top: var(--hairline) solid var(--line-soft);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
+  color: var(--secondary);
+}
+.v2 .v2-cfged-chev {
+  transition: transform var(--dur-micro) var(--ease);
+}
+.v2 .v2-cfged-chev.is-open {
+  transform: rotate(180deg);
+}
+
+.v2 .v2-cfged-libnote {
+  padding-bottom: var(--space-3);
+}
+
+/* Narrow screens: each assigned app is a stacked row (name and Remove, then its On devices select and Show in
+   kiosk), so the controls stay on screen instead of scrolling inside a 600 px table. */
+@media (max-width: 640px) {
+  .v2 .v2-cfged-appsbar__search {
+    flex-basis: 100%;
+    max-width: none;
+  }
+  .v2 .v2-cfged-apps .v2-table {
+    min-width: 0;
+  }
+  .v2 .v2-cfged-apps .v2-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .v2 .v2-cfged-apps .v2-table tbody {
+    display: block;
+  }
+  .v2 .v2-cfged-apps .v2-table tbody tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'app rm'
+      'action kiosk';
+    align-items: center;
+    gap: var(--space-2) var(--space-3);
+    height: auto;
+    padding: var(--space-3) 0;
+  }
+  .v2 .v2-cfged-apps .v2-table tbody td {
+    display: block;
+    width: auto;
+    padding: 0;
+  }
+  .v2 .v2-cfged-apps .v2-table td.v2-table__empty {
+    grid-column: 1 / -1;
+  }
+  .v2 .v2-cfged-apps__app {
+    grid-area: app;
+  }
+  .v2 .v2-cfged-apps__action {
+    grid-area: action;
+    min-width: 0;
+  }
+  /* the header row is hidden, so the first app row needs no line of its own under the card's divider */
+  .v2 .v2-cfged-apps .v2-table tbody tr:first-child {
+    border-top: 0;
+  }
+  .v2 .v2-cfged-apps__kiosk {
+    grid-area: kiosk;
+    justify-self: end;
+  }
+  .v2 .v2-cfged-apps__rm {
+    grid-area: rm;
+    justify-self: end;
+  }
+}
+
+.v2 .v2-cfged-kbg {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+}

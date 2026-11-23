@@ -29,6 +29,7 @@ import com.hmdm.persistence.domain.Settings;
 import com.hmdm.persistence.domain.User;
 import com.hmdm.persistence.domain.UserRole;
 import com.hmdm.rest.json.Response;
+import com.hmdm.rest.json.UserCredentials;
 import com.hmdm.util.WindowLimiter;
 import com.hmdm.security.SecurityContext;
 import com.hmdm.service.EmailService;
@@ -131,14 +132,18 @@ public class PasswordResetResource {
     @Path("/reset")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response updatePassword(User newData) {
+    public Response updatePassword(User newData, @Context HttpServletRequest req) {
         try {
             User user = unsecureDAO.findByPasswordResetToken(newData.getPasswordResetToken());
             if (user == null) {
                 return Response.ERROR("error.user.not.found");
             }
+            if (req != null) {
+                req.setAttribute(UserCredentials.REQUEST_LOGIN, user.getLogin());   // for the audit record
+            }
 
-            if (newData.getNewPassword() == null || newData.getNewPassword().isEmpty()) {
+            if (!PasswordUtil.isMd5Hex(newData.getNewPassword())) {
+                // The new password's MD5 in hex, as the clients send it at sign-in
                 return Response.ERROR("error.password.empty");
             }
 
@@ -146,7 +151,8 @@ public class PasswordResetResource {
             user.setPasswordReset(false);
             PasswordResetTokens.clear(user);             // the link works once
             unsecureDAO.setUserNewPasswordUnsecure(user); // and ends the user's sessions
-            return Response.OK(user);
+            // No body: anyone with the token calls this, and the user object carries the new stored hash (newPassword)
+            return Response.OK();
         } catch (Exception e) {
             logger.error("Unexpected error when resetting the user password", e);
             return Response.INTERNAL_ERROR();

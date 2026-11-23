@@ -33,6 +33,7 @@ import com.hmdm.persistence.mapper.DeviceEventMapper;
 import com.hmdm.persistence.mapper.DeviceStateMapper;
 
 import java.util.List;
+import org.mybatis.guice.transactional.Transactional;
 
 /**
  * <p>DAO for the opaque agent v1 command queue and the device capability column. The server never
@@ -40,6 +41,9 @@ import java.util.List;
  */
 @Singleton
 public class AgentCommandDAO {
+
+    /** The event type whose row comes with kiosk-return evidence (see {@link #recordKioskReturn}). */
+    public static final String KIOSK_RETURN = "kioskReturn";
 
     private final AgentCommandMapper mapper;
     private final AgentDeviceMapper deviceMapper;
@@ -55,8 +59,10 @@ public class AgentCommandDAO {
         this.eventMapper = eventMapper;
     }
 
+    /** @throws DeviceGoneException the device was deleted meanwhile (as for every history write here) */
+    @Transactional
     public void insert(AgentCommand command) {
-        mapper.insert(command);
+        DeviceGoneException.guard(command.getDeviceNumber(), () -> mapper.insert(command));
     }
 
     public List<AgentCommand> listPending(String deviceNumber) {
@@ -84,6 +90,30 @@ public class AgentCommandDAO {
     }
 
     /**
+     * Atomically claim a command for delivery and advance kiosk ordering only once the command is handed to the
+     * device. A queued command has not changed device state yet: a buffered on-device kioskReturn sent in the same
+     * check-in must remain evidence for the prior generation.
+     *
+     * <p>A command that moves the kiosk generation locks its device's row first (FOR KEY SHARE, as the state row's
+     * foreign key check would), then the command's row: a device delete takes them in the same order (the device, then
+     * its commands by cascade), so the two can't deadlock. A delete in progress is waited for.</p>
+     *
+     * @throws DeviceGoneException the device was deleted meanwhile
+     */
+    @Transactional
+    public boolean claimForDelivery(AgentCommand command, Long deliveredAt) {
+        if (changesKiosk(command.getType()) && deviceMapper.lockDeviceKeyShare(command.getDeviceNumber()) == null) {
+            throw new DeviceGoneException(command.getDeviceNumber(), null);
+        }
+        boolean claimed = claimForDelivery(command.getId(), deliveredAt);
+        if (claimed && changesKiosk(command.getType())) {
+            DeviceGoneException.guard(command.getDeviceNumber(),
+                    () -> stateMapper.advanceKioskGeneration(command.getDeviceNumber(), deliveredAt));
+        }
+        return claimed;
+    }
+
+    /**
      * Lazy TTL expiry. Pending commands age out {@code pendingTtlMillis} after creation;
      * delivered ones get their own {@code deliveredTtlMillis} leash from delivery time (the
      * device already holds them — see the mapper note).
@@ -108,7 +138,7 @@ public class AgentCommandDAO {
 
     /** Upsert the latest device-state snapshot. */
     public void upsertState(DeviceState state) {
-        stateMapper.upsert(state);
+        DeviceGoneException.guard(state.getDeviceNumber(), () -> stateMapper.upsert(state));
     }
 
     /** Current device-state snapshot, or null if none reported yet. */
@@ -119,6 +149,11 @@ public class AgentCommandDAO {
     /** Baseline the agent version for config resync (see ConfigReconciler). */
     public void updateConfigAgentVersion(String deviceNumber, String version) {
         stateMapper.updateConfigAgentVersion(deviceNumber, version);
+    }
+
+    /** Record the configuration install set the device's apps were reconciled to (see AppReconciler). */
+    public void updateAppsRevision(String deviceNumber, String revision) {
+        stateMapper.updateAppsRevision(deviceNumber, revision);
     }
 
     /** A command was acked done: if it was a config.apply, the reporting agent version completed it. */
@@ -133,7 +168,39 @@ public class AgentCommandDAO {
         e.setType(type);
         e.setTs(ts);
         e.setDetail(detail);
-        eventMapper.insert(e);
+        DeviceGoneException.guard(deviceNumber, () -> eventMapper.insert(e));
+    }
+
+    /**
+     * Stores a check-in's events, in order, all or none: one multi-row INSERT and, when a {@code kioskReturn} is among
+     * them, its kiosk-return evidence ({@link #recordKioskReturn}'s second statement, which only depends on the
+     * current kiosk generation, so once covers any number of them). One transaction, so one commit for the batch, not
+     * one per event. On any error nothing is stored.
+     *
+     * @throws DeviceGoneException the device was deleted meanwhile
+     */
+    @Transactional
+    public void insertEvents(String deviceNumber, List<DeviceEvent> events) {
+        if (events.isEmpty()) {
+            return;
+        }
+        DeviceGoneException.guard(deviceNumber, () -> eventMapper.insertAll(deviceNumber, events));
+        if (events.stream().anyMatch(e -> KIOSK_RETURN.equals(e.getType()))) {
+            DeviceGoneException.guard(deviceNumber,
+                    () -> stateMapper.recordKioskReturn(deviceNumber, System.currentTimeMillis()));
+        }
+    }
+
+    /** Store the audit event and durable current-generation evidence together. */
+    @Transactional
+    public void recordKioskReturn(String deviceNumber, Long deviceTs, String detail) {
+        insertEvent(deviceNumber, KIOSK_RETURN, deviceTs, detail);
+        DeviceGoneException.guard(deviceNumber,
+                () -> stateMapper.recordKioskReturn(deviceNumber, System.currentTimeMillis()));
+    }
+
+    private static boolean changesKiosk(String type) {
+        return "kiosk.enter".equals(type) || "kiosk.exit".equals(type) || "config.apply".equals(type);
     }
 
     /** Event timeline for a device, newest first, at/after {@code since}. */
@@ -153,21 +220,41 @@ public class AgentCommandDAO {
         return deviceMapper.getDeviceCapabilities(deviceNumber);
     }
 
-    public void updateDeviceSecretHash(String deviceNumber, String secretHash) {
-        deviceMapper.updateDeviceSecretHash(deviceNumber, secretHash);
-    }
-
     public void updateHardwareId(String deviceNumber, String hardwareId) {
         deviceMapper.updateHardwareId(deviceNumber, hardwareId);
+    }
+
+    /** The customer's devices the user may see, enrolled since {@code since}, newest first, at most {@code limit}. */
+    public List<com.hmdm.persistence.domain.Device> listEnrolledSince(int customerId, int userId, boolean superAdmin,
+                                                                      long since, int limit) {
+        return deviceMapper.listEnrolledSince(customerId, userId, superAdmin, since, limit);
     }
 
     public String getDeviceSecretHash(String deviceNumber) {
         return deviceMapper.getDeviceSecretHash(deviceNumber);
     }
 
-    /** Stamp the device's last-seen time (drives the admin UI's online/offline state). */
+    /**
+     * Stamp the device's last-seen time at an authenticated check-in (drives the admin UI's online/offline state). The
+     * device has its credentials then, so this also closes its enrollment's retry window.
+     */
     public void touchLastUpdate(String deviceNumber) {
-        deviceMapper.updateLastUpdate(deviceNumber, System.currentTimeMillis());
+        deviceMapper.markCheckedIn(deviceNumber, System.currentTimeMillis());
+    }
+
+    /** Mark the device wiped (the console's "Wiped") at {@code at}: the delivery time of the wipe just sent. */
+    public void markWiped(String deviceNumber, long at) {
+        deviceMapper.markWiped(deviceNumber, at);
+    }
+
+    /** Unmark a wiped device whose device.wipe {@code commandId} just came back failed or unsupported. */
+    public boolean clearWipedForCommand(String deviceNumber, Integer commandId) {
+        return deviceMapper.clearWipedForCommand(deviceNumber, commandId) > 0;
+    }
+
+    /** Unmark a device marked wiped before {@code cutoff}: it is still checking in. */
+    public boolean clearWipedBefore(String deviceNumber, long cutoff) {
+        return deviceMapper.clearWipedBefore(deviceNumber, cutoff) > 0;
     }
 
     /** Persist the reported Android version into infojson so the device list can show it. */
@@ -183,7 +270,7 @@ public class AgentCommandDAO {
      */
     public void recordLocation(com.hmdm.persistence.domain.DeviceLocation location) {
         location.setRecordedAt(System.currentTimeMillis());
-        deviceMapper.insertLocation(location);
+        DeviceGoneException.guard(location.getDeviceNumber(), () -> deviceMapper.insertLocation(location));
     }
 
     public java.util.List<com.hmdm.persistence.domain.DeviceLocation> listLocations(
@@ -204,6 +291,11 @@ public class AgentCommandDAO {
     /** The device's {@code limit} most recently created commands of {@code type}, newest first. */
     public List<AgentCommand> listLatestOfType(String deviceNumber, String type, int limit) {
         return mapper.listLatestOfType(deviceNumber, type, limit);
+    }
+
+    /** The device's {@code limit} most recently created app.install and app.uninstall commands, newest first. */
+    public List<AgentCommand> listLatestAppCommands(String deviceNumber, int limit) {
+        return mapper.listLatestAppCommands(deviceNumber, limit);
     }
 
     /** Device numbers currently assigned to a configuration. */

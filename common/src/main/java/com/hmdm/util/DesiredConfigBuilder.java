@@ -1,19 +1,27 @@
 package com.hmdm.util;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hmdm.extension.ConfigurationExtensions;
+import com.hmdm.extension.DesiredConfigContributor;
 import com.hmdm.persistence.domain.Application;
 import com.hmdm.persistence.domain.Configuration;
 import com.hmdm.persistence.domain.RequestUpdatesType;
 import com.hmdm.rest.json.agent.DesiredConfig;
+import com.hmdm.rest.json.agent.DesiredConnectivity;
 import com.hmdm.rest.json.agent.DesiredFactoryResetProtection;
 import com.hmdm.rest.json.agent.DesiredKiosk;
+import com.hmdm.rest.json.agent.DesiredKioskBackgroundImage;
 import com.hmdm.rest.json.agent.DesiredKioskFeatures;
 import com.hmdm.rest.json.agent.DesiredKioskTheme;
 import com.hmdm.rest.json.agent.DesiredLocation;
+import com.hmdm.rest.json.agent.DesiredAppPermissions;
+import com.hmdm.persistence.domain.ManagedAppPermission;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.AbstractMap;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -21,6 +29,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.regex.Pattern;
 
 /**
  * The ONLY place a {@link Configuration} row becomes a {@code config.apply} desired-state document.
@@ -35,27 +44,83 @@ import java.util.TreeSet;
 public final class DesiredConfigBuilder {
     public static final String COMMAND_TYPE = "config.apply";
     public static final String CAPABILITY = "device.configApply";
+    /** Agent support token for the optional per-app runtime permission document section. */
+    public static final String APP_PERMISSIONS_CAPABILITY = "app.runtimePermissions";
     public static final String POLICY_PREFIX = "policies.";
     public static final String KEY_KIOSK = "kiosk";
     public static final String KEY_LOCATION = "location";
     public static final String KEY_FACTORY_RESET_PROTECTION = "factoryResetProtection";
-    private static final int ACTION_INSTALL = 1;
+    public static final String CONNECTIVITY_ADAPTIVE = "adaptive";
+    public static final String CONNECTIVITY_ALWAYS_ON = "alwaysOn";
+    /** {@code configurationApplications.action} meaning "install this app". */
+    public static final int ACTION_INSTALL = 1;
+
+    /** A server plugin's policy keys: {@code x.<pluginId>.<key>} ({@link DesiredConfigContributor}). */
+    public static final String CONTRIBUTED_PREFIX = "x.";
+    private static final Pattern CONTRIBUTED_KEY = Pattern.compile("[a-z][A-Za-z0-9]{0,63}");
 
     private static final ObjectMapper PLAIN = new ObjectMapper();
 
     private DesiredConfigBuilder() {}
 
-    public static DesiredConfig build(Configuration cfg, List<Application> apps) {
+    /**
+     * @param contributors server plugins' policy keys ({@link DesiredConfigContributor}), sent as
+     *                     {@code x.<pluginId>.<key>}. None, or only null values, gives the same document and revision
+     *                     as without them.
+     */
+    public static DesiredConfig build(Configuration cfg, List<Application> apps,
+                                      Collection<DesiredConfigContributor> contributors) {
         DesiredConfig d = new DesiredConfig();
         d.setConfigurationId(cfg.getId());
-        d.setPolicies(policies(cfg));
-        d.setKiosk(cfg.isKioskMode() ? kiosk(cfg, apps == null ? Collections.<Application>emptyList() : apps) : null);
+        List<Application> appList = apps == null ? Collections.<Application>emptyList() : apps;
+        Map<String, Boolean> policies = policies(cfg);
+        d.setPolicies(policies);
+        d.setKiosk(cfg.isKioskMode() ? kiosk(cfg, appList) : null);
         DesiredLocation loc = new DesiredLocation();
         loc.setMode(locationMode(cfg.getRequestUpdates()));
         d.setLocation(loc);
+        String connectivity = connectivityMode(cfg.getConnectivityMode());
+        if (connectivity != null) {
+            DesiredConnectivity c = new DesiredConnectivity();
+            c.setMode(connectivity);
+            d.setConnectivity(c);
+        }
+        d.setAppPermissions(appPermissions(cfg, appList));
         d.setFactoryResetProtection(factoryResetProtection(cfg));
+        // Last, once core's sections are built from cfg, so a contributor can't change them.
+        contribute(policies, cfg, Collections.unmodifiableList(appList), contributors);
         d.setRevision(revision(d));
         return d;
+    }
+
+    private static List<DesiredAppPermissions> appPermissions(Configuration cfg, List<Application> apps) {
+        if (cfg.getManagedAppPermissions() == null) return null;
+        Map<Integer, Application> installed = new TreeMap<Integer, Application>();
+        for (Application app : apps) if (app != null && app.getId() != null && app.getAction() == ACTION_INSTALL
+                && app.getPkg() != null && !app.getPkg().trim().isEmpty()) installed.put(app.getId(), app);
+        Map<String, Map<String, String>> byPackage = new TreeMap<String, Map<String, String>>();
+        for (ManagedAppPermission rule : cfg.getManagedAppPermissions()) {
+            if (rule == null || !("grant".equals(rule.getState()) || "deny".equals(rule.getState()))
+                    || rule.getPermission() == null || !rule.getPermission().startsWith("android.permission.")) continue;
+            Application app = installed.get(rule.getApplicationId());
+            if (app != null) byPackage.computeIfAbsent(app.getPkg().trim(), k -> new TreeMap<String, String>())
+                    .put(rule.getPermission(), rule.getState());
+        }
+        List<DesiredAppPermissions> result = new ArrayList<DesiredAppPermissions>();
+        for (Map.Entry<String, Map<String, String>> entry : byPackage.entrySet()) {
+            DesiredAppPermissions value = new DesiredAppPermissions();
+            value.setPackageName(entry.getKey()); value.setPermissions(entry.getValue()); result.add(value);
+        }
+        return result;
+    }
+
+    /**
+     * The configuration's connectivity mode (protocol 1.5), or null when it is not managed: NULL, or a value this
+     * server doesn't know. Null omits the section, so the document (and its revision) is what it was before 1.5.
+     */
+    public static String connectivityMode(String mode) {
+        if (CONNECTIVITY_ADAPTIVE.equals(mode) || CONNECTIVITY_ALWAYS_ON.equals(mode)) return mode;
+        return null;
     }
 
     /**
@@ -79,7 +144,9 @@ public final class DesiredConfigBuilder {
         // wifi = lock/allow the Wi-Fi settings only; wifiRadio (1.4) switches the radio itself.
         putIfManaged(p, "wifi", cfg.getWifi());
         putIfManaged(p, "wifiRadio", cfg.getWifiRadio());
+        putIfManaged(p, "locationServices", cfg.getLocationServices());
         putIfManaged(p, "bluetooth", cfg.getBluetooth());
+        putIfManaged(p, "camera", cfg.getCamera());
         putIfManaged(p, "usbStorage", cfg.getUsbStorage());
         putIfManaged(p, "screenshots", cfg.getDisableScreenshots() == null ? null : !cfg.getDisableScreenshots());
         putIfManaged(p, "factoryReset", cfg.getDisableFactoryReset() == null ? null : !cfg.getDisableFactoryReset());
@@ -99,6 +166,64 @@ public final class DesiredConfigBuilder {
     private static Boolean safeBootAllowed(Configuration cfg) {
         if (cfg.getDisableSafeBoot() != null) return !cfg.getDisableSafeBoot();
         return cfg.isKioskMode() ? Boolean.FALSE : null;
+    }
+
+    /**
+     * Adds each contributor's keys under its own {@code x.<pluginId>.} prefix: core's keys have no dot, so a plugin can
+     * never set one of them, nor another plugin's. A key that breaks the rules, a value that isn't a Boolean (a raw-typed
+     * map gets one past the compiler, and the agent would refuse the whole document), or anything the contributor
+     * throws, while it answers or while its map is read (a lazy view), is a plugin bug: IllegalStateException, naming
+     * the plugin. That includes an Error (NoClassDefFoundError, Kotlin's NotImplementedError, an AssertionError) and an
+     * undeclared checked exception, and a StackOverflowError. Only the JVM's other failures (VirtualMachineError, such
+     * as OutOfMemoryError) pass through as they are.
+     */
+    private static void contribute(Map<String, Boolean> p, Configuration cfg, List<Application> apps,
+                                   Collection<DesiredConfigContributor> contributors) {
+        if (contributors == null) return;
+        for (DesiredConfigContributor c : contributors) {
+            String id = checkedPluginId(c);
+            List<Map.Entry<?, ?>> keys = new ArrayList<Map.Entry<?, ?>>();
+            try {
+                Map<?, ?> returned = c.policies(cfg, apps);
+                if (returned == null) continue;
+                // Read here, inside the try: a lazy view computes its values only now.
+                for (Map.Entry<?, ?> e : returned.entrySet()) {
+                    keys.add(new AbstractMap.SimpleImmutableEntry<Object, Object>(e.getKey(), e.getValue()));
+                }
+            } catch (Throwable e) {
+                // A plugin that recurses (StackOverflowError) is its own bug; the JVM's other failures are not.
+                if (e instanceof VirtualMachineError && !(e instanceof StackOverflowError)) throw (VirtualMachineError) e;
+                throw new IllegalStateException("DesiredConfigContributor " + id + " failed", e);
+            }
+            for (Map.Entry<?, ?> e : keys) {
+                Object name = e.getKey();
+                if (!(name instanceof String) || !CONTRIBUTED_KEY.matcher((String) name).matches()) {
+                    throw new IllegalStateException("DesiredConfigContributor " + id + ": key \"" + name
+                            + "\" must be letters and digits starting with a lowercase letter, at most 64 characters");
+                }
+                Object value = e.getValue();
+                if (value == null) continue;
+                String key = CONTRIBUTED_PREFIX + id + "." + name;
+                if (!(value instanceof Boolean)) {
+                    throw new IllegalStateException("DesiredConfigContributor " + id + ": " + key + " is a "
+                            + value.getClass().getName() + ", not a Boolean");
+                }
+                if (p.containsKey(key)) {
+                    throw new IllegalStateException("DesiredConfigContributor " + id + ": " + key + " is contributed twice");
+                }
+                p.put(key, (Boolean) value);
+            }
+        }
+    }
+
+    /** The contributor's pluginId, or IllegalStateException when it is not lowercase kebab-case. */
+    public static String checkedPluginId(DesiredConfigContributor c) {
+        String id = c.pluginId();
+        if (!ConfigurationExtensions.isId(id)) {
+            throw new IllegalStateException("DesiredConfigContributor " + c.getClass().getName()
+                    + ": pluginId \"" + id + "\" is not lowercase kebab-case of at most 32 characters");
+        }
+        return id;
     }
 
     private static void putIfManaged(Map<String, Boolean> p, String key, Boolean v) {
@@ -181,6 +306,26 @@ public final class DesiredConfigBuilder {
         DesiredKioskTheme t = new DesiredKioskTheme();
         t.setBackgroundColor(cfg.getBackgroundColor()); t.setTextColor(cfg.getTextColor());
         t.setIconSize(cfg.getIconSize() == null ? null : cfg.getIconSize().name());
+        // A legacy raw backgroundImageUrl is intentionally not emitted. Only a managed uploaded file,
+        // whose checksum was computed by the server, can become agent desired state.
+        if (cfg.getBackgroundImageFileId() != null && cfg.getBackgroundImageUrl() != null
+                && cfg.getBackgroundImageSha256() != null) {
+            DesiredKioskBackgroundImage image = new DesiredKioskBackgroundImage();
+            image.setUrl(cfg.getBackgroundImageUrl());
+            image.setSha256(cfg.getBackgroundImageSha256());
+            // 1.10, sent only when not the default, so existing documents and revisions don't move.
+            if ("fit".equals(cfg.getBackgroundImageFit())) {
+                image.setFit("fit");
+            } else {
+                double fx = cfg.getBackgroundImageFocalX() == null ? 0.5 : cfg.getBackgroundImageFocalX();
+                double fy = cfg.getBackgroundImageFocalY() == null ? 0.5 : cfg.getBackgroundImageFocalY();
+                if (fx != 0.5 || fy != 0.5) {
+                    image.setFocalX(fx);
+                    image.setFocalY(fy);
+                }
+            }
+            t.setBackgroundImage(image);
+        }
         k.setTheme(t);
         return k;
     }

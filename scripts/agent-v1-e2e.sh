@@ -32,7 +32,9 @@ cleanup(){
   [ -z "$LIVE_RID" ] || curl -s -b "$CJ" -X POST "$BASE/rest/private/agent/v1/rollout/$LIVE_RID/cancel" >/dev/null || true
   # The Observer exists before its id is known: if the id lookup itself aborted, find the user again by its login.
   [ -n "$LIVE_OID" ] || [ -z "$LIVE_OLOGIN" ] || LIVE_OID=$(uid_of "$LIVE_OLOGIN" || true)
-  [ -z "$LIVE_OID" ] || curl -s -b "$CJ" -X DELETE "$BASE/rest/private/users/other/$LIVE_OID" >/dev/null || true
+  # Deleting an account takes the caller's current password (the admin's MD5 below)
+  [ -z "$LIVE_OID" ] || curl -s -b "$CJ" -X DELETE -H 'Content-Type: application/json' \
+    -d "{\"oldPassword\":\"${MD5:-}\"}" "$BASE/rest/private/users/other/$LIVE_OID" >/dev/null || true
   rm -f "$CJ" ${OJ:+"$OJ"}
 }
 trap cleanup EXIT
@@ -130,18 +132,20 @@ chk "state androidRelease=14" \
 
 echo "== desired-state: config.apply on drift =="
 CFG_ID=$(curl -s -b "$CJ" "$BASE/rest/private/agent/v1/devices/$DID/configStatus" | field "d['data']['configurationId']")
-CUR_REV=$(curl -s -b "$CJ" "$BASE/rest/private/agent/v1/devices/$DID/configStatus" | field "d['data']['currentRevision']")
-chk "current revision is 64 hex" "$(printf '%s' "$CUR_REV" | grep -cE '^[0-9a-f]{64}$')" "1"
 # capable agent, stale revision -> command delivered in the same response
 C_DS=$(curl -s -X POST -H "Authorization: Bearer $SEC" -H 'Content-Type: application/json' \
-  -d "{\"deviceId\":\"$DID\",\"capabilities\":{\"policy\":[\"wifi\"],\"device\":[\"configApply\"]},\"state\":{\"battery\":77,\"charging\":true,\"locked\":false,\"kioskActive\":false,\"androidRelease\":\"14\",\"lastBootAt\":1000,\"appliedConfigRevision\":\"0000\"}}" \
+  -d "{\"deviceId\":\"$DID\",\"capabilities\":{\"policy\":[\"wifi\"],\"device\":[\"configApply\"],\"appManagement\":[\"runtimePermissions\"]},\"state\":{\"battery\":77,\"charging\":true,\"locked\":false,\"kioskActive\":false,\"androidRelease\":\"14\",\"lastBootAt\":1000,\"appliedConfigRevision\":\"0000\"}}" \
   "$BASE/rest/public/agent/v1/checkin")
+# Read after the capable check-in: the revision a device is compared with depends on what it advertises (an agent
+# without app.runtimePermissions gets the document without the appPermissions section).
+CUR_REV=$(curl -s -b "$CJ" "$BASE/rest/private/agent/v1/devices/$DID/configStatus" | field "d['data']['currentRevision']")
+chk "current revision is 64 hex" "$(printf '%s' "$CUR_REV" | grep -cE '^[0-9a-f]{64}$')" "1"
 chk "config.apply delivered on drift" "$(echo "$C_DS" | field "[c['type'] for c in d['data']['commands']].count('config.apply')")" "1"
 chk "config.apply carries current revision" "$(echo "$C_DS" | field "[c['payload']['revision'] for c in d['data']['commands'] if c['type']=='config.apply'][0]")" "$CUR_REV"
 DS_CMD=$(echo "$C_DS" | field "[c['commandId'] for c in d['data']['commands'] if c['type']=='config.apply'][0]")
 # The agent checks in again without a result (it restarted mid-apply, or never got the response): the delivered
 # config.apply is ended and the same revision is sent again at once, once. A second one in a row gets the backoff.
-CI_NORESULT="{\"deviceId\":\"$DID\",\"capabilities\":{\"policy\":[\"wifi\"],\"device\":[\"configApply\"]}}"
+CI_NORESULT="{\"deviceId\":\"$DID\",\"capabilities\":{\"policy\":[\"wifi\"],\"device\":[\"configApply\"],\"appManagement\":[\"runtimePermissions\"]}}"
 ABANDONED="no result: the agent checked in again without finishing it"
 hist_row(){ curl -s -b "$CJ" "$BASE/rest/private/agent/v1/devices/$DID/commands?since=0" | field "[str(c['status'])+':'+str(c.get('detail')) for c in d['data'] if str(c['id'])=='$1'][0]"; }
 C_RE=$(curl -s -X POST -H "Authorization: Bearer $SEC" -H 'Content-Type: application/json' -d "$CI_NORESULT" "$BASE/rest/public/agent/v1/checkin")
@@ -152,7 +156,7 @@ chk "abandoned again: backoff, no re-send" "$(curl -s -X POST -H "Authorization:
 chk "the re-send is ended too" "$(hist_row "$DS_RE")" "expired:$ABANDONED"
 # The first command's result turns up after all (ack done, revision applied) -> it replaces the server's guess; in sync
 curl -s -X POST -H "Authorization: Bearer $SEC" -H 'Content-Type: application/json' \
-  -d "{\"deviceId\":\"$DID\",\"capabilities\":{\"policy\":[\"wifi\"],\"device\":[\"configApply\"]},\"results\":[{\"commandId\":\"$DS_CMD\",\"status\":\"done\",\"detail\":\"{\\\"revision\\\":\\\"$CUR_REV\\\",\\\"outcomes\\\":{\\\"policies.wifi\\\":\\\"applied\\\"}}\",\"completedAt\":\"2026-01-01T00:00:00Z\"}],\"state\":{\"battery\":77,\"charging\":true,\"locked\":false,\"kioskActive\":false,\"androidRelease\":\"14\",\"lastBootAt\":1000,\"appliedConfigRevision\":\"$CUR_REV\"}}" \
+  -d "{\"deviceId\":\"$DID\",\"capabilities\":{\"policy\":[\"wifi\"],\"device\":[\"configApply\"],\"appManagement\":[\"runtimePermissions\"]},\"results\":[{\"commandId\":\"$DS_CMD\",\"status\":\"done\",\"detail\":\"{\\\"revision\\\":\\\"$CUR_REV\\\",\\\"outcomes\\\":{\\\"policies.wifi\\\":\\\"applied\\\"}}\",\"completedAt\":\"2026-01-01T00:00:00Z\"}],\"state\":{\"battery\":77,\"charging\":true,\"locked\":false,\"kioskActive\":false,\"androidRelease\":\"14\",\"lastBootAt\":1000,\"appliedConfigRevision\":\"$CUR_REV\"}}" \
   "$BASE/rest/public/agent/v1/checkin" >/dev/null
 chk "a late result overwrites the abandoned row" "$(hist_row "$DS_CMD" | cut -d: -f1)" "done"
 chk "configStatus inSync after ack" "$(curl -s -b "$CJ" "$BASE/rest/private/agent/v1/devices/$DID/configStatus" | field "d['data']['inSync']")" "True"
@@ -190,7 +194,7 @@ chk "PUT configuration kioskMode=true + mainAppId=version id" \
   "$(curl -s -b "$CJ" -X PUT -H 'Content-Type: application/json' -d "$(kcfg_body "$KCFG" true)" "$BASE/rest/private/configurations" | field "str(d['status'])+':'+str(d['data']['kioskMode'])+':'+str(d['data']['mainAppId'])")" "OK:True:$KVID"
 # Capable agent, stale revision (it last applied the shared configuration's revision).
 C_K=$(curl -s -X POST -H "Authorization: Bearer $SEC" -H 'Content-Type: application/json' \
-  -d "{\"deviceId\":\"$DID\",\"capabilities\":{\"policy\":[\"wifi\"],\"device\":[\"configApply\"]},\"state\":{\"battery\":77,\"charging\":true,\"locked\":false,\"kioskActive\":false,\"androidRelease\":\"14\",\"lastBootAt\":1000,\"appliedConfigRevision\":\"$CUR_REV\"}}" \
+  -d "{\"deviceId\":\"$DID\",\"capabilities\":{\"policy\":[\"wifi\"],\"device\":[\"configApply\"],\"appManagement\":[\"runtimePermissions\"]},\"state\":{\"battery\":77,\"charging\":true,\"locked\":false,\"kioskActive\":false,\"androidRelease\":\"14\",\"lastBootAt\":1000,\"appliedConfigRevision\":\"$CUR_REV\"}}" \
   "$BASE/rest/public/agent/v1/checkin")
 KPAY="[c['payload'] for c in d['data']['commands'] if c['type']=='config.apply'][0]"
 chk "kiosk config.apply delivered" "$(echo "$C_K" | field "[c['type'] for c in d['data']['commands']].count('config.apply')")" "1"
@@ -200,6 +204,34 @@ chk "kiosk.pinPackage == main app pkg" "$(echo "$C_K" | field "$KPAY['kiosk']['p
 chk "restore kioskMode=false" "$(curl -s -b "$CJ" -X PUT -H 'Content-Type: application/json' -d "$(kcfg_body "$KCFG" false)" "$BASE/rest/private/configurations" | field "str(d['status'])+':'+str(d['data']['kioskMode'])")" "OK:False"
 chk "device restored to its configuration" "$(curl -s -b "$CJ" -X PUT -H 'Content-Type: application/json' -d "{\"ids\":[$KDEV],\"configurationId\":$CFG_ID}" "$BASE/rest/private/devices" | field "d['status']")" "OK"
 chk "kiosk scenario configuration deleted" "$(curl -s -b "$CJ" -X DELETE "$BASE/rest/private/configurations/$KCFG" | field "d['status']")" "OK"
+
+echo "== configuration extensions: a save without them keeps them, with them replaces them, a copy copies them =="
+# A temporary configuration with no apps, made from the shared one's columns.
+XNAME="e2e-ext-$(date +%s)-$$"
+xcfg_body(){ # $1 = id or "" ; $2 = the extensions JSON, or - to leave the key out (an older client)
+  KCFG_SRC="$KCFG_SRC" XID="$1" XEXT="$2" XNAME="$XNAME" python3 -c '
+import json,os
+c=json.loads(os.environ["KCFG_SRC"])["data"]
+for k in ("id","qrCodeKey","selected","extensions"): c.pop(k,None)
+if os.environ["XID"]: c["id"]=int(os.environ["XID"])
+c["name"]=os.environ["XNAME"]; c["description"]="agent-v1-e2e extensions (temporary)"
+c["applications"]=[]; c["kioskMode"]=False; c["mainAppId"]=None; c["contentAppId"]=None
+if os.environ["XEXT"]!="-": c["extensions"]=json.loads(os.environ["XEXT"])
+print(json.dumps(c))'; }
+xput(){ curl -s -b "$CJ" -X PUT -H 'Content-Type: application/json' -d "$(xcfg_body "$1" "$2")" "$BASE/rest/private/configurations"; }
+xext(){ curl -s -b "$CJ" "$BASE/rest/private/configurations/$1" | field "json.dumps(d['data']['extensions'],sort_keys=True)"; }
+XNEW=$(xput "" '{"e2e":{"n":1}}')
+XCFG=$(echo "$XNEW" | field "d['data']['id']")
+chk "created with extensions" "$(echo "$XNEW" | field "str(d['status'])+':'+json.dumps(d['data']['extensions'])")" 'OK:{"e2e": {"n": 1}}'
+chk "a save without extensions keeps them" "$(xput "$XCFG" - | field "d['status']"):$(xext "$XCFG")" 'OK:{"e2e": {"n": 1}}'
+chk "a save with extensions replaces them" "$(xput "$XCFG" '{"e2e.more":{"m":true}}' | field "d['status']"):$(xext "$XCFG")" 'OK:{"e2e.more": {"m": true}}'
+chk "a namespace that is not one is refused, and nothing changes" \
+  "$(xput "$XCFG" '{"Not One":{}}' | field "str(d['status'])+':'+d['message']"):$(xext "$XCFG")" 'ERROR:error.extensions.namespace:{"e2e.more": {"m": true}}'
+chk "copy OK" "$(curl -s -b "$CJ" -X PUT -H 'Content-Type: application/json' -d "{\"id\":$XCFG,\"name\":\"$XNAME-copy\"}" "$BASE/rest/private/configurations/copy" | field "d['status']")" "OK"
+XCOPY=$(curl -s -b "$CJ" "$BASE/rest/private/configurations/search" | field "[c['id'] for c in d['data'] if c['name']=='$XNAME-copy'][0]")
+chk "the copy has the extensions" "$(xext "$XCOPY")" '{"e2e.more": {"m": true}}'
+chk "extensions copy deleted" "$(curl -s -b "$CJ" -X DELETE "$BASE/rest/private/configurations/$XCOPY" | field "d['status']")" "OK"
+chk "extensions configuration deleted" "$(curl -s -b "$CJ" -X DELETE "$BASE/rest/private/configurations/$XCFG" | field "d['status']")" "OK"
 
 echo "== command history (payload-free, 6.6) =="
 HIST=$(curl -s -b "$CJ" "$BASE/rest/private/agent/v1/devices/$DID/commands?since=0")
@@ -220,7 +252,7 @@ OLOGIN="e2e-obs-$(date +%s)-$RANDOM" # users.login is varchar(30)
 OPW=$(printf '%s' "$OLOGIN-pw" | md5sum | awk '{print toupper($1)}')
 LIVE_OLOGIN="$OLOGIN"   # before the create call: from here on cleanup() can find the user even without its id
 chk "observer user created" "$(curl -s -b "$CJ" -X PUT -H 'Content-Type: application/json' \
-  -d "{\"login\":\"$OLOGIN\",\"name\":\"$OLOGIN\",\"email\":\"$OLOGIN@e2e.invalid\",\"userRole\":{\"id\":100},\"newPassword\":\"$OPW\",\"allDevicesAvailable\":true,\"allConfigAvailable\":true}" \
+  -d "{\"login\":\"$OLOGIN\",\"name\":\"$OLOGIN\",\"email\":\"$OLOGIN@e2e.invalid\",\"userRole\":{\"id\":100},\"newPassword\":\"$OPW\",\"allDevicesAvailable\":true,\"allConfigAvailable\":true,\"oldPassword\":\"$MD5\"}" \
   "$BASE/rest/private/users" | field "d['status']")" "OK"
 OID=$(uid_of "$OLOGIN" || true)   # a curl error must reach the FAIL below, not abort (cleanup() still finds the user)
 [ -n "$OID" ] || { echo "  FAIL: observer user id lookup"; exit 1; }
@@ -277,9 +309,101 @@ fi
 chk "observer: command history readable" "$(curl -s -b "$OJ" "$BASE/rest/private/agent/v1/devices/$DID/commands?since=0" | field "d['status']")" "OK"
 chk "observer: device state readable" "$(curl -s -b "$OJ" "$BASE/rest/private/agent/v1/devices/$DID/state" | field "str(d['status'])+':'+str(d['data']['battery'])")" "OK:77"
 chk "observer: active rollout readable" "$(curl -s -b "$OJ" "$BASE/rest/private/agent/v1/rollout/active" | field "d['status']")" "OK"
-DELETED=$(curl -s -b "$CJ" -X DELETE "$BASE/rest/private/users/other/$OID" | field "d['status']" || true)  # as CANCELLED
+DELETED=$(curl -s -b "$CJ" -X DELETE -H 'Content-Type: application/json' -d "{\"oldPassword\":\"$MD5\"}" \
+  "$BASE/rest/private/users/other/$OID" | field "d['status']" || true)  # as CANCELLED
 chk "observer user deleted" "$DELETED" "OK"
 if [ "$DELETED" = OK ]; then LIVE_OID=""; LIVE_OLOGIN=""; fi
+
+# Last, since it enrolls two more devices: nothing above counts devices after this.
+echo "== a token for two devices enrolls two, then refuses a third =="
+enroll_with(){ curl -s -X POST -H 'Content-Type: application/json' -d "{\"enrollToken\":\"$1\",\"agent\":{\"version\":\"0.1.0\",\"package\":\"com.mdmesh.agent\"},\"device\":{\"androidSdkInt\":34,\"isDeviceOwner\":true},\"capabilities\":{\"policy\":[],\"appManagement\":[],\"remoteControl\":{\"tier\":\"none\"},\"oem\":{\"vendor\":\"samsung\",\"knox\":false}}}" "$BASE/rest/public/agent/v1/enroll"; }
+TOK2=$(curl -s -b "$CJ" -X POST -H 'Content-Type: application/json' -d '{"maxUses":2,"validHours":1}' \
+  "$BASE/rest/private/agent/v1/token" | field "str(d['data']['maxUses'])+':'+d['data']['token']")
+chk "two-device token minted" "${TOK2%%:*}" "2"
+TOK2=${TOK2#*:}
+chk "two-device token: 1st enroll OK" "$(enroll_with "$TOK2" | field "d['status']")" "OK"
+chk "two-device token: 2nd enroll OK" "$(enroll_with "$TOK2" | field "d['status']")" "OK"
+chk "two-device token: 3rd enroll refused" "$(enroll_with "$TOK2" | field "d['message']")" "error.agent.token.used"
+chk "single-use token: 2nd enroll refused" "$(enroll_with "$TOK" | field "d['message']")" "error.agent.token.used"
+chk "token for more than 1000 devices refused" "$(curl -s -b "$CJ" -X POST -H 'Content-Type: application/json' \
+  -d '{"maxUses":1001}' "$BASE/rest/private/agent/v1/token" | field "d['message']")" "error.agent.token.maxUses"
+
+# The device count holds when enrolls race: claim() is one UPDATE, so of 8 at once exactly 3 get a 3-device token.
+TOK3=$(curl -s -b "$CJ" -X POST -H 'Content-Type: application/json' -d '{"maxUses":3,"validHours":1}' \
+  "$BASE/rest/private/agent/v1/token" | field "d['data']['token']")
+PAR="$(mktemp -d)"
+for i in 1 2 3 4 5 6 7 8; do (enroll_with "$TOK3" | field "d['status']" > "$PAR/$i") & done; wait
+chk "three-device token: 8 enrolls at once, 3 succeed" "$(cat "$PAR"/* | grep -c '^OK$')" "3"
+rm -rf "$PAR"
+
+# Stopping all codes ends a batch code at once (enrolls two more devices), and a code made afterwards works.
+echo "== stopping all codes stops a batch code =="
+TOK4=$(curl -s -b "$CJ" -X POST -H 'Content-Type: application/json' -d '{"maxUses":5,"validHours":1}' \
+  "$BASE/rest/private/agent/v1/token" | field "d['data']['token']")
+chk "batch code: enroll before the stop OK" "$(enroll_with "$TOK4" | field "d['status']")" "OK"
+chk "stop all codes" "$(curl -s -b "$CJ" -X POST "$BASE/rest/private/agent/v1/token/revoke-all" | field "str(d['status'])+':'+str(d['data']['revoked']>=1)")" "OK:True"
+chk "batch code: enroll after the stop refused" "$(enroll_with "$TOK4" | field "d['message']")" "error.agent.token.used"
+TOK5=$(curl -s -b "$CJ" -X POST "$BASE/rest/private/agent/v1/token" | field "d['data']['token']")
+chk "a code made after the stop enrolls" "$(enroll_with "$TOK5" | field "d['status']")" "OK"
+
+# A lost enroll response: the agent retries with the same attempt id and gets the same device back (enrolls one more).
+echo "== a retried enroll gets its own device back =="
+enroll_attempt(){ curl -s -X POST -H 'Content-Type: application/json' -d "{\"enrollToken\":\"$1\",\"enrollAttempt\":\"$2\",\"agent\":{\"version\":\"0.5.0\",\"package\":\"com.mdmesh.agent\"},\"device\":{\"androidSdkInt\":34,\"isDeviceOwner\":true},\"capabilities\":{\"policy\":[],\"appManagement\":[],\"remoteControl\":{\"tier\":\"none\"},\"oem\":{\"vendor\":\"samsung\",\"knox\":false}}}" "$BASE/rest/public/agent/v1/enroll"; }
+TOK6=$(curl -s -b "$CJ" -X POST "$BASE/rest/private/agent/v1/token" | field "d['data']['token']")
+ATT="e2eAttempt$(date +%s%N)"
+R1=$(enroll_attempt "$TOK6" "$ATT"); R2=$(enroll_attempt "$TOK6" "$ATT")
+chk "retry: same device" "$(echo "$R2" | field "d['data']['deviceId']")" "$(echo "$R1" | field "d['data']['deviceId']")"
+RDID=$(echo "$R2" | field "d['data']['deviceId']"); RSEC=$(echo "$R2" | field "d['data']['deviceSecret']")
+OLDSEC=$(echo "$R1" | field "d['data']['deviceSecret']")
+chk "retry: another attempt with the used code refused" "$(enroll_attempt "$TOK6" "${ATT}x" | field "d['message']")" "error.agent.token.used"
+rcheckin(){ curl -s -X POST -H "Authorization: Bearer $1" -H 'Content-Type: application/json' \
+  -d "{\"deviceId\":\"$RDID\",\"capabilities\":{\"policy\":[],\"appManagement\":[],\"remoteControl\":{\"tier\":\"none\"},\"oem\":{\"vendor\":\"samsung\",\"knox\":false}}}" \
+  "$BASE/rest/public/agent/v1/checkin" | field "d['status']"; }
+# Every answer for one attempt carries the same secret (derived from it), so whichever answer reached the agent works.
+chk "retry: both answers carry the same secret" "$RSEC" "$OLDSEC"
+chk "retry: the first answer's secret checks in" "$(rcheckin "$OLDSEC")" "OK"
+chk "retry: the retry's secret checks in" "$(rcheckin "$RSEC")" "OK"
+chk "retry: closed after the first check-in" "$(enroll_attempt "$TOK6" "$ATT" | field "d['message']")" "error.agent.token.used"
+
+# Retries of one attempt sent at once (an agent that timed out while the server was slow): one transaction per
+# enrollment, locked on the code, so they all get the same device and the single-use code is used once (enrolls one).
+echo "== concurrent retries of one enrollment get one device =="
+TOK7=$(curl -s -b "$CJ" -X POST "$BASE/rest/private/agent/v1/token" | field "d['data']['token']")
+ATT7="e2eConcurrent$(date +%s%N)"
+PAR7="$(mktemp -d)"
+for i in 1 2 3 4 5 6; do (enroll_attempt "$TOK7" "$ATT7" | field "str(d['status'])+':'+str((d.get('data') or {}).get('deviceId'))" > "$PAR7/$i") & done; wait
+chk "concurrent retries: all answered OK" "$(cut -d: -f1 "$PAR7"/* | sort -u)" "OK"
+chk "concurrent retries: one device" "$(cut -d: -f2- "$PAR7"/* | sort -u | wc -l | tr -d ' ')" "1"
+rm -rf "$PAR7"
+
+# The agent's credential recovery: a resume-only enroll gets back the device its attempt made, before that device's
+# first check-in, and otherwise nothing: no device, no use of the code (enrolls two devices).
+echo "== resume-only gets back its own device, and nothing else =="
+enroll_resume(){ curl -s -X POST -H 'Content-Type: application/json' -d "{\"enrollToken\":\"$1\",\"enrollAttempt\":\"$2\",\"resumeOnly\":true,\"agent\":{\"version\":\"0.5.0\",\"package\":\"com.mdmesh.agent\"},\"device\":{\"androidSdkInt\":34,\"isDeviceOwner\":true},\"capabilities\":{\"policy\":[],\"appManagement\":[],\"remoteControl\":{\"tier\":\"none\"},\"oem\":{\"vendor\":\"samsung\",\"knox\":false}}}" "$BASE/rest/public/agent/v1/enroll"; }
+device_count(){ curl -s -b "$CJ" -X POST -H 'Content-Type: application/json' -d '{"value":"","pageNum":1,"pageSize":1}' \
+  "$BASE/rest/private/devices/search" | field "d['data']['devices']['totalItemsCount']"; }
+checkin_as(){ curl -s -X POST -H "Authorization: Bearer $2" -H 'Content-Type: application/json' \
+  -d "{\"deviceId\":\"$1\",\"capabilities\":{\"policy\":[],\"appManagement\":[],\"remoteControl\":{\"tier\":\"none\"},\"oem\":{\"vendor\":\"samsung\",\"knox\":false}}}" \
+  "$BASE/rest/public/agent/v1/checkin" | field "d['status']"; }
+TOK8=$(curl -s -b "$CJ" -X POST -H 'Content-Type: application/json' -d '{"maxUses":2,"validHours":1}' \
+  "$BASE/rest/private/agent/v1/token" | field "d['data']['token']")
+ATT8="e2eResume$(date +%s%N)"
+E8=$(enroll_attempt "$TOK8" "$ATT8")
+chk "resume-only: the enroll answer says the server resumes" "$(echo "$E8" | field "str(d['data'].get('resumeSupported'))")" "True"
+DEV8=$(echo "$E8" | field "d['data']['deviceId']"); SEC8=$(echo "$E8" | field "d['data']['deviceSecret']")
+COUNT8=$(device_count)
+R8=$(enroll_resume "$TOK8" "$ATT8")
+chk "resume-only before the first check-in: the same device" "$(echo "$R8" | field "d['data']['deviceId']")" "$DEV8"
+chk "resume-only before the first check-in: the same secret" "$(echo "$R8" | field "d['data']['deviceSecret']")" "$SEC8"
+chk "resume-only: the device checks in" "$(checkin_as "$DEV8" "$SEC8")" "OK"
+chk "resume-only after the first check-in: nothing to resume" "$(enroll_resume "$TOK8" "$ATT8" | field "d['message']")" \
+  "error.agent.enrollment.notResumable"
+chk "resume-only for an unknown attempt: nothing to resume" "$(enroll_resume "$TOK8" "${ATT8}x" | field "d['message']")" \
+  "error.agent.enrollment.notResumable"
+chk "resume-only made no device" "$(device_count)" "$COUNT8"
+chk "resume-only took no use: the code's second device still enrolls" \
+  "$(enroll_attempt "$TOK8" "${ATT8}second" | field "d['status']")" "OK"
+chk "and then the code is used up" "$(enroll_attempt "$TOK8" "${ATT8}third" | field "d['message']")" "error.agent.token.used"
 
 echo "===== RESULT: PASS=$PASS FAIL=$FAIL ====="
 [ "$FAIL" -eq 0 ]

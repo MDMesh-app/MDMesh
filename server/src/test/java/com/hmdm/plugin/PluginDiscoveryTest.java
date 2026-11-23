@@ -8,8 +8,8 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.TreeSet;
 
-import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 /**
  * Guards the ClassGraph classpath scan in {@link PluginList#init}: with the same bundled plugin jars as launcher.war on
@@ -19,10 +19,10 @@ import static org.junit.Assert.assertFalse;
  */
 public class PluginDiscoveryTest {
 
-    @Test
-    public void scanFindsEveryBundledPlugin() {
-        ServletContext context = (ServletContext) Proxy.newProxyInstance(
-                getClass().getClassLoader(), new Class<?>[]{ServletContext.class},
+    /** The context the plugins read their settings from at init: only devicelog's persistence choice. */
+    public static ServletContext context() {
+        return (ServletContext) Proxy.newProxyInstance(
+                PluginDiscoveryTest.class.getClassLoader(), new Class<?>[]{ServletContext.class},
                 (proxy, method, args) -> {
                     if ("getInitParameter".equals(method.getName())
                             && "plugin.devicelog.persistence.config.class".equals(args[0])) {
@@ -30,11 +30,17 @@ public class PluginDiscoveryTest {
                     }
                     return null;
                 });
+    }
 
-        PluginList.init(context);
+    @Test
+    public void scanFindsEveryBundledPlugin() {
+        PluginList.init(context());
 
-        List<String> expected = Arrays.asList("audit", "deviceinfo", "devicelog", "messaging", "push", "xtra");
-        assertEquals(new TreeSet<>(expected), new TreeSet<>(PluginList.getEnabledPlugins()));
+        // fixture: the tests' own fork plugin under com.mdmesh (com.mdmesh.fixture), on this classpath only. Contained,
+        // not equal: a fork's plugins in plugins/fork are on this classpath too, and must not fail core's build.
+        List<String> expected = Arrays.asList("audit", "deviceinfo", "devicelog", "messaging", "push", "xtra", "fixture");
+        TreeSet<String> found = new TreeSet<>(PluginList.getEnabledPlugins());
+        assertTrue("core's plugins " + expected + " are all among " + found, found.containsAll(expected));
         assertFalse("plugins contributed no Guice modules", PluginList.getPluginModules().isEmpty());
     }
 }

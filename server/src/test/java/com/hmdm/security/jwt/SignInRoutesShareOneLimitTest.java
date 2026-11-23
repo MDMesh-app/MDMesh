@@ -32,6 +32,8 @@ public class SignInRoutesShareOneLimitTest {
 
     private static final String RIGHT_MD5 = "5F4DCC3B5AA765D61D8327DEB882CF99";
     private static final String WRONG_MD5 = "0123456789ABCDEF0123456789ABCDEF";
+    /** Hashed once: bcrypt is slow on purpose, and every lookup builds the account anew. */
+    private static final String RIGHT_HASH = PasswordUtil.getHashFromMd5(RIGHT_MD5);
 
     @Test
     public void alternatingRoutesSpellingsAndAddressesGetNoMoreThanTheAccountLimit() {
@@ -95,7 +97,7 @@ public class SignInRoutesShareOneLimitTest {
         u.setEmail("admin@example.com");
         u.setCustomerId(1);
         u.setUserRole(role);
-        u.setPassword(PasswordUtil.getHashFromMd5(RIGHT_MD5));
+        u.setPassword(RIGHT_HASH);
         u.setAuthToken("token");
         return u;
     }

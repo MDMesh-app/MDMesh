@@ -27,8 +27,8 @@ result() {   # result POINT VERDICT DETAIL — one row of $OUT/results.tsv
 # themselves (v0.3.2 and older).
 NODE_URL=https://nodejs.org/dist/v22.23.3/node-v22.23.3-linux-x64.tar.xz
 NODE_SHA256=df450af89261115ef9f9e3830c3eeb2cc9213b63c720b1af623cb5dcbe2e02de
-JDK17_URL=https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.20.1%2B1/OpenJDK17U-jdk_x64_linux_hotspot_17.0.20.1_1.tar.gz
-JDK17_SHA256=3808d1d15e3ec6bd5b84057fb5d84c33d8a1536a258146bcea2e603fc726e08e
+JDK17_URL=https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.21.1%2B2/OpenJDK17U-jdk_x64_linux_hotspot_17.0.21.1_2.tar.gz
+JDK17_SHA256=0b0ac5eab6db6abaec68c9913bcddb31321e5da411c45073d520d9c125e6f7b4
 
 # distro_setup DISTRO: BASE_IMAGE, and the workaround build args. Only an upgrade from an installer without fetch_runtime
 # gets them (its from-ref install needs them); a fresh run, a newer from-ref and T2_STRICT=1 get the stock baseline.
@@ -157,6 +157,21 @@ run_install() {
   return "$rc"
 }
 
+# run_update LABEL: the documented update in the guest (guest.sh update, with run.sh's SET_REPO, the updater setting the
+# install has); its output lands in $OUT/LABEL.out. Returns its exit code.
+run_update() {
+  local label=$1 rc=0 t0
+  t0=$(date +%s)
+  log "update [$label]: sudo ./setup.sh --update --native (no -y, stdin closed)"
+  timeout "${T2_STEP_TIMEOUT:-3600}" docker exec "$CTR" bash /t2/guest.sh update "/t2/out/$label.out" "$SET_REPO" \
+    > "$OUT/$label.result" 2>&1 || rc=$?
+  [ "$rc" -ne 124 ] || echo "T2 update timed out after ${T2_STEP_TIMEOUT:-3600}s" >> "$OUT/$label.result"
+  docker cp "$CTR:/t2/out/$label.out" "$OUT/$label.out" > /dev/null 2>&1 || true
+  while IFS= read -r l; do log "  $l"; done < "$OUT/$label.result"
+  log "update [$label] rc=$rc in $(( ($(date +%s) - t0) / 60 ))m$(( ($(date +%s) - t0) % 60 ))s"
+  return "$rc"
+}
+
 # --- API helpers (curl + python3 on the host, like scripts/agent-v1-e2e.sh) ------------------------------------------
 md5u() { printf '%s' "$1" | md5sum | awk '{print toupper($1)}'; }
 # api METHOD PATH [JSON] [extra curl args...]: the JSON reply (empty on a transport error).
@@ -215,6 +230,11 @@ check_install() {
   check "Tomcat on port $T2_HTTP_PORT (server.xml connector, listening)" "$(guest port)" "$T2_HTTP_PORT listening"
   check "Tomcat serves this checkout's build (server WAR + console)" "$(guest deployed)" match
   check "initialized.txt says OK" "$(guest initialized | head -n 1 | cut -c1-2)" OK
+  # CVE-2026-114938 (OpenJDK): a version whose installer sets -XX:-UseBASE64Intrinsics runs the server with it.
+  # Not `grep -q`: its early exit would SIGPIPE git show and, under pipefail, skip the check.
+  if git -C "$REPO" show "$ref:install/install-native.sh" 2>/dev/null | grep -- '-XX:-UseBASE64Intrinsics' > /dev/null; then
+    check "server JVM runs with -XX:-UseBASE64Intrinsics" "$(guest base64-flag)" "false {command line}"
+  fi
   check "GET /rest/public/name" "$(http_code /rest/public/name)" 200
   check "admin can sign in (status:passwordReset)" "$(admin_login_ok)" "OK:False"
   e2e="$WORK/e2e-$label.sh"

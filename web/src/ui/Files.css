@@ -1,0 +1,89 @@
+/* Custom APK file panels: the drop zone (empty) and the "file read" result share one anatomy. */
+
+/* ---- file read panel ---- */
+.v2 .v2-filepanel,
+.v2 .v2-drop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: var(--hairline) dashed var(--ok-line);
+  border-radius: var(--radius-control);
+  background: var(--ok-wash);
+}
+.v2 .v2-filepanel.is-alert {
+  border-color: var(--alert-line);
+  background: var(--alert-soft);
+}
+.v2 .v2-filepanel__tile {
+  flex: 0 0 auto;
+  width: var(--control-lg);
+  height: var(--control-lg);
+  box-sizing: border-box;
+  border-radius: var(--radius-chip);
+  background: var(--surface);
+  border: var(--hairline) solid var(--border);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-2);
+}
+.v2 .v2-filepanel__bar {
+  fill: var(--ok-mark);
+}
+.v2 .v2-filepanel.is-alert .v2-filepanel__bar {
+  fill: var(--alert-line);
+}
+.v2 .v2-filepanel__text {
+  flex: 1 1 240px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.v2 .v2-filepanel__name {
+  font-family: var(--font-mono);
+  font-weight: var(--weight-medium);
+  overflow-wrap: anywhere;
+}
+.v2 .v2-filepanel__detail {
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
+  color: var(--ok-ink);
+}
+.v2 .v2-filepanel.is-alert .v2-filepanel__detail {
+  color: var(--alert-ink);
+}
+
+/* ---- drop zone: the same panel, empty ---- */
+.v2 .v2-drop {
+  border-color: var(--border-strong);
+  background: var(--surface-sunken);
+  transition:
+    border-color var(--dur-micro) var(--ease),
+    background-color var(--dur-micro) var(--ease);
+}
+.v2 .v2-drop.is-over {
+  border-color: var(--ink);
+  background: var(--surface-2);
+}
+.v2 .v2-drop.is-disabled {
+  opacity: var(--disabled-opacity);
+}
+.v2 .v2-drop__title {
+  font-weight: var(--weight-medium);
+}
+.v2 .v2-drop__hint {
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
+  color: var(--secondary);
+}
+
+/* The read result inside FileDropZone: still a drop target (outline while a file is over it). */
+.v2 .v2-dropresult {
+  border-radius: var(--radius-control);
+}
+.v2 .v2-dropresult.is-over {
+  outline: var(--indicator) dashed var(--ink);
+  outline-offset: var(--indicator);
+}

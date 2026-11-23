@@ -63,7 +63,9 @@ jobs:
     name: ${{ matrix.name }}
     needs: paths
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
-    timeout-minutes: 15
+    # edge: the installer suites in containers and the apt-lock cases install packages from the distributions'
+    # mirrors (2 to 8 minutes, by the mirrors' day), then edge-check builds a web image: 15 minutes was cut off.
+    timeout-minutes: ${{ matrix.name == 'edge' && 30 || 15 }}
     # The supervisor and edge entries' image tags, each defined once for its build step and its cleanup step. Per run:
     # on a daemon shared by several runners (vars.CI_RUNNER) a fixed tag lets concurrent runs retag each other's image,
     # so a run could smoke another PR's build.

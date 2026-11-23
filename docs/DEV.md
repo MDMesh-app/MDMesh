@@ -181,3 +181,5 @@ Everything a run creates is named `mdmesh-t2-…` and removed on exit; see the h
 `KILL_POINTS` in `tests/native/lib/guest.sh`, and `run.sh`.
 
 CI runs the rig as tier T2 (see [CI](../CONTRIBUTING.md#ci)).
+The rig's Maven cache helpers have a quick test of their own, `tests/native/m2-cache-test.sh` (a docker stub, no root,
+no network), which T0 runs when `tests/native/` changes.

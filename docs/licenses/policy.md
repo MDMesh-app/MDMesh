@@ -116,6 +116,24 @@ after building the three (`mvn -DskipTests package`, `npm run build` in `web/`, 
 `agent-android/`). A Dependabot pull request that brings in a new component shows the warning: review the component,
 and update the inventory in the pull request, or in the next one.
 
+## Files kept from upstream
+
+MDMesh started from Headwind MDM's server at upstream commit `daed2099` (May 2026, after release 5.39.1).
+[upstream-files.tsv](upstream-files.tsv) lists every file kept from it, with the file's blob there and whether it
+carried the upstream copyright header. Apache-2.0 asks two things of them:
+
+- A file MDMesh changed says so (section 4(b)): `Modified by the MDMesh contributors.` under the upstream copyright
+  line, or, in a file upstream left without a header, a first-line comment `Derived from Headwind MDM (Apache-2.0);
+  modified by the MDMesh contributors.` `scripts/licenses/headers.py mark PATH` adds the right one. A JSON file can't
+  carry a comment: the list says so, and NOTICE points to it.
+- A file keeps the upstream copyright line it had (section 4(c)).
+
+Files MDMesh wrote carry the MDMesh header (`Copyright (C) 2026 the MDMesh contributors. Licensed under the Apache
+License, Version 2.0.`), never the upstream one. The agent files ported from the upstream Android agent keep its
+header and say what changed. The licences workflow runs `scripts/licenses/headers.py check` on every pull request.
+When the first change to a kept file fails it, run `mark` on the file; when a kept file is deleted or moved, remove
+or update its row.
+
 ## Code copied from elsewhere
 
 No build sees source code copied into the repository. Don't copy code from a project under a licence this page

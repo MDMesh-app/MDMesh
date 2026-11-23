@@ -32,6 +32,8 @@ export interface DeviceView {
   /** Last sync time, ms since epoch. */
   lastUpdate?: number;
   imei?: string;
+  /** Legacy agent info; current agent identity is stored separately in telemetry. */
+  info?: { imei?: string };
   phone?: string;
   publicIp?: string;
   serial?: string;

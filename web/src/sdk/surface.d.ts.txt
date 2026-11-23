@@ -189,6 +189,9 @@ export interface DeviceView {
     description?: string;
     lastUpdate?: number;
     imei?: string;
+    info?: {
+        imei?: string;
+    };
     phone?: string;
     publicIp?: string;
     serial?: string;

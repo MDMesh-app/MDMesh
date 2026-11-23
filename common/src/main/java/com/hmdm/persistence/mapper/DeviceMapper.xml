@@ -92,6 +92,22 @@
                             AND configurations.customerId = devices.customerId))
     </update>
 
+    <!-- Current agents report IMEIs in telemetry, including both SIM slots. Keep this
+         predicate shared by the page query and its count, inside their access filters. -->
+    <sql id="reportedImeiMatches">
+        EXISTS (
+            SELECT 1
+            FROM device_state imeiState,
+                 LATERAL jsonb_array_elements_text(
+                     CASE WHEN jsonb_typeof(imeiState.telemetry::jsonb #&gt; '{identity,imei}') = 'array'
+                          THEN imeiState.telemetry::jsonb #&gt; '{identity,imei}'
+                          ELSE '[]'::jsonb END
+                 ) AS reportedImei(value)
+            WHERE imeiState.deviceNumber = devices.number
+              AND reportedImei.value ILIKE #{value}
+        )
+    </sql>
+
     <sql id="allowedDevicesSelect">
         SELECT DISTINCT deviceId AS deviceId, LOWER(deviceNumber) AS deviceNumber, searchPriority, sortingValue
         FROM
@@ -162,6 +178,7 @@
             OR devices.phone ILIKE #{value}
             OR devices.publicIp ILIKE #{value}
             OR devices.infojson -&gt;&gt; 'imei' ILIKE #{value}
+            OR <include refid="reportedImeiMatches"/>
             OR devices.infojson -&gt;&gt; 'phone' ILIKE #{value}
             OR devices.infojson -&gt;&gt; 'model' ILIKE #{value}
             OR devices.infojson -&gt;&gt; 'serial' ILIKE #{value}
@@ -305,6 +322,7 @@
             OR devices.phone ILIKE #{value}
             OR devices.publicIp ILIKE #{value}
             OR devices.infojson -&gt;&gt; 'imei' ILIKE #{value}
+            OR <include refid="reportedImeiMatches"/>
             OR devices.infojson -&gt;&gt; 'phone' ILIKE #{value}
             OR devices.infojson -&gt;&gt; 'model' ILIKE #{value}
             OR devices.infojson -&gt;&gt; 'serial' ILIKE #{value}

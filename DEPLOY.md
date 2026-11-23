@@ -222,7 +222,8 @@ Notes:
 
 ### Your own edge rules
 
-The edge imports every `*.caddy` file in `site.d/` in the install directory into its site, after MDMesh's own
+The edge imports every `*.caddy` file in `site.d/` in the install directory into its site (except hidden ones,
+`.*.caddy`, such as an editor's lock file or a rule you set aside as `.office.caddy`), after MDMesh's own
 settings: an IP allowlist for the console, an extra header, a redirect. Updates and rollbacks never touch `site.d`,
 and the installers create it (with a short README). For example, `site.d/office-only.caddy`:
 
@@ -266,7 +267,8 @@ docker compose exec -e MDMESH_RAW_SITE_D=1 caddy caddy validate --config /etc/ca
 ```
 
 `MDMESH_RAW_SITE_D=1` checks `site.d` as it is now, through the same per-file check as a start: it validates exactly
-the files a restart would load, and fails, saying why, if a restart would leave any file out, couldn't read `site.d`,
+the files a restart would load, and fails, saying why, if a restart would leave any file out (hidden ones aside: they
+are never rules), couldn't read `site.d`,
 or finds no `*.caddy` file at all (most likely `site.d` isn't mounted: see `MDMESH_SITE_DIR` below), so the restart
 after `&&` never runs without a rule you expect. The start itself still starts without such a file.
 

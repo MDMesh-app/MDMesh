@@ -295,7 +295,8 @@ mdm_site_dir() {
     if [ -O site.d ]; then warn "site.d isn't writable (its mode): its README is left out."
     else warn "site.d belongs to root: add your own edge rules there as root."; fi
   elif [ ! -e site.d/README ]; then
-    printf '%s\n' "Your own rules for MDMesh's edge (Caddy). Every *.caddy file here is imported into the edge's site," \
+    printf '%s\n' "Your own rules for MDMesh's edge (Caddy). Every *.caddy file here (but hidden ones, .*.caddy) is" \
+      "imported into the edge's site," \
       "after MDMesh's own settings. Updates never change this directory. Each file must be yours (or root's), not a" \
       "link, and writable by you only (chmod 644), or the edge leaves it out, saying so in its log. Check it (the" \
       "check fails if a restart would leave a file out, or finds no *.caddy file: site.d not mounted), then restart" \

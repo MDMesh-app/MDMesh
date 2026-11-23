@@ -62,7 +62,7 @@ edge_site_d() {
   _owners="0 ${_st%% *}"
   for _f in "$1"/.*.caddy; do
     [ -e "$_f" ] || [ -L "$_f" ] || continue
-    edge_site_log "site.d/${_f##*/} is not loaded: a hidden file"; EDGE_SITE_SKIPPED=$((EDGE_SITE_SKIPPED + 1))
+    edge_site_log "site.d/${_f##*/} is not loaded: a hidden file (not a rule; a check doesn't fail on it)"
   done
   for _f in "$1"/*.caddy; do
     [ -e "$_f" ] || [ -L "$_f" ] || continue

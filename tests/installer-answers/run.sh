@@ -981,6 +981,29 @@ kill "$held" > "$WORK/kill.log" 2>&1 || true; wait "$held" > "$WORK/kill.log" 2>
 { grep -qF 'Another quick start is running in' "$WORK/out/e" && ! grep -q 'compose pull\|compose up' "$WORK/docker.log"; } \
   || { fail "a second quick start in the same directory is not refused while the first runs"; show; }
 ok
+# Without flock (macOS): the lock is the running quick start's PID. A PID that is no quick start (reused after a reboot,
+# say) doesn't hold it; one that is, does, and the refusal names the file. A PATH of this host's commands but flock.
+mkdir -p "$WORK/noflock"
+for c in /usr/bin/* /bin/*; do n=${c##*/}; [ "$n" = flock ] || [ -e "$WORK/noflock/$n" ] || [ -L "$WORK/noflock/$n" ] || ln -s "$c" "$WORK/noflock/$n"; done
+qs_noflock() {
+  : > "$WORK/docker.log"
+  (cd "$WORK/qs7" && env -i PATH="$WORK/stubs-rel:$WORK/stubs:$WORK/noflock" HOME="$WORK" STUB_LOG="$WORK/docker.log" STUB_DOCKER_OK=1 \
+    MDMESH_RELEASE_PUBKEY="$(sed -n 2p "$FIX/k.pub")" bash "$REPO/quickstart.sh" < /dev/null > "$WORK/out/o" 2> "$WORK/out/e") || true
+}
+qs_unfinished; sleep 60 & other_pid=$!; echo "$other_pid" > "$WORK/qs7/mdmesh/.quickstart.lock"
+qs_noflock
+kill "$other_pid" > "$WORK/kill.log" 2>&1 || true; wait "$other_pid" > "$WORK/kill.log" 2>&1 || true
+{ ! grep -qF 'Another quick start is running' "$WORK/out/e" && grep -q '/docker compose pull$' "$WORK/docker.log"; } \
+  || { fail "without flock, a stale PID (no quick start) in .quickstart.lock refuses a resume"; show; }
+ok
+if [ -n "$(command -v ps || true)" ]; then
+qs_unfinished; bash -c 'sleep 60; true' quickstart.sh & qs_pid=$!; echo "$qs_pid" > "$WORK/qs7/mdmesh/.quickstart.lock"
+qs_noflock
+kill "$qs_pid" > "$WORK/kill.log" 2>&1 || true; wait "$qs_pid" > "$WORK/kill.log" 2>&1 || true
+{ grep -qF "Another quick start is running in $WORK/qs7/mdmesh (PID $qs_pid)" "$WORK/out/e" && grep -qF '.quickstart.lock' "$WORK/out/e" \
+  && ! grep -q 'compose pull' "$WORK/docker.log"; } || { fail "without flock, a running quick start's PID does not refuse, naming the lock file"; show; }
+ok
+fi
 # A new install over a seeded database is refused, also with RESUMING=1 in the environment (only a resume finishes one).
 mkdir -p "$WORK/qs10"; rm -rf -- "$WORK/qs10/mdmesh"; : > "$WORK/docker.log"; : > "$WORK/docker.log.stdin"
 (cd "$WORK/qs10" && env -i PATH="$WORK/stubs-rel:$WORK/stubs-qsfull:$PATH" HOME="$WORK" STUB_LOG="$WORK/docker.log" STUB_ADMIN=t \
@@ -1070,8 +1093,9 @@ qs_run STUB_DOCKER_PS="$(printf '%s\n/project' "$WORK/qs7/mdmesh")" STUB_DOCKER_
 grep -q '/docker compose pull$' "$WORK/docker.log" || { fail "quickstart.sh does not resume beside its own containers"; show; }
 ok
 qs_dir; qs_env > "$WORK/qs7/mdmesh/.env"; chmod 600 "$WORK/qs7/mdmesh/.env"
-qs_run STUB_DOCKER_PS=/srv/mdmesh
-stack_refused "a resumed quick start beside an install in /srv/mdmesh" 'An MDMesh install already exists in /srv/mdmesh'
+mkdir -p "$WORK/other-install"   # another install's directory, still there
+qs_run STUB_DOCKER_PS="$WORK/other-install"
+stack_refused "a resumed quick start beside an install in another directory" "An MDMesh install already exists in $WORK/other-install"
 # A container of the project that names no directory (a compose too old to record it): refused, even beside its own.
 qs_dir; qs_env > "$WORK/qs7/mdmesh/.env"; chmod 600 "$WORK/qs7/mdmesh/.env"
 qs_run STUB_DOCKER_PS="$(printf '%s\n-' "$WORK/qs7/mdmesh")"
@@ -1110,8 +1134,17 @@ ok
 setup_run "$WORK/src9" STUB_DOCKER_PS="$(printf '%s\n/project' "$WORK/src9")" STUB_DOCKER_VOLUMES=mdmesh_pgdata
 [ "$(up_args)" = '-f docker-compose.yml -f docker-compose.domain.yml' ] || { fail "a setup.sh re-run beside its own stack does not go on"; show; }
 ok
-setup_run "$WORK/src9" STUB_DOCKER_PS=/opt/mdmesh
-stack_refused "a setup.sh re-run beside an install in /opt/mdmesh" 'An MDMesh install already exists in /opt/mdmesh'
+setup_run "$WORK/src9" STUB_DOCKER_PS="$WORK/other-install"
+stack_refused "a setup.sh re-run beside an install in another directory" "An MDMesh install already exists in $WORK/other-install"
+# Its own containers, made where the clone was before it was moved (a path that is gone): the same install, moved here.
+setup_run "$WORK/src9" STUB_DOCKER_PS="$WORK/moved-away-clone"
+{ [ "$(up_args)" = '-f docker-compose.yml -f docker-compose.domain.yml' ] && grep -qF "were made in $WORK/moved-away-clone, which is gone" "$WORK/out/o" "$WORK/out/e" \
+  && ! grep -qF 'take over' "$WORK/out/e"; } || { fail "a setup.sh re-run of a moved clone is refused as another install"; show; }
+ok
+# A new install beside such containers is still refused (no .env here: they are another install's).
+rm -rf -- "$WORK/src11"; mkdir -p "$WORK/src11/install"; cp_setup "$WORK/src11"; cp -R -- "$REPO/install/lib" "$WORK/src11/install/"
+setup_run "$WORK/src11" MDMESH_NONINTERACTIVE=1 MDMESH_MODE=domain MDMESH_HOST=mdm.example.com STUB_DOCKER_PS="$WORK/moved-away-clone"
+stack_refused "setup.sh in a fresh clone beside containers whose directory is gone" "An MDMesh install already exists in $WORK/moved-away-clone"
 
 if [ -e "$WORK/stubs.called" ]; then fail "a dry run ran a command that changes the host: $(cat "$WORK/stubs.called")"; fi
 
@@ -1120,5 +1153,5 @@ if [ -e "$WORK/stubs.called" ]; then fail "a dry run ran a command that changes 
 TREE=$(git -c safe.directory='*' -C "$REPO" describe --always --dirty 2>&1) || TREE='?'
 TREE="$REPO at $TREE"
 if [ "$FAILS" != 0 ]; then echo "installer answers: $FAILS failure(s) ($TREE)" >&2; exit 1; fi
-if [ "$CHECKS" -lt 627 ]; then echo "installer answers: only $CHECKS checks ran, expected at least 627 ($TREE)" >&2; exit 1; fi
+if [ "$CHECKS" -lt 637 ]; then echo "installer answers: only $CHECKS checks ran, expected at least 637 ($TREE)" >&2; exit 1; fi
 echo "installer answers: all $CHECKS checks passed ($TREE)"

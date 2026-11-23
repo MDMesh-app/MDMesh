@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # One MDMesh stack per Docker project name (setup.sh sources this file; quickstart.sh keeps a verbatim copy of the
-# functions between the markers below, which CI checks). Source it; do not execute it. The installers define err.
+# functions between the markers below, which CI checks). Source it; do not execute it. The installers define err and warn.
 # bash 3.2 compatible (quickstart may run under macOS's bash).
 #
 # Every install's .env says COMPOSE_PROJECT_NAME=mdmesh, so the quick start or setup.sh run in a second directory would
@@ -17,7 +17,7 @@
 # PROJECT is refused, since a new .env's secrets can't work with them; NEW=0 (this directory's .env is used) allows this
 # directory's own. Fails closed when Docker can't be asked, and on a container that names no directory.
 mdm_stack_guard() {
-  local project=$1 new=$2 here dirs d other='' ours=0 n=0 unknown=0 vols
+  local project=$1 new=$2 here dirs d other='' gone='' ours=0 n=0 unknown=0 vols
   here=$(pwd -P)
   dirs=$(docker ps -a --filter "label=com.docker.compose.project=$project" \
     --format 'dir:{{.Label "com.docker.compose.project.working_dir"}}') \
@@ -27,12 +27,20 @@ mdm_stack_guard() {
     n=$((n + 1)); d=${d#dir:}
     [ -n "$d" ] || { unknown=1; continue; }
     [ "$d" != /project ] || continue
-    if [ "$d" -ef "$here" ]; then ours=1; else other="$other$d
+    if [ "$d" -ef "$here" ]; then ours=1
+    elif [ "$new" = 0 ] && [ ! -e "$d" ]; then gone="$gone$d
+"
+    else other="$other$d
 "; fi
   done <<EOF
 $dirs
 EOF
   other=$(printf '%s' "$other" | sort -u | tr '\n' ' ' | sed 's/ $//')
+  # A re-run here whose containers name a directory that no longer exists: this install, moved (or renamed) since.
+  if [ -n "$gone" ] && [ -z "$other" ] && [ "$unknown" = 0 ]; then
+    warn "This install's containers were made in $(printf '%s' "$gone" | sort -u | tr '\n' ' ' | sed 's/ $//'), which is gone: taking them as this install, moved here."
+    ours=1
+  fi
   if [ -n "$other" ] || [ "$unknown" = 1 ] || { [ "$n" -gt 0 ] && { [ "$new" = 1 ] || [ "$ours" = 0 ]; }; }; then
     if [ -n "$other" ]; then
       err "An MDMesh install already exists in $other (Docker project $project)."

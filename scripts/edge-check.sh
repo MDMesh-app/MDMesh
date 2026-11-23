@@ -277,6 +277,9 @@ PEER_CASES=(
   "host|EDGE_BIND=[::1]:8080|172.19.0.1/32|:8080|off|"
   "192.0.2.10|EDGE_BIND=0.0.0.0:8080|192.0.2.10/32|:8080|off|"
   "fd00::1 2001:db8::/32,::1||fd00::1/128 2001:db8::/32 ::1/128|:8080|off|"
+  "1:2:3:4:5:6:7:8||1:2:3:4:5:6:7:8/128|:8080|off|"
+  "1::2:3:4:5:6:7:8||refused"
+  "1:2:3:4:5:6:7:8:9||refused"
   "2001:db8:1||refused"
   "1::2::3||refused"
   "12345::1||refused"
@@ -369,7 +372,8 @@ ot() {  # ot NAME WANT-CA(right|wrong): run the front, then a request through it
   for _ in $(seq 1 40); do
     out="$(docker run --rm --network "$OT_NET" curlimages/curl:8.23.0 -sk -m 5 -o /tmp/body -w '%{http_code}' \
       --resolve "mdm.example.com:443:$ip" https://mdm.example.com/ 2>> "$OT_D/docker.log")" || true
-    case "$out" in 000*|'') sleep 0.5 ;; *) break ;; esac
+    # 404: Traefik answers it until its file provider has loaded the route.
+    case "$out" in 000*|404|'') sleep 0.5 ;; *) break ;; esac
   done
   echo "$out"
 }

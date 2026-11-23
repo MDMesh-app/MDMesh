@@ -823,7 +823,8 @@ mdm_site_dir() {
     if [ -O site.d ]; then warn "site.d isn't writable (its mode): its README is left out."
     else warn "site.d belongs to root: add your own edge rules there as root."; fi
   elif [ ! -e site.d/README ]; then
-    printf '%s\n' "Your own rules for MDMesh's edge (Caddy). Every *.caddy file here is imported into the edge's site," \
+    printf '%s\n' "Your own rules for MDMesh's edge (Caddy). Every *.caddy file here (but hidden ones, .*.caddy) is" \
+      "imported into the edge's site," \
       "after MDMesh's own settings. Updates never change this directory. Each file must be yours (or root's), not a" \
       "link, and writable by you only (chmod 644), or the edge leaves it out, saying so in its log. Check it (the" \
       "check fails if a restart would leave a file out, or finds no *.caddy file: site.d not mounted), then restart" \
@@ -859,7 +860,7 @@ mdm_mode_env() {
 # PROJECT is refused, since a new .env's secrets can't work with them; NEW=0 (this directory's .env is used) allows this
 # directory's own. Fails closed when Docker can't be asked, and on a container that names no directory.
 mdm_stack_guard() {
-  local project=$1 new=$2 here dirs d other='' ours=0 n=0 unknown=0 vols
+  local project=$1 new=$2 here dirs d other='' gone='' ours=0 n=0 unknown=0 vols
   here=$(pwd -P)
   dirs=$(docker ps -a --filter "label=com.docker.compose.project=$project" \
     --format 'dir:{{.Label "com.docker.compose.project.working_dir"}}') \
@@ -869,12 +870,20 @@ mdm_stack_guard() {
     n=$((n + 1)); d=${d#dir:}
     [ -n "$d" ] || { unknown=1; continue; }
     [ "$d" != /project ] || continue
-    if [ "$d" -ef "$here" ]; then ours=1; else other="$other$d
+    if [ "$d" -ef "$here" ]; then ours=1
+    elif [ "$new" = 0 ] && [ ! -e "$d" ]; then gone="$gone$d
+"
+    else other="$other$d
 "; fi
   done <<EOF
 $dirs
 EOF
   other=$(printf '%s' "$other" | sort -u | tr '\n' ' ' | sed 's/ $//')
+  # A re-run here whose containers name a directory that no longer exists: this install, moved (or renamed) since.
+  if [ -n "$gone" ] && [ -z "$other" ] && [ "$unknown" = 0 ]; then
+    warn "This install's containers were made in $(printf '%s' "$gone" | sort -u | tr '\n' ' ' | sed 's/ $//'), which is gone: taking them as this install, moved here."
+    ours=1
+  fi
   if [ -n "$other" ] || [ "$unknown" = 1 ] || { [ "$n" -gt 0 ] && { [ "$new" = 1 ] || [ "$ours" = 0 ]; }; }; then
     if [ -n "$other" ]; then
       err "An MDMesh install already exists in $other (Docker project $project)."
@@ -1037,10 +1046,13 @@ done
 if [ -n "$(command -v flock || true)" ]; then
   exec 9>> .quickstart.lock
   flock -n 9 || { err "Another quick start is running in $(pwd): let it finish. Nothing was changed."; exit 1; }
-else   # no flock (macOS): the running one's PID, refused while it lives
+else   # no flock (macOS): refused while the PID in it is a quick start still running
   _pid=$(cat .quickstart.lock 2>&1) || _pid=''
   case "$_pid" in ''|*[!0-9]*) ;; *)
-    if _k=$(kill -0 "$_pid" 2>&1); then err "Another quick start is running in $(pwd): let it finish. Nothing was changed."; exit 1; fi ;;
+    case "$(ps -p "$_pid" -o command= 2>&1)" in *quickstart*)
+      err "Another quick start is running in $(pwd) (PID $_pid): let it finish. If none is, delete $(pwd)/.quickstart.lock."
+      err "Nothing was changed."; exit 1 ;;
+    esac ;;
   esac
   echo "$$" > .quickstart.lock
 fi

@@ -45,7 +45,10 @@ EXEMPT = {
 # The agent files ported from hmdm-android (NOTICE): not copies of an upstream file, so no blob to compare.
 PORTED = "ported from hmdm-android"
 # The comment syntax of a file that never had the header, by extension.
-COMMENTS = {".java": "// {}", ".js": "// {}", ".sql": "-- {}", ".example": "# {}", ".xml": "<!-- {} -->"}
+COMMENTS = {".java": "// {}", ".js": "// {}", ".sql": "-- {}", ".example": "# {}", ".xml": "<!-- {} -->",
+            ".sh": "# {}", ".bat": "REM {}"}
+# A first line that must stay first: an XML declaration, a shebang, a batch file's @echo off.
+FIRST = ("<?xml", "#!", "@echo off")
 
 
 def git(*args, cwd=ROOT, stdin=None):
@@ -112,8 +115,7 @@ def mark(paths):
             ext = os.path.splitext(path)[1]
             if ext not in COMMENTS:
                 sys.exit(f"{path}: no comment syntax known for {ext or 'this file'}: add it to EXEMPT, with the reason")
-            # After an XML declaration, which must come first.
-            at = 1 if lines[0].startswith("<?xml") else 0
+            at = 1 if lines[0].startswith(FIRST) else 0
             lines.insert(at, COMMENTS[ext].format(DERIVED))
         with open(full, "w", encoding="utf-8") as f:
             f.write("\n".join(lines))

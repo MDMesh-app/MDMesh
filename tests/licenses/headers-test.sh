@@ -27,10 +27,11 @@ cp src/A.java src/B.java
 printf 'angular.module("x");\n' > src/c.js
 printf '<?xml version="1.0"?>\n<Context>\n</Context>\n' > src/context.xml
 printf '{"a": 1}\n' > src/en.json
+printf '#!/bin/bash\necho hi\n' > src/run.sh
 {
   printf '# fixture\n'
   for f in src/A.java src/B.java; do printf '%s\t%s\tyes\t\n' "$f" "$(git hash-object "$f")"; done
-  for f in src/c.js src/context.xml; do printf '%s\t%s\tno\t\n' "$f" "$(git hash-object "$f")"; done
+  for f in src/c.js src/context.xml src/run.sh; do printf '%s\t%s\tno\t\n' "$f" "$(git hash-object "$f")"; done
   printf '%s\t%s\tno\tJSON has no comments\n' src/en.json "$(git hash-object src/en.json)"
 } > docs/licenses/upstream-files.tsv
 printf '/*\n * Copyright (C) 2026 the MDMesh contributors.\n */\npackage m;\n' > src/Mine.java
@@ -51,17 +52,19 @@ expect_check 0 'carries the notices it needs' 'clean tree'
 printf '// changed\n' >> src/A.java
 printf 'x;\n' >> src/c.js
 printf '<!-- changed -->\n' >> src/context.xml
+printf 'echo bye\n' >> src/run.sh
 printf '{"a": 2}\n' > src/en.json
 expect_check 1 'src/A.java: differs from upstream' 'changed headered file'
 expect_check 1 'src/c.js: differs from upstream' 'changed headerless file'
 if "$H" check 2>&1 | grep -q 'src/en.json'; then fail 'an exempt file was reported'; fi
 
-"$H" mark src/A.java src/c.js src/context.xml > "$WORK/mark.out"
+"$H" mark src/A.java src/c.js src/context.xml src/run.sh > "$WORK/mark.out"
 grep -qx ' \* Modified by the MDMesh contributors\.' src/A.java || fail "mark: no notice in A.java: $(cat src/A.java)"
 [ "$(grep -n 'Modified by' src/A.java | cut -d: -f1)" = 5 ] || fail 'mark: the notice is not under the copyright line'
 DERIVED='Derived from Headwind MDM (Apache-2.0); modified by the MDMesh contributors.'
 [ "$(head -n 1 src/c.js)" = "// $DERIVED" ] || fail "mark: c.js starts with $(head -n 1 src/c.js)"
 [ "$(sed -n 2p src/context.xml)" = "<!-- $DERIVED -->" ] || fail "mark: context.xml: $(cat src/context.xml)"
+[ "$(sed -n 2p src/run.sh)" = "# $DERIVED" ] || fail "mark: run.sh: $(cat src/run.sh)"
 expect_check 0 'carries the notices it needs' 'after mark'
 "$H" mark src/A.java | grep -q 'already says' || fail 'mark: a marked file was marked again'
 [ "$(grep -c 'Modified by' src/A.java)" = 1 ] || fail 'mark: the notice was added twice'

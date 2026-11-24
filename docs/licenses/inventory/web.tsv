@@ -43,7 +43,7 @@ react-remove-scroll-bar	MIT
 react-router	MIT
 react-style-singleton	MIT
 scheduler	MIT
-spark-md5	(WTFPL OR MIT)
+spark-md5	MIT
 tslib	0BSD
 use-callback-ref	MIT
 use-sidecar	MIT

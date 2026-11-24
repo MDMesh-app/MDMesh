@@ -206,7 +206,9 @@
                 </executions>
                 <configuration>
                     <excludedScopes>test,provided,system</excludedScopes>
-                    <excludedGroups>^com\.hmdm</excludedGroups>
+                    <!-- This repository's own modules: core under com.hmdm, a fork's plugins under com.hmdm or com.mdmesh
+                         (plugins/fork/README.md). -->
+                    <excludedGroups>^com\.(hmdm|mdmesh)(\.|$)</excludedGroups>
                     <!-- Read the POMs already resolved; don't look for third-party descriptors in the repositories. -->
                     <useRepositoryMissingFiles>false</useRepositoryMissingFiles>
                     <outputDirectory>${project.build.directory}/licenses/META-INF</outputDirectory>

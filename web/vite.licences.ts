@@ -50,7 +50,7 @@ export function violations(packages: readonly BundledPackage[], allowed: readonl
  */
 export function licences(
   files = { licence: repo('LICENSE'), notice: repo('NOTICE'), allowed: repo('docs/licenses/allowed.txt') },
-  enforce = Boolean(process.env.CI),
+  enforce = !!process.env.CI && !/^(false|0)$/i.test(process.env.CI),
 ): Plugin {
   return {
     name: 'mdmesh-licences',

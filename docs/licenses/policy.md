@@ -19,7 +19,8 @@ Each also ships `LICENSE` and `NOTICE` next to its list.
 The container images also hold an operating system and runtimes that MDMesh doesn't link with: the Alpine or Ubuntu
 packages, Tomcat, the JDK, Node and Caddy. They are shipped unmodified beside MDMesh, not combined with it, so they
 keep their own licences and this allowlist doesn't apply to them. [images.md](images.md) lists what each image is built
-from, and NOTICE has the written offer for the source of the GPL and LGPL software among them.
+from; each release attaches an SBOM per image, and NOTICE says where the source of the GPL and LGPL software among
+them is, with a written offer for it.
 
 ## Allowed licences
 
@@ -48,16 +49,22 @@ Every build writes its list, and a component under a licence outside the list fa
 variable is set, as GitHub Actions sets it). Elsewhere the server and console builds only report it, so building an
 image or a native install never stops on licence policy; the agent's build fails anywhere.
 
-A component offered under several licences passes when one of them is allowed (`(WTFPL OR MIT)` passes on MIT, and a
-jar whose POM lists CDDL-1.1 and GPL-2.0 with the Classpath Exception passes on CDDL-1.1). The server records which
-one MDMesh uses in `server/src/license/override-THIRD-PARTY.properties`, so its list names only that one.
+The build tools pass a component offered under several licences when one of them is allowed (`(WTFPL OR MIT)`
+passes on MIT, and a jar whose POM lists CDDL-1.1 and GPL-2.0 with the Classpath Exception passes on CDDL-1.1). So
+MDMesh records which one it uses: the server in `server/src/license/override-THIRD-PARTY.properties` (then its list
+names only that one), the console and the agent in [elections.tsv](elections.tsv).
 
-The [licences workflow](../../.github/workflows/licences.yml) also checks, on changes to dependencies or the images:
+In CI, `scripts/licenses/inventory.py` then reads each built artifact and fails when:
 
-- that the WAR, the console build and the APK each carry LICENSE, NOTICE and their list, and that the WAR's list
-  names every third-party jar it holds;
-- that every package the images install is in [images.md](images.md) (`scripts/licenses/check-images.sh`);
-- whether the components differ from the inventory below. This one only warns.
+- the WAR, the console build or the APK lacks LICENSE, NOTICE or its list, or the WAR's list doesn't name exactly
+  the third-party jars it holds;
+- a listed component is under a licence `allowed.txt` doesn't list, or is offered under several with no recorded
+  choice for exactly that offer. A new version of an elected jar whose POM still offers several licences fails here
+  until its line is updated.
+
+It also compares the lists with the inventory below, and only warns when they differ. The
+[licences workflow](../../.github/workflows/licences.yml) checks that every image and package the images use is in
+[images.md](images.md) (`scripts/licenses/check-images.sh`).
 
 ## When a build refuses a component
 
@@ -87,16 +94,16 @@ Where a component is offered under several licences, MDMesh uses it under this o
 | spark-md5 (console) | WTFPL or MIT | MIT |
 
 The server's elections are keyed by version (`group--artifact--version`): a new version of one of these jars needs its
-line updated, and the build names it when it does. Most are held back by `.github/dependabot.yml` until the move to
-Jakarta EE, which replaces them.
+line updated. The build itself stays green (one allowed licence is enough for it), and `inventory.py` names the jar
+and fails. Most are held back by `.github/dependabot.yml` until the move to Jakarta EE, which replaces them.
 
 Other decisions:
 
 - **SpotBugs annotations** (LGPL-2.1) came in with mybatis-guice, which needs them only to compile. The root
   `pom.xml` excludes them: nothing loads them at runtime.
 - **JAXB 2.2.11 core and impl**: their POMs can't be read on JDK 9 and later, so license-maven-plugin leaves them out.
-  `server/src/license/THIRD-PARTY.ftl` lists them by hand, and the licences workflow fails if the WAR's jars and the
-  list ever differ.
+  `server/src/license/THIRD-PARTY.ftl` lists them by hand, and `inventory.py` fails if the WAR's jars and the list
+  ever differ.
 - **desugar_jdk_libs** (GPL-2.0 with the Classpath Exception) is compiled into the agent by core library desugaring,
   which Licensee doesn't see. The Classpath Exception allows that, and NOTICE names it and covers it with the source
   offer.
@@ -105,7 +112,7 @@ Other decisions:
 
 [inventory/](inventory/) has each part's components and licences, without versions: `server.tsv`, `web.tsv` and
 `agent.tsv`. It changes when a component is added or removed or changes licence, not on version bumps, and it is how
-a review sees a new component. The licences workflow warns when a build's components differ from it; update it with
+a review sees a new component. CI warns when a build's components differ from it; update it with
 
 ```sh
 scripts/licenses/inventory.py --write --war server/target/launcher.war --web web/dist \

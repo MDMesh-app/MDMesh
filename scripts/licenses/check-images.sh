@@ -5,6 +5,10 @@
 # under which licences, and NOTICE's source offer covers the GPL software among it (docs/licenses/policy.md).
 # Names, not versions: a tag or package bump doesn't need the page changed. Run from anywhere; needs no Docker.
 #
+# A cheap pull-request nudge, not the record: each release's per-image SBOM (release.yml) is what lists everything an
+# image holds. Known blind spots: software that arrives another way (COPY --from=<an outside image>, pip install,
+# npm install -g, curl | tar, a downloaded binary), and the packages an installed package pulls in.
+#
 # Usage: scripts/licenses/check-images.sh
 set -euo pipefail
 ROOT=$(cd -P -- "$(dirname -- "$0")/../.." && pwd)
@@ -31,8 +35,11 @@ names() {
     esac
     # Every "apk add ..." or "apt-get install ..." up to the end of its command (&&, ;, |).
     { grep -oE '(apk add|apt-get( -[^ ]+)* install)[^&;|]*' <<< "$line" || true; } | while read -r cmd; do
+      local skip=""
       for word in ${cmd#*apk add}; do
-        case $word in -*|install|apt-get) continue ;; esac
+        # --virtual / -t NAME names a group of packages, not a package.
+        if [ -n "$skip" ]; then skip=""; continue; fi
+        case $word in --virtual|-t) skip=1; continue ;; -*|install|apt-get) continue ;; esac
         echo "package ${word%%=*}"
       done
     done

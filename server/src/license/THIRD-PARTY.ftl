@@ -15,6 +15,6 @@ under. NOTICE has the source offer for the ones under a licence that asks for on
 </#list>
 <#-- The plugin can't read these two POMs on JDK 9 and later (their parent needs a tools.jar path, which only JDK 8
      has), so it leaves them out. .github/dependabot.yml holds com.sun.xml.bind at 2.2.11, and the licences workflow
-     (scripts/licenses/inventory.sh) fails when the WAR's jars and this list differ. -->
+     (scripts/licenses/inventory.py) fails when the WAR's jars and this list differ. -->
     (CDDL-1.1) Old JAXB Core (com.sun.xml.bind:jaxb-core:2.2.11 - http://jaxb.java.net/)
     (CDDL-1.1) Old JAXB Runtime (com.sun.xml.bind:jaxb-impl:2.2.11 - http://jaxb.java.net/)

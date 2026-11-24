@@ -2,7 +2,24 @@
 
 MDMesh publishes three images (`release.yml`). Besides MDMesh's own code, each holds a base image and packages that
 MDMesh redistributes unmodified, under their own licences ([policy.md](policy.md) says why the allowlist doesn't apply
-to them). Some of that software is under the GPL or the LGPL: NOTICE has the written offer for its source.
+to them). Some of that software is under the GPL or the LGPL: NOTICE says where its source is, and has a written offer
+for it.
+
+**Each release records what its images hold.** The release workflow scans every pushed image with
+[Syft](https://github.com/anchore/syft) and attaches the result to the GitHub Release as
+`mdmesh-<image>-linux-<arch>.spdx.json` (SPDX JSON): every package with its exact version, and for distribution
+packages the source package it was built from. That is what the source pointers in NOTICE resolve against:
+
+- Alpine packages (mdmesh-web, mdmesh-supervisor): the recipe and patches in
+  [aports](https://gitlab.alpinelinux.org/alpine/aports), on the branch of the image's Alpine release, and the source
+  archives at <https://distfiles.alpinelinux.org/distfiles/>. GPL-3.0 among them: `bash` and `readline` in
+  mdmesh-supervisor.
+- Ubuntu packages (mdmesh-server): `https://launchpad.net/ubuntu/+source/<source package>/<version>`, or
+  `apt-get source <source package>=<version>`. GPL-3.0 among them: bash, coreutils, tar, and others the SBOM names.
+- The Temurin JDK: <https://github.com/adoptium/jdk17u>, at the tag of the version the SBOM names.
+
+The base images are pinned by digest (tomcat, caddy) or are the Node LTS line (node), so the SBOM of a release is the
+image as shipped.
 
 `scripts/licenses/check-images.sh` (the licences workflow) fails when a `docker/*.Dockerfile` starts from an image or
 installs a package this page doesn't name. Update the tables in the same pull request.

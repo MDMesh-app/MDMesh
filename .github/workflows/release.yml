@@ -149,6 +149,23 @@ jobs:
           docker pull --quiet "$REF"
           docker run --rm -w /app "$REF" node --test test.js
           scripts/supervisor-smoke.sh "$REF"
+      # What exactly the pushed image holds: its OS packages (each with its source package and version) and the other
+      # software Syft finds, as SPDX JSON. The release job attaches it to the GitHub Release: NOTICE's source offer and
+      # docs/licenses/images.md point to it. A release asset, not an index attestation (the build step says why).
+      - name: SBOM of ${{ matrix.image }}, linux/${{ matrix.arch }}
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c  # v0.24.3
+        with:
+          image: ${{ steps.push.outputs.ref }}
+          syft-version: v1.57.0
+          format: spdx-json
+          output-file: ${{ runner.temp }}/sbom/mdmesh-${{ matrix.image }}-linux-${{ matrix.arch }}.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: sbom-${{ matrix.image }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/sbom/mdmesh-${{ matrix.image }}-linux-${{ matrix.arch }}.spdx.json
+          if-no-files-found: error
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: digest-${{ matrix.image }}-${{ matrix.arch }}
@@ -245,6 +262,17 @@ jobs:
           pattern: digest-*
           path: ${{ runner.temp }}/digest
           merge-multiple: true
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          pattern: sbom-*
+          path: sbom
+          merge-multiple: true
+      # One SBOM per image and platform (the images job's matrix), or the Release would publish without the record the
+      # source offer relies on.
+      - name: Every image has its SBOM
+        run: |
+          n=$(find sbom -name 'mdmesh-*-linux-*.spdx.json' | wc -l)
+          [ "$n" = 6 ] || { echo "::error::expected 6 image SBOMs (3 images x 2 platforms), found ${n}"; ls -l sbom; exit 1; }
 
       # The gate's check again, right before anything is tagged: "Re-run failed jobs" on an older release's run, after a
       # newer release, must not re-tag its images or move :latest back to them. Reads the tags from origin, not the
@@ -372,6 +400,7 @@ jobs:
             manifest.json
             manifest.json.minisig
             quickstart.sh
+            sbom/*.spdx.json
 
       # --- Read the published quickstart.sh back (README's install block downloads it) ---
       # A Release whose quickstart.sh isn't the file the signed manifest hashes must not get :latest.

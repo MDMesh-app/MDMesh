@@ -9,10 +9,11 @@ obligations to the upstream code (headers, `NOTICE`, change notices, no use of t
 [NOTICE](../../NOTICE) has the current position.
 
 **Amended (2026-11-23):** the record below no longer describes a proprietary product. The dependency licence scan
-(obligation 5) now runs in every build, and
+(obligation 5) now runs in every build; the legal sign-off it also asks for is still open.
 [docs/licenses/policy.md](../licenses/policy.md) records the allowed licences and the choices made for components
 offered under several. Each part of MDMesh ships LICENSE, NOTICE and its third-party list, and NOTICE carries the
-written offer for the source of the GPL software in the images and the agent.
+pointers to, and a written offer for, the source of the GPL software in the images and the agent (each release
+attaches an SBOM per image).
 
 ## Context
 
@@ -45,8 +46,8 @@ those files carry the upstream header and say what changed.
    files do not yet.
 4. **No trademark use** (§6): the product is NOT named "Headwind"; no Headwind logos/marks; no
    implied endorsement. All product-facing surfaces get rebranded (starts with the React UI).
-5. Run a formal dependency license scan before commercial launch. (Done: every build runs one,
-   [docs/licenses/policy.md](../licenses/policy.md).)
+5. Run a formal dependency license scan + obtain legal sign-off before commercial launch. (The scan is done: every
+   build runs one, [docs/licenses/policy.md](../licenses/policy.md). The sign-off is still open.)
 
 ## Consequences
 
@@ -54,4 +55,4 @@ those files carry the upstream header and say what changed.
 - (+) Strangler path de-risks: never blocked, migrate at our pace.
 - (−) Must pick and apply a product brand (the `com.hmdm` package namespace is cosmetic legacy,
   not a legal issue; renaming it is optional cleanup). The new agent already uses `com.mdmesh`.
-- This is practical guidance, not legal advice.
+- This is practical guidance, not legal advice; §5 sign-off remains required.

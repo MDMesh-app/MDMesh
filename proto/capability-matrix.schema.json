@@ -53,6 +53,11 @@
           "items": { "type": "string" },
           "description": "Device-action keys, e.g. lock, wipe; flattened server-side to device.<key> (registry.md)."
         },
+        "configSections": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "1.12, from agent 0.6.0: the config.apply sections (config-sections.json) this agent applies; flattened server-side to config.<name>. A server sends such an agent only these. An agent without it gets a section by its version and the section's capability (README, Configuration sections)."
+        },
         "remoteControl": {
           "type": "object",
           "additionalProperties": true,

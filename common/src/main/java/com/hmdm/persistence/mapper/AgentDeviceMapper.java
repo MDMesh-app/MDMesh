@@ -186,14 +186,14 @@ public interface AgentDeviceMapper {
     List<String> listDeviceNumbersByConfigurationId(@Param("configurationId") int configurationId);
 
     /**
-     * One row per device of the customer with its configuration + last applied revision (LEFT JOIN: never-reported
-     * devices included), and whether its latest config.apply result has a deferred outcome (one lookup per device on
+     * One row per device of the customer with its configuration, last applied revision and agent version (LEFT JOIN:
+     * never-reported devices included), and whether its latest config.apply result has a deferred outcome (one lookup per device on
      * the agentCommand (deviceNumber, type, id) index). A wiped device stays in, marked: it can never report a new
      * revision, but it still blocks deleting its configuration (ConfigurationMapper.countDevices), so the summary counts
      * it apart.
      */
     @Select({"SELECT d.number AS deviceNumber, d.configurationId AS configurationId, d.agentCapabilities AS capabilitiesJson, " +
-            "s.appliedConfigRevision AS appliedConfigRevision, d.wipedAt IS NOT NULL AS wiped, " +
+            "s.appliedConfigRevision AS appliedConfigRevision, s.agentVersion AS agentVersion, d.wipedAt IS NOT NULL AS wiped, " +
             "COALESCE((SELECT c.detail LIKE '%\"deferred:%' FROM agentCommand c " +
             "          WHERE c.deviceNumber = d.number AND c.type = 'config.apply' ORDER BY c.id DESC LIMIT 1), false) " +
             "AS lastApplyDeferred " +

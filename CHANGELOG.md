@@ -37,6 +37,9 @@ New
   `onSelect` moves focus itself, so the menu leaves focus there rather than returning it to its trigger.
 
 Fixes
+- A device whose agent is too old for a setting its configuration sets (Connectivity needs agent 0.4.0) no longer
+  shows as in sync: it shows out of sync until its agent is updated, and is sent the configuration without that
+  setting.
 - Enrollment keeps its agent through a restart with GitHub down: the updater keeps the signed manifest and agent of
   each release it has run, and checks both again before it serves them. When it has no agent to give new devices
   (GitHub didn't answer yet, or the release's manifest doesn't verify), the Enroll page says so on Docker installs

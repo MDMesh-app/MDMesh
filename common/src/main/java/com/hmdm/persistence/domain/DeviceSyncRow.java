@@ -14,6 +14,8 @@ public class DeviceSyncRow {
     private Integer configurationId;
     private String capabilitiesJson;
     private String appliedConfigRevision;
+    /** The agent version the device last reported (null when never): which configuration sections it applies. */
+    private String agentVersion;
     /** The latest config.apply result reports a deferred outcome (e.g. Wi-Fi radio Off on the only network). */
     private boolean lastApplyDeferred;
     /** devices.wipedAt is set: the device erased itself and can't report a new revision. */

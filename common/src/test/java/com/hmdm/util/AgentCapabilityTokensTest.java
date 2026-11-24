@@ -49,6 +49,14 @@ public class AgentCapabilityTokensTest {
     }
 
     @Test
+    public void testFlattenConfigSections() {
+        Set<String> tokens = AgentCapabilityTokens.flatten("{\"configSections\":[\"policies\",\"connectivity\",\"\",7]}");
+        Assert.assertEquals(2, tokens.size());
+        Assert.assertTrue(tokens.contains("config.policies"));
+        Assert.assertTrue(tokens.contains("config.connectivity"));
+    }
+
+    @Test
     public void testFlattenRemoteTierEmittedWhenNotNone() {
         Set<String> view = AgentCapabilityTokens.flatten("{\"remoteControl\":{\"tier\":\"view\"}}");
         Assert.assertTrue(view.contains("remote.view"));

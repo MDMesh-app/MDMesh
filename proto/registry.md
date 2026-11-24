@@ -4,7 +4,7 @@ Open string registries. Adding a row is an additive (MINOR) change. Keep this fi
 with the agent's capability advertisement and the server's command catalog.
 
 A command's `requiresCapability` is a flattened **token**, not a bare key: the server turns each
-advertised key into `policy.<key>`, `app.<key>` or `device.<key>` (plus `remote.<tier>` and `oem.knox`;
+advertised key into `policy.<key>`, `app.<key>`, `device.<key>` or `config.<section>` (plus `remote.<tier>` and `oem.knox`;
 see `endpoints.md` and `AgentCapabilityTokens`), and delivers a command only if its token is in the
 device's set. A command with no `requiresCapability` is always delivered.
 
@@ -44,6 +44,13 @@ hostname, a VPN profile) are planned as a new top-level section of the document,
 working. Old agents ignore an unknown section silently instead of reporting it `unsupported`, so that section comes
 with a protocol bump, a capability token and a per-section outcome, in the release that ships it.
 
+### configSections
+1.12, from agent 0.6.0. The `config.apply` sections the agent applies, one key per row of `config-sections.json`
+(`policies`, `kiosk`, …), flattened to `config.<section>`. They gate sections of the document, not commands: the
+server leaves out of a device's document each section its agent doesn't list, under the revision of what is left.
+An agent that lists none (before 0.6.0) gets a section with a `capability` when it advertises it, and any other
+section unless it reports a version below the row's `since`; a missing or unreadable version withholds nothing.
+
 ### appManagement
 | key | meaning | notes |
 |-----|---------|-------|
@@ -51,7 +58,7 @@ with a protocol bump, a capability token and a per-section outcome, in the relea
 | `silentUninstall` | silent uninstall | Planned: not advertised yet. |
 | `splitApk` | split/.xapk install | Planned key: not advertised; `app.install` already takes split `parts`. |
 | `fdroidCatalog` | can pull from an F-Droid repo | Planned: not advertised yet. |
-| `runtimePermissions` | per-app runtime permission grant, denial, and release | 1.7. Device Owner and API 23+. The optional `config.apply.appPermissions` section is sent only to agents advertising `app.runtimePermissions`; omission is legacy/no management and an empty array releases MDMesh overrides. |
+| `runtimePermissions` | per-app runtime permission grant, denial, and release | 1.7. Device Owner and API 23+. The optional `config.apply.appPermissions` section is sent only to agents advertising `app.runtimePermissions` (from 0.6.0, `config.appPermissions`); omission is legacy/no management and an empty array releases MDMesh overrides. |
 
 ### remoteControl
 Advertised as an object (`tier`, `screenCapture`, `inputInjection`, `transport`). See README. The agent

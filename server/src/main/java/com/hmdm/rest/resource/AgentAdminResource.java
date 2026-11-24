@@ -542,9 +542,9 @@ public class AgentAdminResource {
         v.setConfigurationId(device.getConfigurationId());
         Set<String> tokens = AgentCapabilityTokens.flatten(commandDAO.getDeviceCapabilities(deviceId));
         DesiredConfig doc = configReconciler.statusDocument(device);
-        v.setCurrentRevision(ConfigReconciler.statusRevision(doc, tokens));
-        v.setKioskBackgroundImageFrom(doc);
         DeviceState state = commandDAO.getState(deviceId);
+        v.setCurrentRevision(ConfigReconciler.statusRevision(doc, tokens, state == null ? null : state.getAgentVersion()));
+        v.setKioskBackgroundImageFrom(doc);
         if (state != null) { v.setAppliedRevision(state.getAppliedConfigRevision()); v.setAppliedAt(state.getAppliedConfigAt()); }
         boolean supported = AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, tokens);
         v.setSupported(supported);
@@ -580,8 +580,8 @@ public class AgentAdminResource {
                 documentByConfig.put(cfgId, configReconciler.statusDocument(probe));
             }
             Set<String> tokens = AgentCapabilityTokens.flatten(row.getCapabilitiesJson());
-            // Per device: an agent without app permission support is compared with what it can apply.
-            String current = ConfigReconciler.statusRevision(documentByConfig.get(cfgId), tokens);
+            // Per device: an agent that can't apply a section is compared with what it can apply.
+            String current = ConfigReconciler.statusRevision(documentByConfig.get(cfgId), tokens, row.getAgentVersion());
             boolean supported = AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, tokens);
             if (!supported) {
                 s.setUnsupported(s.getUnsupported() + 1);

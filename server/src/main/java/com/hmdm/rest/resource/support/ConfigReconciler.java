@@ -7,10 +7,10 @@ import com.hmdm.persistence.domain.AgentCommand;
 import com.hmdm.persistence.domain.Application;
 import com.hmdm.persistence.domain.Configuration;
 import com.hmdm.persistence.domain.Device;
-import com.hmdm.rest.json.agent.DesiredAppPermissions;
 import com.hmdm.rest.json.agent.DesiredConfig;
 import com.hmdm.util.AgentCapabilityTokens;
 import com.hmdm.util.ConfigReconcileDecision;
+import com.hmdm.util.ConfigSections;
 import com.hmdm.util.DesiredConfigBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -84,41 +84,33 @@ public class ConfigReconciler {
     }
 
     /**
-     * The document as this device receives it. An agent without {@code app.runtimePermissions} gets it without the
-     * appPermissions section, under the revision of what it gets: it can't apply the rules, and must not be sent the
-     * same document again and again for reporting a revision it never had.
+     * The document as this device receives it: without the sections its agent can't apply
+     * ({@link ConfigSections#withheld}), under the revision of what it gets, so it is not sent the same document again
+     * and again for reporting a revision it never had.
+     *
+     * @param agentVersion the version the agent reports (null when unknown: then only capabilities withhold a section)
      */
-    DesiredConfig currentDocument(Device device, Set<String> deviceTokens) {
+    DesiredConfig currentDocument(Device device, Set<String> deviceTokens, String agentVersion) {
         DesiredConfig doc = currentDocument(device);
-        if (doc != null && doc.getAppPermissions() != null && !managesAppPermissions(deviceTokens)) {
-            doc.setAppPermissions(null);
-            doc.setRevision(DesiredConfigBuilder.revision(doc));
-        }
+        if (doc != null) ConfigSections.strip(doc, ConfigSections.withheld(doc, deviceTokens, agentVersion));
         return doc;
     }
 
-    private static boolean managesAppPermissions(Set<String> deviceTokens) {
-        return AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.APP_PERMISSIONS_CAPABILITY, deviceTokens);
-    }
-
     /**
-     * The revision the console compares with the one the device applied, for its sync status. An agent that can apply
-     * app permission rules must have applied the whole document. One that can't is in sync with the document it gets
-     * when the configuration has no rules (nothing is missing), and never when it has some: its device doesn't enforce
-     * them, so it must not show as in sync.
+     * The revision the console compares with the one the device applied, for its sync status. A device whose agent
+     * applies every section of the document must have applied the whole document. One whose agent can't apply some of
+     * them is in sync with the document it gets when those sections ask nothing (absent or empty), and never when one
+     * of them asks something: its device doesn't enforce it, so it must not show as in sync.
      *
      * @param doc the configuration's document ({@link #statusDocument}), left as it was; null gives null
      */
-    public static String statusRevision(DesiredConfig doc, Set<String> deviceTokens) {
+    public static String statusRevision(DesiredConfig doc, Set<String> deviceTokens, String agentVersion) {
         if (doc == null) return null;
-        List<DesiredAppPermissions> rules = doc.getAppPermissions();
-        if (rules == null || !rules.isEmpty() || managesAppPermissions(deviceTokens)) return doc.getRevision();
-        doc.setAppPermissions(null);
-        try {
-            return DesiredConfigBuilder.revision(doc);
-        } finally {
-            doc.setAppPermissions(rules);
+        List<ConfigSections.Section> withheld = ConfigSections.withheld(doc, deviceTokens, agentVersion);
+        for (ConfigSections.Section s : withheld) {
+            if (!ConfigSections.isEmpty(s.valueIn(doc))) return doc.getRevision();
         }
+        return ConfigSections.revisionWithout(doc, withheld);
     }
 
     /**
@@ -147,8 +139,8 @@ public class ConfigReconciler {
     }
 
     /** {@link #statusRevision} of the device's configuration ({@link #statusDocument}). */
-    public String currentRevision(Device device, Set<String> deviceTokens) {
-        return statusRevision(statusDocument(device), deviceTokens);
+    public String currentRevision(Device device, Set<String> deviceTokens, String agentVersion) {
+        return statusRevision(statusDocument(device), deviceTokens, agentVersion);
     }
 
     /**
@@ -165,9 +157,10 @@ public class ConfigReconciler {
             // Cost short-circuit only: an old agent without the capability pays nothing (no config/app
             // query at all). ConfigReconcileDecision.decide still re-checks this same gate below.
             if (!AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, deviceTokens)) return false;
-            DesiredConfig doc = currentDocument(device, deviceTokens);
-            if (doc == null) return false;
             String number = device.getNumber();
+            DesiredConfig doc = currentDocument(device, deviceTokens,
+                    agentVersion != null ? agentVersion : storedAgentVersion(number));
+            if (doc == null) return false;
             if (configAgentVersion == null && agentVersion != null) {
                 // First sighting: record a baseline only, so a server upgrade does not re-send to the whole fleet.
                 commandDAO.updateConfigAgentVersion(number, agentVersion);
@@ -233,11 +226,11 @@ public class ConfigReconciler {
         String number = device.getNumber();
         Set<String> tokens = AgentCapabilityTokens.flatten(commandDAO.getDeviceCapabilities(number));
         if (!AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, tokens)) return Retry.UNSUPPORTED;
-        DesiredConfig doc = currentDocument(device, tokens);
-        if (doc == null) return Retry.NO_CONFIGURATION;
         com.hmdm.persistence.domain.DeviceState state = commandDAO.getState(number);
         String applied = state == null ? null : state.getAppliedConfigRevision();
         String agentVersion = state == null ? null : state.getAgentVersion();
+        DesiredConfig doc = currentDocument(device, tokens, agentVersion);
+        if (doc == null) return Retry.NO_CONFIGURATION;
         boolean agentChanged = state != null
                 && ConfigReconcileDecision.agentChanged(agentVersion, state.getConfigAgentVersion());
         boolean open = commandDAO.hasOpenOfType(number, DesiredConfigBuilder.COMMAND_TYPE);
@@ -248,6 +241,15 @@ public class ConfigReconciler {
         if (!enqueue(number, doc, agentVersion, now)) return Retry.ALREADY_QUEUED;
         logger.info("config.apply queued for {} by Retry apply (revision {} -> {})", number, applied, doc.getRevision());
         return Retry.QUEUED;
+    }
+
+    /**
+     * The agent version stored from the device's last check-in that reported one, for a check-in that didn't: the
+     * device keeps getting the document it got, rather than every section for one check-in.
+     */
+    private String storedAgentVersion(String number) {
+        com.hmdm.persistence.domain.DeviceState state = commandDAO.getState(number);
+        return state == null ? null : state.getAgentVersion();
     }
 
     /** Queue {@code doc} for the device; false when a concurrent check-in or retry queued one first. */

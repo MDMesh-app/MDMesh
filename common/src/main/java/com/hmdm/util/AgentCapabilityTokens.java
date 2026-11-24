@@ -38,6 +38,7 @@ import java.util.Set;
  * <ul>
  *     <li>each {@code capabilities.policy[]} entry &rarr; {@code policy.<key>}</li>
  *     <li>each {@code capabilities.appManagement[]} entry &rarr; {@code app.<key>}</li>
+ *     <li>each {@code capabilities.configSections[]} entry &rarr; {@code config.<section>} ({@link ConfigSections})</li>
  *     <li>{@code capabilities.remoteControl.tier} (when not {@code none}) &rarr; {@code remote.<tier>}</li>
  *     <li>{@code capabilities.oem.knox == true} &rarr; {@code oem.knox}</li>
  * </ul>
@@ -132,6 +133,7 @@ public final class AgentCapabilityTokens {
         addArrayTokens(tokens, capabilities.get("policy"), "policy.");
         addArrayTokens(tokens, capabilities.get("appManagement"), "app.");
         addArrayTokens(tokens, capabilities.get("device"), "device.");
+        addArrayTokens(tokens, capabilities.get("configSections"), ConfigSections.TOKEN_PREFIX);
 
         JsonNode remoteControl = capabilities.get("remoteControl");
         if (remoteControl != null && remoteControl.isObject()) {

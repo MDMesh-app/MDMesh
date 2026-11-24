@@ -719,6 +719,16 @@ public class AgentDeviceAccessTest {
         }
     }
 
+    /** An agent without config.apply: "agent too old" (supported false) says it all, with no section list. */
+    @Test
+    public void anAgentWithoutConfigApplyListsNoSections() {
+        connectivity = true;
+        agentVersion = "0.3.8";
+        com.hmdm.rest.json.agent.ConfigStatusView v = configStatus();
+        assertFalse(v.isSupported());
+        assertNull(v.getAgentUpdateNeeded());
+    }
+
     private com.hmdm.rest.json.agent.ConfigStatusView configStatus() {
         return (com.hmdm.rest.json.agent.ConfigStatusView) resource.getConfigStatus(VISIBLE).getData();
     }

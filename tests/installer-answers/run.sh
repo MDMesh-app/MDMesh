@@ -67,6 +67,9 @@ sed -i '2i [ "${STUB_DOCKER_OK:-}" = 1 ] \&\& [ "$1 $2" = "volume ls" ] \&\& { [
 # With STUB_DOCKER_OK=1, the quick start's architecture query fails quietly, so it reads uname (as without a daemon).
 # shellcheck disable=SC2016  # the stub's own variables
 sed -i '2i [ "${STUB_DOCKER_OK:-}" = 1 ] \&\& [ "$*" = "info --format {{.Architecture}}" ] \&\& exit 1' "$WORK/stubs/docker"
+# With STUB_ARGV, every docker call's arguments, one per line and then "--", are added to that file.
+# shellcheck disable=SC2016  # the stub's own variables
+sed -i '2i [ -z "${STUB_ARGV:-}" ] || { printf "%s\\n" "$@" --; } >> "$STUB_ARGV"' "$WORK/stubs/docker"
 # With STUB_DOCKER_INFO, `docker info` prints it (what install/lib/modes.sh reads to tell rootless Docker apart).
 sed -i '2i [ -n "${STUB_DOCKER_INFO:-}" ] \&\& [ "$1" = info ] \&\& { echo "$STUB_DOCKER_INFO"; exit 0; }' "$WORK/stubs/docker"
 
@@ -718,6 +721,12 @@ sed -i 's#^COMPOSE_FILE=.*#COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.
 setup_run "$WORK/src6"
 [ "$(up_args)" = '-f docker-compose.yml -f docker-compose.proxy.yml -f docker-compose.local.yml' ] \
   || { fail "a setup.sh re-run ignores the COMPOSE_FILE list .env saved (compose args \"$(up_args)\")"; show; }
+ok
+# A path in that list with blanks in it stays one argument.
+sed -i 's#^COMPOSE_FILE=.*#COMPOSE_FILE="docker-compose.yml:docker-compose.proxy.yml:/srv/MDMesh rules/override.yml"#' "$WORK/src6/.env"
+: > "$WORK/argv.log"; setup_run "$WORK/src6" STUB_ARGV="$WORK/argv.log"
+grep -qxF '/srv/MDMesh rules/override.yml' "$WORK/argv.log" \
+  || { fail "a setup.sh re-run splits a COMPOSE_FILE path with a blank in it"; show; grep -A8 -- '^-f$' "$WORK/argv.log" | head -12 >&2; }
 cp "$WORK/env6.before" "$WORK/src6/.env"
 ok
 # Installs from before 0.6.0 keep their compose command (tunnel: COMPOSE_FILE from .env; domain: the domain overlay),
@@ -1238,5 +1247,5 @@ if [ -e "$WORK/stubs.called" ]; then fail "a dry run ran a command that changes 
 TREE=$(git -c safe.directory='*' -C "$REPO" describe --always --dirty 2>&1) || TREE='?'
 TREE="$REPO at $TREE"
 if [ "$FAILS" != 0 ]; then echo "installer answers: $FAILS failure(s) ($TREE)" >&2; exit 1; fi
-if [ "$CHECKS" -lt 650 ]; then echo "installer answers: only $CHECKS checks ran, expected at least 650 ($TREE)" >&2; exit 1; fi
+if [ "$CHECKS" -lt 651 ]; then echo "installer answers: only $CHECKS checks ran, expected at least 651 ($TREE)" >&2; exit 1; fi
 echo "installer answers: all $CHECKS checks passed ($TREE)"

@@ -622,7 +622,7 @@ if [ -n "${GITHUB_REPO:-}" ] && command -v python3 >/dev/null && command -v curl
         "$SUPERVISOR_IMAGE" -V -p /verify/minisign.pub -m "/verify/release/$(basename -- "$msg")"
     }
     # shellcheck disable=SC2086
-    if { docker image inspect "$SUPERVISOR_IMAGE" >/dev/null 2>&1 || docker compose $COMPOSE_ARGS build supervisor >/dev/null 2>&1; } \
+    if { docker image inspect "$SUPERVISOR_IMAGE" >/dev/null 2>&1 || docker compose ${COMPOSE_ARGS[@]+"${COMPOSE_ARGS[@]}"} build supervisor >/dev/null 2>&1; } \
        && docker run --rm --pull never --network none --entrypoint minisign "$SUPERVISOR_IMAGE" -v >/dev/null 2>&1; then
       MDM_MINISIGN=mdm_container_minisign
     fi
@@ -658,7 +658,7 @@ export VITE_AGENT_PACKAGE VITE_AGENT_CHECKSUM VITE_AGENT_APK_URL
 
 say "Building + starting the stack…"
 # shellcheck disable=SC2086
-docker compose $COMPOSE_ARGS up -d --build \
+docker compose ${COMPOSE_ARGS[@]+"${COMPOSE_ARGS[@]}"} up -d --build \
   || { err "docker compose up failed (above). $(mdm_up_hint)"; err "Then re-run ./setup.sh (it reuses your .env)."; exit 1; }
 
 say "Waiting for the server to finish first-boot (Liquibase)…"

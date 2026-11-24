@@ -753,13 +753,13 @@ mdm_compose_has_proxy() {
 }
 
 # mdm_mode_settings NUMBER [rerun]: the mode's settings, from HOST (and, behind your proxy, PROXY_BIND and ORIGIN_TLS):
-# COMPOSE_ARGS (its compose files and profile, for a command line), EXTRA_NOTE (what to do next) and ENTRY (where
+# COMPOSE_ARGS (an array: its compose files and profile, for a command line), EXTRA_NOTE (what to do next) and ENTRY (where
 # requests come in); and, for a new .env, SITE_ADDRESS (the edge's site; behind your proxy the edge sets its own),
 # COMPOSE_FILE and COMPOSE_PROFILES (compose and the updater read them from .env), with another mode's answers cleared
 # so they never reach .env. With rerun (an existing .env, already loaded and exported) only the first three: its own
 # values stay as they are.
 mdm_mode_settings() {
-  local f site file profiles='' at
+  local f site file profiles='' at files
   case "$1" in
     1) site=':80'; file='docker-compose.yml'; profiles='cloudflare'; ENTRY="Cloudflare Tunnel"
        EXTRA_NOTE="In Cloudflare, route the tunnel's public hostname ($HOST) to http://caddy:80." ;;
@@ -775,13 +775,16 @@ mdm_mode_settings() {
        fi ;;
     *) _mdm_answer_fail "internal: unknown hosting mode $1" ;;
   esac
-  COMPOSE_ARGS=''
+  COMPOSE_ARGS=()
   # A re-run uses the list its .env saved (an override of the operator's own included), else the mode's.
   [ "${2:-}" != rerun ] || [ -z "${COMPOSE_FILE:-}" ] || file=$COMPOSE_FILE
-  # compose's own default file is left to COMPOSE_FILE (.env), as setup.sh always did in tunnel mode.
-  [ "$file" = docker-compose.yml ] || for f in $(printf '%s' "$file" | tr ':' ' '); do COMPOSE_ARGS="$COMPOSE_ARGS -f $f"; done
-  [ -z "$profiles" ] || COMPOSE_ARGS="$COMPOSE_ARGS --profile $profiles"
-  COMPOSE_ARGS=${COMPOSE_ARGS# }
+  # compose's own default file is left to COMPOSE_FILE (.env), as setup.sh always did in tunnel mode. Split on ":"
+  # only: a path may hold blanks.
+  if [ "$file" != docker-compose.yml ]; then
+    IFS=: read -r -a files <<< "$file"
+    for f in "${files[@]}"; do [ -z "$f" ] || COMPOSE_ARGS+=(-f "$f"); done
+  fi
+  [ -z "$profiles" ] || COMPOSE_ARGS+=(--profile "$profiles")
   [ "${2:-}" != rerun ] || return 0
   SITE_ADDRESS=$site; COMPOSE_FILE=$file; COMPOSE_PROFILES=$profiles
   [ "$1" = 1 ] || TUNNEL_TOKEN=''

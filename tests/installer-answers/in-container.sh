@@ -19,7 +19,7 @@ NAME="mdmesh-installer-tests-$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n')"
 docker run --rm --name "$NAME" -v "$REPO:/src:ro" -e SHIM="$SHIM" "$IMAGE" bash -euc '
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq >/dev/null
-  apt-get install -y -qq --no-install-recommends jq git minisign openssl python3 ca-certificates ${SHIM:+busybox} >/dev/null
+  apt-get install -y -qq --no-install-recommends jq git minisign openssl python3 procps ca-certificates ${SHIM:+busybox} >/dev/null
   shim=""
   if [ -n "$SHIM" ]; then mkdir -p /usr/local/awkshim; ln -s "$(command -v busybox)" /usr/local/awkshim/awk; shim=/usr/local/awkshim:; fi
   if [ -n "$SHIM" ]; then awk_is="busybox awk ($(busybox 2>&1 | head -n 1 || true))"; else awk_is=$(awk -W version 2>&1 | head -n 1 || true); fi

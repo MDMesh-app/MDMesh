@@ -168,6 +168,8 @@ so "the newest tag" is not the last MDMesh release.
 | `T2_FROM_REF` | Release to upgrade from (default `v0.3.1`). |
 | `T2_MIN_FREE_GB` | Refuses to start with less free space under the Docker root (default 8). |
 | `T2_CACHE=1` | Shares Maven and npm caches between runs in the volumes `mdmesh-t2-cache-m2` and `mdmesh-t2-cache-npm` (remove them with `docker volume rm`). |
+| `T2_M2_REPO` | A dedicated host directory holding a Maven repository. Never point it at your real `~/.m2`: the rig rewrites it. It is copied (not mounted) into the first container as root's `~/.m2/repository` before any install. After a converged install, the guest's repository replaces it and the rig writes the marker `<dir>.t2-saved`. Both directions are best-effort. CI keeps it with `actions/cache`, because Maven Central rate-limits GitHub's runners, so a warm guest rarely needs Central. A cache entry is uploaded only on a key miss with that marker. The nightly run and a manual run on `main` refresh main's entries, which pull requests start from; run t2-native by hand on `main` to prime them after a pom change or a release. The nightly `debian-13 / fresh` cell runs without the cache, as a cold VPS would. |
+| `T2_M2_SAVE=0` | With `T2_M2_REPO`: seeds, but never saves. CI sets it when the cache entry was an exact hit. |
 | `T2_OUT` | Logs and `results.tsv` (default `/tmp/mdmesh-t2`, or `$TMPDIR/mdmesh-t2`). Each run writes to `<T2_OUT>/<container>/`. |
 | `T2_STRICT=1` | Builds an upgrade's image without the old-release workarounds (see `tests/native/Dockerfile`). |
 
@@ -180,3 +182,19 @@ Everything a run creates is named `mdmesh-t2-…` and removed on exit; see the h
 `KILL_POINTS` in `tests/native/lib/guest.sh`, and `run.sh`.
 
 CI runs the rig as tier T2 (see [CI](../CONTRIBUTING.md#ci)).
+The rig's Maven cache helpers have a quick test of their own, `tests/native/m2-cache-test.sh` (a docker stub, no root,
+no network), which T0 runs when `tests/native/` changes.
+
+## Behind your own proxy (Docker), end to end
+
+```bash
+for n in server web supervisor; do docker build -f docker/$n.Dockerfile -t ghcr.io/local/mdmesh-$n:px-e2e .; done
+tests/proxy-e2e/run.sh                     # phases: nginx tls proxies update (default: all)
+```
+
+It installs the proxy mode as the quick start writes it, in a throwaway docker:dind with a registry that answers as
+ghcr.io, puts each configuration in [`docs/proxies`](proxies/) in front, and checks from a client on another machine:
+the console, sign-in, the client address the server records (forged headers refused), the agent's wake socket, large
+uploads, the HTTPS origin, then an update and a Roll back. Run it after changing `docker/Caddyfile`,
+`docker/edge-peers.sh`, `docker-compose.proxy.yml` or `docs/proxies`. About 15 minutes; the rest is in the script's
+header. `scripts/edge-check.sh` (CI, T0) covers the edge's side of the mode without a stack.

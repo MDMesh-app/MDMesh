@@ -64,10 +64,15 @@ def git(*args, cwd=ROOT, stdin=None):
 def read_manifest():
     rows = {}
     with open(os.path.join(ROOT, MANIFEST)) as f:
-        for line in f:
+        for number, line in enumerate(f, 1):
             if line.startswith("#") or not line.strip():
                 continue
-            path, blob, header, note = line.rstrip("\n").split("\t")
+            fields = line.rstrip("\n").split("\t")
+            if len(fields) != 4 or fields[2] not in ("yes", "no"):
+                print(f"::error file={MANIFEST},line={number}::{MANIFEST}:{number}: not a row: four tab-separated "
+                      "columns (path, upstream blob or 'derived from <path>', yes or no, note), the note may be empty")
+                sys.exit(1)
+            path, blob, header, note = fields
             rows[path] = (blob, header == "yes", note)
     return rows
 

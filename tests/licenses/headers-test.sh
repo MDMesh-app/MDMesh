@@ -95,5 +95,11 @@ printf '@echo off\r\necho hi\r\n' > src/run.bat
 [ "$(grep -c $'\r$' src/run.bat)" = 3 ] || fail "mark: run.bat lost its CRLF endings: $(od -c src/run.bat | head -5)"
 [ "$(sed -n 2p src/run.bat)" = "REM $DERIVED"$'\r' ] || fail "mark: run.bat: $(cat -A src/run.bat)"
 
+# A malformed row (three columns) is named, not a traceback.
+cp docs/licenses/upstream-files.tsv "$WORK/manifest.bak"
+printf 'src/Mine.java\tderived from x\tyes\n' >> docs/licenses/upstream-files.tsv
+expect_check 1 'upstream-files.tsv:[0-9]+: not a row: four tab-separated columns' 'malformed row'
+cp "$WORK/manifest.bak" docs/licenses/upstream-files.tsv
+
 if [ "$FAILS" -ne 0 ]; then echo "$FAILS check(s) failed" >&2; exit 1; fi
 echo "headers.py: all checks passed"

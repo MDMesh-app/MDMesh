@@ -20,14 +20,18 @@ import java.util.regex.Pattern;
 
 /**
  * The sections of a {@code config.apply} document (its top-level keys besides {@code revision} and
- * {@code configurationId}), one row each, as {@code proto/config-sections.json} lists them, and the one rule that
- * decides which of them a device gets.
+ * {@code configurationId}), one row each, as {@code proto/config-sections.json} lists them, and the rules for which of
+ * them a device is sent and which it applies.
  *
- * <p>An agent from 0.6.0 advertises {@code configSections}, flattened to {@code config.<name>}: it gets exactly the
- * sections it lists. An older agent advertises none: it gets a section that has a capability when it advertises that
- * capability, and any other section unless it reports a version below the section's {@code since}. Only a version that
- * reads as one counts: a missing or unreadable version gets every such section. A section left out is released by the agent (absent means "not managed"), so a guess
- * that strips one would release it on devices that apply it.</p>
+ * <p>An agent releases a section it is no longer sent (absent means "not managed"), so a section is left out of a
+ * device's document only on what its agent advertises: a section with a capability ({@code appPermissions}) is sent
+ * only to an agent that advertises the capability. Every other section is always sent: an agent ignores a section it
+ * doesn't know, and nothing it reports, its version least of all, can make the server send less.</p>
+ *
+ * <p>What a device applies decides only whether it shows in sync. An agent from 0.6.0 advertises {@code configSections},
+ * flattened to {@code config.<name>}, and applies exactly those. An older agent applies a section with a capability
+ * when it advertises it, and any other section unless it reports a version below the section's {@code since}. Only a
+ * version that reads as one counts: a missing or unreadable one is taken to apply them all.</p>
  */
 public final class ConfigSections {
 
@@ -57,12 +61,12 @@ public final class ConfigSections {
         public String getSince() { return since; }
 
         /**
-         * The capability an agent before 0.6.0 advertises when it applies this section, which then decides alone (its
-         * version doesn't count); null when none.
+         * The capability an agent advertises when it applies this section: the section is sent only to such an agent.
+         * Null when none: the section is sent to every agent.
          */
         public String getCapability() { return capability; }
 
-        /** The capability token an agent from 0.6.0 advertises when it applies this section. */
+        /** The capability token an agent from 0.6.0 advertises when it applies this section ({@code config.<name>}). */
         public String getToken() { return TOKEN_PREFIX + name; }
 
         public Object valueIn(DesiredConfig doc) { return get.apply(doc); }
@@ -94,26 +98,42 @@ public final class ConfigSections {
     private ConfigSections() {}
 
     /**
-     * Whether a device with these capability tokens and this reported agent version gets {@code section}.
-     *
-     * @param agentVersion the version the agent reports; null or unreadable never withholds a section
+     * The sections of {@code doc} (not null) this device is not sent: a section with a capability its agent doesn't
+     * advertise. Never decided by the agent's version.
      */
-    public static boolean deviceTakes(Section section, Set<String> deviceTokens, String agentVersion) {
-        Set<String> tokens = deviceTokens == null ? Collections.<String>emptySet() : deviceTokens;
-        if (tokens.contains(section.getToken())) return true;
-        if (listsSections(tokens)) return false;
-        if (section.getCapability() != null) return tokens.contains(section.getCapability());
-        return !isBelow(agentVersion, section.getSince());
-    }
-
-    /** The sections {@code doc} carries (not null) that the device doesn't get, in {@link #ALL} order. */
-    public static List<Section> withheld(DesiredConfig doc, Set<String> deviceTokens, String agentVersion) {
+    public static List<Section> withheld(DesiredConfig doc, Set<String> deviceTokens) {
+        Set<String> tokens = tokensOf(deviceTokens);
         List<Section> out = new ArrayList<Section>();
         if (doc == null) return out;
         for (Section s : ALL) {
-            if (s.valueIn(doc) != null && !deviceTakes(s, deviceTokens, agentVersion)) out.add(s);
+            if (s.valueIn(doc) != null && s.getCapability() != null && !tokens.contains(s.getCapability())) out.add(s);
         }
         return out;
+    }
+
+    /**
+     * The sections of {@code doc} that ask something (not {@link #isEmpty}) and this device doesn't apply, in
+     * {@link #ALL} order: it is not in sync while there is one, and needs an agent update for it.
+     *
+     * @param agentVersion the version the agent reports; null or unreadable counts as applying every section
+     */
+    public static List<Section> notApplied(DesiredConfig doc, Set<String> deviceTokens, String agentVersion) {
+        Set<String> tokens = tokensOf(deviceTokens);
+        List<Section> out = new ArrayList<Section>();
+        if (doc == null) return out;
+        boolean lists = listsSections(tokens);
+        for (Section s : ALL) {
+            if (isEmpty(s.valueIn(doc))) continue;
+            boolean applies = s.getCapability() == null || tokens.contains(s.getCapability());
+            if (lists) applies &= tokens.contains(s.getToken());
+            else if (s.getCapability() == null) applies = !isBelow(agentVersion, s.getSince());
+            if (!applies) out.add(s);
+        }
+        return out;
+    }
+
+    private static Set<String> tokensOf(Set<String> deviceTokens) {
+        return deviceTokens == null ? Collections.<String>emptySet() : deviceTokens;
     }
 
     /** Clears {@code sections} in {@code doc} and sets the revision of what is left. */

@@ -542,13 +542,16 @@ public class AgentAdminResource {
         v.setConfigurationId(device.getConfigurationId());
         Set<String> tokens = AgentCapabilityTokens.flatten(commandDAO.getDeviceCapabilities(deviceId));
         DesiredConfig doc = configReconciler.statusDocument(device);
-        DeviceState state = commandDAO.getState(deviceId);
-        v.setCurrentRevision(ConfigReconciler.statusRevision(doc, tokens, state == null ? null : state.getAgentVersion()));
+        v.setCurrentRevision(ConfigReconciler.statusRevision(doc, tokens));
         v.setKioskBackgroundImageFrom(doc);
+        DeviceState state = commandDAO.getState(deviceId);
         if (state != null) { v.setAppliedRevision(state.getAppliedConfigRevision()); v.setAppliedAt(state.getAppliedConfigAt()); }
         boolean supported = AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, tokens);
         v.setSupported(supported);
-        v.setInSync(v.getCurrentRevision() != null && v.getCurrentRevision().equals(v.getAppliedRevision()));
+        List<String> notApplied = ConfigReconciler.notApplied(doc, tokens, state == null ? null : state.getAgentVersion());
+        if (!notApplied.isEmpty()) v.setAgentUpdateNeeded(notApplied);
+        v.setInSync(v.getCurrentRevision() != null && v.getCurrentRevision().equals(v.getAppliedRevision())
+                && notApplied.isEmpty());
         v.setLastCommand(ConfigStatusView.LastCommand.from(commandDAO.findLatestOfType(deviceId, DesiredConfigBuilder.COMMAND_TYPE)));
         return Response.OK(v);
     }
@@ -580,14 +583,17 @@ public class AgentAdminResource {
                 documentByConfig.put(cfgId, configReconciler.statusDocument(probe));
             }
             Set<String> tokens = AgentCapabilityTokens.flatten(row.getCapabilitiesJson());
-            // Per device: an agent that can't apply a section is compared with what it can apply.
-            String current = ConfigReconciler.statusRevision(documentByConfig.get(cfgId), tokens, row.getAgentVersion());
+            // Per device: an agent without app permission support is compared with what it can apply, and one that
+            // doesn't apply a section the configuration sets is never in sync.
+            DesiredConfig doc = documentByConfig.get(cfgId);
+            String current = ConfigReconciler.statusRevision(doc, tokens);
+            boolean appliesAll = ConfigReconciler.notApplied(doc, tokens, row.getAgentVersion()).isEmpty();
             boolean supported = AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, tokens);
             if (!supported) {
                 s.setUnsupported(s.getUnsupported() + 1);
             } else if (row.getAppliedConfigRevision() == null) {
                 s.setNeverSeen(s.getNeverSeen() + 1);
-            } else if (row.getAppliedConfigRevision().equals(current)) {
+            } else if (row.getAppliedConfigRevision().equals(current) && appliesAll) {
                 s.setInSync(s.getInSync() + 1);
                 if (row.isLastApplyDeferred()) s.setDeferred(s.getDeferred() + 1);
             } else {

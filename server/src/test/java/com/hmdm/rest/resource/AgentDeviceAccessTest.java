@@ -79,6 +79,9 @@ public class AgentDeviceAccessTest {
     private int configurationReads;
     private final Set<String> wiped = new HashSet<>();
     private String appliedRevision = "rev";
+    /** The agent version the devices report, and whether their configuration sets connectivity (since 0.4.0). */
+    private String agentVersion;
+    private boolean connectivity;
     private int revisionReads;
     private final List<String> enrolledQuery = new ArrayList<>();
 
@@ -130,7 +133,12 @@ public class AgentDeviceAccessTest {
                 inserted.add(c);
                 sideEffects.add("insert " + c.getDeviceNumber());
             }
-            @Override public DeviceState getState(String n) { return new DeviceState(); }
+            @Override public DeviceState getState(String n) {
+                DeviceState state = new DeviceState();
+                state.setAgentVersion(agentVersion);
+                state.setAppliedConfigRevision(appliedRevision);
+                return state;
+            }
             @Override public List listEvents(String n, long s, int l) { return new ArrayList<>(); }
             @Override public List<AgentCommand> listHistory(String n, long s, int l) { return new ArrayList<>(); }
             @Override public List listLocations(String n, long s, int l) { return new ArrayList<>(); }
@@ -157,6 +165,7 @@ public class AgentDeviceAccessTest {
                     r.setConfigurationId(5);
                     r.setCapabilitiesJson("{\"device\":[\"configApply\"]}");
                     r.setAppliedConfigRevision(appliedRevision);
+                    r.setAgentVersion(agentVersion);
                     r.setLastApplyDeferred(true);
                     r.setWiped(wiped.contains(n));
                     rows.add(r);
@@ -176,6 +185,11 @@ public class AgentDeviceAccessTest {
                 revisionReads++;
                 com.hmdm.rest.json.agent.DesiredConfig doc = new com.hmdm.rest.json.agent.DesiredConfig();
                 doc.setRevision("rev");
+                if (connectivity) {
+                    com.hmdm.rest.json.agent.DesiredConnectivity c = new com.hmdm.rest.json.agent.DesiredConnectivity();
+                    c.setMode("alwaysOn");
+                    doc.setConnectivity(c);
+                }
                 return doc;
             }
         };
@@ -614,6 +628,37 @@ public class AgentDeviceAccessTest {
         ConfigSyncSummary s = ((List<ConfigSyncSummary>) resource.getSyncSummary().getData()).get(0);
         assertEquals(1, s.getInSync());
         assertEquals("in sync, but the latest config.apply deferred something", 1, s.getDeferred());
+    }
+
+    /** A device that applied the revision but whose agent doesn't apply a section the configuration sets. */
+    @Test
+    @SuppressWarnings("unchecked")
+    public void syncSummaryCountsAnAgentTooOldForASectionOutOfSync() {
+        connectivity = true;
+        agentVersion = "0.3.8";
+        ConfigSyncSummary s = ((List<ConfigSyncSummary>) resource.getSyncSummary().getData()).get(0);
+        assertEquals(0, s.getInSync());
+        assertEquals(1, s.getOutOfSync());
+        for (String applies : Arrays.asList("0.4.0", "0.4.0-rc1", "0.5.1+fork", "unknown", null)) {
+            agentVersion = applies;
+            s = ((List<ConfigSyncSummary>) resource.getSyncSummary().getData()).get(0);
+            assertEquals(String.valueOf(applies), 1, s.getInSync());
+        }
+    }
+
+    @Test
+    public void configStatusNamesTheSectionsTheAgentNeedsAnUpdateFor() {
+        connectivity = true;
+        agentVersion = "0.3.8";
+        com.hmdm.rest.json.agent.ConfigStatusView v =
+                (com.hmdm.rest.json.agent.ConfigStatusView) resource.getConfigStatus(VISIBLE).getData();
+        assertEquals("rev", v.getAppliedRevision());
+        assertEquals(Collections.singletonList("connectivity"), v.getAgentUpdateNeeded());
+        assertFalse(v.isInSync());
+        agentVersion = "0.4.0";
+        v = (com.hmdm.rest.json.agent.ConfigStatusView) resource.getConfigStatus(VISIBLE).getData();
+        assertNull(v.getAgentUpdateNeeded());
+        assertTrue(v.isInSync());
     }
 
     @Test

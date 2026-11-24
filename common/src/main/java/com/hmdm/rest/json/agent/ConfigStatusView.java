@@ -25,6 +25,8 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.util.List;
+
 /**
  * Desired-state configuration status for a single device: the configuration's current revision vs.
  * the revision the agent last reported as applied.
@@ -39,6 +41,11 @@ public class ConfigStatusView {
     private Long appliedAt;
     private boolean inSync;
     private boolean supported;
+    /**
+     * Sections the configuration sets that the device's agent doesn't apply (config-sections.json names), in the
+     * order agents apply them; null when none. The device is not in sync while there is one.
+     */
+    private List<String> agentUpdateNeeded;
     private LastCommand lastCommand;
     /**
      * The kiosk background image the device's configuration specifies ({@code kiosk.theme.backgroundImage} of the

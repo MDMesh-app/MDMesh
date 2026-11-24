@@ -56,7 +56,7 @@
         "configSections": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "1.12, from agent 0.6.0: the config.apply sections (config-sections.json) this agent applies; flattened server-side to config.<name>. A server sends such an agent only these. An agent without it gets a section by its version and the section's capability (README, Configuration sections)."
+          "description": "1.12, from agent 0.6.0: the config.apply sections (config-sections.json) this agent applies; flattened server-side to config.<name>. The server shows a device that doesn't apply a section its configuration sets as not in sync (registry.md, configSections)."
         },
         "remoteControl": {
           "type": "object",

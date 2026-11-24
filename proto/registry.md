@@ -46,10 +46,12 @@ with a protocol bump, a capability token and a per-section outcome, in the relea
 
 ### configSections
 1.12, from agent 0.6.0. The `config.apply` sections the agent applies, one key per row of `config-sections.json`
-(`policies`, `kiosk`, …), flattened to `config.<section>`. They gate sections of the document, not commands: the
-server leaves out of a device's document each section its agent doesn't list, under the revision of what is left.
-An agent that lists none (before 0.6.0) gets a section with a `capability` when it advertises it, and any other
-section unless it reports a version below the row's `since`; a missing or unreadable version withholds nothing.
+(`policies`, `kiosk`, …), flattened to `config.<section>`. They don't gate what is sent: an agent releases a section
+it stops getting, so the server sends every section, except one with a `capability` (`appPermissions`) to an agent
+without it, as before. They decide the sync status: a device whose agent doesn't apply a section the configuration
+sets is not in sync, and its status names the section (`agentUpdateNeeded`). An agent that lists none (before 0.6.0)
+applies a section with a `capability` when it advertises it, and any other section unless it reports a version below
+the row's `since`; a missing or unreadable version counts as applying them all.
 
 ### appManagement
 | key | meaning | notes |

@@ -37,7 +37,10 @@ the users of that device's customer who have an email address, may edit devices 
 device (all devices, or one of its device groups). At most one alert per device, and ten per customer, per hour.
 This needs `SMTP_HOST`; without it the lockout only shows in the device's events.
 
-The wizard writes `SITE_ADDRESS`, `ACME_EMAIL` and `TUNNEL_TOKEN` for the hosting mode you choose.
+The wizard writes `SITE_ADDRESS`, `ACME_EMAIL` and `TUNNEL_TOKEN` for the hosting mode you choose, and behind your
+own proxy `MDMESH_BIND`, `TRUSTED_PROXIES` and `MDMESH_ORIGIN_TLS`
+([DEPLOY, Behind your own proxy](../DEPLOY.md#3-behind-your-own-proxy)). `MDMESH_SITE_DIR` is the `site.d` directory
+of [your own edge rules](../DEPLOY.md#your-own-edge-rules).
 
 ### Updater (supervisor)
 
@@ -216,6 +219,10 @@ and drops any `CF-Connecting-IP` a device sends.
   through updates, which doesn't pass that variable, so Caddy looks for the `cloudflared` container instead. To pass it,
   add `COMPOSE_PROFILES: ${COMPOSE_PROFILES:-}` under `caddy:` → `environment:` in that file.
 - **Own domain and the dev stack:** nothing a device sends is believed.
+- **Behind your own proxy:** Caddy takes the client's address from `X-Forwarded-For`, only when your proxy (an
+  address in `TRUSTED_PROXIES`, `host` for one on the same machine) sent the request, reading the list from the
+  right. From anyone else the request's own address counts
+  ([DEPLOY, Behind your own proxy](../DEPLOY.md#3-behind-your-own-proxy)).
 
 **Native installs:** keep Tomcat's port (`HTTP_PORT`, default `8080`) reachable only by your proxy. A device on a
 private network that reaches it directly is trusted like a proxy, so it can set its own address. Either firewall the
@@ -342,8 +349,10 @@ Two setups make every client look alike. The server logs a warning the first tim
 
 **A CDN or another proxy in front of Docker's Caddy** (Cloudflare's proxy in own-domain mode, a load balancer): Caddy
 believes `X-Forwarded-For` only from the addresses in `TRUSTED_PROXIES`, by default none. Without them, Caddy reports
-the CDN as the client, and every client shares one address. Add the CDN's ranges, space-separated, to `.env` in the
-install directory, then run `docker compose up -d caddy`:
+the CDN as the client, and every client shares one address. (Behind your own proxy, `TRUSTED_PROXIES` names your
+proxy instead, and a CDN in front of it is your proxy's to read: see the notes in
+[DEPLOY, Behind your own proxy](../DEPLOY.md#3-behind-your-own-proxy).) Add the CDN's ranges, space-separated, to
+`.env` in the install directory, then run `docker compose up -d caddy`:
 
 ```bash
 TRUSTED_PROXIES="173.245.48.0/20 103.21.244.0/22 2400:cb00::/32"
@@ -553,7 +562,9 @@ It never touches apt packages, your proxy or the git checkout.
 ## Security notes
 
 - Each install generates its own secrets. `.env` is mode 600.
-- Traffic uses TLS: on Docker through Cloudflare or Caddy, on native through your own proxy. Docker never publishes
+- Traffic uses TLS: on Docker through Cloudflare, Caddy or your own proxy, on native through your own proxy. Behind
+  your own proxy, the hop from it to MDMesh's edge is plain HTTP unless `MDMESH_ORIGIN_TLS=1`
+  ([DEPLOY](../DEPLOY.md#3-behind-your-own-proxy)). Docker never publishes
   the database and server ports. The agent speaks HTTPS only.
 - The admin must set a new password at first sign-in. A database the server created without an installer run has an
   admin no password works for, until an installer (or `scripts/dev-seed.sh`) sets one.

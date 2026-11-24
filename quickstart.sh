@@ -7,6 +7,9 @@
 #
 #   bash <(curl -fsSL https://github.com/MDMesh-app/MDMesh/releases/latest/download/quickstart.sh)
 #
+# It first asks how phones will reach MDMesh (install/lib/modes.sh): through a Cloudflare Tunnel, on your own domain, or
+# behind your own proxy. --tunnel, --domain or --proxy after the command answers that (as MDMESH_MODE does).
+#
 # Each question can be answered in advance with an environment variable (MDMESH_MODE, MDMESH_HOST, …) or an answers
 # file (MDMESH_ANSWERS); MDMESH_NONINTERACTIVE=1 never asks, MDMESH_DRY_RUN=1 only checks the answers and prints the
 # plan. The variables are listed in install/options.json and DEPLOY.md.
@@ -18,6 +21,9 @@ set -euo pipefail
 # CDPATH's directories, not the current one — silently building or reading from a same-named directory elsewhere. Unset
 # it for this script and its children.
 unset CDPATH
+# What this script makes is writable by its user only, whatever the login umask (Debian and Ubuntu give a regular user
+# 0002): the directory check below refuses group- or world-writable paths, and the secrets are written mode 600 anyway.
+umask 022
 
 REPO="MDMesh-app/MDMesh"
 IMAGE_OWNER_DEFAULT="mdmesh-app"
@@ -133,8 +139,10 @@ mdm_manifest_has_platform() {
 MDM_SHA256_ERE='[0123456789abcdef]{64}'
 MDM_IMAGE_REF_ERE='[abcdefghijklmnopqrstuvwxyz0123456789._/-]+@sha256:[0123456789abcdef]{64}'
 
-# The files downloaded from the release's tag, as named in the manifest's "files" (release/build-manifest.sh).
-MDM_QUICKSTART_FILES="docker-compose.release.yml docker-compose.domain.yml install/sql/hmdm_init.en.sql install/sql/post_seed.sql install/lib/db.sh"
+# The files downloaded from the release's tag, as named in the manifest's "files" (release/build-manifest.sh). A release
+# before 0.6.0 has no docker-compose.proxy.yml: it is fetched when the manifest lists it, and needed only behind your
+# own proxy.
+MDM_QUICKSTART_FILES="docker-compose.release.yml docker-compose.domain.yml docker-compose.proxy.yml install/sql/hmdm_init.en.sql install/sql/post_seed.sql install/lib/db.sh"
 
 # mdm_sha256 FILE: its SHA-256 in lowercase hex.
 mdm_sha256() { openssl dgst -sha256 -r "$1" | cut -d' ' -f1; }
@@ -236,14 +244,14 @@ mdm_check_host() {
 # between the markers, for the same reason as url.sh's above. CI (t0-fast, edge entry) fails if the copies differ.
 # >>> answers.sh functions (quickstart.sh keeps a verbatim copy) >>>
 # The keys an answers file may set: every answer and setting in install/options.json (CI checks the two match).
-_MDM_ANSWER_KEYS=" MDMESH_MODE MDMESH_REPO MDMESH_IMAGE_OWNER MDMESH_HOST MDMESH_TUNNEL_TOKEN MDMESH_ACME_EMAIL MDMESH_BASE_URL MDMESH_HTTP_PORT MDMESH_REPLACE_DATA MDMESH_ASSUME_YES MDMESH_DIR MDMESH_VERSION MDMESH_RELEASE_PUBKEY MDMESH_NONINTERACTIVE MDMESH_DRY_RUN "
+_MDM_ANSWER_KEYS=" MDMESH_MODE MDMESH_REPO MDMESH_IMAGE_OWNER MDMESH_HOST MDMESH_TUNNEL_TOKEN MDMESH_ACME_EMAIL MDMESH_BIND MDMESH_TRUSTED_PROXIES MDMESH_BASE_URL MDMESH_HTTP_PORT MDMESH_REPLACE_DATA MDMESH_ASSUME_YES MDMESH_DIR MDMESH_VERSION MDMESH_RELEASE_PUBKEY MDMESH_ORIGIN_TLS MDMESH_NONINTERACTIVE MDMESH_DRY_RUN "
 _MDM_SECRET_KEYS=" MDMESH_TUNNEL_TOKEN "
 _MDM_ANS_GIVEN=" "       # ids of the questions answered in advance
 _MDM_ANS_FROM_FILE=" "   # keys set from the answers file
 _mdm_answer_fail() { printf 'MDMesh installer: %s\n' "$*" >&2; exit 1; }
 
 # mdm_answers_load: reads the answers file MDMESH_ANSWERS names, if any (keys already in the environment are left
-# alone), then checks MDMESH_NONINTERACTIVE and MDMESH_DRY_RUN. Stops the installer on any error. xtrace stays off
+# alone), then checks the 0/1 settings (MDMESH_NONINTERACTIVE, MDMESH_DRY_RUN, MDMESH_ORIGIN_TLS). Stops the installer on any error. xtrace stays off
 # while it runs (the file may hold a secret).
 mdm_answers_load() { local _mdm_x=$-; set +x; _mdm_answers_load; case "$_mdm_x" in *x*) set -x ;; esac; }
 # _mdm_private_file FILE: FILE belongs to this user (or root) and nobody else may read, write or run it. Fails closed:
@@ -286,7 +294,7 @@ _mdm_answers_load() {
       if [ -z "${!key+x}" ]; then printf -v "$key" '%s' "$val"; _MDM_ANS_FROM_FILE="$_MDM_ANS_FROM_FILE$key "; fi
     done < "$f"
   fi
-  for key in MDMESH_NONINTERACTIVE MDMESH_DRY_RUN; do
+  for key in MDMESH_NONINTERACTIVE MDMESH_DRY_RUN MDMESH_ORIGIN_TLS; do
     v=${!key-}
     case "$v" in ''|0|1) ;; *) _mdm_answer_fail "$key must be 1 or 0." ;; esac
   done
@@ -298,9 +306,9 @@ _mdm_answer_check() {
   local v=$_MDM_V u l d
   _MDM_WHY=''; _MDM_SHOW=$v
   case "$1" in
-    mode)
+    mode)   # the hosting modes of install/lib/modes.sh
       case "$v" in tunnel|1) _MDM_V=1; _MDM_SHOW=tunnel ;; domain|2) _MDM_V=2; _MDM_SHOW=domain ;;
-        *) _MDM_WHY='must be tunnel or domain' ;; esac ;;
+        proxy|3) _MDM_V=3; _MDM_SHOW=proxy ;; *) _MDM_WHY='must be tunnel, domain or proxy' ;; esac ;;
     hostname)
       u="https://$v"
       { mdm_check_host _MDM_V && mdm_check_base_url u; } || _MDM_WHY=' ' ;;
@@ -345,6 +353,10 @@ _mdm_answer_check() {
         *[!${_MDM_DIGITS}]*) _MDM_WHY='must be a number' ;;
         *) { [ "${#u}" -le 5 ] && [ "$u" -ge 1 ] && [ "$u" -le 65535 ]; } || _MDM_WHY='must be 1-65535' ;;
       esac ;;
+    bind)
+      [ -z "$v" ] || _mdm_bind_ok "$v" || _MDM_WHY='must be an IP address and a port, e.g. 127.0.0.1:8080 or [::1]:8080' ;;
+    proxies)
+      _mdm_proxies_check "$v"; _MDM_SHOW=$_MDM_V ;;
     yes-no)
       case "$v" in yes|no) ;; *) _MDM_WHY='must be yes or no' ;; esac ;;
     flag)
@@ -353,8 +365,68 @@ _mdm_answer_check() {
   esac
 }
 
+# _mdm_ipv4 ADDR: ADDR is a dotted IPv4 address (four numbers 0-255, no leading zeros).
+_mdm_ipv4() {
+  local a=$1. o n=0
+  case "$1" in ''|*[!${_MDM_DIGITS}.]*|.*|*.|*..*) return 1 ;; esac
+  while [ -n "$a" ]; do
+    o=${a%%.*}; a=${a#*.}; n=$((n + 1))
+    case "$o" in 0?*) return 1 ;; esac
+    { [ "${#o}" -le 3 ] && [ "$o" -le 255 ]; } || return 1
+  done
+  [ "$n" = 4 ]
+}
+# _mdm_ipv6 ADDR: ADDR (no brackets) is an IPv6 address: 8 groups of 1-4 hex digits, or fewer with one "::". IPv4-mapped
+# ones (::ffff:…, or a dotted part) are refused: they don't match the IPv4 peers they mean.
+_mdm_ipv6() {
+  local r=$1 p g=0 d=0
+  case "$1" in ''|*[!${_MDM_HEX}:]*|*:::*|*::*::*|:[!:]*|*[!:]:|::[Ff][Ff][Ff][Ff]:*|0:0:0:0:0:[Ff][Ff][Ff][Ff]:*) return 1 ;; *::*) d=1 ;; esac
+  while [ -n "$r" ]; do
+    p=${r%%:*}; if [ "$p" = "$r" ]; then r=''; else r=${r#*:}; fi
+    [ -n "$p" ] || continue
+    [ "${#p}" -le 4 ] || return 1
+    g=$((g + 1))
+  done
+  if [ "$d" = 1 ]; then [ "$g" -le 7 ]; else [ "$g" -eq 8 ]; fi
+}
+# _mdm_bind_ok IP:PORT: an address to listen on: an IPv4 address or an [IPv6] one, then :port (1-65535).
+_mdm_bind_ok() {
+  local a p
+  case "$1" in
+    \[*\]:*) a=${1%%\]:*}; p=${1#*\]:}; _mdm_ipv6 "${a#\[}" || return 1 ;;
+    *:*) p=${1##*:}; _mdm_ipv4 "${1%:*}" || return 1 ;;
+    *) return 1 ;;
+  esac
+  case "$p" in ''|*[!0-9]*) return 1 ;; esac
+  [ -z "$(_mdm_hostport_problem "[::1]:$p")" ]
+}
+# _mdm_proxies_check LIST: the proxy addresses in LIST (separated by spaces or commas). Each is "host" (a proxy on this
+# machine: MDMesh's edge sees it at its Docker network's gateway), an IP address, or a range (CIDR) no wider than an IPv4
+# /8 or an IPv6 /16, which would trust far more than a proxy. Names and Caddy's private_ranges are refused. On success
+# _MDM_V is the list with one space between entries; else _MDM_WHY says why. Empty: the default, host.
+_mdm_proxies_check() {
+  local t a l min max out='' list
+  case "$1" in *$'\n'*|*$'\r'*) _MDM_WHY='has a line break'; return ;; esac
+  IFS=', ' read -r -a list <<< "$1"
+  for t in ${list[@]+"${list[@]}"}; do
+    case "$t" in '') continue ;; host) out="$out $t"; continue ;; esac
+    a=${t%/*}
+    if _mdm_ipv4 "$a"; then min=8; max=32
+    elif _mdm_ipv6 "$a"; then min=16; max=128
+    else _MDM_WHY="has \"$t\", which is not an IP address, a range (CIDR) or host"; return; fi
+    case "$t" in
+      */*) l=${t#*/}
+           case "$l" in ''|*[!${_MDM_DIGITS}]*|0?*) _MDM_WHY="has \"$t\", whose range is not a prefix length"; return ;; esac
+           { [ "${#l}" -le 3 ] && [ "$l" -ge "$min" ] && [ "$l" -le "$max" ]; } \
+             || { _MDM_WHY="has \"$t\": a range must be /$min to /$max (a wider one trusts far more than your proxy)"; return; } ;;
+    esac
+    out="$out $t"
+  done
+  _MDM_V=${out# }
+}
+
 # _mdm_answer_rule_has_default RULE: an empty or missing answer means the question's default (Enter at the prompt).
-_mdm_answer_rule_has_default() { case "$1" in github-repo|image-owner|port|email|yes-no) return 0 ;; esac; return 1; }
+_mdm_answer_rule_has_default() { case "$1" in github-repo|image-owner|port|email|yes-no|bind|proxies) return 0 ;; esac; return 1; }
 
 # mdm_answer ID VAR RULE ENV [ALIAS]: if ENV (or ALIAS, the installer's older name for it) is set, in the environment or
 # the answers file, checks its value by RULE and stores it in VAR: question ID is then answered. Stops the installer when
@@ -397,12 +469,14 @@ _mdm_answer() {
 }
 
 # mdm_prompt_ok ID VAR: checks the answer just typed at question ID (in VAR) with the rule a pre-set answer gets. Fails,
-# saying why (never the value of a secret), so the caller asks again. xtrace is off while it holds the value.
+# saying why (never the value of a secret), so the caller asks again; otherwise VAR holds the answer as the rule writes it
+# (a list of proxies with one space between entries, say). xtrace is off while it holds the value.
 mdm_prompt_ok() { local _mdm_x=$- _mdm_rc=0; set +x; _mdm_prompt_ok "$@" || _mdm_rc=1; case "$_mdm_x" in *x*) set -x ;; esac; return "$_mdm_rc"; }
 _mdm_prompt_ok() {
   local r="_MDM_ANS_RULE_${1//-/_}"
   _MDM_V=${!2-}
   _mdm_answer_check "${!r}"
+  [ -n "$_MDM_WHY" ] || printf -v "$2" '%s' "$_MDM_V"
   _MDM_V=''
   [ -n "$_MDM_WHY" ] || return 0
   case "$_MDM_WHY" in ' ') printf 'Enter it again.\n' >&2 ;; *) printf 'That answer %s. Enter it again.\n' "$_MDM_WHY" >&2 ;; esac
@@ -479,19 +553,478 @@ mdm_plan_line() {
 mdm_plan_row() { printf '  %-13s %-32s [%s]\n' "$1" "$2" "$3"; }
 # <<< answers.sh functions <<<
 
+# The hosting modes (install/lib/modes.sh): a verbatim copy of the functions between the markers, for the same reason as
+# url.sh's above. CI (t0-fast, edge entry) fails if the copies differ.
+# >>> modes.sh functions (quickstart.sh keeps a verbatim copy) >>>
+# number|name|menu label|who should pick it
+_MDM_MODES='1|tunnel|Cloudflare Tunnel|easiest: no ports to open (domain on Cloudflare)
+2|domain|Your own domain|MDMesh gets its own HTTPS (ports 80/443 must reach this machine)
+3|proxy|Behind your own proxy|your nginx/Apache/Caddy/Traefik does HTTPS; MDMesh listens on 127.0.0.1:8080'
+# The answers only one mode asks: number|answer id|its default in the dry-run plan.
+_MDM_MODE_ANSWERS='1|tunnel-token|
+2|acme-email|
+3|bind|127.0.0.1:8080
+3|trusted-proxies|host'
+MDM_PROXY_BIND_DEFAULT=127.0.0.1:8080
+MDM_PROXY_TRUSTED_DEFAULT=host
+# Where the docs are for someone with no clone (the quick start): the main branch's pages on GitHub.
+MDM_DOCS=https://github.com/MDMesh-app/MDMesh/blob/main
+
+# mdm_mode_name NUMBER: the mode's name (tunnel, domain, proxy).
+mdm_mode_name() { printf '%s\n' "$_MDM_MODES" | awk -F'|' -v n="$1" '$1 == n { print $2 }'; }
+
+# mdm_mode_choose FOOTER: asks the hosting-mode question (MODE: 1, 2 or 3), unless it was answered in advance. When
+# something on this host already listens on port 80 or 443 (often a web server of your own), it says so and points at
+# the proxy mode.
+mdm_mode_choose() {
+  mdm_answered mode && return 0
+  echo "How will your phones reach MDMesh?"
+  printf '%s\n' "$_MDM_MODES" | awk -F'|' '{ printf "  %s) %-23s %s\n", $1, $3, $4 }'
+  if mdm_listening 80 || mdm_listening 443; then
+    echo "  Ports 80/443 are already in use on this machine. If that is your own web server, pick 3."
+  fi
+  echo "$1"
+  MODE=""
+  while :; do
+    read -rp "Choose [1/2/3]: " MODE || { err "No selection (non-interactive run?). Aborting."; exit 1; }   # answer: mode
+    case "$MODE" in 1|2|3) break ;; *) warn "Please enter 1, 2 or 3." ;; esac
+  done
+}
+
+# mdm_listening PORT [IP]: succeeds when a TCP listener on this host holds PORT on IP, or on every address (with no IP:
+# on any). From ss (iproute2), else netstat, else lsof; with none of them, nothing is found.
+mdm_listening() {
+  local out
+  if command -v ss > /dev/null 2>&1; then out=$(ss -ltn 2> /dev/null | awk 'NR > 1 { print $4 }')
+  elif command -v netstat > /dev/null 2>&1; then out=$(netstat -ltn 2> /dev/null | awk '$6 == "LISTEN" { print $4 }')
+  elif command -v lsof > /dev/null 2>&1; then out=$(lsof -nP -iTCP -sTCP:LISTEN 2> /dev/null | awk 'NR > 1 { print $9 }')
+  else return 1; fi
+  printf '%s\n' "$out" | awk -v port="$1" -v ip="${2:-}" '
+    { n = split($0, a, ":"); if (a[n] != port) next
+      addr = substr($0, 1, length($0) - length(port) - 1); gsub(/[][]/, "", addr); sub(/%.*/, "", addr)
+      if (ip == "" || addr == ip || addr == "*" || addr == "0.0.0.0" || addr == "::" || addr == "" ||
+          ip == "0.0.0.0" || ip == "::") f = 1 }
+    END { exit !f }'
+}
+
+# mdm_mode_from_flag NAME: the mode flag given on the command line (--NAME: --tunnel, --domain or --proxy; the
+# installers' argument loops take only these) answers MDMESH_MODE, as the environment or an answers file would. Called
+# after mdm_answers_load. Stops the installer when MDMESH_MODE names another mode. No NAME: nothing to do.
+mdm_mode_from_flag() {
+  local given=${MDMESH_MODE-} n
+  [ -n "$1" ] || return 0
+  if [ -n "$given" ]; then
+    n=$(printf '%s\n' "$_MDM_MODES" | awk -F'|' -v v="$given" '$1 == v || $2 == v { print $2 }')
+    [ "$n" = "$1" ] || _mdm_answer_fail "--$1 and MDMESH_MODE=$given name different hosting modes: give one."
+  fi
+  MDMESH_MODE=$1
+}
+
+# mdm_mode_check_answers: once the answers are loaded, the rules that span them: an answer given for another mode's
+# question is ignored, saying so (MDMESH_ORIGIN_TLS too); behind your own proxy, `host` is refused with an address other
+# machines reach (mdm_proxy_trust_problem).
+mdm_mode_check_answers() {
+  local m id why
+  mdm_given mode || return 0
+  while IFS='|' read -r m id _; do
+    [ "$m" = "$MODE" ] || mdm_unused "$id" "in $(mdm_mode_name "$MODE") mode"
+  done <<EOF
+$_MDM_MODE_ANSWERS
+EOF
+  if [ "$MODE" != 3 ] && [ "${MDMESH_ORIGIN_TLS:-0}" = 1 ]; then
+    printf 'MDMesh installer: MDMESH_ORIGIN_TLS is not used in %s mode: ignoring it.\n' "$(mdm_mode_name "$MODE")" >&2
+  fi
+  # Only when the proxies won't be asked (given, no questions, or a dry run): a run at the terminal asks first.
+  if [ "$MODE" = 3 ] && mdm_given bind && { mdm_given trusted-proxies || [ "${MDMESH_NONINTERACTIVE:-0}" = 1 ] \
+     || [ "${MDMESH_DRY_RUN:-0}" = 1 ]; }; then
+    why=$(mdm_proxy_trust_problem "${PROXY_BIND:-$MDM_PROXY_BIND_DEFAULT}" "${PROXY_TRUSTED:-$MDM_PROXY_TRUSTED_DEFAULT}")
+    [ -z "$why" ] || _mdm_answer_fail "MDMESH_BIND and MDMESH_TRUSTED_PROXIES: $why"
+  fi
+}
+
+# mdm_bind_loopback IP:PORT: the address is this machine's own loopback (127.x.x.x or [::1]): only programs on this
+# machine reach it.
+mdm_bind_loopback() { case "$1" in 127.*|\[::1\]:*) return 0 ;; esac; return 1; }
+
+# mdm_proxy_trust_problem BIND LIST: prints why LIST can't be trusted with the edge on BIND; nothing when it can. `host`
+# (this machine, as Docker delivers its connections: the stack network's gateway) is safe only on a loopback BIND: other
+# machines reaching a non-loopback BIND can arrive from that same gateway (Docker Desktop, rootless Docker, a docker-proxy
+# for IPv6), and would then be believed. docker/edge-peers.sh applies the same rule when the edge starts.
+mdm_proxy_trust_problem() {
+  case " $2 " in *" host "*) ;; *) return 0 ;; esac
+  mdm_bind_loopback "$1" && return 0
+  echo "host (a proxy on this machine) needs MDMesh on a loopback address, 127.0.0.1 or [::1]; with $1, list your proxy's own address instead"
+}
+
+# mdm_docker_keeps_sources: succeeds unless this Docker hides where connections come from: rootless Docker and Docker
+# Desktop deliver every connection to a published port from their gateway.
+mdm_docker_keeps_sources() {
+  case "$(docker info --format '{{.OperatingSystem}} {{json .SecurityOptions}}' 2> /dev/null)" in
+    *rootless*|*'Docker Desktop'*) return 1 ;;
+  esac
+}
+
+# mdm_mode_questions: asks what the mode needs and was not answered in advance (the public hostname, then the mode's own
+# questions), with their defaults, and sets BASE_URL and the mode's settings (mdm_mode_settings). Stops the installer on
+# a wrong hostname. Behind your own proxy it checks the address MDMesh listens on is free, and that `host` fits it.
+mdm_mode_questions() {
+  local why
+  if ! mdm_answered host; then
+    case "$MODE" in
+      1) read -rp "Public hostname devices will use (e.g. mdm.example.com): " HOST ;;   # answer: host
+      2) read -rp "Your domain (DNS already pointing here, e.g. mdm.example.com): " HOST ;;   # answer: host
+      3) read -rp "Public hostname your proxy serves (e.g. mdm.example.com): " HOST ;;   # answer: host
+    esac
+  fi
+  mdm_check_host HOST || { err "Enter the hostname only, e.g. mdm.example.com, then re-run."; exit 1; }
+  BASE_URL="https://${HOST}"
+  mdm_check_base_url BASE_URL || { err "Check the hostname you entered (the name only, e.g. mdm.example.com), then re-run."; exit 1; }
+  case "$MODE" in
+    1) while :; do
+         mdm_answered tunnel-token || read -rp "Cloudflare Tunnel token (Zero Trust → Tunnels → your tunnel): " TUNNEL_TOKEN   # answer: tunnel-token
+         mdm_prompt_ok tunnel-token TUNNEL_TOKEN && break
+       done ;;
+    2) while :; do
+         mdm_answered acme-email || read -rp "Email for Let's Encrypt: " ACME_EMAIL   # answer: acme-email
+         mdm_prompt_ok acme-email ACME_EMAIL && break
+       done ;;
+    3) while :; do
+         mdm_answered bind || read -rp "Address MDMesh listens on for your proxy [127.0.0.1:8080]: " PROXY_BIND   # answer: bind
+         mdm_prompt_ok bind PROXY_BIND || continue
+         PROXY_BIND=${PROXY_BIND:-$MDM_PROXY_BIND_DEFAULT}
+         _mdm_bind_free "$PROXY_BIND" && break
+         if mdm_given bind || [ "${MDMESH_NONINTERACTIVE:-0}" = 1 ]; then
+           _mdm_answer_fail "MDMESH_BIND=$PROXY_BIND: something on this machine already listens there. Set MDMESH_BIND to a free address and port."
+         fi
+         warn "Something on this machine already listens on $PROXY_BIND: choose another address or port."
+         PROXY_BIND=''
+       done
+       while :; do
+         mdm_answered trusted-proxies || read -rp "Your proxy's IP address as MDMesh sees it (host = a proxy on this machine) [host]: " PROXY_TRUSTED   # answer: trusted-proxies
+         mdm_prompt_ok trusted-proxies PROXY_TRUSTED || continue
+         PROXY_TRUSTED=${PROXY_TRUSTED:-$MDM_PROXY_TRUSTED_DEFAULT}
+         why=$(mdm_proxy_trust_problem "$PROXY_BIND" "$PROXY_TRUSTED")
+         [ -n "$why" ] || break
+         mdm_given trusted-proxies && _mdm_answer_fail "MDMESH_TRUSTED_PROXIES: $why."
+         [ "${MDMESH_NONINTERACTIVE:-0}" != 1 ] || _mdm_answer_fail "MDMESH_TRUSTED_PROXIES (default host): $why."
+         warn "That answer: $why."
+         PROXY_TRUSTED=''
+       done
+       if ! mdm_bind_loopback "$PROXY_BIND" && ! mdm_docker_keeps_sources; then
+         warn "This Docker (rootless, or Docker Desktop) delivers every connection to $PROXY_BIND from its own gateway, so"
+         warn "MDMesh can't see your proxy's address: it then believes no one's X-Forwarded-For, and every client counts as one"
+         warn "address for the sign-in limits. With a proxy on this machine, keep MDMesh on 127.0.0.1 ($MDM_DOCS/DEPLOY.md#3-behind-your-own-proxy)."
+       fi ;;
+  esac
+  ORIGIN_TLS=${MDMESH_ORIGIN_TLS:-0}
+  mdm_mode_settings "$MODE"
+}
+# _mdm_bind_free IP:PORT: nothing on this machine listens where the edge would.
+_mdm_bind_free() {
+  local ip=${1%:*}
+  ip=${ip#\[}; ip=${ip%\]}
+  ! mdm_listening "${1##*:}" "$ip"
+}
+
+# mdm_mode_plan: the dry-run plan's lines for the answers only one mode asks: asked (or answered) in the mode given,
+# "unused" in the others, and all of them when the mode isn't known yet.
+mdm_mode_plan() {
+  local m id def
+  while IFS='|' read -r m id def; do
+    if ! mdm_given mode || [ "$m" = "$MODE" ]; then mdm_plan_line "$id" "$def"; else mdm_plan_row "$id" - unused; fi
+  done <<EOF
+$_MDM_MODE_ANSWERS
+EOF
+}
+
+# mdm_mode_of_env: the mode of an existing .env (already loaded): tunnel when COMPOSE_PROFILES lists cloudflare, proxy
+# when COMPOSE_FILE lists docker-compose.proxy.yml, else domain.
+mdm_mode_of_env() {
+  case ",$(printf '%s' "${COMPOSE_PROFILES:-}" | tr -d ' ')," in *,cloudflare,*) echo 1; return ;; esac
+  if mdm_compose_has_proxy "${COMPOSE_FILE:-}"; then echo 3; return; fi
+  echo 2
+}
+
+# mdm_compose_has_proxy LIST: the COMPOSE_FILE list LIST names docker-compose.proxy.yml (as the installers write it, or
+# ./docker-compose.proxy.yml or a path ending in it, as a hand edit might).
+mdm_compose_has_proxy() {
+  case ":$1:" in *:docker-compose.proxy.yml:*|*/docker-compose.proxy.yml:*) return 0 ;; esac
+  return 1
+}
+
+# mdm_mode_settings NUMBER [rerun]: the mode's settings, from HOST (and, behind your proxy, PROXY_BIND and ORIGIN_TLS):
+# COMPOSE_ARGS (an array: its compose files and profile, for a command line), EXTRA_NOTE (what to do next) and ENTRY (where
+# requests come in); and, for a new .env, SITE_ADDRESS (the edge's site; behind your proxy the edge sets its own),
+# COMPOSE_FILE and COMPOSE_PROFILES (compose and the updater read them from .env), with another mode's answers cleared
+# so they never reach .env. With rerun (an existing .env, already loaded and exported) only the first three: its own
+# values stay as they are.
+mdm_mode_settings() {
+  local f site file profiles='' at files
+  case "$1" in
+    1) site=':80'; file='docker-compose.yml'; profiles='cloudflare'; ENTRY="Cloudflare Tunnel"
+       EXTRA_NOTE="In Cloudflare, route the tunnel's public hostname ($HOST) to http://caddy:80." ;;
+    2) site=$HOST; file='docker-compose.yml:docker-compose.domain.yml'; ENTRY="ports 80/443"
+       EXTRA_NOTE="Make sure ${HOST} resolves to this server and ports 80/443 are open." ;;
+    3) site=':8080'; file='docker-compose.yml:docker-compose.proxy.yml'; ENTRY="${PROXY_BIND}, behind your proxy"
+       # On every address: the one your proxy uses is one of this machine's.
+       case "$PROXY_BIND" in 0.0.0.0:*|\[::\]:*) at="<this machine's address>:${PROXY_BIND##*:}" ;; *) at=$PROXY_BIND ;; esac
+       if [ "${ORIGIN_TLS:-0}" = 1 ]; then
+         EXTRA_NOTE="Point your proxy at https://${at}, trusting MDMesh's own CA, certificate name $(mdm_host_name "$HOST"): $MDM_DOCS/DEPLOY.md#3-behind-your-own-proxy"
+       else
+         EXTRA_NOTE="Point your proxy at http://${at}. Ready configurations: $MDM_DOCS/DEPLOY.md#3-behind-your-own-proxy"
+       fi ;;
+    *) _mdm_answer_fail "internal: unknown hosting mode $1" ;;
+  esac
+  COMPOSE_ARGS=()
+  # A re-run uses the list its .env saved (an override of the operator's own included), else the mode's.
+  [ "${2:-}" != rerun ] || [ -z "${COMPOSE_FILE:-}" ] || file=$COMPOSE_FILE
+  # compose's own default file is left to COMPOSE_FILE (.env), as setup.sh always did in tunnel mode. Split on ":"
+  # only: a path may hold blanks.
+  if [ "$file" != docker-compose.yml ]; then
+    IFS=: read -r -a files <<< "$file"
+    for f in "${files[@]}"; do [ -z "$f" ] || COMPOSE_ARGS+=(-f "$f"); done
+  fi
+  [ -z "$profiles" ] || COMPOSE_ARGS+=(--profile "$profiles")
+  [ "${2:-}" != rerun ] || return 0
+  SITE_ADDRESS=$site; COMPOSE_FILE=$file; COMPOSE_PROFILES=$profiles
+  [ "$1" = 1 ] || TUNNEL_TOKEN=''
+  [ "$1" = 2 ] || ACME_EMAIL=''
+}
+
+# mdm_up_hint: what to check when `docker compose up` fails, by mode.
+mdm_up_hint() {
+  case "$MODE" in
+    2) echo "If the edge could not publish ports 80/443, stop what holds them, or pick mode 3 behind that web server." ;;
+    3) echo "If the edge could not publish MDMESH_BIND (${PROXY_BIND:-in .env}), set a free address in .env (e.g. MDMESH_BIND=127.0.0.1:8081)." ;;
+  esac
+}
+
+# mdm_host_name HOSTPORT: the host of a checked host[:port] (an [IPv6] keeps its brackets).
+mdm_host_name() {
+  case "$1" in
+    \[*) printf '%s]\n' "${1%%]*}" ;;
+    *) printf '%s\n' "${1%%:*}" ;;
+  esac
+}
+
+# mdm_site_dir: makes ./site.d, for your own Caddy rules (the edge imports site.d/*.caddy into its site; updates never
+# touch it), with a short README, and sets MDMESH_SITE_DIR to its absolute path for .env: compose mounts it from there,
+# also when the updater runs compose from inside its own container. A directory whose path .env can't hold as it is
+# (a space, a quote, a $) is left out, saying so: the edge then mounts an empty volume instead.
+mdm_site_dir() {
+  local d
+  MDMESH_SITE_DIR=''
+  # Made private from the start (mkdir -m ignores the umask). One that already exists is used only when it is a directory
+  # of this user's (or root's) that nobody else may write: its rules go into the edge, so it is never made private and
+  # then trusted.
+  if [ -e site.d ] || [ -L site.d ]; then
+    if [ -L site.d ] || [ ! -d site.d ]; then
+      warn "site.d is not connected to the edge: it is a link or not a directory. Make it a directory of your own"
+      warn "(mkdir -m 755 site.d, after moving that one away), then run this again ($MDM_DOCS/DEPLOY.md#your-own-edge-rules)."
+      return 0
+    fi
+    if [ -z "$(find site.d -prune \( -user "$EUID" -o -user 0 \) -print 2> /dev/null)" ]; then
+      warn "site.d is not connected to the edge: it belongs to another user. Make it a directory of your own, then run"
+      warn "this again ($MDM_DOCS/DEPLOY.md#your-own-edge-rules)."
+      return 0
+    fi
+    if [ -n "$(find site.d -prune \( -perm -020 -o -perm -002 \) -print 2> /dev/null)" ]; then
+      warn "site.d is not connected to the edge: other users may write it. If nobody else could have changed it, run"
+      warn "chmod go-w site.d, then run this again ($MDM_DOCS/DEPLOY.md#your-own-edge-rules)."
+      return 0
+    fi
+  elif ! mkdir -m 755 site.d; then
+    warn "Could not make site.d here: your own edge rules can't be added."; return 0
+  fi
+  # A site.d this run can't write (root's, on a run as another user; or made read-only): connected (nobody else may
+  # write it), its README left out.
+  if [ ! -w site.d ]; then
+    if [ -O site.d ]; then warn "site.d isn't writable (its mode): its README is left out."
+    else warn "site.d belongs to root: add your own edge rules there as root."; fi
+  elif [ ! -e site.d/README ]; then
+    printf '%s\n' "Your own rules for MDMesh's edge (Caddy). Every *.caddy file here (but hidden ones, .*.caddy) is" \
+      "imported into the edge's site," \
+      "after MDMesh's own settings. Updates never change this directory. Each file must be yours (or root's), not a" \
+      "link, and writable by you only (chmod 644), or the edge leaves it out, saying so in its log. Check it (the" \
+      "check fails if a restart would leave a file out, or finds no *.caddy file: site.d not mounted), then restart" \
+      "the edge (from the install directory):" \
+      "  docker compose exec -e MDMESH_RAW_SITE_D=1 caddy caddy validate --config /etc/caddy/Caddyfile && docker compose restart caddy" \
+      "Each file stands alone (no snippet definitions, no import of another file): it is pasted into MDMesh's site." \
+      "Your files run after MDMesh's path checks and before its own routes, the first matching handle answering:" \
+      "wrap a rule that answers requests (respond, redir) in handle { }; a bare one answers every request." \
+      "How, with an example: $MDM_DOCS/DEPLOY.md#your-own-edge-rules" > site.d/README
+    chmod 644 site.d/README
+  fi
+  d=$(pwd -P)
+  case "$d" in
+    *[!${_MDM_ALNUM}._/+@-]*) warn "site.d is not connected to the edge: its path ($d) has a character .env can't hold as it is ($MDM_DOCS/DEPLOY.md#your-own-edge-rules)." ;;
+    *) MDMESH_SITE_DIR="$d/site.d" ;;
+  esac
+}
+
+# mdm_mode_env: the .env lines only this mode writes (behind your proxy: where the edge listens, whom it believes, and
+# whether it speaks HTTPS to your proxy).
+mdm_mode_env() {
+  [ "$MODE" = 3 ] || return 0
+  printf '%s\n' "MDMESH_BIND=${PROXY_BIND}" "TRUSTED_PROXIES=\"${PROXY_TRUSTED}\"" "MDMESH_ORIGIN_TLS=${ORIGIN_TLS:-0}"
+}
+# <<< modes.sh functions <<<
+
+# One stack per Docker project name (install/lib/stack.sh): a verbatim copy, like the ones above.
+# >>> stack.sh functions (quickstart.sh keeps a verbatim copy) >>>
+# mdm_stack_guard PROJECT NEW: stops the installer when Docker already has a stack of PROJECT that is not this
+# directory's. Its containers' com.docker.compose.project.working_dir labels name their directory: any other than this
+# one is refused, naming it. (Containers the updater recreated say /project, its own mount of the install directory:
+# they don't count either way.) With NEW=1 (no .env here yet: the installer writes a new one) any container or volume of
+# PROJECT is refused, since a new .env's secrets can't work with them; NEW=0 (this directory's .env is used) allows this
+# directory's own. Fails closed when Docker can't be asked, and on a container that names no directory.
+mdm_stack_guard() {
+  local project=$1 new=$2 here dirs d other='' gone='' ours=0 n=0 unknown=0 vols
+  here=$(pwd -P)
+  dirs=$(docker ps -a --filter "label=com.docker.compose.project=$project" \
+    --format 'dir:{{.Label "com.docker.compose.project.working_dir"}}') \
+    || { err "Could not list Docker's containers (docker ps failed, above): not starting anything. Nothing was changed."; exit 1; }
+  while IFS= read -r d; do
+    [ -n "$d" ] || continue
+    n=$((n + 1)); d=${d#dir:}
+    [ -n "$d" ] || { unknown=1; continue; }
+    [ "$d" != /project ] || continue
+    if [ "$d" -ef "$here" ]; then ours=1
+    elif [ "$new" = 0 ] && [ ! -e "$d" ]; then gone="$gone$d
+"
+    else other="$other$d
+"; fi
+  done <<EOF
+$dirs
+EOF
+  other=$(printf '%s' "$other" | sort -u | tr '\n' ' ' | sed 's/ $//')
+  # A re-run here whose containers name a directory that no longer exists: this install, moved (or renamed) since.
+  if [ -n "$gone" ] && [ -z "$other" ] && [ "$unknown" = 0 ]; then
+    warn "This install's containers were made in $(printf '%s' "$gone" | sort -u | tr '\n' ' ' | sed 's/ $//'), which is gone: taking them as this install, moved here."
+    ours=1
+  fi
+  if [ -n "$other" ] || [ "$unknown" = 1 ] || { [ "$n" -gt 0 ] && { [ "$new" = 1 ] || [ "$ours" = 0 ]; }; }; then
+    if [ -n "$other" ]; then
+      err "An MDMesh install already exists in $other (Docker project $project)."
+    elif [ "$ours" = 1 ] && [ "$unknown" = 0 ]; then
+      err "The containers of an MDMesh install in this directory exist, but its .env is gone (Docker project $project)."
+    else
+      err "An MDMesh install already exists on this machine (Docker project $project; 'docker compose ls' shows where)."
+    fi
+    err "Starting another here would stop it and take over its containers. To update it, use Settings → Updates in its"
+    err "console, or run ./setup.sh --update in its directory if it is a clone. Nothing was changed."
+    exit 1
+  fi
+  [ "$new" = 1 ] || return 0
+  vols=$(docker volume ls -q --filter "label=com.docker.compose.project=$project") \
+    || { err "Could not list Docker's volumes (docker volume ls failed, above): not starting anything. Nothing was changed."; exit 1; }
+  vols=$(printf '%s' "$vols" | tr '\n' ' ' | sed 's/ *$//')
+  if [ -n "$vols" ]; then
+    err "Docker still has the data of an MDMesh install (volumes: $vols), with none of its containers. Its database"
+    err "keeps the password in that install's .env: run 'docker compose up -d' in that install's directory to start it"
+    err "again. To start over instead, remove them: docker volume rm $vols (this deletes ALL of that install's data)."
+    err "Nothing was changed."
+    exit 1
+  fi
+}
+# mdm_edge_up: the edge (caddy, which every phone and browser reaches MDMesh through) is running, and still the same run
+# MDM_EDGE_SETTLE seconds later (default 5): an edge that can't load its configuration (a rule in site.d, proxy
+# settings docker/edge-peers.sh refuses) exits at start and is restarted over and over. When it isn't, it says so with
+# the edge's last log lines, and fails. Run from the install directory, after `docker compose up`.
+mdm_edge_up() {
+  local id a='' b=''
+  id=$(docker compose ps -a -q caddy 2> /dev/null | head -1)
+  if [ -n "$id" ]; then
+    a=$(docker inspect --format '{{.State.Status}} {{.State.StartedAt}}' "$id" 2> /dev/null) || a=''
+    sleep "${MDM_EDGE_SETTLE:-5}"
+    b=$(docker inspect --format '{{.State.Status}} {{.State.StartedAt}}' "$id" 2> /dev/null) || b=''
+    if [ "${a%% *}" = running ] && [ "$a" = "$b" ]; then return 0; fi
+  fi
+  err "The edge (caddy) did not stay up (${b:-${a:-no container}}), so MDMesh can't be reached. Its last log lines:"
+  docker compose logs --tail 20 caddy 2>&1 | sed 's/^/    /' >&2 || true
+  return 1
+}
+# <<< stack.sh functions <<<
+
+# The versions an install's hosting mode allows (supervisor/mode-guard.sh, the updater's rule): a verbatim copy.
+# >>> mode-guard.sh functions (quickstart.sh keeps a verbatim copy) >>>
+# mode_problem VERSION: prints why this install can't run VERSION (nothing when it can). A version that isn't X.Y.Z
+# (latest) is let through: there is nothing to compare. Before 0.6.0 (the web image's edge doesn't know these):
+#   - behind your own proxy (COMPOSE_FILE, in the supervisor's environment or .env, lists docker-compose.proxy.yml): the
+#     older edge would believe no proxy (every client one address for the sign-in limits) and serve no HTTPS origin;
+#   - TRUSTED_PROXIES (.env) still saying `host`, as an install moved out of the proxy mode may have left it: the
+#     0.6.0 edge ignores it, an older one hands it to Caddy, which refuses its whole configuration.
+mode_problem() {
+  local v=${1%%@*} files proxies
+  [[ "$v" =~ ^([0-9]+)\.([0-9]+)\.[0-9]+ ]] || return 0
+  [ "$((10#${BASH_REMATCH[1]}))" -eq 0 ] && [ "$((10#${BASH_REMATCH[2]}))" -lt 6 ] || return 0
+  files="${COMPOSE_FILE:-}:$(_mode_env COMPOSE_FILE)"
+  # As written by the installers, or ./docker-compose.proxy.yml or a path ending in it, as a hand edit might.
+  case ":$files:" in
+    *:docker-compose.proxy.yml:*|*/docker-compose.proxy.yml:*)
+      echo "this install runs behind your own proxy (docker-compose.proxy.yml), which came in 0.6.0, so it can't go to ${v}: that version's edge doesn't know the mode. Move the install back to its earlier hosting mode first (docs/UPGRADING.md, Changing the hosting mode), then try again. Nothing was changed."
+      return 0 ;;
+  esac
+  proxies=" $(_mode_env TRUSTED_PROXIES | tr ',' ' ') "
+  case "$proxies" in
+    *" host "*)
+      echo "TRUSTED_PROXIES in .env still says host (left from the proxy mode), which ${v}'s edge can't read: it would not start. Set TRUSTED_PROXIES= in .env (docs/UPGRADING.md, Changing the hosting mode), then try again. Nothing was changed." ;;
+  esac
+}
+# _mode_env KEY: KEY's value in .env, read as compose reads the usual forms: the last KEY line (blanks and "export "
+# before it, KEY=v, KEY = v or KEY: v); quoted, the text between the quotes; else up to a blank and "#", trailing blanks
+# trimmed. Unlike compose: no escapes in quotes, no multi-line values, no ${VAR}, and a tab before "#" also starts a
+# comment.
+_mode_env() {
+  local f=${ENV_FILE:-/project/.env} v
+  [ -f "$f" ] && [ -r "$f" ] || return 0
+  # (each match printed as "=value", so a last "KEY=" with no newline after it still counts)
+  v=$(sed -n -E "s/^[[:space:]]*(export[[:space:]]+)?$1[[:space:]]*[=:][[:space:]]*/=/p" "$f" | tail -1 | tr -d '\r')
+  v=${v#=}
+  case "$v" in
+    \"*) v=${v#\"}; v=${v%%\"*} ;;
+    \'*) v=${v#\'}; v=${v%%\'*} ;;
+    *) v=${v%%[[:space:]]#*}; v=${v%"${v##*[![:space:]]}"} ;;
+  esac
+  printf '%s\n' "$v"
+}
+# <<< mode-guard.sh functions <<<
+
+# The only arguments: one hosting mode, which answers the first question. Nothing else runs before the answers are
+# loaded (the tunnel token would be in its environment), so this only takes note.
+MODE_FLAG=''; RESUMING=0
+for a in "$@"; do
+  case "$a" in
+    --tunnel|--domain|--proxy)
+      [ -z "$MODE_FLAG" ] || [ "$MODE_FLAG" = "${a#--}" ] || { err "--${MODE_FLAG} and $a name different hosting modes: give one."; exit 2; }
+      MODE_FLAG=${a#--} ;;
+    *) err "Unknown option: $a (quickstart.sh takes one of --tunnel, --domain or --proxy)."; exit 2 ;;
+  esac
+done
+
 # Every answer is checked here, before anything else happens.
 mdm_answers_load
+mdm_mode_from_flag "$MODE_FLAG"
 mdm_answer mode MODE mode MDMESH_MODE
 mdm_answer repo GH_REPO github-repo MDMESH_REPO
 mdm_answer image-owner IMAGE_OWNER image-owner MDMESH_IMAGE_OWNER
 mdm_answer host HOST hostname MDMESH_HOST
 mdm_answer tunnel-token TUNNEL_TOKEN tunnel-token MDMESH_TUNNEL_TOKEN
 mdm_answer acme-email ACME_EMAIL email MDMESH_ACME_EMAIL
-if mdm_given mode; then
-  if [ "$MODE" = 1 ]; then mdm_unused acme-email "in tunnel mode"; else mdm_unused tunnel-token "in domain mode"; fi
+mdm_answer bind PROXY_BIND bind MDMESH_BIND
+mdm_answer trusted-proxies PROXY_TRUSTED proxies MDMESH_TRUSTED_PROXIES
+# A resume ignores the answers (it uses its .env): what follows is for a new install only.
+_resume=0; [ ! -f "${MDMESH_DIR:-mdmesh}/.quickstart-unfinished" ] || _resume=1
+if [ "$_resume" = 0 ]; then
+  mdm_mode_check_answers
+  # Behind your own proxy needs a release from 0.6.0 on: one named in advance is refused now.
+  _ver=${MDMESH_VERSION:-}
+  if mdm_given mode && [ "$MODE" = 3 ] && [ -n "$(ENV_FILE=/nonexistent COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml mode_problem "${_ver#v}")" ]; then
+    _mdm_answer_fail "MDMESH_VERSION=${MDMESH_VERSION}: behind your own proxy came in 0.6.0, so install 0.6.0 or later, or pick another mode."
+  fi
+  mdm_need mode; mdm_need host
+  if mdm_given mode && [ "$MODE" = 1 ]; then mdm_need tunnel-token; fi
 fi
-mdm_need mode; mdm_need host
-if mdm_given mode && [ "$MODE" = 1 ]; then mdm_need tunnel-token; fi
 if [ "${MDMESH_DRY_RUN:-0}" = 1 ]; then
   say "== MDMesh quick start: dry run (MDMESH_DRY_RUN=1) =="
   echo "The answers check out. Nothing on this host was checked or changed. What a run would do:"
@@ -499,9 +1032,7 @@ if [ "${MDMESH_DRY_RUN:-0}" = 1 ]; then
   mdm_plan_line repo "$REPO"
   mdm_plan_line image-owner "$IMAGE_OWNER_DEFAULT"
   mdm_plan_line host ''
-  if ! mdm_given mode; then mdm_plan_line tunnel-token ''; mdm_plan_line acme-email ''
-  elif [ "$MODE" = 1 ]; then mdm_plan_line tunnel-token ''; mdm_plan_row acme-email - unused
-  else mdm_plan_row tunnel-token - unused; mdm_plan_line acme-email ''; fi
+  mdm_mode_plan
   [ -z "${MDMESH_RELEASE_PUBKEY:-}" ] || mdm_plan_row release-pubkey '(custom)' MDMESH_RELEASE_PUBKEY
   _dir=${MDMESH_DIR:-mdmesh}; case "$_dir" in /*) ;; *) _dir="$PWD/$_dir" ;; esac
   _repo=$REPO; if mdm_given repo && [ -n "$GH_REPO" ]; then _repo=$GH_REPO; fi
@@ -544,21 +1075,334 @@ DIR="${MDMESH_DIR:-mdmesh}"
 # through and the rest would run in the wrong directory.
 mkdir -p -- "$DIR"
 cd -P -- "$DIR"
-{ [ -e .env ] || [ -L .env ]; } && { err "An .env already exists in $(pwd) — refusing to overwrite. Remove it to re-run."; exit 1; }
+# qs_leave_alone: an install the quick start didn't start (or finished) is here: say so and stop, changing nothing.
+qs_leave_alone() {
+  err "An .env already exists in $(pwd): an install is here, so the quick start leaves it alone. Don't delete that .env"
+  err "while the install's volumes exist (its database keeps the password in it): update from the console, or edit"
+  err ".env and run 'docker compose up -d' there. To start over, first 'docker compose down -v' there (deletes ALL data)."
+  exit 1
+}
+# Nothing of an install the quick start won't resume is read: said first, whatever its permissions.
+if { [ -e .env ] || [ -L .env ]; } && [ ! -e .quickstart-unfinished ]; then qs_leave_alone; fi
+# Everything here is read, sourced or handed to docker as this user (often root): the directory and whatever the quick
+# start uses in it must belong to this user or root, and nobody else may write them. A directory someone else made (in
+# /tmp, say) is refused, so they can't plant a .env, a compose file or db.sh, or swap a verified file before it runs.
+# A path that already exists and others may write is refused too, never made private and then trusted: someone may
+# have changed it while it was open. (What this run creates is private from the start: umask 022 above.)
+for _p in . install install/lib install/sql .env .quickstart-unfinished .quickstart.lock $MDM_QUICKSTART_FILES docker-compose.yml site.d; do
+  [ -e "$_p" ] || [ -L "$_p" ] || continue
+  _open=$(find "$_p" -prune \( -perm -020 -o -perm -002 \) -print 2>/dev/null)
+  if [ -L "$_p" ] || [ -z "$(find "$_p" -prune \( -user "$EUID" -o -user 0 \) -print 2>/dev/null)" ] || { [ -n "$_open" ] && [ ! -O "$_p" ]; }; then
+    err "$(pwd)/${_p#./}: the install directory and what is in it must belong to you (or root), not be links, and be"
+    err "writable by nobody else. Install into a directory of your own (MDMESH_DIR). Nothing was changed."
+    exit 1
+  fi
+  if [ -n "$_open" ]; then
+    err "$(pwd)/${_p#./} is writable by other users, so what is in it can't be trusted. If nobody else could have changed"
+    err "it, make it yours alone (chmod go-w '$(pwd)/${_p#./}'), then run the quick start again. Nothing was changed."
+    exit 1
+  fi
+done
+# One quick start at a time here: two resumes would each set, and show, an admin password.
+if [ -n "$(command -v flock || true)" ]; then
+  exec 9>> .quickstart.lock
+  flock -n 9 || { err "Another quick start is running in $(pwd): let it finish. Nothing was changed."; exit 1; }
+else   # no flock (macOS): refused while the PID in it is a quick start still running
+  _pid=$(cat .quickstart.lock 2>&1) || _pid=''
+  case "$_pid" in ''|*[!0-9]*) ;; *)
+    case "$(ps -p "$_pid" -o command= 2>&1)" in *quickstart*)
+      err "Another quick start is running in $(pwd) (PID $_pid): let it finish. If none is, delete $(pwd)/.quickstart.lock."
+      err "Nothing was changed."; exit 1 ;;
+    esac ;;
+  esac
+  echo "$$" > .quickstart.lock
+fi
+RESUME_HINT="Fix it, then run the quick start again with MDMESH_DIR=$(pwd): it finishes this install with the same .env. Keep .env: the database has its password."
+# verify_release: RELEASE of GH_REPO, checked against its signed manifest (see "What the quick start trusts" above):
+# the signature, the version, and the image digests under IMAGE_OWNER. Sets MANIFEST, SERVER_TAG, WEB_TAG,
+# SUPERVISOR_TAG and RAW. Stops the quick start when anything does not verify.
+ENV_TMP=''
+verify_release() {
+  say "Verifying release v${RELEASE} of ${GH_REPO}…"
+  VERIFY_DIR=$(mktemp -d)
+  cleanup_verify() {
+    [ -z "$ENV_TMP" ] || rm -f -- "$ENV_TMP"   # a .env write that failed or was interrupted: it holds the new secrets
+    rm -f -- "$VERIFY_DIR/manifest.json" "$VERIFY_DIR/manifest.json.minisig" "$VERIFY_DIR"/dl.*
+    rmdir -- "$VERIFY_DIR" 2>/dev/null || true
+  }
+  trap cleanup_verify EXIT
+  MANIFEST="$VERIFY_DIR/manifest.json"
+  REL_URL="https://github.com/${GH_REPO}/releases/download/v${RELEASE}"
+  if ! curl -fsSL -m 60 "${REL_URL}/manifest.json" -o "$MANIFEST" \
+     || ! curl -fsSL -m 60 "${REL_URL}/manifest.json.minisig" -o "$VERIFY_DIR/manifest.json.minisig"; then
+    err "Could not download manifest.json and manifest.json.minisig from ${REL_URL} (is v${RELEASE} a published release with a signed manifest?)."
+    exit 1
+  fi
+  VERIFY_RC=0
+  mdm_verify_manifest "${MDMESH_RELEASE_PUBKEY:-$MDM_RELEASE_PUBKEY_DEFAULT}" "$MANIFEST" "$VERIFY_DIR/manifest.json.minisig" || VERIFY_RC=$?
+  if [ "$VERIFY_RC" = 2 ]; then
+    err "Checking the release signature needs OpenSSL 3.0+ or minisign (this host: $(openssl version 2>/dev/null || echo 'no openssl'))."
+    err "Install minisign (your distribution's package, or https://github.com/jedisct1/minisign/releases) and re-run. Nothing was installed."
+    exit 1
+  fi
+  if [ "$VERIFY_RC" != 0 ]; then
+    err "The manifest of release v${RELEASE} of ${GH_REPO} is not signed by the release key (reason above). Nothing was installed."
+    if [ "$GH_REPO" != "$REPO" ] && [ -z "${MDMESH_RELEASE_PUBKEY:-}" ]; then
+      err "A fork signs with its own key: run that repository's quickstart.sh, or set MDMESH_RELEASE_PUBKEY to the key line of its release/minisign.pub."
+    fi
+    exit 1
+  fi
+  # Bind the signed manifest to this release: an older release's manifest is signed too.
+  MANIFEST_VERSION=$(mdm_manifest_field "$MANIFEST" version '[0-9A-Za-z.+-]+' || true)
+  if [ "$MANIFEST_VERSION" != "$RELEASE" ]; then
+    err "The signed manifest is for version ${MANIFEST_VERSION:-(none)}, not v${RELEASE}. Nothing was installed."; exit 1
+  fi
+  # Images for this host's platform: a manifest without components.platforms has linux/amd64 only.
+  mdm_manifest_has_platform "$MANIFEST" "linux/${HOST_ARCH}" || no_host_images "$RELEASE" "$(mdm_manifest_platforms "$MANIFEST")"
+  # The image digests: all three, under the owner chosen above.
+  SERVER_REF=$(mdm_manifest_field "$MANIFEST" server "$MDM_IMAGE_REF_ERE" || true)
+  WEB_REF=$(mdm_manifest_field "$MANIFEST" web "$MDM_IMAGE_REF_ERE" || true)
+  SUPERVISOR_REF=$(mdm_manifest_field "$MANIFEST" supervisor "$MDM_IMAGE_REF_ERE" || true)
+  if [ -n "$SERVER_REF" ] && [ -n "$WEB_REF" ] && [ -n "$SUPERVISOR_REF" ]; then
+    # Each ref must be exactly its own image under this owner (as supervisor/lib.js imagePins and apply.sh require).
+    for _pair in "server $SERVER_REF" "web $WEB_REF" "supervisor $SUPERVISOR_REF"; do
+      _name=${_pair%% *}; _ref=${_pair#* }
+      if [ "${_ref%@*}" != "ghcr.io/${IMAGE_OWNER}/mdmesh-${_name}" ]; then
+        err "Release v${RELEASE} of ${GH_REPO} publishes its ${_name} image as ${_ref%@*}, not ghcr.io/${IMAGE_OWNER}/mdmesh-${_name}. Re-run and enter the image owner it names."
+        exit 1
+      fi
+    done
+    SERVER_TAG="${RELEASE}@${SERVER_REF#*@}"; WEB_TAG="${RELEASE}@${WEB_REF#*@}"; SUPERVISOR_TAG="${RELEASE}@${SUPERVISOR_REF#*@}"
+  else
+    err "The signed manifest of v${RELEASE} does not pin the server, web and supervisor images by digest, so the quick start can't install it."
+    err "(A fork publishing with an older release workflow: update its release/ scripts and .github/workflows/release.yml.)"
+    exit 1
+  fi
+  RAW="https://raw.githubusercontent.com/${GH_REPO}/v${RELEASE}"
+  say "Installing release v${RELEASE} of ${GH_REPO}."
+}
+
+# fetch_release_files: every file of MDM_QUICKSTART_FILES from RAW, each checked against its SHA-256 in the signed
+# manifest, then moved into place over whatever is there (a resumed install's copies too), so nothing unverified is
+# ever sourced or run. docker-compose.proxy.yml only when the release has it (0.6.0 on).
+fetch_release_files() {
+  local n f want got dest FETCHED
+  say "Downloading the pull-only compose + seed…"
+  # Every file is downloaded to a temporary name and checked against its SHA-256 in the signed manifest; only when all of
+  # them match are they moved into place. db.sh is sourced below, so nothing unverified ever runs.
+  n=0; FETCHED=''
+  for f in $MDM_QUICKSTART_FILES; do
+    n=$((n + 1))
+    want=$(mdm_manifest_field "$MANIFEST" "$f" "$MDM_SHA256_ERE" || true)
+    # Before 0.6.0 (proxy mode was refused above for such a release).
+    if [ -z "$want" ] && [ "$f" = docker-compose.proxy.yml ]; then continue; fi
+    [ -n "$want" ] || { err "The signed manifest of v${RELEASE} has no SHA-256 for ${f}, so it can't be verified. Nothing was installed."; exit 1; }
+    curl -fsSL -m 120 "${RAW}/${f}" -o "$VERIFY_DIR/dl.$n" || { err "Could not download ${RAW}/${f}. Nothing was installed."; exit 1; }
+    got=$(mdm_sha256 "$VERIFY_DIR/dl.$n")
+    if [ "$got" != "$want" ]; then
+      err "${f} from ${RAW} does not match the signed release (SHA-256 ${got}, expected ${want}). Nothing was installed."; exit 1
+    fi
+    FETCHED="$FETCHED $n"
+  done
+  n=0
+  for f in $MDM_QUICKSTART_FILES; do
+    n=$((n + 1))
+    case " $FETCHED " in *" $n "*) ;; *) continue ;; esac
+    dest=$f; [ "$f" = docker-compose.release.yml ] && dest=docker-compose.yml
+    mkdir -p -- "$(dirname -- "$dest")"
+    mv -f -- "$VERIFY_DIR/dl.$n" "$dest"
+  done
+}
+
+# resume_install: finishes an install this quick start began here (.quickstart-unfinished) with its .env, whose
+# secrets the database already has. Nothing on disk is trusted but that private .env, and each of its values is checked
+# as a fresh run checks it: the release (CURRENT_VERSION) is verified again against its signed manifest, the files are
+# downloaded and checked again over the ones here before db.sh is sourced, and the image pins in .env must be the
+# manifest's.
+resume_install() {
+  local v
+  say "== MDMesh quick start: finishing the install in $(pwd) with its .env =="
+  mdm_any_answered && warn "The MDMESH_* answers are not used: this install's .env is."
+  _mdm_private_file "$(pwd)/.env" || { err "$(pwd)/.env must belong to you (or root) and be private to you (chmod 600). Nothing was changed."; exit 1; }
+  envval() { ENV_FILE=.env _mode_env "$1"; }   # as compose reads .env (supervisor/mode-guard.sh)
+  RELEASE=$(envval CURRENT_VERSION); GH_REPO=$(envval GITHUB_REPO); IMAGE_OWNER=$(envval IMAGE_OWNER); BASE_URL=$(envval BASE_URL)
+  [[ "$RELEASE" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.+-]+)?$ ]] || { err ".env: CURRENT_VERSION is not a release version. Nothing was changed."; exit 1; }
+  for v in "GITHUB_REPO|$GH_REPO|github-repo" "IMAGE_OWNER|$IMAGE_OWNER|image-owner"; do
+    _MDM_V=${v#*|}; _MDM_V=${_MDM_V%|*}
+    _mdm_answer_check "${v##*|}"
+    { [ -z "$_MDM_WHY" ] && [ -n "$_MDM_V" ]; } || { err ".env: ${v%%|*} ${_MDM_WHY:-is empty}. Nothing was changed."; exit 1; }
+  done
+  mdm_check_base_url BASE_URL || { err ".env: BASE_URL is not valid (why above). Nothing was changed."; exit 1; }
+  HOST=${BASE_URL#*://}; HOST=${HOST%%/*}
+  mdm_check_host HOST || { err ".env: BASE_URL's host is not valid (why above). Nothing was changed."; exit 1; }
+  COMPOSE_FILE=$(envval COMPOSE_FILE); COMPOSE_PROFILES=$(envval COMPOSE_PROFILES)
+  case "$COMPOSE_FILE|$COMPOSE_PROFILES" in
+    'docker-compose.yml|cloudflare'|'docker-compose.yml:docker-compose.domain.yml|'|'docker-compose.yml:docker-compose.proxy.yml|') ;;
+    *) err ".env: COMPOSE_FILE and COMPOSE_PROFILES are not a hosting mode the quick start writes. Nothing was changed."; exit 1 ;;
+  esac
+  # Its own containers and volumes are expected; another directory's install is not touched.
+  _project=$(envval COMPOSE_PROJECT_NAME)
+  case "${_project:-mdmesh}" in *[!a-z0-9_-]*) err ".env: COMPOSE_PROJECT_NAME is not a Docker project name. Nothing was changed."; exit 1 ;; esac
+  mdm_stack_guard "${_project:-mdmesh}" 0
+  MODE=$(mdm_mode_of_env)
+  PROXY_BIND=$(envval MDMESH_BIND); ORIGIN_TLS=$(envval MDMESH_ORIGIN_TLS)
+  if [ "$MODE" = 3 ]; then
+    _mdm_bind_ok "$PROXY_BIND" || { err ".env: MDMESH_BIND is not an address and port. Nothing was changed."; exit 1; }
+    # The proxies the edge believes: as a fresh run checks the answer, and `host` only with a loopback bind.
+    _MDM_WHY=''; _mdm_proxies_check "$(envval TRUSTED_PROXIES)"
+    { [ -z "$_MDM_WHY" ] && [ -n "$_MDM_V" ]; } || { err ".env: TRUSTED_PROXIES ${_MDM_WHY:-is empty}. Nothing was changed."; exit 1; }
+    v=$(mdm_proxy_trust_problem "$PROXY_BIND" "$_MDM_V")
+    [ -z "$v" ] || { err ".env: TRUSTED_PROXIES and MDMESH_BIND: $v. Nothing was changed."; exit 1; }
+  fi
+  # Your own edge rules: this install's site.d (as mdm_site_dir writes it), or none.
+  v=$(envval MDMESH_SITE_DIR)
+  [ -z "$v" ] || [ "$v" = "$(pwd -P)/site.d" ] || { err ".env: MDMESH_SITE_DIR is not this install's site.d ($(pwd -P)/site.d). Nothing was changed."; exit 1; }
+  verify_release
+  for v in "SERVER_VERSION|$SERVER_TAG" "WEB_VERSION|$WEB_TAG" "SUPERVISOR_VERSION|$SUPERVISOR_TAG"; do
+    [ "$(envval "${v%%|*}")" = "${v#*|}" ] || { err ".env: ${v%%|*} is not the image release v${RELEASE}'s signed manifest pins. Nothing was changed."; exit 1; }
+  done
+  fetch_release_files
+  # shellcheck source=install/lib/db.sh
+  . ./install/lib/db.sh
+  mdm_mode_settings "$MODE" rerun
+  ADMIN_PASSWORD=$(rand); RESET_TOKEN=$(openssl rand -hex 16); RESUMING=1
+  finish_install
+}
+
+# qs_admin_after_seed: a resumed install whose earlier run seeded the database and then stopped: that run's password
+# was never shown. Unless the admin has set their own since (the seed's first-login change is no longer pending), it
+# gets a new temporary one, as a fresh seed's. Shown with ADMIN_SHOWN=1; else 0.
+qs_admin_after_seed() {
+  local st vars
+  st=$(mdm_psql -c "SELECT passwordreset FROM users WHERE login='admin'") \
+    || { err "Could not read the admin account."; return 1; }
+  case "$st" in
+    f) ADMIN_SHOWN=0; return 0 ;;
+    t) ;;
+    *) err "The database has no admin account to finish (got: ${st:-nothing})."; return 1 ;;
+  esac
+  vars="\\set h $(_mdm_psql_arg "$(mdm_pwhash "$ADMIN_PASSWORD")")"$'\n'"\\set t $(_mdm_psql_arg "$RESET_TOKEN")"
+  printf '%s\n' "$vars" "UPDATE users SET password=:'h', passwordreset=true, passwordresettoken=:'t' WHERE login='admin';" \
+    | mdm_psql || { err "Could not set a new temporary admin password."; return 1; }
+}
+
+# finish_install: pull, start, seed and report, with the .env in this directory. A new install runs it once .env is
+# written; a run that stopped after that (.quickstart-unfinished is still there) is resumed with it, keeping .env:
+# the database volume already has its password.
+finish_install() {
+  # docker compose prefers the environment to .env: the keys .env sets reach it from .env only (an exported
+  # MDMESH_BIND from the first run must not override the one fixed in .env since).
+  local k
+  # shellcheck disable=SC2163  # unexporting the variable named k
+  while IFS= read -r k; do export -n "$k"; done < <(sed -n -E 's/^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*[=:].*/\2/p' .env)
+  # And compose reads this .env, not files COMPOSE_ENV_FILES names.
+  if [ -n "${COMPOSE_ENV_FILES+x}" ]; then
+    warn "Ignoring COMPOSE_ENV_FILES (${COMPOSE_ENV_FILES}): this install's compose reads its own .env."
+    unset COMPOSE_ENV_FILES
+  fi
+  say "Pulling images…"
+  docker compose pull || { err "Could not pull the v${RELEASE} images from ghcr.io/${IMAGE_OWNER} (pinned by digest in .env). Has a release been published? (to cut one, see RELEASING.md)"; err "$RESUME_HINT"; exit 1; }
+  # The init marker the wait below reads is on the server's data volume, and the server writes it only when it is absent.
+  # The entrypoint removes the previous start's marker only in images after v0.3.1, and this script (the latest
+  # release's, or main's) may be installing v0.3.1 or older, so a re-run over an existing volume would read the last run's result. Remove it here:
+  # the old server stopped first (so it cannot write it again in between), then a one-off container of the server image
+  # that runs rm as the server's own user (never as root on the volume; rm -f removes a planted link, not its target).
+  # On a fresh install there is no container to stop and no marker to remove, and the one-off only creates the volume
+  # that `up` would create anyway.
+  say "Starting the stack…"
+  docker compose stop server >/dev/null 2>&1 || true
+  docker compose run --rm --no-deps -T -u mdmesh --entrypoint rm server -f /opt/mdmesh/initialized.txt \
+    || { err "Could not remove the previous start's init marker (/opt/mdmesh/initialized.txt) from the server's volume."; exit 1; }
+  docker compose up -d || { err "docker compose up failed (above). $(mdm_up_hint)"; err "$RESUME_HINT"; exit 1; }
+
+  say "Waiting for the server to finish first-boot (Liquibase)…"
+  BOOTED=0
+  for _ in $(seq 1 60); do
+    sleep 5   # first: `up -d` can return before the entrypoint has removed the previous start's marker
+    if docker compose exec -T server test -s /opt/mdmesh/initialized.txt 2>/dev/null; then BOOTED=1; break; fi
+  done
+  if [ "$BOOTED" != 1 ]; then
+    err "Server did not finish first-boot within ~5 minutes. Last server logs:"
+    docker compose logs --tail 40 server 2>&1 || true
+    err "$RESUME_HINT"; exit 1
+  fi
+  # The marker holds "OK" or the server's initialization error (docker/entrypoint.sh removes the previous start's marker,
+  # so it is this boot's). It is read as the server's own user: the volume is that account's, and the container's root
+  # would follow a link planted there.
+  INIT_RESULT=$(docker compose exec -T -u mdmesh server cat /opt/mdmesh/initialized.txt 2>/dev/null || true)
+  if ! grep -q '^OK' <<< "$INIT_RESULT"; then
+    err "The server reported an initialization error:"
+    printf '%s\n' "${INIT_RESULT:0:2000}" | tr -d '\000-\010\013-\037\177' | sed 's/^/    /'   # the server's text: no control chars
+    err "$RESUME_HINT"; exit 1
+  fi
+  # The edge too, before the database is seeded (so a run resumed after fixing it still finds a fresh database).
+  mdm_edge_up || { err "$RESUME_HINT"; exit 1; }
+
+  # Same rules as setup.sh (shared install/lib/db.sh): seed only a fresh database, verify the seed, then
+  # the always-run repairs that switch on QR/token enrollment (this step used to be missing here).
+  # shellcheck disable=SC2034  # PSQL is consumed by install/lib/db.sh
+  PSQL=(docker compose exec -T postgres psql -U mdmesh -d mdmesh)
+  STATE=$(mdm_db_state)
+  ADMIN_SHOWN=1
+  case "$STATE" in
+    fresh)
+      say "Seeding settings + admin…"
+      if ! mdm_seed "admin@${HOST}" install/sql/hmdm_init.en.sql "$ADMIN_PASSWORD" "$RESET_TOKEN"; then
+        err "Seeding failed — the install is NOT usable yet. Fix the error above."; err "$RESUME_HINT"; exit 1
+      fi ;;
+    seeded)
+      # Only this install's own earlier run (it stopped before the end: .quickstart-unfinished) gets past this.
+      if [ "${RESUMING:-0}" != 1 ]; then
+        err "This database is already seeded — the quick start is for new installs only. To upgrade, use ./setup.sh in a clone."; exit 1
+      fi
+      say "The database was seeded by this install's earlier run: finishing it."
+      qs_admin_after_seed || { err "$RESUME_HINT"; exit 1; } ;;
+    *)      err "Could not confirm a fresh database (state: ${STATE}). Aborting before touching data."; exit 1 ;;
+  esac
+  if ! mdm_post_seed install/sql/post_seed.sql; then
+    err "Post-seed repairs failed — device enrollment would not work. Fix the error above."; err "$RESUME_HINT"; exit 1
+  fi
+
+  echo
+  say "== MDMesh is up =="
+  echo "  Console:        ${BASE_URL}"
+  echo "  REST API base:  ${BASE_URL}/rest"
+  echo "  Login:          admin"
+  if [ "$ADMIN_SHOWN" = 1 ]; then
+    echo "  Password:       ${ADMIN_PASSWORD}   (temporary — you'll set your own on first login)"
+  else
+    echo "  Password:       (the one you set; unchanged)"
+  fi
+  echo "  Directory:      $(pwd)   (run 'docker compose' commands from here)"
+  echo "  Reached via:    ${ENTRY}"
+  echo
+  [ "$ADMIN_SHOWN" != 1 ] || warn "Save that password now — it is not stored anywhere in clear text."
+  echo "Next: $EXTRA_NOTE"
+  if [ "$MODE" = 3 ] && [ "$ORIGIN_TLS" = 1 ]; then
+    echo "      Your proxy trusts MDMesh's CA: docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt ./mdmesh-origin-ca.crt"
+  fi
+  echo "Enroll devices from the console's Enroll page (it builds the QR with ${BASE_URL})."
+  rm -f -- .quickstart-unfinished
+}
+
+# An .env here: an install. One the quick start didn't finish is resumed; any other is left alone (never delete .env
+# while its volumes exist: the database keeps the password in it).
+if [ -e .env ] || [ -L .env ]; then
+  if [ -f .quickstart-unfinished ] && [ -f .env ] && [ ! -L .env ]; then
+    resume_install
+    exit 0
+  fi
+  qs_leave_alone
+fi
+
+# A new install: no other install's containers or volumes may exist (install/lib/stack.sh), or compose would take them
+# over. Checked before any question.
+mdm_stack_guard mdmesh 1
 
 say "== MDMesh quick start (published images) =="
 echo "Installing into: $(pwd)"
 echo
-if ! mdm_answered mode; then
-  echo "Hosting mode:"
-  echo "  1) Cloudflare Tunnel   (no open ports; Cloudflare manages TLS — needs a domain in Cloudflare)"
-  echo "  2) Your own domain     (open 80/443; Caddy auto-provisions a Let's Encrypt cert)"
-  MODE=""
-  while [ "$MODE" != "1" ] && [ "$MODE" != "2" ]; do
-    read -rp "Choose [1/2]: " MODE || { err "No selection (non-interactive run?). Aborting."; exit 1; }   # answer: mode
-    case "$MODE" in 1|2) ;; *) warn "Please enter 1 or 2." ;; esac
-  done
-fi
+mdm_mode_choose "Without Docker? See Native in DEPLOY.md: $MDM_DOCS/DEPLOY.md#option-c--native-no-docker"
 
 while :; do
   mdm_answered repo || read -rp "Pull releases from GitHub repo [${REPO}]: " GH_REPO   # answer: repo
@@ -599,111 +1443,16 @@ if [ -z "$RELEASE" ]; then
   exit 1
 fi
 [ -z "${MDMESH_RELEASE_PUBKEY:-}" ] || warn "Using MDMESH_RELEASE_PUBKEY: a custom release signing key, not MDMesh's."
-say "Verifying release v${RELEASE} of ${GH_REPO}…"
-VERIFY_DIR=$(mktemp -d)
-ENV_TMP=''
-cleanup_verify() {
-  [ -z "$ENV_TMP" ] || rm -f -- "$ENV_TMP"   # a .env write that failed or was interrupted: it holds the new secrets
-  rm -f -- "$VERIFY_DIR/manifest.json" "$VERIFY_DIR/manifest.json.minisig" "$VERIFY_DIR"/dl.*
-  rmdir -- "$VERIFY_DIR" 2>/dev/null || true
-}
-trap cleanup_verify EXIT
-MANIFEST="$VERIFY_DIR/manifest.json"
-REL_URL="https://github.com/${GH_REPO}/releases/download/v${RELEASE}"
-if ! curl -fsSL -m 60 "${REL_URL}/manifest.json" -o "$MANIFEST" \
-   || ! curl -fsSL -m 60 "${REL_URL}/manifest.json.minisig" -o "$VERIFY_DIR/manifest.json.minisig"; then
-  err "Could not download manifest.json and manifest.json.minisig from ${REL_URL} (is v${RELEASE} a published release with a signed manifest?)."
-  exit 1
-fi
-VERIFY_RC=0
-mdm_verify_manifest "${MDMESH_RELEASE_PUBKEY:-$MDM_RELEASE_PUBKEY_DEFAULT}" "$MANIFEST" "$VERIFY_DIR/manifest.json.minisig" || VERIFY_RC=$?
-if [ "$VERIFY_RC" = 2 ]; then
-  err "Checking the release signature needs OpenSSL 3.0+ or minisign (this host: $(openssl version 2>/dev/null || echo 'no openssl'))."
-  err "Install minisign (your distribution's package, or https://github.com/jedisct1/minisign/releases) and re-run. Nothing was installed."
-  exit 1
-fi
-if [ "$VERIFY_RC" != 0 ]; then
-  err "The manifest of release v${RELEASE} of ${GH_REPO} is not signed by the release key (reason above). Nothing was installed."
-  if [ "$GH_REPO" != "$REPO" ] && [ -z "${MDMESH_RELEASE_PUBKEY:-}" ]; then
-    err "A fork signs with its own key: run that repository's quickstart.sh, or set MDMESH_RELEASE_PUBKEY to the key line of its release/minisign.pub."
-  fi
-  exit 1
-fi
-# Bind the signed manifest to this release: an older release's manifest is signed too.
-MANIFEST_VERSION=$(mdm_manifest_field "$MANIFEST" version '[0-9A-Za-z.+-]+' || true)
-if [ "$MANIFEST_VERSION" != "$RELEASE" ]; then
-  err "The signed manifest is for version ${MANIFEST_VERSION:-(none)}, not v${RELEASE}. Nothing was installed."; exit 1
-fi
-# Images for this host's platform: a manifest without components.platforms has linux/amd64 only.
-mdm_manifest_has_platform "$MANIFEST" "linux/${HOST_ARCH}" || no_host_images "$RELEASE" "$(mdm_manifest_platforms "$MANIFEST")"
-# The image digests: all three, under the owner chosen above.
-SERVER_REF=$(mdm_manifest_field "$MANIFEST" server "$MDM_IMAGE_REF_ERE" || true)
-WEB_REF=$(mdm_manifest_field "$MANIFEST" web "$MDM_IMAGE_REF_ERE" || true)
-SUPERVISOR_REF=$(mdm_manifest_field "$MANIFEST" supervisor "$MDM_IMAGE_REF_ERE" || true)
-if [ -n "$SERVER_REF" ] && [ -n "$WEB_REF" ] && [ -n "$SUPERVISOR_REF" ]; then
-  # Each ref must be exactly its own image under this owner (as supervisor/lib.js imagePins and apply.sh require).
-  for _pair in "server $SERVER_REF" "web $WEB_REF" "supervisor $SUPERVISOR_REF"; do
-    _name=${_pair%% *}; _ref=${_pair#* }
-    if [ "${_ref%@*}" != "ghcr.io/${IMAGE_OWNER}/mdmesh-${_name}" ]; then
-      err "Release v${RELEASE} of ${GH_REPO} publishes its ${_name} image as ${_ref%@*}, not ghcr.io/${IMAGE_OWNER}/mdmesh-${_name}. Re-run and enter the image owner it names."
-      exit 1
-    fi
-  done
-  SERVER_TAG="${RELEASE}@${SERVER_REF#*@}"; WEB_TAG="${RELEASE}@${WEB_REF#*@}"; SUPERVISOR_TAG="${RELEASE}@${SUPERVISOR_REF#*@}"
-else
-  err "The signed manifest of v${RELEASE} does not pin the server, web and supervisor images by digest, so the quick start can't install it."
-  err "(A fork publishing with an older release workflow: update its release/ scripts and .github/workflows/release.yml.)"
-  exit 1
-fi
-RAW="https://raw.githubusercontent.com/${GH_REPO}/v${RELEASE}"
-say "Installing release v${RELEASE} of ${GH_REPO}."
+verify_release
 
 DB_PASSWORD=$(rand); HASH_SECRET=$(rand); ADMIN_PASSWORD=$(rand); RESET_TOKEN=$(openssl rand -hex 16)
 
-if [ "$MODE" = "1" ]; then
-  mdm_answered host || read -rp "Public hostname devices will use (e.g. mdm.example.com): " HOST   # answer: host
-  mdm_check_host HOST || { err "Enter the hostname only, e.g. mdm.example.com, then re-run."; exit 1; }
-  while :; do
-    mdm_answered tunnel-token || read -rp "Cloudflare Tunnel token (Zero Trust → Tunnels → your tunnel): " TUNNEL_TOKEN   # answer: tunnel-token
-    mdm_prompt_ok tunnel-token TUNNEL_TOKEN && break
-  done
-  BASE_URL="https://${HOST}"; SITE_ADDRESS=":80"; ACME_EMAIL=""
-  COMPOSE_FILE="docker-compose.yml"; COMPOSE_PROFILES="cloudflare"
-  EXTRA_NOTE="In Cloudflare, route the tunnel's public hostname ($HOST) to http://caddy:80."
-else
-  mdm_answered host || read -rp "Your domain (DNS already pointing here, e.g. mdm.example.com): " HOST   # answer: host
-  mdm_check_host HOST || { err "Enter the hostname only, e.g. mdm.example.com, then re-run."; exit 1; }
-  while :; do
-    mdm_answered acme-email || read -rp "Email for Let's Encrypt: " ACME_EMAIL   # answer: acme-email
-    mdm_prompt_ok acme-email ACME_EMAIL && break
-  done
-  BASE_URL="https://${HOST}"; SITE_ADDRESS="${HOST}"; TUNNEL_TOKEN=""
-  COMPOSE_FILE="docker-compose.yml:docker-compose.domain.yml"; COMPOSE_PROFILES=""
-  EXTRA_NOTE="Make sure ${HOST} resolves to this server and ports 80/443 are open."
+if [ "$MODE" = 3 ] && ! mdm_manifest_field "$MANIFEST" docker-compose.proxy.yml "$MDM_SHA256_ERE" > /dev/null; then
+  err "Release v${RELEASE} has no proxy mode (it came in 0.6.0): install 0.6.0 or later, or pick another mode. Nothing was installed."; exit 1
 fi
-mdm_check_base_url BASE_URL || { err "Check the hostname you entered (the name only, e.g. mdm.example.com), then re-run."; exit 1; }
+mdm_mode_questions
 
-say "Downloading the pull-only compose + seed…"
-# Every file is downloaded to a temporary name and checked against its SHA-256 in the signed manifest; only when all of
-# them match are they moved into place. db.sh is sourced below, so nothing unverified ever runs.
-n=0
-for f in $MDM_QUICKSTART_FILES; do
-  n=$((n + 1))
-  want=$(mdm_manifest_field "$MANIFEST" "$f" "$MDM_SHA256_ERE" || true)
-  [ -n "$want" ] || { err "The signed manifest of v${RELEASE} has no SHA-256 for ${f}, so it can't be verified. Nothing was installed."; exit 1; }
-  curl -fsSL -m 120 "${RAW}/${f}" -o "$VERIFY_DIR/dl.$n" || { err "Could not download ${RAW}/${f}. Nothing was installed."; exit 1; }
-  got=$(mdm_sha256 "$VERIFY_DIR/dl.$n")
-  if [ "$got" != "$want" ]; then
-    err "${f} from ${RAW} does not match the signed release (SHA-256 ${got}, expected ${want}). Nothing was installed."; exit 1
-  fi
-done
-n=0
-for f in $MDM_QUICKSTART_FILES; do
-  n=$((n + 1))
-  dest=$f; [ "$f" = docker-compose.release.yml ] && dest=docker-compose.yml
-  mkdir -p -- "$(dirname -- "$dest")"
-  mv -f -- "$VERIFY_DIR/dl.$n" "$dest"
-done
+fetch_release_files
 # Shared seed rules with setup.sh / the native installer (seed gate, verified seed, post-seed repairs).
 # Version coupling: this script may be newer than the release it installs (MDMESH_VERSION, or a copy from main), but
 # db.sh (like the compose file and the seed) comes from the release tag being installed, so it matches the images. Call only db.sh functions, with only the arguments and output, that the
@@ -715,6 +1464,7 @@ done
 # Owner-only from the start: written to a new mode-600 file (mktemp), then renamed to .env, so no other user can read
 # the secrets at any moment.
 trap 'exit 130' INT; trap 'exit 143' TERM   # so an interrupt runs cleanup_verify too
+mdm_site_dir
 ENV_TMP=$(mktemp .env.new.XXXXXX)
 cat > "$ENV_TMP" <<EOF
 DB_NAME=mdmesh
@@ -739,6 +1489,8 @@ AUTO_UPDATE=0
 COMPOSE_PROJECT_NAME=mdmesh
 COMPOSE_FILE=${COMPOSE_FILE}
 COMPOSE_PROFILES=${COMPOSE_PROFILES}
+MDMESH_SITE_DIR=${MDMESH_SITE_DIR}
+$(mdm_mode_env)
 SMTP_HOST=
 SMTP_PORT=25
 SMTP_FROM=mdm@${HOST}
@@ -746,72 +1498,9 @@ EOF
 # No -T (GNU only): so check again, just before, that nothing named .env has appeared since the start (a directory or a
 # link to one would get the file inside it).
 if [ -e .env ] || [ -L .env ]; then err "Something named .env appeared in $(pwd) during the install: not overwriting it. Remove it and re-run."; exit 1; fi
+: > .quickstart-unfinished   # until finish_install completes: a later run resumes with this .env
 mv -f -- "$ENV_TMP" .env
 ENV_TMP=''; trap - INT TERM
 say "Wrote .env (secrets generated). docker compose reads COMPOSE_FILE/PROFILES from it."
 
-say "Pulling images…"
-docker compose pull || { err "Could not pull the v${RELEASE} images from ghcr.io/${IMAGE_OWNER} (pinned by digest in .env). Has a release been published? (to cut one, see RELEASING.md)"; exit 1; }
-# The init marker the wait below reads is on the server's data volume, and the server writes it only when it is absent.
-# The entrypoint removes the previous start's marker only in images after v0.3.1, and this script (the latest
-# release's, or main's) may be installing v0.3.1 or older, so a re-run over an existing volume would read the last run's result. Remove it here:
-# the old server stopped first (so it cannot write it again in between), then a one-off container of the server image
-# that runs rm as the server's own user (never as root on the volume; rm -f removes a planted link, not its target).
-# On a fresh install there is no container to stop and no marker to remove, and the one-off only creates the volume
-# that `up` would create anyway.
-say "Starting the stack…"
-docker compose stop server >/dev/null 2>&1 || true
-docker compose run --rm --no-deps -T -u mdmesh --entrypoint rm server -f /opt/mdmesh/initialized.txt \
-  || { err "Could not remove the previous start's init marker (/opt/mdmesh/initialized.txt) from the server's volume."; exit 1; }
-docker compose up -d
-
-say "Waiting for the server to finish first-boot (Liquibase)…"
-BOOTED=0
-for _ in $(seq 1 60); do
-  sleep 5   # first: `up -d` can return before the entrypoint has removed the previous start's marker
-  if docker compose exec -T server test -s /opt/mdmesh/initialized.txt 2>/dev/null; then BOOTED=1; break; fi
-done
-if [ "$BOOTED" != 1 ]; then
-  err "Server did not finish first-boot within ~5 minutes. Last server logs:"
-  docker compose logs --tail 40 server 2>&1 || true
-  err "Fix the issue above and re-run the quick start from this directory ($(pwd))."; exit 1
-fi
-# The marker holds "OK" or the server's initialization error (docker/entrypoint.sh removes the previous start's marker,
-# so it is this boot's). It is read as the server's own user: the volume is that account's, and the container's root
-# would follow a link planted there.
-INIT_RESULT=$(docker compose exec -T -u mdmesh server cat /opt/mdmesh/initialized.txt 2>/dev/null || true)
-if ! grep -q '^OK' <<< "$INIT_RESULT"; then
-  err "The server reported an initialization error:"
-  printf '%s\n' "${INIT_RESULT:0:2000}" | tr -d '\000-\010\013-\037\177' | sed 's/^/    /'   # the server's text: no control chars
-  err "Fix the issue above and re-run the quick start from this directory ($(pwd))."; exit 1
-fi
-
-# Same rules as setup.sh (shared install/lib/db.sh): seed only a fresh database, verify the seed, then
-# the always-run repairs that switch on QR/token enrollment (this step used to be missing here).
-# shellcheck disable=SC2034  # PSQL is consumed by install/lib/db.sh
-PSQL=(docker compose exec -T postgres psql -U mdmesh -d mdmesh)
-STATE=$(mdm_db_state)
-case "$STATE" in
-  fresh)  ;;
-  seeded) err "This database is already seeded — the quick start is for new installs only. To upgrade, use ./setup.sh in a clone."; exit 1 ;;
-  *)      err "Could not confirm a fresh database (state: ${STATE}). Aborting before touching data."; exit 1 ;;
-esac
-say "Seeding settings + admin…"
-if ! mdm_seed "admin@${HOST}" install/sql/hmdm_init.en.sql "$ADMIN_PASSWORD" "$RESET_TOKEN"; then
-  err "Seeding failed — the install is NOT usable yet. Fix the error above and re-run."; exit 1
-fi
-if ! mdm_post_seed install/sql/post_seed.sql; then
-  err "Post-seed repairs failed — device enrollment would not work. Fix the error above and re-run."; exit 1
-fi
-
-echo
-say "== MDMesh is up =="
-echo "  Console:        ${BASE_URL}"
-echo "  REST API base:  ${BASE_URL}/rest"
-echo "  Login:          admin"
-echo "  Password:       ${ADMIN_PASSWORD}   (temporary — you'll set your own on first login)"
-echo "  Directory:      $(pwd)   (run 'docker compose' commands from here)"
-echo
-warn "Save that password now — it is not stored anywhere in clear text."
-echo "Next: $EXTRA_NOTE"
-echo "Enroll devices from the console's Enroll page (it builds the QR with ${BASE_URL})."
+finish_install

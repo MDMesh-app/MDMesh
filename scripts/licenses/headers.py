@@ -7,7 +7,8 @@ that differs from upstream must say MDMesh changed it, and one that had the head
 
   scripts/licenses/headers.py check
       fail when a changed upstream file lacks the notice, a file lost the upstream header, a listed file is gone, or
-      a file that isn't listed carries the upstream header (MDMesh's own files carry MDMesh's)
+      a file that isn't listed carries the upstream header (list it as derived from its upstream file and keep the
+      header; only a file MDMesh wrote itself takes the MDMesh header)
   scripts/licenses/headers.py mark PATH...
       add the notice to PATH: a line under the upstream copyright line, or a comment at the top of a file that never
       had the header
@@ -44,6 +45,11 @@ EXEMPT = {
 }
 # The agent files ported from hmdm-android (NOTICE): not copies of an upstream file, so no blob to compare.
 PORTED = "ported from hmdm-android"
+# A file derived from an upstream one under another path (moved, copied, ported within the server): "derived from
+# <upstream path>" in the blob column. Like a ported file, it must say MDMesh changed it.
+DERIVED_FROM = "derived from "
+# The Apache notice an upstream header carries with its copyright line (4(c) keeps both).
+APACHE = "Licensed under the Apache License"
 # The comment syntax of a file that never had the header, by extension.
 COMMENTS = {".java": "// {}", ".js": "// {}", ".sql": "-- {}", ".example": "# {}", ".xml": "<!-- {} -->",
             ".sh": "# {}", ".bat": "REM {}"}
@@ -76,7 +82,8 @@ def check():
 
     present = [p for p in rows if os.path.isfile(os.path.join(ROOT, p))]
     for path in sorted(set(rows) - set(present)):
-        error(MANIFEST, f"lists {path}, which is gone: remove its row")
+        error(MANIFEST, f"lists {path}, which is gone. If it moved, change its path in the list (it is still a file "
+                        "kept from upstream, and keeps its header); remove the row only if the file was deleted")
     blobs = dict(zip(present, git("hash-object", "--stdin-paths", stdin="\n".join(present) + "\n").split()))
     for path in present:
         blob, header, note = rows[path]
@@ -84,14 +91,19 @@ def check():
             text = f.read()
         if header and ANCHOR not in text:
             error(path, f"lost the upstream copyright line ({ANCHOR}); Apache-2.0 4(c) requires it: put it back")
+        elif header and APACHE not in text:
+            error(path, f"lost the upstream header's licence notice ({APACHE}...); Apache-2.0 4(c) requires it: put "
+                        "it back")
         if blobs[path] != blob and note == "" and not NOTICE.search(text):
             error(path, f"differs from upstream but doesn't say MDMesh changed it: {MARK} {path}")
     # This script and its test name the line; nothing else outside the list may.
     carriers = git("grep", "--untracked", "-l", "-F", ANCHOR, "--", ".", ":!scripts/licenses", ":!tests/licenses")
     for path in carriers.splitlines():
         if path not in rows:
-            error(path, "carries the upstream copyright header but isn't a file kept from upstream "
-                        f"({MANIFEST}): MDMesh's own files carry the MDMesh header")
+            error(path, f"carries the upstream copyright header but isn't in {MANIFEST}. If it comes from upstream "
+                        "(moved, copied or ported from a Headwind MDM file), keep the header and add the row "
+                        f"'{path}<TAB>{DERIVED_FROM}<upstream path><TAB>yes<TAB>', then {MARK} {path}. Only a file "
+                        "MDMesh wrote itself takes the MDMesh header instead (docs/licenses/policy.md)")
     if errors:
         print(f"{len(errors)} problem(s); docs/licenses/policy.md explains the notices.")
         return 1
@@ -102,8 +114,11 @@ def check():
 def mark(paths):
     for path in paths:
         full = os.path.join(ROOT, path)
-        with open(full, encoding="utf-8") as f:
-            lines = f.read().split("\n")
+        # newline="": keep the file's own line endings (a CRLF batch file stays CRLF).
+        with open(full, encoding="utf-8", newline="") as f:
+            text = f.read()
+        eol = "\r\n" if "\r\n" in text else "\n"
+        lines = text.split(eol)
         if any(NOTICE.search(line) for line in lines):
             print(f"{path}: already says MDMesh changed it")
             continue
@@ -117,8 +132,8 @@ def mark(paths):
                 sys.exit(f"{path}: no comment syntax known for {ext or 'this file'}: add it to EXEMPT, with the reason")
             at = 1 if lines[0].startswith(FIRST) else 0
             lines.insert(at, COMMENTS[ext].format(DERIVED))
-        with open(full, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines))
+        with open(full, "w", encoding="utf-8", newline="") as f:
+            f.write(eol.join(lines))
         print(f"{path}: marked")
     return 0
 
@@ -140,19 +155,24 @@ def manifest(upstream):
             headered.add(path)
         i = nl + 1 + size + 1
     ported = sorted(p for p in git("grep", "-l", "-F", ANCHOR, "--", "agent-android").splitlines())
+    # Rows for files derived from upstream ones under another path are written by hand: keep them.
+    with open(os.path.join(ROOT, MANIFEST)) as f:
+        derived = [line for line in f if f"\t{DERIVED_FROM}" in line]
     with open(os.path.join(ROOT, MANIFEST), "w") as f:
         f.write(
             "# The files MDMesh kept from Headwind MDM (https://github.com/h-mdm/hmdm-server at upstream commit\n"
             f"# {UPSTREAM}), and the agent files ported from hmdm-android. Columns: path, the file's\n"
             "# blob at that commit (or how it came), whether it carried the upstream copyright header there, and why\n"
             "# it carries no in-file notice if it doesn't. A listed file that differs from that blob says MDMesh\n"
-            "# changed it.\n"
+            "# changed it. A file derived from an upstream one under another path has 'derived from <path>' in the\n"
+            "# blob column (a row added by hand) and says MDMesh changed it.\n"
             "# Written by scripts/licenses/headers.py manifest; checked by scripts/licenses/headers.py check.\n"
         )
         for path in kept:
             f.write(f"{path}\t{up[path]}\t{'yes' if path in headered else 'no'}\t{EXEMPT.get(path, '')}\n")
         for path in ported:
             f.write(f"{path}\t{PORTED}\tyes\t\n")
+        f.writelines(derived)
     print(f"{MANIFEST}: {len(kept)} kept files, {len(headered)} with the upstream header, {len(ported)} ported")
     return 0
 

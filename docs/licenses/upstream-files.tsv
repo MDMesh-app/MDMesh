@@ -1,7 +1,9 @@
 # The files MDMesh kept from Headwind MDM (https://github.com/h-mdm/hmdm-server at upstream commit
 # daed2099c9d50e68248ced38135180ffea6902ce), and the agent files ported from hmdm-android. Columns: path, the file's
-# blob at that commit (or how it came), whether it carried the upstream copyright header there, and why it
-# carries no in-file notice if it doesn't. A listed file that differs from that blob says MDMesh changed it.
+# blob at that commit (or how it came), whether it carried the upstream copyright header there, and why
+# it carries no in-file notice if it doesn't. A listed file that differs from that blob says MDMesh
+# changed it. A file derived from an upstream one under another path has 'derived from <path>' in the
+# blob column (a row added by hand) and says MDMesh changed it.
 # Written by scripts/licenses/headers.py manifest; checked by scripts/licenses/headers.py check.
 .gitignore	d6086ca50d728321227656ec854072791bf67399	no	rewritten for MDMesh
 LICENSE	989e2c59e973a05cfbfe9de678b7f2af777b0713	no	

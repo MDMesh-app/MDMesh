@@ -22,7 +22,8 @@ git init -q .
 mkdir -p scripts/licenses docs/licenses src
 cp "$REPO/scripts/licenses/headers.py" scripts/licenses/
 ANCHOR='Copyright (C) 2019 Headwind Solutions LLC (http://h-sms.com)'
-printf '/*\n * Headwind MDM\n *\n * %s\n *\n * Apache-2.0\n */\npackage a;\n' "$ANCHOR" > src/A.java
+APACHE='Licensed under the Apache License, Version 2.0'
+printf '/*\n * Headwind MDM\n *\n * %s\n *\n * %s\n */\npackage a;\n' "$ANCHOR" "$APACHE" > src/A.java
 cp src/A.java src/B.java
 printf 'angular.module("x");\n' > src/c.js
 printf '<?xml version="1.0"?>\n<Context>\n</Context>\n' > src/context.xml
@@ -70,15 +71,29 @@ expect_check 0 'carries the notices it needs' 'after mark'
 [ "$(grep -c 'Modified by' src/A.java)" = 1 ] || fail 'mark: the notice was added twice'
 
 sed -i '/Headwind Solutions LLC/d' src/B.java
-expect_check 1 'src/B.java: lost the upstream copyright line' 'header removed'
+expect_check 1 'src/B.java: lost the upstream copyright line' 'copyright line removed'
+git checkout -q -- src/B.java
+sed -i '/Licensed under the Apache License/d' src/B.java
+expect_check 1 "src/B.java: lost the upstream header's licence notice" 'licence notice removed'
 git checkout -q -- src/B.java
 
+# A file copied (or moved) from upstream: the gate offers keeping its header first, and a "derived from" row passes.
 cp src/B.java src/Copied.java
-expect_check 1 "src/Copied.java: carries the upstream copyright header but isn't a file kept" 'header copied'
-rm src/Copied.java
+expect_check 1 "src/Copied.java: carries the upstream copyright header but isn't in .*keep the header and add the row" \
+  'header copied'
+printf 'src/Copied.java\tderived from src/B.java\tyes\t\n' >> docs/licenses/upstream-files.tsv
+expect_check 1 'src/Copied.java: differs from upstream' 'derived file without the notice'
+"$H" mark src/Copied.java > "$WORK/mark.out"
+expect_check 0 'carries the notices it needs' 'derived file, marked'
 
 rm src/c.js
-expect_check 1 'lists src/c.js, which is gone' 'listed file deleted'
+expect_check 1 'lists src/c.js, which is gone. If it moved, change its path' 'listed file deleted'
+
+# mark keeps a CRLF file's line endings.
+printf '@echo off\r\necho hi\r\n' > src/run.bat
+"$H" mark src/run.bat > "$WORK/mark.out"
+[ "$(grep -c $'\r$' src/run.bat)" = 3 ] || fail "mark: run.bat lost its CRLF endings: $(od -c src/run.bat | head -5)"
+[ "$(sed -n 2p src/run.bat)" = "REM $DERIVED"$'\r' ] || fail "mark: run.bat: $(cat -A src/run.bat)"
 
 if [ "$FAILS" -ne 0 ]; then echo "$FAILS check(s) failed" >&2; exit 1; fi
 echo "headers.py: all checks passed"

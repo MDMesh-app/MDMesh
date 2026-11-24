@@ -42,6 +42,19 @@ describe('a configuration with live devices', () => {
   });
 });
 
+describe('devices whose agent needs an update for a section the configuration sets', () => {
+  it('are named next to the sync counts, which they stay part of', () => {
+    expect(syncLine(row({ total: 2, inSync: 2, agentUpdateNeeded: 1 }), false)).toMatchObject({
+      text: 'All 2 in sync · 1 agent update needed',
+      tone: 'warn',
+    });
+    expect(syncLine(row({ total: 3, inSync: 2, neverSeen: 1, agentUpdateNeeded: 2 }), false)).toMatchObject({
+      text: '2 of 3 in sync · 2 agent update needed · 1 not reported yet',
+      tone: 'warn',
+    });
+  });
+});
+
 describe('an unused configuration, and an older server that sends no wiped count', () => {
   it('still reads as unused', () => {
     expect(syncLine(row(), false).text).toBe('Not used by any device yet');

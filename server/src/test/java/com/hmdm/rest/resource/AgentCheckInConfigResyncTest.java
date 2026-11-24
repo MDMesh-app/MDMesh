@@ -467,6 +467,37 @@ public class AgentCheckInConfigResyncTest {
         assertEquals(1, configApplies());
     }
 
+    /**
+     * Retry apply answers as the device's config status does (ConfigReconciler.syncOf): on a device that applied what
+     * it is sent, "in sync" when its agent applies every section the configuration sets, "agent update needed"
+     * otherwise, and nothing is queued either way.
+     */
+    @Test
+    public void a_retry_answers_as_the_config_status_does() throws Exception {
+        for (String version : java.util.Arrays.asList("0.3.8", "0.3.8-rc1", "0.4.0", "0.1.15", "0.0.0-dev",
+                "0.5.1+fork", "unknown")) {
+            setUp();
+            outbox.clear();
+            unsecureDAO.configuration.setConnectivityMode(DesiredConfigBuilder.CONNECTIVITY_ALWAYS_ON);
+            String full = DesiredConfigBuilder.build(unsecureDAO.configuration, Collections.<Application>emptyList(),
+                    NO_CONTRIBUTORS).getRevision();
+            assertEquals(version, 1, checkIn(version, null).size());
+            checkIn(version, full); // acked done: the agent applied what it was sent, connectivity included
+
+            DeviceState state = commandDAO.getState(NUMBER);
+            ConfigReconciler.Sync sync = ConfigReconciler.syncOf(reconciler.statusDocument(unsecureDAO.device),
+                    com.hmdm.util.AgentCapabilityTokens.flatten(commandDAO.caps), state.getAppliedConfigRevision(),
+                    ConfigReconciler.applyingAgentVersion(state));
+            assertEquals(version, true, sync.inSync);
+            boolean tooOld = version.startsWith("0.3.");
+            assertEquals(version, tooOld ? Collections.singletonList("connectivity") : Collections.<String>emptyList(),
+                    sync.agentUpdateNeeded);
+            assertEquals(version, tooOld ? ConfigReconciler.Retry.AGENT_UPDATE_NEEDED : ConfigReconciler.Retry.IN_SYNC,
+                    retry());
+            assertEquals(version, 1, configApplies());
+        }
+    }
+
     @Test
     public void a_retry_for_an_agent_without_configurations_queues_nothing() {
         commandDAO.caps = "{\"device\":[\"lock\"]}";

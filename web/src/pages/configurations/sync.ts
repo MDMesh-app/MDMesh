@@ -45,16 +45,21 @@ export function syncLine(s: ConfigSyncSummary | undefined, unavailable: boolean)
     { value: s.outOfSync + s.unsupported, tone: 'warn' },
     { value: s.neverSeen, tone: 'idle' },
   ];
+  // Apart from the four counts: devices (in sync or not) whose agent doesn't apply a section the configuration sets.
+  const update = s.agentUpdateNeeded ?? 0;
+  const updateNote = update > 0 ? `${update} agent update needed` : null;
   if (s.inSync === s.total) {
-    return { segments, text: s.total === 1 ? 'In sync' : `All ${s.total} in sync`, tone: 'ok' };
+    const text = s.total === 1 ? 'In sync' : `All ${s.total} in sync`;
+    return update > 0 ? { segments, text: `${text} · ${updateNote}`, tone: 'warn' } : { segments, text, tone: 'ok' };
   }
   const parts = [
     `${s.inSync} of ${s.total} in sync`,
     s.outOfSync > 0 ? `${s.outOfSync} applying` : null,
     s.unsupported > 0 ? `${plural(s.unsupported, 'agent')} too old` : null,
+    updateNote,
     s.neverSeen > 0 ? `${s.neverSeen} not reported yet` : null,
   ].filter(Boolean);
-  const tone: SyncTone = s.outOfSync + s.unsupported > 0 ? 'warn' : 'idle';
+  const tone: SyncTone = s.outOfSync + s.unsupported + update > 0 ? 'warn' : 'idle';
   return { segments, text: parts.join(' · '), tone };
 }
 

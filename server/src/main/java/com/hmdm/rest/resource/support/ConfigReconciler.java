@@ -112,6 +112,36 @@ public class ConfigReconciler {
         return ConfigSections.revisionWithout(doc, withheld);
     }
 
+    /** A device's configuration status, as every path reports it (config status, sync summary, Retry apply). */
+    public static final class Sync {
+        /** The device runs the revision it should ({@link #statusRevision}). */
+        public final boolean inSync;
+        /** {@link #notApplied}: the sections it needs an agent update for; apart from {@link #inSync}. */
+        public final List<String> agentUpdateNeeded;
+
+        private Sync(boolean inSync, List<String> agentUpdateNeeded) {
+            this.inSync = inSync;
+            this.agentUpdateNeeded = agentUpdateNeeded;
+        }
+    }
+
+    /**
+     * The one verdict on a device's configuration, which the config status, the sync summary and Retry apply all use.
+     *
+     * @param doc                  the configuration's full document ({@link #statusDocument}); null: not in sync,
+     *                             nothing needed
+     * @param appliedRevision      the revision the device reports
+     * @param applyingAgentVersion {@link #applyingAgentVersion}
+     */
+    public static Sync syncOf(DesiredConfig doc, Set<String> deviceTokens, String appliedRevision,
+                              String applyingAgentVersion) {
+        String current = statusRevision(doc, deviceTokens);
+        // An agent without config.apply needs an update for all of it, which the status says on its own (supported).
+        boolean configApply = AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, deviceTokens);
+        return new Sync(current != null && current.equals(appliedRevision), configApply
+                ? notApplied(doc, deviceTokens, applyingAgentVersion) : Collections.<String>emptyList());
+    }
+
     /**
      * The names of the sections of {@code doc} that ask something and the device doesn't apply
      * ({@link ConfigSections#notApplied}): it needs an agent update for them. Empty for a null document.
@@ -230,6 +260,11 @@ public class ConfigReconciler {
         ALREADY_QUEUED,
         /** The device already applied the current configuration. */
         IN_SYNC,
+        /**
+         * The device applied what it is sent, but its agent doesn't apply a section the configuration sets
+         * ({@link #syncOf}): an agent update, not a re-send, brings it.
+         */
+        AGENT_UPDATE_NEEDED,
         /** The device's agent can't apply configurations. */
         UNSUPPORTED,
         /** The device has no configuration. */
@@ -246,17 +281,21 @@ public class ConfigReconciler {
         String number = device.getNumber();
         Set<String> tokens = AgentCapabilityTokens.flatten(commandDAO.getDeviceCapabilities(number));
         if (!AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, tokens)) return Retry.UNSUPPORTED;
-        DesiredConfig doc = currentDocument(device, tokens);
+        DesiredConfig doc = currentDocument(device);
         if (doc == null) return Retry.NO_CONFIGURATION;
         com.hmdm.persistence.domain.DeviceState state = commandDAO.getState(number);
         String applied = state == null ? null : state.getAppliedConfigRevision();
         String agentVersion = state == null ? null : state.getAgentVersion();
+        // What the console shows for the device, from the full document, before it becomes the one the device is sent.
+        Sync sync = syncOf(doc, tokens, applied, applyingAgentVersion(state));
+        ConfigSections.strip(doc, ConfigSections.withheld(doc, tokens));
         boolean agentChanged = state != null
                 && ConfigReconcileDecision.agentChanged(agentVersion, state.getConfigAgentVersion());
         boolean open = commandDAO.hasOpenOfType(number, DesiredConfigBuilder.COMMAND_TYPE);
         if (ConfigReconcileDecision.decideRetry(tokens, doc.getRevision(), applied, open, agentChanged)
                 != ConfigReconcileDecision.Action.ENQUEUE) {
-            return open ? Retry.ALREADY_QUEUED : Retry.IN_SYNC;
+            if (open) return Retry.ALREADY_QUEUED;
+            return sync.agentUpdateNeeded.isEmpty() ? Retry.IN_SYNC : Retry.AGENT_UPDATE_NEEDED;
         }
         if (!enqueue(number, doc, agentVersion, now)) return Retry.ALREADY_QUEUED;
         logger.info("config.apply queued for {} by Retry apply (revision {} -> {})", number, applied, doc.getRevision());

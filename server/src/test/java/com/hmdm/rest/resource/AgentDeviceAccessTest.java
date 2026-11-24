@@ -89,6 +89,9 @@ public class AgentDeviceAccessTest {
     private boolean connectivity;
     /** The device state's applied revision, for the config status (null: none reported). */
     private String stateAppliedRevision;
+    /** The device's stored capabilities, for the config status (null: none). The summary's rows have CONFIG_APPLY. */
+    private String stateCapabilities;
+    private static final String CONFIG_APPLY = "{\"device\":[\"configApply\"]}";
     private int revisionReads;
     private final List<String> enrolledQuery = new ArrayList<>();
 
@@ -150,7 +153,7 @@ public class AgentDeviceAccessTest {
             @Override public List listEvents(String n, long s, int l) { return new ArrayList<>(); }
             @Override public List<AgentCommand> listHistory(String n, long s, int l) { return new ArrayList<>(); }
             @Override public List listLocations(String n, long s, int l) { return new ArrayList<>(); }
-            @Override public String getDeviceCapabilities(String n) { return null; }
+            @Override public String getDeviceCapabilities(String n) { return stateCapabilities; }
             @Override public AgentCommand findLatestOfType(String n, String t) { return null; }
             @Override public List<Device> listEnrolledSince(int customerId, int userId, boolean superAdmin, long since,
                                                             int limit) {
@@ -171,7 +174,7 @@ public class AgentDeviceAccessTest {
                     DeviceSyncRow r = new DeviceSyncRow();
                     r.setDeviceNumber(n);
                     r.setConfigurationId(5);
-                    r.setCapabilitiesJson("{\"device\":[\"configApply\"]}");
+                    r.setCapabilitiesJson(CONFIG_APPLY);
                     r.setAppliedConfigRevision(appliedRevision);
                     r.setAgentVersion(configAgentVersion != null ? configAgentVersion : agentVersion);
                     r.setLastApplyDeferred(true);
@@ -663,6 +666,7 @@ public class AgentDeviceAccessTest {
     @Test
     @SuppressWarnings("unchecked")
     public void anAgentUpdateCountsOnceTheNewAgentAppliedTheConfiguration() {
+        stateCapabilities = CONFIG_APPLY;
         connectivity = true;
         agentVersion = "0.4.0";
         configAgentVersion = "0.3.8";
@@ -675,6 +679,7 @@ public class AgentDeviceAccessTest {
 
     @Test
     public void configStatusNamesTheSectionsTheAgentNeedsAnUpdateForAndKeepsInSyncByRevision() {
+        stateCapabilities = CONFIG_APPLY;
         connectivity = true;
         agentVersion = "0.3.8";
         stateAppliedRevision = "rev";
@@ -683,6 +688,35 @@ public class AgentDeviceAccessTest {
         assertTrue("it runs the current revision: Retry has nothing to send", v.isInSync());
         agentVersion = "0.4.0";
         assertNull(configStatus().getAgentUpdateNeeded());
+    }
+
+    /**
+     * The device page and the fleet summary give one answer for the same device, over the fleet's agent versions: in
+     * sync by revision alike, and needing an agent update alike (the summary's version is the applying one, as the
+     * status's is).
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    public void theConfigStatusAndTheSummaryAgree() {
+        stateCapabilities = CONFIG_APPLY;
+        for (boolean sets : new boolean[]{true, false}) {
+            for (String applied : Arrays.asList("rev", "old")) {
+                for (String[] versions : new String[][]{{"0.3.8", null}, {"0.4.0", "0.3.8"}, {"0.4.0", "0.4.0"},
+                        {"0.1.15", null}, {"0.0.0-dev", null}, {"0.4.0-rc1", null}, {"0.5.1+fork", null}, {null, null},
+                        {"unknown", "0.3.8"}}) {
+                    connectivity = sets;
+                    appliedRevision = applied;
+                    stateAppliedRevision = applied;
+                    agentVersion = versions[0];
+                    configAgentVersion = versions[1];
+                    String profile = sets + " " + applied + " " + Arrays.toString(versions);
+                    com.hmdm.rest.json.agent.ConfigStatusView v = configStatus();
+                    ConfigSyncSummary s = ((List<ConfigSyncSummary>) resource.getSyncSummary().getData()).get(0);
+                    assertEquals(profile, v.isInSync() ? 1 : 0, s.getInSync());
+                    assertEquals(profile, v.getAgentUpdateNeeded() == null ? 0 : 1, s.getAgentUpdateNeeded());
+                }
+            }
+        }
     }
 
     private com.hmdm.rest.json.agent.ConfigStatusView configStatus() {

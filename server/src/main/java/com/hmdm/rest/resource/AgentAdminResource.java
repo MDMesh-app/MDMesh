@@ -548,10 +548,11 @@ public class AgentAdminResource {
         if (state != null) { v.setAppliedRevision(state.getAppliedConfigRevision()); v.setAppliedAt(state.getAppliedConfigAt()); }
         boolean supported = AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, tokens);
         v.setSupported(supported);
-        v.setInSync(v.getCurrentRevision() != null && v.getCurrentRevision().equals(v.getAppliedRevision()));
-        // Apart from inSync, which stays "runs the current revision" (Retry and the kiosk state read it that way).
-        List<String> notApplied = ConfigReconciler.notApplied(doc, tokens, ConfigReconciler.applyingAgentVersion(state));
-        if (!notApplied.isEmpty()) v.setAgentUpdateNeeded(notApplied);
+        // inSync stays "runs the current revision" (the kiosk state reads it that way); agentUpdateNeeded is apart.
+        ConfigReconciler.Sync sync = ConfigReconciler.syncOf(doc, tokens, v.getAppliedRevision(),
+                ConfigReconciler.applyingAgentVersion(state));
+        v.setInSync(sync.inSync);
+        if (!sync.agentUpdateNeeded.isEmpty()) v.setAgentUpdateNeeded(sync.agentUpdateNeeded);
         v.setLastCommand(ConfigStatusView.LastCommand.from(commandDAO.findLatestOfType(deviceId, DesiredConfigBuilder.COMMAND_TYPE)));
         return Response.OK(v);
     }
@@ -583,18 +584,17 @@ public class AgentAdminResource {
                 documentByConfig.put(cfgId, configReconciler.statusDocument(probe));
             }
             Set<String> tokens = AgentCapabilityTokens.flatten(row.getCapabilitiesJson());
-            // Per device: an agent without app permission support is compared with what it can apply.
-            DesiredConfig doc = documentByConfig.get(cfgId);
-            String current = ConfigReconciler.statusRevision(doc, tokens);
+            // Per device, the same verdict as its config status (ConfigReconciler.syncOf); the row's agentVersion is
+            // the applying one (COALESCE(configAgentVersion, agentVersion)).
+            ConfigReconciler.Sync sync = ConfigReconciler.syncOf(documentByConfig.get(cfgId), tokens,
+                    row.getAppliedConfigRevision(), row.getAgentVersion());
             boolean supported = AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, tokens);
-            if (supported && !ConfigReconciler.notApplied(doc, tokens, row.getAgentVersion()).isEmpty()) {
-                s.setAgentUpdateNeeded(s.getAgentUpdateNeeded() + 1);
-            }
+            if (!sync.agentUpdateNeeded.isEmpty()) s.setAgentUpdateNeeded(s.getAgentUpdateNeeded() + 1);
             if (!supported) {
                 s.setUnsupported(s.getUnsupported() + 1);
             } else if (row.getAppliedConfigRevision() == null) {
                 s.setNeverSeen(s.getNeverSeen() + 1);
-            } else if (row.getAppliedConfigRevision().equals(current)) {
+            } else if (sync.inSync) {
                 s.setInSync(s.getInSync() + 1);
                 if (row.isLastApplyDeferred()) s.setDeferred(s.getDeferred() + 1);
             } else {
@@ -743,12 +743,13 @@ public class AgentAdminResource {
         return Response.OK(body);
     }
 
-    /** The API's name for a retry result: queued, alreadyQueued, inSync, unsupported, noConfiguration. */
+    /** The API's name for a retry result: queued, alreadyQueued, inSync, agentUpdateNeeded, unsupported, noConfiguration. */
     static String retryResultName(ConfigReconciler.Retry result) {
         switch (result) {
             case QUEUED: return "queued";
             case ALREADY_QUEUED: return "alreadyQueued";
             case IN_SYNC: return "inSync";
+            case AGENT_UPDATE_NEEDED: return "agentUpdateNeeded";
             case UNSUPPORTED: return "unsupported";
             default: return "noConfiguration";
         }

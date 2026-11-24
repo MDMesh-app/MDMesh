@@ -137,6 +137,7 @@ export interface ConfigStatus {
     appliedAt?: number | null;
     inSync: boolean;
     supported: boolean;
+    agentUpdateNeeded?: string[] | null;
     lastCommand?: {
         id: number;
         status: string;

@@ -129,7 +129,13 @@ export const SOME_DEFERRED_LABEL = 'In sync (some settings deferred)';
 export function summarizeStatus(s: ConfigStatus | null): { tone: 'ok' | 'warn' | 'alert' | 'idle'; label: string } {
   if (!s || s.configurationId == null) return { tone: 'idle', label: 'No configuration' };
   if (!s.supported) return { tone: 'warn', label: 'Agent too old' };
-  if (s.inSync && s.agentUpdateNeeded?.length) {
+  const st = s.lastCommand?.status;
+  if (!s.inSync && (st === 'pending' || st === 'delivered')) return { tone: 'warn', label: 'Applying…' };
+  if (!s.inSync && st === 'failed') return { tone: 'alert', label: 'Apply failed' };
+  if (!s.inSync && !s.appliedRevision) return { tone: 'idle', label: 'Not reported yet' };
+  // The device's agent doesn't apply a section the configuration sets: an agent update, not a re-send, fixes it. The
+  // server re-sends a newer revision by itself; a failed apply shows as such above.
+  if (s.agentUpdateNeeded?.length) {
     return { tone: 'warn', label: AGENT_UPDATE_NEEDED_PREFIX + sectionLabels(s.agentUpdateNeeded) };
   }
   if (s.inSync) {
@@ -137,10 +143,6 @@ export function summarizeStatus(s: ConfigStatus | null): { tone: 'ok' | 'warn' |
     const deferred = Object.values(outcomes).some((o) => o.startsWith('deferred'));
     return deferred ? { tone: 'warn', label: SOME_DEFERRED_LABEL } : { tone: 'ok', label: 'In sync' };
   }
-  const st = s.lastCommand?.status;
-  if (st === 'pending' || st === 'delivered') return { tone: 'warn', label: 'Applying…' };
-  if (st === 'failed') return { tone: 'alert', label: 'Apply failed' };
-  if (!s.appliedRevision) return { tone: 'idle', label: 'Not reported yet' };
   if (s.appliedRevision === DEVICE_RESET_REVISION) return { tone: 'warn', label: DEVICE_RESET_LABEL };
   return { tone: 'warn', label: 'Out of sync' };
 }

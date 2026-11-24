@@ -2,7 +2,24 @@
 # SITE_ADDRESS is set by the setup wizard:
 #   own-domain  → "mdm.example.com" (Caddy auto-provisions + renews a Let's Encrypt cert)
 #   cloudflare  → ":80" (Cloudflare terminates TLS; cloudflared connects to this internally)
+#   your proxy  → ":8080" (docker-compose.proxy.yml: your proxy terminates TLS and forwards here; no ACME). With
+#                 MDMESH_ORIGIN_TLS=1, docker/edge-peers.sh makes it "https://<BASE_URL's host>:8080", with a
+#                 certificate from Caddy's own CA (edge_tls_internal below), for a proxy on another machine.
+
+# The global options of the proxy mode's HTTPS origin, when docker/edge-peers.sh sets EDGE_TLS=internal; none otherwise.
+# (Snippets precede the global options so they can be imported there.) default_sni: a proxy that sends no TLS server
+# name (nginx without proxy_ssl_server_name) still gets the certificate. No trust store to install into, and no
+# HTTP->HTTPS redirect: only your proxy connects, on the one published port.
+(edge_global_off) {
+}
+(edge_global_internal) {
+	default_sni {$EDGE_ORIGIN_NAME}
+	skip_install_trust
+	auto_https disable_redirects
+}
+
 {
+	import edge_global_{$EDGE_TLS:off}
 	email "{$ACME_EMAIL}"
 	# Who Caddy believes about a client's address ({client_ip}, which the server records as a device's public IP).
 	# Set per listener, so each hosting mode gets its own rule. Strict mode reads a header list from the right, so an
@@ -23,6 +40,22 @@
 		client_ip_headers {$HTTP_CLIENT_IP_HEADER:X-Forwarded-For}
 		trusted_proxies_strict
 	}
+	#   :8080 behind your own proxy (docker-compose.proxy.yml). Only your proxy may set X-Forwarded-For (and
+	#         X-Forwarded-Proto): PROXY_TRUSTED_PEERS, which docker/edge-peers.sh makes from .env's TRUSTED_PROXIES (`host`
+	#         = this machine, as the edge sees it). Unset: loopback only, which no Docker peer is, so nothing is believed.
+	servers :8080 {
+		trusted_proxies static {$PROXY_TRUSTED_PEERS:127.0.0.1/32 ::1/128}
+		trusted_proxies_strict
+	}
+}
+
+# The proxy mode's HTTPS origin (EDGE_TLS=internal): a certificate for the site's name from Caddy's own CA, kept in the
+# caddy_data volume (your proxy trusts its root, /data/caddy/pki/authorities/local/root.crt). Otherwise nothing: a site
+# with a name gets a public certificate (own domain), and ":80" or ":8080" none.
+(edge_tls_off) {
+}
+(edge_tls_internal) {
+	tls internal
 }
 
 # Every reverse_proxy to the server imports this. The server reads the client's address from X-Forwarded-For (and
@@ -40,8 +73,9 @@
 # images send just the origin, which OpenStreetMap requires (web/src/ui/LocationMap.tsx). `defer` applies them
 # after the upstream's own headers, so these are the values the browser gets.
 # HSTS only where the browser is on HTTPS: Caddy's own TLS (own domain), or a proxy in front that says so in
-# X-Forwarded-Proto (Cloudflare tunnel, your own proxy). A browser ignores HSTS received over plain HTTP, so a forged
-# X-Forwarded-Proto gains nothing, and HTTP-only (LAN) installs are unaffected. Six months, this host only, no preload.
+# X-Forwarded-Proto (Cloudflare tunnel, your own proxy), believed only from a peer the listener trusts (the same peers
+# whose X-Forwarded-For it believes: {http.vars.trusted_proxy}). HTTP-only (LAN) installs are unaffected. Six months,
+# this host only, no preload.
 # Importers define @https (a site's named matchers are visible in its handle_errors, and may be defined only once).
 (security_headers) {
 	header {
@@ -59,52 +93,23 @@
 
 {$SITE_ADDRESS} {
 	encode gzip
-	@https expression `{http.request.scheme} == "https" || {http.request.header.X-Forwarded-Proto} == "https"`
+	@https expression `{http.request.scheme} == "https" || ({http.vars.trusted_proxy} == true && {http.request.header.X-Forwarded-Proto} == "https")`
 	import security_headers
+	import edge_tls_{$EDGE_TLS:off}
 
 	# A server path that the server's routing would read differently from its security filters: a ";" path
 	# parameter, or an encoded ";", "/" or "\" (or a raw "\"), anywhere in the path of /rest, /files or /agent (the
-	# query string is not looked at). Refused here with 400, before it is proxied; the server refuses these too
-	# (AmbiguousPathFilter), for installs without this edge. {http.request.uri} is the path as sent, still escaped.
+	# query string is not looked at). Refused with 400 (first, in the route below), before it is proxied; the server
+	# refuses these too (AmbiguousPathFilter), for installs without this edge. {http.request.uri} is the path as sent,
+	# still escaped.
 	@ambiguous {
 		path_regexp ^(?i)/(rest|files|agent)([/;\\]|$)
 		expression `{http.request.uri}.matches("^(?i)[^?]*(;|%3b|%2f|%5c|\\\\)")`
 	}
-	handle @ambiguous {
-		respond 400
-	}
-
-	# Canonical agent-APK URL: /files/agent.apk works on BOTH deployment shapes (native serves a
-	# real file from Tomcat; here it's the supervisor's sha256-verified release mirror — the same
-	# upstream as /update/agent.apk, which stays below for back-compat). The exact-path matcher
-	# outranks the /files/* → server route (Caddy sorts handles longest-path-first), so this must
-	# stay more specific than @backend.
-	handle /files/agent.apk {
-		rewrite * /update/agent.apk
-		reverse_proxy supervisor:9000
-	}
-
-	# API, uploaded files, and the agent wake WebSocket → the Tomcat server. reverse_proxy
-	# upgrades WebSockets automatically, so /agent/ws works without extra config.
+	# API, uploaded files, and the agent wake WebSocket: the Tomcat server.
 	@backend path /rest/* /files/* /agent/ws/*
-	handle @backend {
-		reverse_proxy server:8080 {
-			import client_address
-		}
-	}
-
-	# Updater status + recovery page → the decoupled supervisor (always up, independent of the
-	# server), so "update available" + recovery stay reachable even mid-update.
-	handle /update/* {
-		reverse_proxy supervisor:9000
-	}
-	handle /recovery* {
-		reverse_proxy supervisor:9000
-	}
-
 	# Health probes for uptime monitors. Both answer 200 "ok" or 503, never the SPA's catch-all 200:
-	#   /healthz            the edge AND the API server answer (the probe apply.sh/rollback.sh use to call
-	#                       an update healthy: GET /rest/public/name, no DB round-trip, no auth)
+	#   /healthz            the edge AND the API server answer (GET /rest/public/name, no DB round-trip, no auth)
 	#   /healthz/supervisor the updater/recovery supervisor answers (update checks, recovery page, and the
 	#                       /files/agent.apk mirror that new enrollments download)
 	# Each also answers with a trailing slash (exact paths only, nothing below them), so /healthz/ cannot fall through
@@ -112,37 +117,81 @@
 	# sees the probe path.
 	@healthz path /healthz /healthz/
 	@healthzSupervisor path /healthz/supervisor /healthz/supervisor/
-	handle @healthz {
-		reverse_proxy server:8080 {
-			import client_address
-			rewrite /rest/public/name
-			@up status 2xx
-			handle_response @up {
-				respond "ok" 200
-			}
-			handle_response {
-				respond "server unavailable" 503
-			}
-		}
-	}
-	handle @healthzSupervisor {
-		reverse_proxy supervisor:9000 {
-			rewrite /healthz
-			@up status 2xx
-			handle_response @up {
-				respond "ok" 200
-			}
-			handle_response {
-				respond "supervisor unavailable" 503
-			}
-		}
-	}
 
-	# Everything else is the single-page app.
-	handle {
-		root * /srv
-		try_files {path} /index.html
-		file_server
+	# One ordered route, read top to bottom, the first matching handle answering: MDMesh's path check, then your own
+	# rules, then MDMesh's routes. (Outside a route Caddy sorts handles by path, so a rule of your own with a path, say
+	# handle /rest/x/*, would run before the path check.)
+	route {
+		handle @ambiguous {
+			respond 400
+		}
+
+		# Your own rules (DEPLOY.md, "Your own edge rules"): the *.caddy files of the install directory's site.d/,
+		# mounted read-only at /etc/caddy/site.d (MDMESH_SITE_DIR in .env), that docker/edge-peers.sh let through at
+		# start (only files nobody but their owner can change) into EDGE_SITE_D, /run/mdmesh-site.d (also the default: a
+		# caddy command that missed those settings never reads the raw mount). Updates never touch them. None there:
+		# nothing is imported. Each file is pasted here, inside this route, so it can't define a snippet; one that
+		# imports another file is left out at start (that file isn't checked). A handle here answers before MDMesh's
+		# own below; any other directive (a header, a bare respond) applies to every request that gets this far.
+		import {$EDGE_SITE_D:/run/mdmesh-site.d}/*.caddy
+
+		# Canonical agent-APK URL: /files/agent.apk works on BOTH deployment shapes (native serves a
+		# real file from Tomcat; here it's the supervisor's sha256-verified release mirror — the same
+		# upstream as /update/agent.apk, which stays below for back-compat). Before @backend, which
+		# /files/* would otherwise take.
+		handle /files/agent.apk {
+			rewrite * /update/agent.apk
+			reverse_proxy supervisor:9000
+		}
+
+		# reverse_proxy upgrades WebSockets automatically, so /agent/ws works without extra config.
+		handle @backend {
+			reverse_proxy server:8080 {
+				import client_address
+			}
+		}
+
+		# Updater status + recovery page → the decoupled supervisor (always up, independent of the
+		# server), so "update available" + recovery stay reachable even mid-update.
+		handle /update/* {
+			reverse_proxy supervisor:9000
+		}
+		handle /recovery* {
+			reverse_proxy supervisor:9000
+		}
+
+		handle @healthz {
+			reverse_proxy server:8080 {
+				import client_address
+				rewrite /rest/public/name
+				@up status 2xx
+				handle_response @up {
+					respond "ok" 200
+				}
+				handle_response {
+					respond "server unavailable" 503
+				}
+			}
+		}
+		handle @healthzSupervisor {
+			reverse_proxy supervisor:9000 {
+				rewrite /healthz
+				@up status 2xx
+				handle_response @up {
+					respond "ok" 200
+				}
+				handle_response {
+					respond "supervisor unavailable" 503
+				}
+			}
+		}
+
+		# Everything else is the single-page app.
+		handle {
+			root * /srv
+			try_files {path} /index.html
+			file_server
+		}
 	}
 
 	# If the server (API) is down/erroring, fall back to the supervisor's recovery page. Not for the health

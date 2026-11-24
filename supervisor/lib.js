@@ -75,6 +75,10 @@ function missedSecurity(manifest, verified, current, withLatest = false) {
     .sort((a, b) => (semverGt(a, b) ? 1 : semverGt(b, a) ? -1 : 0));
 }
 
+/** How an operator rolls back: on the host, in the install directory (recovery-cli.js). Named in the texts that reach
+ *  the console. */
+const HOST_ROLLBACK = 'docker compose exec supervisor mdmesh-recovery rollback, in the install directory';
+
 /** Build the status object the console + recovery page read. Update only offered if VERIFIED, and not `blocked`
  *  (updateBlocked's { code, reason }: why this install can't apply the newer release; the console shows that instead,
  *  with the security fixes it leaves missing). */
@@ -125,7 +129,7 @@ function applyRefusal({ manifest, current, skipVersion, imageOwner, platform }) 
   if (semverGt(to, current)) return imagePins(manifest, imageOwner, platform).error || null;
   if (to === current || !semverGt(current, to)) {
     return current === skipVersion
-      ? `already running ${current}, whose update failed: if it is not healthy, use Roll back (/recovery) to return to the previous version`
+      ? `already running ${current}, whose update failed: if it is not healthy, roll back to the previous version on the host (${HOST_ROLLBACK})`
       : `already running ${current}`;
   }
   return `already running ${current} (newer than ${to})`;
@@ -335,6 +339,14 @@ function deploymentAdminVerdict(body) {
   return 'deploymentAdmin' in u ? false : null;
 }
 
+/** Whether a GET /rest/private/users/current answer (the caller's session, forwarded) names a signed-in user: any user
+ *  may read /update/status. The server answers 403 without a valid session, so only its 200 answer reaches this. */
+function signedInVerdict(body) {
+  if (!body || typeof body !== 'object' || body.status !== 'OK') return false;
+  const u = body.data;
+  return !!u && typeof u === 'object' && !Array.isArray(u);
+}
+
 /** The same users/current answer from a server before 0.3.8, which has no deploymentAdmin field. That server's own
  *  rule let any user with the "settings" permission update, every customer's admin included. Narrowed here to what
  *  0.3.8 decides, as far as the old answer tells: a super-admin (userRole.superAdmin), or the org admin (role 2) of
@@ -356,5 +368,5 @@ module.exports = {
   parseSemver, semverGt, isReleaseVersion, agentOffer, pickRelease, shapeStatus, updateBlocked, blockedLogLine, hostPlatform, missedSecurity,
   imageTags, imagePins, nextPhase, isTerminal, APPLY_PHASES, APPLY_TERMINAL,
   apkAsset, sha256Matches, recoveryPage, isPublishTemp, assetRequest, fetchAsset, envValue, applyLine, applyRefusal,
-  deploymentAdminVerdict, legacyDeploymentAdmin,
+  deploymentAdminVerdict, legacyDeploymentAdmin, signedInVerdict,
 };

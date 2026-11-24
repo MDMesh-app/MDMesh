@@ -29,6 +29,9 @@ import com.hmdm.rest.filter.AuthFilter;
 import com.hmdm.security.jwt.JWTFilter;
 
 public class PrivateRestModule extends ServletModule {
+    /** {@code /update} and every path below it, except exactly {@code /update/agent.apk} and {@code /update/healthz}. */
+    static final String UPDATE_SESSION_PATHS = "^/update(?!/agent\\.apk$|/healthz$)(/.*)?$";
+
     public PrivateRestModule() {
     }
 
@@ -36,6 +39,10 @@ public class PrivateRestModule extends ServletModule {
         this.filter("/rest/private/*").through(JWTFilter.class);
         this.filter("/rest/private/*").through(AuthFilter.class);
         this.filter("/rest/private/*").through(PrivateIPFilter.class);
+        // web.xml's UpdateProxyServlet (/update/*): every path but the agent APK and the supervisor's health check needs
+        // a console session (no API tokens), deny by default. Guice matches the decoded, normalized path.
+        this.filterRegex(UPDATE_SESSION_PATHS).through(AuthFilter.class);
+        this.filterRegex(UPDATE_SESSION_PATHS).through(PrivateIPFilter.class);
         this.bind(DeviceResource.class);
         this.bind(GroupResource.class);
         this.bind(ConfigurationResource.class);

@@ -25,6 +25,7 @@ import com.hmdm.plugin.PluginDiscoveryTest;
 import com.hmdm.plugin.PluginList;
 import com.hmdm.plugin.guice.module.PluginRestModule;
 import com.hmdm.plugin.rest.PluginAccessFilter;
+import com.hmdm.security.jwt.JWTFilter;
 import com.mdmesh.fixture.FixturePrivateResource;
 import io.github.classgraph.ClassGraph;
 import io.github.classgraph.ClassInfo;
@@ -154,6 +155,31 @@ public class PrivateRouteFilterTest {
         assertEquals("private routes whose filters are missing, typo'd or out of order (map them in the plugin's "
                 + "ServletModule as web/EXTENDING.md's REST row shows)", new TreeSet<String>(),
                 unchecked(resources, mappings));
+    }
+
+    /**
+     * web.xml's UpdateProxyServlet serves {@code /update/*}: only the agent APK and the supervisor's health are public;
+     * every other path, one the servlet would refuse included, needs a console session (deny by default), checked as
+     * {@code /rest/private} checks it, by AuthFilter and then PrivateIPFilter. Not JWTFilter: the update status is for
+     * console sessions.
+     */
+    @Test
+    public void everyUpdatePathButTheAgentApkAndTheHealthCheckGoesThroughAuthFilter() {
+        Mappings mappings = mappings(servletModules());
+        for (String uri : Arrays.asList("/update/status", "/update/check", "/update/apply", "/update/auto",
+                "/update/rollback", "/update/x", "/update/", "/update", "/update/status/", "/update/agent.apk/x",
+                "/update/agent.apkx", "/update/healthz/", "/update/x/agent.apk")) {
+            assertEquals(uri, Arrays.asList(AuthFilter.class, PrivateIPFilter.class), sessionFilters(mappings, uri));
+        }
+        for (String uri : Arrays.asList("/update/agent.apk", "/update/healthz", "/updates", "/updatex/status")) {
+            assertEquals(uri, Collections.emptyList(), sessionFilters(mappings, uri));
+        }
+    }
+
+    /** The session filters of {@code uri}'s chain, in its order (filters every route passes through left out). */
+    private static List<Class<?>> sessionFilters(Mappings mappings, String uri) {
+        List<Class<?>> session = Arrays.asList(JWTFilter.class, AuthFilter.class, PrivateIPFilter.class);
+        return mappings.chain(uri).stream().filter(session::contains).collect(Collectors.toList());
     }
 
     @Test

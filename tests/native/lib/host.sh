@@ -294,6 +294,23 @@ admin_login_ok() {
     | jq_py "str(d.get('status'))+':'+str((d.get('data') or {}).get('passwordReset'))"
 }
 
+# check_update_gate LABEL: /update through Tomcat. Anonymous: the status and any unknown path refused, the supervisor's
+# health and the agent APK passed on, a malformed APK query
+# refused. Signed in as the admin: the status, through the supervisor's own session check.
+check_update_gate() {
+  local label=$1 jar="$WORK/update-$1.jar"
+  check "anonymous GET /update/status refused" "$(http_code /update/status)" 403
+  check "anonymous GET /update/x refused" "$(http_code /update/x)" 403
+  check "GET /update/healthz (the supervisor's health)" "$(http_code /update/healthz)" 200
+  check "GET /update/agent.apk passed to the supervisor (200, or its 404 without an agent)" \
+    "$(case "$(http_code /update/agent.apk)" in 200|404) echo passed ;; *) echo refused ;; esac)" passed
+  check "GET /update/agent.apk?v=abc refused" "$(http_code '/update/agent.apk?v=abc')" 400
+  api POST /rest/public/auth/login "{\"login\":\"admin\",\"password\":\"$(md5u "$ADMIN_PW")\"}" -c "$jar" > "$WORK/update-$label.login"
+  check "signed in, GET /update/status" \
+    "$(curl -s -m 15 -b "$jar" -o "$WORK/update-$label.status" -w '%{http_code}' "$API/update/status" || true)" 200
+  check "signed in, the status names the running version" "$(jq_py "'current' in d" < "$WORK/update-$label.status")" True
+}
+
 # --- the reusable check step -----------------------------------------------------------------------------------------
 # check_install LABEL REF: everything an install or upgrade must leave behind, on the version REF.
 #   - the server unit (and the supervisor unit, when the version installs one) is active;
@@ -316,6 +333,10 @@ check_install() {
   fi
   check "GET /rest/public/name" "$(http_code /rest/public/name)" 200
   check "admin can sign in (status:passwordReset)" "$(admin_login_ok)" "OK:False"
+  # A version whose UpdateProxyServlet gates /update: only the agent APK and the supervisor's health are public.
+  if [ "$(git -C "$REPO" show "$ref:server/src/main/java/com/hmdm/rest/UpdateProxyServlet.java" 2>&1 | grep -c 'Gate.SESSION')" -gt 0 ]; then
+    check_update_gate "$label"
+  fi
   e2e="$WORK/e2e-$label.sh"
   if git -C "$REPO" show "$ref:scripts/agent-v1-e2e.sh" > "$e2e" 2>/dev/null; then
     ADMIN_PW="$ADMIN_PW" bash "$e2e" "$API" > "$OUT/$label.e2e.log" 2>&1 || true

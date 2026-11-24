@@ -74,8 +74,8 @@ public class PublicRouteInventoryTest {
             "/rest/public/logo",                // branding
             "/rest/plugin/main/public/registered", // plugin list for the console shell
             "/rest/plugins/messaging/{id}",     // console delete; checks the session's permission in the resource
-            // web.xml's UpdateProxyServlet: passes /update/* to the loopback updater supervisor (native installs),
-            // which checks the session cookie, CSRF header and recovery token itself
+            // web.xml's UpdateProxyServlet: of /update/*, only /update/agent.apk and /update/healthz are public; every
+            // other path needs a console session (PrivateRouteFilterTest.everyUpdatePathBut...)
             "/update",
             // Swagger's API description: lists only @Api resources; served by a library class, see LIBRARY_RESOURCES
             "/rest/swagger.{type:json|yaml}"

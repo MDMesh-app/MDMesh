@@ -11,7 +11,9 @@ RUN apk add --no-cache minisign docker-cli docker-cli-compose postgresql-client 
 WORKDIR /app
 COPY supervisor/ /app/
 COPY release/minisign.pub /app/minisign.pub
-RUN chmod +x /app/apply.sh /app/rollback.sh
+# mdmesh-recovery status|rollback: the updater's recovery from the host (docker compose exec supervisor mdmesh-recovery …).
+RUN chmod +x /app/apply.sh /app/rollback.sh /app/recovery-cli.js \
+    && ln -s /app/recovery-cli.js /usr/local/bin/mdmesh-recovery
 EXPOSE 9000
 # Absolute on purpose (#27): older compose files (<= v0.3.0) set working_dir /project, and a relative path
 # would resolve against it. The entrypoint must not depend on the container's working directory.

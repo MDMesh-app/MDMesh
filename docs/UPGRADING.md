@@ -4,7 +4,7 @@
 
 | Install | Update with | One-click rollback |
 |---------|-------------|--------------------|
-| Quick start (Option A) | **Update** in the console, or automatic updates | Yes, from `/recovery` |
+| Quick start (Option A) | **Update** in the console, or automatic updates | Yes, [on the host](#rolling-back-on-the-host) or from `/recovery` |
 | From source (Option B) | `./setup.sh --update` (from 0.4.x, first [move to 0.5.0 once](#v050)) | Only with a registry `IMAGE_OWNER` ([below](#from-source-docker-installs)) |
 | Native (Option C) | `sudo ./setup.sh --update --native` (from 0.4.x, first [move to 0.5.0 once](#v050)) | No |
 
@@ -176,17 +176,39 @@ to its old mode first. The updater refuses one too while `TRUSTED_PROXIES` still
 
 ## Recovery and rollback
 
+### Rolling back on the host
+
+From the install directory, with a supervisor from 0.6.0 on:
+
+```bash
+docker compose exec supervisor mdmesh-recovery status     # the running version, the last update and its error
+docker compose exec supervisor mdmesh-recovery rollback   # roll back, and follow it to the end
+```
+
+It reads the recovery token itself, so it works while the server and the console are down. `rollback` exits `0` once
+the install is rolled back and `1` if the rollback failed, with the reason. With an older supervisor, the same
+rollback is:
+
+```bash
+docker compose exec supervisor sh -c 'curl -fsS -X POST -H "X-MDMesh-Console: 1" -H "X-Recovery-Token: $(cat /backups/recovery.token)" http://127.0.0.1:9000/update/rollback'
+```
+
+and `docker compose exec supervisor cat /backups/recovery.token` shows the token.
+
 ### The recovery page
 
 With one-click updates (`APPLY_SUPPORTED=1`), `https://<host>/recovery` shows the update status and a **Roll back**
-button. Signed in as an admin who can update, you need no token. If the server is down, use the recovery token instead:
-
-```bash
-docker compose exec supervisor cat /backups/recovery.token
-```
+button. Signed in as an admin who can update, you need no token. If the server is down, type the recovery token
+(above) instead: with a supervisor from 0.6.0 on, the page shows the status only to a signed-in session or once the
+token is typed.
 
 Other installs (`IMAGE_OWNER=local`, and native) get the update commands above instead of the button.
-On native, open it on the host: `curl 127.0.0.1:9000/recovery`.
+On native, open it on the host: `curl 127.0.0.1:9000/recovery`. The status there needs the token, which only the
+`mdmesh` user and root can read:
+
+```bash
+sudo sh -c 'curl -fsS -H "X-Recovery-Token: $(cat /opt/mdmesh/supervisor/recovery.token)" 127.0.0.1:9000/update/status'
+```
 
 ### What a rollback does
 
@@ -200,8 +222,8 @@ A rollback, after a failed update or from **Roll back**:
 **Anything written to the database after the update is lost.**
 
 If the restore fails, nothing changes: it runs in one transaction, and `.env` still matches the database. `server`
-stays **stopped** on purpose, so the old version can't run on the wrong database. Fix the cause, then press
-**Roll back** again; it reuses the same backup. psql's full output:
+stays **stopped** on purpose, so the old version can't run on the wrong database. Fix the cause, then roll back
+again (`mdmesh-recovery rollback`, or **Roll back**); it reuses the same backup. psql's full output:
 
 ```bash
 docker compose exec supervisor cat /backups/<stamp>.restore.log
@@ -311,6 +333,13 @@ exited or credentials cleared while the older agent ran.
   (`up -d` recreates the edge with the directory mounted; updates read both files, so they keep it.)
 - **A rollback below 0.6.0** of an install you moved to the proxy mode is refused by the updater: move it back first
   ([how](#changing-the-hosting-mode)).
+- **`/update/status` needs a signed-in console session.** Any signed-in user may read it; the console reads it as
+  before. On native this holds from the update on. On a quick start it holds once this release's supervisor runs: the
+  update pins it in `.env`, so after the update, when no update or rollback is running, run
+  `docker compose up -d supervisor`. A monitor that reads `/update/status` should use `/healthz` instead
+  ([Operations](OPERATIONS.md#health-checks)); on the host, `mdmesh-recovery status` reads it.
+- **Recovery from the host:** that supervisor brings `mdmesh-recovery status` and `rollback`
+  ([how](#rolling-back-on-the-host)). A failed update's message names it.
 
 ### v0.6.0 for forks
 

@@ -15,9 +15,9 @@
 #            checks through HTTPS from nginx to the edge.
 #   proxies  docs/proxies' Apache, Caddy and Traefik configurations in front instead of nginx: console, sign-in, the
 #            client's address, the wake socket.
-#   update   The supervisor refuses an update to a release before 0.6.0; its own apply.sh updates to the next release, then Roll back (POST /update/rollback with the
-#            recovery token, through nginx, as /recovery sends it): the mode, the published port, .env and the site.d
-#            rule stay, and the nginx checks pass on both versions.
+#   update   The supervisor refuses an update to a release before 0.6.0; its own apply.sh updates to the next release, then a
+#            roll back on the host (mdmesh-recovery rollback): the mode, the published port, .env and the site.d rule
+#            stay, and the nginx checks pass on both versions. /update/status is refused to an anonymous client.
 #
 # Everything runs in a privileged docker:dind container (its own daemon: nothing reaches this host's stacks) next to a TLS
 # registry that answers as ghcr.io, on an internal network; the client is a container on that network. Images (on this
@@ -431,8 +431,8 @@ phase_proxies() {
 }
 
 phase_update() {
-  say "update: the supervisor's apply.sh to 0.6.1, then Roll back through nginx (as /recovery does)"
-  local before r tok st _
+  say "update: the supervisor's apply.sh to 0.6.1, then a roll back on the host (mdmesh-recovery rollback)"
+  local before r st
   before="$(in_dind grep -vE '^(SERVER|WEB|SUPERVISOR)_VERSION=|^CURRENT_VERSION=' "$D/.env" | sha256sum)"
   # A release before 0.6.0 doesn't know the mode: the running supervisor refuses it and changes nothing.
   dc exec -T supervisor /app/apply.sh 0.5.9 "$(ref_of 0.6.1 server)" "$(ref_of 0.6.1 web)" "$(ref_of 0.6.1 supervisor)" \
@@ -448,16 +448,12 @@ phase_update() {
   check "the update changed nothing in .env but the versions" \
     test "$(in_dind grep -vE '^(SERVER|WEB|SUPERVISOR)_VERSION=|^CURRENT_VERSION=' "$D/.env" | sha256sum)" = "$before"
 
-  tok="$(dc exec -T supervisor cat /backups/recovery.token | tr -d '\r\n')"
-  r="$(web POST /update/rollback '' -H 'X-MDMesh-Console: 1' -H "X-Recovery-Token: $tok")"
-  check "Roll back through nginx accepted (${r:0:40})" grep -q '^202' <<< "$r"
-  st=''
-  for _ in $(seq 1 60); do
-    sleep 5
-    st="$(web GET /update/status | grep -o '"phase":"[a-z_]*"' | head -1)"
-    case "$st" in *rolled_back*|*failed*) break ;; esac
-  done
-  check "Roll back finished: $st" test "$st" = '"phase":"rolled_back"'
+  r="$(anon GET /update/status)"
+  check "/update/status through nginx is refused without a session (${r:0:40})" grep -q '^401' <<< "$r"
+  dc exec -T supervisor mdmesh-recovery rollback > "$WORK/rollback.out" 2>&1; st=$?
+  sed 's/^/      mdmesh-recovery: /' "$WORK/rollback.out" | tr -d '\r' | cut -c1-200
+  check "mdmesh-recovery rollback exits 0 (rc=$st)" test "$st" = 0
+  check "mdmesh-recovery rollback ends rolled back" grep -q '^update    rolled_back (0.6.1 -> 0.6.0)' "$WORK/rollback.out"
   check "after Roll back the edge runs 0.6.0 again ($(image_of caddy))" test "$(image_of caddy)" = "ghcr.io/$OWNER/mdmesh-web:$(pin_of 0.6.0 web)"
   after_step "after Roll back"
 }

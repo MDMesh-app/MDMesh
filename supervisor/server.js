@@ -8,7 +8,7 @@ const cp = require('child_process');
 const path = require('path');
 const crypto = require('crypto');
 const { semverGt, isReleaseVersion, agentOffer, pickRelease, shapeStatus, updateBlocked, blockedLogLine, hostPlatform, imageTags, imagePins, isTerminal, apkAsset, sha256Matches, recoveryPage, isPublishTemp, fetchAsset,
-  envValue, applyLine, applyRefusal, deploymentAdminVerdict, legacyDeploymentAdmin } = require('./lib');
+  envValue, applyLine, applyRefusal, deploymentAdminVerdict, legacyDeploymentAdmin, signedInVerdict } = require('./lib');
 
 const PORT = +(process.env.SUPERVISOR_PORT || 9000);
 // Bind address. Docker keeps the default (all interfaces — the container has no published ports);
@@ -145,7 +145,7 @@ function minisignProblem(dir) {
 /** Download + minisign-verify a release's manifest. Returns { manifest, files } when verified (files: the manifest's and
  *  its signature's bytes, which runningAgent persists), else { error, transient }: transient when a download failed
  *  (the release lists the files, so this is GitHub or the network, this time), not when the signature or JSON is bad.
- *  The reason is logged in full ([verify] line), but /update/status is public (Caddy proxies it), so `error` names
+ *  The reason is logged in full ([verify] line), but every console user reads /update/status, so `error` names
  *  only the kind of failure. */
 async function verifyManifest(mAsset, sAsset) {
   let d = null;
@@ -653,17 +653,27 @@ async function serverJson(p, cookie) {
   return r.json().catch(() => null);
 }
 
-async function authorizeApply(req) {
+/** The server's users/current answer for the caller's session cookie; null without one, or when the server refuses
+ *  or can't be asked (unreachable, non-JSON). */
+async function sessionUser(req) {
   const cookie = req.headers.cookie || '';
-  if (!/JSESSIONID=/.test(cookie)) return false;
-  try {
-    const body = await serverJson(AUTHZ_PATH, cookie);
-    const verdict = deploymentAdminVerdict(body);
-    if (verdict !== null) return verdict;           // 0.3.8+: the server's answer
-    return legacyDeploymentAdmin(body);              // older server: narrowed (see above)
-  } catch {
-    return false; // server unreachable / non-JSON → refuse (you update from a working console)
-  }
+  if (!/JSESSIONID=/.test(cookie)) return null;
+  try { return await serverJson(AUTHZ_PATH, cookie); } catch { return null; }
+}
+
+async function authorizeApply(req) {
+  const body = await sessionUser(req);              // no answer refuses (you update from a working console)
+  const verdict = deploymentAdminVerdict(body);
+  if (verdict !== null) return verdict;             // 0.3.8+: the server's answer
+  return legacyDeploymentAdmin(body);               // older server: narrowed (see above)
+}
+
+// /update/status (the version, the last update and its error, release notes) is for the console's signed-in users,
+// any of them, and for the host: mdmesh-recovery reads it with the recovery token while the server is down. The
+// server's own gate (UpdateProxyServlet) does the same; this one also holds behind an edge that routes straight here
+// (0.5.x, after a rollback) and for the other containers.
+async function authorizeStatus(req) {
+  return validToken(req) || signedInVerdict(await sessionUser(req));
 }
 
 const RECOVERY = recoveryPage(fs.readFileSync(path.join(__dirname, 'recovery.html'), 'utf8'), APPLY_SUPPORTED);
@@ -679,9 +689,15 @@ function readJson(req) {
 
 http.createServer(async (req, res) => {
   try {
-    if (req.url === '/healthz') { res.writeHead(200).end('ok'); return; }
-    if (req.url.startsWith('/update/status')) { json(res, 200, state); return; }
-    if (req.url.startsWith('/update/agent.apk')) {
+    // Each route is its exact path (the query aside): any other path is the recovery page below.
+    const route = new URL(req.url, 'http://x').pathname;
+    if (route === '/healthz') { res.writeHead(200).end('ok'); return; }
+    if (route === '/update/status') {
+      if (!(await authorizeStatus(req))) { json(res, 401, { error: 'sign in to the console, or on the host: mdmesh-recovery status' }); return; }
+      json(res, 200, state);
+      return;
+    }
+    if (route === '/update/agent.apk') {
       // The mirrored agent APK, for enrollment (/files/agent.apk) and device rollouts. Public GET (the device fetches
       // it during an app.install). Every file served was just checked against the SHA-256 of a verified manifest
       // (ensureApk / cachedApkOk), and the agent checks the payload's sha256 too. Without ?v=: the offered agent.
@@ -702,7 +718,7 @@ http.createServer(async (req, res) => {
       fs.createReadStream(cachePath(desc)).on('error', () => res.destroy()).pipe(res);
       return;
     }
-    if (req.method === 'POST' && req.url.startsWith('/update/check')) {
+    if (req.method === 'POST' && route === '/update/check') {
       if (!csrfOk(req)) { json(res, 403, { error: 'missing console header' }); return; }
       if (!(await authorizeApply(req))) { json(res, 401, { error: 'unauthorized (only an admin who may update this deployment)' }); return; }
       // Rate-limit so this can't be used to hammer the GitHub API; otherwise return the current state.
@@ -710,7 +726,7 @@ http.createServer(async (req, res) => {
       json(res, 200, state);
       return;
     }
-    if (req.method === 'POST' && req.url.startsWith('/update/apply')) {
+    if (req.method === 'POST' && route === '/update/apply') {
       if (!APPLY_SUPPORTED) { json(res, 501, { error: 'self-update apply is not supported on this deployment — pull and re-run the installer' }); return; }
       if (!csrfOk(req)) { json(res, 403, { error: 'missing console header' }); return; }
       if (!(await authorizeApply(req))) { json(res, 401, { error: 'unauthorized (only an admin who may update this deployment)' }); return; }
@@ -719,7 +735,7 @@ http.createServer(async (req, res) => {
       json(res, 202, { status: 'started', apply: state.apply });
       return;
     }
-    if (req.method === 'POST' && req.url.startsWith('/update/auto')) {
+    if (req.method === 'POST' && route === '/update/auto') {
       if (!APPLY_SUPPORTED) { json(res, 501, { error: 'self-update apply is not supported on this deployment' }); return; }
       if (!csrfOk(req)) { json(res, 403, { error: 'missing console header' }); return; }
       if (!(await authorizeApply(req))) { json(res, 401, { error: 'unauthorized (only an admin who may update this deployment)' }); return; }
@@ -730,7 +746,7 @@ http.createServer(async (req, res) => {
       json(res, 200, { auto: autoUpdate });
       return;
     }
-    if (req.method === 'POST' && req.url.startsWith('/update/rollback')) {
+    if (req.method === 'POST' && route === '/update/rollback') {
       if (!APPLY_SUPPORTED) { json(res, 501, { error: 'apply/rollback is not supported on this deployment' }); return; }
       if (!csrfOk(req)) { json(res, 403, { error: 'missing console header' }); return; }
       // A session that may manage the deployment OR the break-glass recovery token (for when the server is down).

@@ -66,8 +66,9 @@
         <listener-class>com.hmdm.rest.AgentWakeBootstrap</listener-class>
     </listener>
 
-    <!-- Same-origin passthrough to the loopback updater supervisor (native installs; on Docker,
-         Caddy routes /update/* before Tomcat ever sees it, so this is inert there). -->
+    <!-- The updater supervisor's routes the console and devices use (UpdateProxyServlet's allowlist): loopback on
+         native installs, supervisor:9000 on Docker. Only the agent APK and the health check are public;
+         PrivateRestModule maps AuthFilter on every other /update path. -->
     <servlet>
         <servlet-name>update-proxy</servlet-name>
         <servlet-class>com.hmdm.rest.UpdateProxyServlet</servlet-class>

@@ -2,7 +2,7 @@ const t = require('node:test');
 const a = require('node:assert');
 const { semverGt, isReleaseVersion, agentOffer, pickRelease, shapeStatus, updateBlocked, blockedLogLine, missedSecurity, imageTags, nextPhase, isTerminal, apkAsset, sha256Matches, recoveryPage, isPublishTemp,
   assetRequest, fetchAsset, envValue, applyLine, applyRefusal, imagePins, deploymentAdminVerdict,
-  legacyDeploymentAdmin } = require('./lib');
+  legacyDeploymentAdmin, signedInVerdict } = require('./lib');
 
 // The digest-pinned refs server.js passes apply.sh after the signed manifest verified (components.images).
 const PIN = { server: 'ghcr.io/mdmesh-app/mdmesh-server@sha256:' + 'a'.repeat(64),
@@ -340,7 +340,7 @@ t.test('applyRefusal — the Update guard says what is actually true', () => {
   a.equal(applyRefusal({ manifest: m('0.0.4'), current: '0.0.4', skipVersion: null }), 'already running 0.0.4');
   a.equal(applyRefusal({ manifest: m('0.0.3'), current: '0.0.4', skipVersion: null }), 'already running 0.0.4 (newer than 0.0.3)');
   a.equal(applyRefusal({ manifest: m('0.0.4'), current: '0.0.4', skipVersion: '0.0.4' }),
-    'already running 0.0.4, whose update failed: if it is not healthy, use Roll back (/recovery) to return to the previous version');
+    'already running 0.0.4, whose update failed: if it is not healthy, roll back to the previous version on the host (docker compose exec supervisor mdmesh-recovery rollback, in the install directory)');
   // A non-release manifest version (not X.Y.Z) is refused for what it is, not as "already running".
   a.equal(applyRefusal({ manifest: m('nightly'), current: '0.0.4', skipVersion: null }),
     'the verified release version "nightly" is not a release version (X.Y.Z), so it cannot be applied');
@@ -568,7 +568,8 @@ t.test('/update/status reports the mirrored APK as available once the warm-up do
       child.on('exit', onExit);
     });
 
-    const status = await (await fetch(`http://127.0.0.1:${port}/update/status`)).json();
+    const status = await (await fetch(`http://127.0.0.1:${port}/update/status`,
+      { headers: { 'X-Recovery-Token': fs.readFileSync(path.join(dir, 'recovery.token'), 'utf8') } })).json();
     a.equal(status.verified, true, 'the fake release verifies against the throwaway key');
     a.deepEqual({ versionCode: status.apk && status.apk.versionCode, available: status.apk && status.apk.available },
       { versionCode: 999, available: true }, '/update/status must say available once the APK is being served');
@@ -619,7 +620,11 @@ async function spawnSupervisor(dir, env, until, extraArgs = [], attempt = 1) {
     if (attempt < 3 && /EADDRINUSE/.test(log)) return spawnSupervisor(dir, env, until, extraArgs, attempt + 1);
     throw e;
   }
-  return { child, port, log: () => log };
+  // The recovery token server.js read or made at start (RECOVERY_TOKEN_FILE): fetch options that read /update/status as
+  // the host does (mdmesh-recovery).
+  const tokenFile = env.RECOVERY_TOKEN_FILE || path.join(dir, 'recovery.token');
+  const asHost = () => ({ headers: { 'X-Recovery-Token': require('fs').readFileSync(tokenFile, 'utf8').trim() } });
+  return { child, port, log: () => log, asHost };
 }
 async function stopChild(child) {
   if (child && child.exitCode === null && child.signalCode === null) {
@@ -849,7 +854,7 @@ t.test('update routes need an admin who may manage the deployment: a customer ad
       const r = await fetch(url('/update/auto'), { method: 'POST', headers: { ...ADMIN, Cookie: cookie }, body: '{"auto":true}' });
       a.equal(r.status, 401, 'cookie ' + JSON.stringify(cookie));
     }
-    const s = await (await fetch(url('/update/status'))).json();
+    const s = await (await fetch(url('/update/status'), sup.asHost())).json();
     a.equal(s.apply, null, 'nothing started');
     a.equal(s.auto, false, 'auto-update unchanged');
     a.ok(!fs.existsSync(path.join(dir, 'auto.json')), 'nothing saved');
@@ -882,8 +887,138 @@ t.test('against a server before 0.3.8 (no deploymentAdmin) the operator can stil
         a.equal(r.status, 401, route + ' refuses ' + cookie);
       }
     }
-    const s = await (await fetch(url('/update/status'))).json();
+    const s = await (await fetch(url('/update/status'), sup.asHost())).json();
     a.equal(s.apply, null, 'nothing started');
+  });
+
+t.test('signedInVerdict: any user the server names for the session; anything else refuses', () => {
+  a.equal(signedInVerdict({ status: 'OK', data: { id: 3, login: 'viewer', deploymentAdmin: false } }), true);
+  a.equal(signedInVerdict({ status: 'OK', data: { id: 1, superAdmin: true } }), true, 'a server before 0.3.8');
+  a.equal(signedInVerdict({ status: 'OK', data: null }), false, 'no user in the session');
+  a.equal(signedInVerdict({ status: 'OK', data: [] }), false, 'the users/all shape');
+  a.equal(signedInVerdict({ status: 'OK', data: 'admin' }), false);
+  a.equal(signedInVerdict({ status: 'ERROR', data: { id: 1 } }), false);
+  a.equal(signedInVerdict(null), false);
+  a.equal(signedInVerdict('OK'), false);
+});
+
+t.test('/update/status needs a session the server accepts (any user) or the recovery token', { timeout: 20000 }, async (tt) => {
+  const fs = require('fs'), os = require('os'), path = require('path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sup-status-'));
+  let sup = null, authz = null;
+  tt.after(async () => { await stopChild(sup && sup.child); if (authz) await authz.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+  authz = await fakeAuthz();
+  sup = await spawnSupervisor(dir, { APPLY_SUPPORTED: '1', SERVER_BASE: authz.base }, /supervisor on/);
+  const get = (headers = {}) => fetch(`http://127.0.0.1:${sup.port}/update/status`, { headers });
+  for (const headers of [{}, { Cookie: 'JSESSIONID=nobody' }, { Cookie: 'other=abc' }, { 'X-Recovery-Token': 'wrong' },
+    { 'X-Recovery-Token': '' }]) {
+    const r = await get(headers);
+    a.equal(r.status, 401, JSON.stringify(headers));
+    const body = await r.json();
+    a.equal(body.current, undefined, 'nothing of the status: ' + JSON.stringify(body));
+  }
+  // Any signed-in user may read it (owner decision): a customer's admin too, and an answer without deploymentAdmin.
+  for (const cookie of ['JSESSIONID=abc', 'JSESSIONID=orgadmin', 'JSESSIONID=noshape']) {
+    const r = await get({ Cookie: cookie });
+    a.equal(r.status, 200, cookie);
+    a.equal((await r.json()).current, '0.0.0', cookie);
+  }
+  const host = await fetch(`http://127.0.0.1:${sup.port}/update/status`, sup.asHost());
+  a.equal(host.status, 200, 'the host, with the recovery token');
+  // The server down: a session can't be checked, so it is refused; the token still works.
+  await authz.close(); authz = null;
+  a.equal((await get({ Cookie: 'JSESSIONID=abc' })).status, 401, 'the server is down');
+  a.equal((await fetch(`http://127.0.0.1:${sup.port}/update/status`, sup.asHost())).status, 200);
+});
+
+t.test('each route answers its exact path only: a longer one is the recovery page, and acts on nothing', { timeout: 20000 },
+  async (tt) => {
+    const fs = require('fs'), os = require('os'), path = require('path');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sup-exact-'));
+    let sup = null, authz = null;
+    tt.after(async () => { await stopChild(sup && sup.child); if (authz) await authz.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+    authz = await fakeAuthz();
+    sup = await spawnSupervisor(dir, { APPLY_SUPPORTED: '1', SERVER_BASE: authz.base }, /supervisor on/);
+    const url = (p) => `http://127.0.0.1:${sup.port}${p}`;
+    const isPage = async (r) => r.status === 200 && /text\/html/.test(r.headers.get('content-type')) && /<html/i.test(await r.text());
+    for (const p of ['/update/statusx', '/update/status/', '/update/status/x', '/update/agent.apkx', '/update/agent.apk/x',
+      '/healthz/', '/healthzx']) {
+      a.ok(await isPage(await fetch(url(p), sup.asHost())), p);
+    }
+    for (const p of ['/update/autox', '/update/auto/', '/update/checkx', '/update/rollbackx', '/update/applyx']) {
+      a.ok(await isPage(await fetch(url(p), { method: 'POST', headers: ADMIN, body: '{"auto":true}' })), p);
+    }
+    const s = await (await fetch(url('/update/status?x=1'), sup.asHost())).json();
+    a.equal(s.auto, false, 'the query is not the path: the status, and auto-update unchanged');
+    a.equal(s.apply, null);
+    a.equal((await (await fetch(url('/healthz?probe=1'))).text()), 'ok');
+  });
+
+// --- mdmesh-recovery: status and rollback from the host, with the token, while the server is down. ---
+const RECOVERY_CLI = require('path').join(__dirname, 'recovery-cli.js');
+/** Run mdmesh-recovery against the supervisor on `port`, reading the token from `tokenFile`. Not spawnSync: the
+ *  supervisor answering it is another process, but the test's own fake servers live in this one. */
+function runRecovery(args, port, tokenFile) {
+  return new Promise((resolve) => {
+    const child = cp.spawn(process.execPath, [RECOVERY_CLI, ...args], { stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, SUPERVISOR_PORT: String(port), RECOVERY_TOKEN_FILE: tokenFile } });
+    let out = '', err = '';
+    child.stdout.on('data', (d) => { out += d; });
+    child.stderr.on('data', (d) => { err += d; });
+    child.on('exit', (code) => resolve({ code, out, err }));
+  });
+}
+
+t.test('mdmesh-recovery: status and a rollback followed to its end, with the token and no server', { timeout: 40000 },
+  async (tt) => {
+    const fs = require('fs'), path = require('path');
+    const d = makeDeploy('SERVER_VERSION=0.0.2\nWEB_VERSION=0.0.2\nCURRENT_VERSION=0.0.2\n');
+    fs.writeFileSync(path.join(d.backups, 'latest'), '20260927-120000\n');
+    fs.writeFileSync(path.join(d.backups, '20260927-120000.env'), 'SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n');
+    fs.writeFileSync(path.join(d.backups, '20260927-120000.sql'), 'SELECT 1;\n-- PostgreSQL database dump complete\n');
+    const tokenFile = path.join(d.dir, 'recovery.token');
+    let sup = null;
+    tt.after(async () => { await stopChild(sup && sup.child); fs.rmSync(d.dir, { recursive: true, force: true }); });
+    sup = await spawnSupervisor(d.dir, { ...d.env, APPLY_SUPPORTED: '1', SERVER_BASE: 'http://127.0.0.1:9' }, /supervisor on/);
+
+    let r = await runRecovery(['status'], sup.port, tokenFile);
+    a.equal(r.code, 0, r.err);
+    a.match(r.out, /^version +0\.0\.2$/m);
+    a.match(r.out, /^update +none since the supervisor started$/m);
+
+    r = await runRecovery(['rollback'], sup.port, tokenFile);
+    a.equal(r.code, 0, r.out + r.err + sup.log());
+    a.match(r.out, /^rollback started$/m);
+    a.match(r.out, /^update +rolled_back \(0\.0\.2 -> 0\.0\.1\)$/m);
+    a.match(d.envFile(), /^CURRENT_VERSION=0\.0\.1$/m);
+    r = await runRecovery(['status'], sup.port, tokenFile);
+    a.match(r.out, /^version +0\.0\.1$/m);
+
+    // A restore that fails ends `failed`: exit 1, with the supervisor's error.
+    await stopChild(sup.child);
+    fs.writeFileSync(path.join(d.project, '.env'), 'SERVER_VERSION=0.0.2\nWEB_VERSION=0.0.2\nCURRENT_VERSION=0.0.2\n');
+    sup = await spawnSupervisor(d.dir, { ...d.env, APPLY_SUPPORTED: '1', SERVER_BASE: 'http://127.0.0.1:9', STUB_PSQL_FAIL: '1' },
+      /supervisor on/);
+    r = await runRecovery(['rollback'], sup.port, tokenFile);
+    a.equal(r.code, 1, r.out + r.err);
+    a.match(r.out, /^update +failed /m);
+    a.match(r.out, /^error +.*database restore failed/m);
+
+    // Refused: a wrong token; no supervisor; no such command.
+    fs.writeFileSync(path.join(d.dir, 'other.token'), 'wrong');
+    r = await runRecovery(['status'], sup.port, path.join(d.dir, 'other.token'));
+    a.equal(r.code, 1);
+    a.match(r.err, /status refused \(HTTP 401\)/);
+    r = await runRecovery(['status'], sup.port, path.join(d.dir, 'missing.token'));
+    a.equal(r.code, 1);
+    a.match(r.err, /cannot read the recovery token/);
+    await stopChild(sup.child);
+    r = await runRecovery(['status'], sup.port, tokenFile);
+    a.equal(r.code, 1);
+    a.match(r.err, /the supervisor does not answer/);
+    r = await runRecovery(['bogus'], sup.port, tokenFile);
+    a.equal(r.code, 2);
+    a.match(r.err, /usage: mdmesh-recovery status \| rollback/);
   });
 
 t.test('private repo: with GITHUB_TOKEN the manifest, signature and APK come through the asset API URL, and the token '
@@ -897,7 +1032,7 @@ t.test('private repo: with GITHUB_TOKEN the manifest, signature and APK come thr
   // 302s to https://cdn.test, which refuses any request carrying Authorization.
   gh = await fakeGitHub(dir, { version: '9.9.9', privateRepo: true, token: TOKEN, apk: crypto.randomBytes(2048) });
   sup = await spawnSupervisor(dir, { ...gh.env, GITHUB_TOKEN: TOKEN, CURRENT_VERSION: '9.9.0' }, /\[apk\] mirrored/, ['--require', gh.preload]);
-  const status = await (await fetch(`http://127.0.0.1:${sup.port}/update/status`)).json();
+  const status = await (await fetch(`http://127.0.0.1:${sup.port}/update/status`, sup.asHost())).json();
   a.equal(status.verified, true, 'the private release verifies:\n' + sup.log());
   a.equal(status.updateAvailable, true);
   a.equal(status.apk && status.apk.available, true, 'the APK was mirrored through the API URL');
@@ -920,9 +1055,9 @@ t.test('an unverifiable release logs why (HTTP status / minisign), without secre
     gh = await fakeGitHub(dir, { version: '9.9.9' });
     sup = await spawnSupervisor(dir, { ...gh.env, MANIFEST_PUBKEY: path.join(dir, 'b.pub') }, /\[verify\]/, ['--require', gh.preload]);
     a.match(sup.log(), /\[verify\] .*minisign.*key id/i, 'a wrong-key signature is logged with minisign\'s own reason');
-    let status = await (await fetch(`http://127.0.0.1:${sup.port}/update/status`)).json();
+    let status = await (await fetch(`http://127.0.0.1:${sup.port}/update/status`, sup.asHost())).json();
     a.equal(status.verified, false);
-    // /update/status is public (Caddy proxies it): the kind of failure only, never upstream output.
+    // every console user reads /update/status: the kind of failure only, never upstream output.
     a.equal(status.error, 'manifest not verified: minisign signature check failed (details in the supervisor log)');
     await stopChild(sup.child);
     await gh.close();
@@ -930,7 +1065,7 @@ t.test('an unverifiable release logs why (HTTP status / minisign), without secre
     gh = await fakeGitHub(dir, { version: '9.9.9', missing: ['manifest.json.minisig'] });
     sup = await spawnSupervisor(dir, { ...gh.env }, /\[verify\]/, ['--require', gh.preload]);
     a.match(sup.log(), /\[verify\] .*manifest\.json\.minisig.*HTTP 404/, 'a missing asset is logged with its HTTP status');
-    status = await (await fetch(`http://127.0.0.1:${sup.port}/update/status`)).json();
+    status = await (await fetch(`http://127.0.0.1:${sup.port}/update/status`, sup.asHost())).json();
     a.equal(status.error, 'manifest not verified: manifest.json.minisig: HTTP 404 (details in the supervisor log)');
     await stopChild(sup.child);
     await gh.close();
@@ -939,7 +1074,7 @@ t.test('an unverifiable release logs why (HTTP status / minisign), without secre
     gh = await fakeGitHub(dir, { version: '9.9.9', privateRepo: true, token: 'x' });
     sup = await spawnSupervisor(dir, { ...gh.env }, /\[verify\]/, ['--require', gh.preload]);
     a.match(sup.log(), /\[verify\] .*manifest\.json: HTTP 404.*GITHUB_TOKEN/);
-    status = await (await fetch(`http://127.0.0.1:${sup.port}/update/status`)).json();
+    status = await (await fetch(`http://127.0.0.1:${sup.port}/update/status`, sup.asHost())).json();
     a.equal(status.error, 'manifest not verified: manifest.json: HTTP 404 (details in the supervisor log)');
   });
 
@@ -1026,7 +1161,7 @@ t.test('supervisor start: CURRENT_VERSION comes from the project .env (what appl
     const d = makeDeploy('SERVER_VERSION=0.0.2\nCURRENT_VERSION=0.0.2\n');
     let sup = null;
     tt.after(async () => { await stopChild(sup && sup.child); fs.rmSync(d.dir, { recursive: true, force: true }); });
-    const status = async () => (await fetch(`http://127.0.0.1:${sup.port}/update/status`)).json();
+    const status = async () => (await fetch(`http://127.0.0.1:${sup.port}/update/status`, sup.asHost())).json();
 
     // A restart after an apply: the container env still says 0.0.1, .env says 0.0.2.
     sup = await spawnSupervisor(d.dir, { APPLY_SUPPORTED: '1', CURRENT_VERSION: '0.0.1', COMPOSE_PROJECT_DIR: d.project }, /supervisor on/);
@@ -1058,7 +1193,7 @@ t.test('rollback resets /update/status current to the version it restored', { ti
   tt.after(async () => { await stopChild(sup && sup.child); fs.rmSync(d.dir, { recursive: true, force: true }); });
   sup = await spawnSupervisor(d.dir, { ...d.env, APPLY_SUPPORTED: '1', CURRENT_VERSION: '0.0.1', SERVER_BASE: 'http://127.0.0.1:9' },
     /supervisor on/);
-  const status = async () => (await fetch(`http://127.0.0.1:${sup.port}/update/status`)).json();
+  const status = async () => (await fetch(`http://127.0.0.1:${sup.port}/update/status`, sup.asHost())).json();
   a.equal((await status()).current, '0.0.2');
   const r = await fetch(`http://127.0.0.1:${sup.port}/update/rollback`, { method: 'POST',
     headers: { 'X-MDMesh-Console': '1', 'X-Recovery-Token': 'tok123' } });
@@ -1189,7 +1324,7 @@ t.test('with AUTO_UPDATE on, a rollback is not undone by auto-applying the relea
     gh = await fakeGitHub(d.dir, { version: '0.0.2' }); // the signed 0.0.2 release is the latest on the channel
     sup = await spawnSupervisor(d.dir, { ...d.env, ...gh.env, APPLY_SUPPORTED: '1', AUTO_UPDATE: '1', CURRENT_VERSION: '0.0.1',
       SERVER_BASE: 'http://127.0.0.1:9' }, /supervisor on/, ['--require', gh.preload]);
-    const status = async () => (await fetch(`http://127.0.0.1:${sup.port}/update/status`)).json();
+    const status = async () => (await fetch(`http://127.0.0.1:${sup.port}/update/status`, sup.asHost())).json();
     const before = await waitFor(async () => { const x = await status(); return x.checkedAt && x; }, 'the startup poll');
     a.equal(before.verified, true, sup.log());
     a.equal(before.updateAvailable, false, 'running 0.0.2 already');
@@ -1273,7 +1408,7 @@ t.test('rollback.sh: a failed restore exits non-zero, says what state the stack 
     a.match(r.err, /^psql: .*relation "x" does not exist/m, 'the psql error is in the log');
     a.doesNotMatch(r.err.split('\n').filter((l) => l.startsWith('ERR ')).join('\n'), /relation/, 'no psql text on an ERR line');
     a.match(r.err, /^ERR .*server is stopped/mi, 'the state is spelled out');
-    a.match(r.err, /^ERR .*Roll back again/m, 'how to recover is spelled out');
+    a.match(r.err, /^ERR .*roll back again on the host: docker compose exec supervisor mdmesh-recovery rollback/m, 'how to recover is spelled out');
     const calls = d.calls();
     a.equal(calls.slice(idx(calls, PSQL_RE) + 1).filter((c) => /^compose up /.test(c)).length, 0,
       'the old server is not started on the un-restored database:\n' + calls.join('\n'));
@@ -1522,7 +1657,7 @@ t.test('auto.json {auto:true, skipVersion} blocks exactly that release across a 
     fs.writeFileSync(path.join(d.dir, 'auto.json'), JSON.stringify({ auto: true, skipVersion: '0.0.2' }));
     let gh = null, sup = null;
     tt.after(async () => { await stopChild(sup && sup.child); if (gh) await gh.close(); fs.rmSync(d.dir, { recursive: true, force: true }); });
-    const status = async () => (await fetch(`http://127.0.0.1:${sup.port}/update/status`)).json();
+    const status = async () => (await fetch(`http://127.0.0.1:${sup.port}/update/status`, sup.asHost())).json();
 
     gh = await fakeGitHub(d.dir, { version: '0.0.2' });
     sup = await spawnSupervisor(d.dir, { ...d.env, ...gh.env, APPLY_SUPPORTED: '1', AUTO_UPDATE: '1', SERVER_BASE: 'http://127.0.0.1:9' },
@@ -1560,7 +1695,7 @@ t.test('a failed MANUAL apply also blocks auto-apply of that release, persisted 
     authz = await fakeAuthz();
     const env = { ...d.env, ...gh.env, APPLY_SUPPORTED: '1', AUTO_UPDATE: '0', SERVER_BASE: authz.base, STUB_FAIL_RE: '^compose pull ' };
     sup = await spawnSupervisor(d.dir, env, /supervisor on/, ['--require', gh.preload]);
-    const status = async () => (await fetch(`http://127.0.0.1:${sup.port}/update/status`)).json();
+    const status = async () => (await fetch(`http://127.0.0.1:${sup.port}/update/status`, sup.asHost())).json();
     await waitFor(async () => (await status()).verified, 'the startup poll');
 
     const r = await fetch(`http://127.0.0.1:${sup.port}/update/apply`, { method: 'POST', headers: ADMIN });
@@ -1603,7 +1738,7 @@ t.test('after an apply, status shows the new current even when the next poll fai
     authz = await fakeAuthz();
     sup = await spawnSupervisor(d.dir, { ...d.env, ...gh.env, APPLY_SUPPORTED: '1', AUTO_UPDATE: '0', SERVER_BASE: authz.base },
       /supervisor on/, ['--require', gh.preload]);
-    const status = async () => (await fetch(`http://127.0.0.1:${sup.port}/update/status`)).json();
+    const status = async () => (await fetch(`http://127.0.0.1:${sup.port}/update/status`, sup.asHost())).json();
     const before = await waitFor(async () => { const x = await status(); return x.checkedAt && x; }, 'the startup poll');
     a.equal(before.updateAvailable, true, sup.log());
 
@@ -1685,7 +1820,7 @@ t.test('a failed restore reaches /update/status as a pointer to restore.log; the
     let sup = null;
     tt.after(async () => { await stopChild(sup && sup.child); fs.rmSync(d.dir, { recursive: true, force: true }); });
     sup = await spawnSupervisor(d.dir, { ...d.env, APPLY_SUPPORTED: '1', STUB_PSQL_FAIL: '1', SERVER_BASE: 'http://127.0.0.1:9' }, /supervisor on/);
-    const status = async () => (await fetch(`http://127.0.0.1:${sup.port}/update/status`)).json();
+    const status = async () => (await fetch(`http://127.0.0.1:${sup.port}/update/status`, sup.asHost())).json();
     const r = await fetch(`http://127.0.0.1:${sup.port}/update/rollback`, { method: 'POST',
       headers: { 'X-MDMesh-Console': '1', 'X-Recovery-Token': 'tok123' } });
     a.equal(r.status, 202);
@@ -1730,7 +1865,7 @@ t.test('a successful manual apply of the skipped version clears the skip (auto.j
     gh = await fakeGitHub(d.dir, { version: '0.0.2' });
     authz = await fakeAuthz();
     sup = await spawnSupervisor(d.dir, { ...d.env, ...gh.env, APPLY_SUPPORTED: '1', SERVER_BASE: authz.base }, /supervisor on/, ['--require', gh.preload]);
-    const status = async () => (await fetch(`http://127.0.0.1:${sup.port}/update/status`)).json();
+    const status = async () => (await fetch(`http://127.0.0.1:${sup.port}/update/status`, sup.asHost())).json();
     const before = await waitFor(async () => { const x = await status(); return x.checkedAt && x; }, 'the startup poll');
     a.equal(before.autoSkipped, '0.0.2');
     const r = await fetch(`http://127.0.0.1:${sup.port}/update/apply`, { method: 'POST', headers: ADMIN });
@@ -1877,7 +2012,7 @@ t.test('a release without digests, under another owner or without images for thi
         gh = await fakeGitHub(d.dir, opts);
         authz = await fakeAuthz();
         sup = await spawnSupervisor(d.dir, { ...d.env, ...gh.env, APPLY_SUPPORTED: '1', AUTO_UPDATE: '1', SERVER_BASE: authz.base }, /supervisor on/, ['--require', gh.preload]);
-        const status = async () => (await fetch(`http://127.0.0.1:${sup.port}/update/status`)).json();
+        const status = async () => (await fetch(`http://127.0.0.1:${sup.port}/update/status`, sup.asHost())).json();
         const st = await waitFor(async () => { const x = await status(); return x.checkedAt && x; }, 'the startup poll');
         a.equal(st.updateAvailable, false, 'not offered as an update');
         a.equal(st.latest, '0.0.2');
@@ -1912,7 +2047,7 @@ const envOf = (owner, current = '0.0.1') =>
   `IMAGE_OWNER=${owner}\nSERVER_VERSION=${current}\nWEB_VERSION=${current}\nCURRENT_VERSION=${current}\n`;
 const NEW_AGENT = Buffer.from('agent 0.0.2'), RUNNING_AGENT = Buffer.from('agent 0.0.1');
 async function statusOf(sup, since = 0) {
-  return waitFor(async () => { const x = await (await fetch(`http://127.0.0.1:${sup.port}/update/status`)).json();
+  return waitFor(async () => { const x = await (await fetch(`http://127.0.0.1:${sup.port}/update/status`, sup.asHost())).json();
     return x.checkedAt && x.checkedAt > since && x; }, 'a poll');
 }
 async function agentOf(sup) {
@@ -2084,7 +2219,7 @@ t.test('the offer follows the running version at once (apply, rollback); ?v= ser
     await withDeploy(envOf('mdmesh-app'), { ...GH(), failAfter: 1 }, async (d, gh, authz) => {
       fs.writeFileSync(path.join(d.dir, 'recovery.token'), 'tok123');
       const sup = await supervisorOn(d, gh, authz);
-      const status = async () => (await fetch(`http://127.0.0.1:${sup.port}/update/status`)).json();
+      const status = async () => (await fetch(`http://127.0.0.1:${sup.port}/update/status`, sup.asHost())).json();
       const get = (q) => fetch(`http://127.0.0.1:${sup.port}/update/agent.apk${q}`);
       try {
         const st = await statusOf(sup);
@@ -2126,7 +2261,7 @@ t.test('a slow lookup for the version that was running can\'t replace the offer 
     await withDeploy(envOf('mdmesh-app'), { ...GH({ unlisted: true }), failAfter: 1 }, async (d, gh, authz) => {
       gh.control.tagDelayMs = 3000;
       const sup = await supervisorOn(d, gh, authz);
-      const status = async () => (await fetch(`http://127.0.0.1:${sup.port}/update/status`)).json();
+      const status = async () => (await fetch(`http://127.0.0.1:${sup.port}/update/status`, sup.asHost())).json();
       try {
         // The first poll has verified 0.0.2 and is now waiting on 0.0.1's lookup: update while it does.
         await waitFor(async () => gh.hits.tags >= 1, 'the old lookup started');
@@ -2236,7 +2371,7 @@ t.test('after a rollback to a version not yet known, the old (newer) agent is dr
       fs.writeFileSync(path.join(d.backups, '20260927-120000.sql'), 'SELECT 1;\n-- PostgreSQL database dump complete\n');
       fs.writeFileSync(path.join(d.dir, 'recovery.token'), 'tok123');
       const sup = await supervisorOn(d, gh, authz);
-      const status = async () => (await fetch(`http://127.0.0.1:${sup.port}/update/status`)).json();
+      const status = async () => (await fetch(`http://127.0.0.1:${sup.port}/update/status`, sup.asHost())).json();
       try {
         a.deepEqual((await statusOf(sup)).apk.version, '0.0.2');
         a.equal(gh.hits.tags, 0);
@@ -2392,7 +2527,7 @@ t.test('a failed lookup is retried within the retry interval, not only at the ne
         const st = await statusOf(sup);
         a.equal(st.apk, null);
         gh.control.tagStatus = null;
-        const ok = await waitFor(async () => { const x = await (await fetch(`http://127.0.0.1:${sup.port}/update/status`)).json(); return x.apk && x; }, 'the retry', 15000);
+        const ok = await waitFor(async () => { const x = await (await fetch(`http://127.0.0.1:${sup.port}/update/status`, sup.asHost())).json(); return x.apk && x; }, 'the retry', 15000);
         a.deepEqual([ok.apk.version, ok.apk.of], ['0.0.1', 'running']);
         a.equal(gh.hits.releases, 1, 'no second poll');
       } finally { await stopChild(sup.child); }
@@ -2407,7 +2542,7 @@ t.test('the kept agent of the running release is offered at start-up, before the
       gh.control.listDelayMs = 3000;
       sup = await supervisorOn(d, gh, authz);
       try {
-        const st = await (await fetch(`http://127.0.0.1:${sup.port}/update/status`)).json();
+        const st = await (await fetch(`http://127.0.0.1:${sup.port}/update/status`, sup.asHost())).json();
         a.equal(st.checkedAt, null, 'the first poll hasn\'t answered');
         a.deepEqual(st.apk && [st.apk.version, st.apk.of], ['0.0.1', 'running']);
         a.deepEqual(await agentOf(sup), RUNNING_AGENT);
@@ -2444,7 +2579,7 @@ t.test('an agent whose download outlasts a rollback that makes it newer than the
       fs.writeFileSync(path.join(d.dir, 'recovery.token'), 'tok123');
       gh.control.apkDelayMs = 4000;   // 0.0.2's agent takes a while to mirror
       const sup = await supervisorOn(d, gh, authz);
-      const status = async () => (await fetch(`http://127.0.0.1:${sup.port}/update/status`)).json();
+      const status = async () => (await fetch(`http://127.0.0.1:${sup.port}/update/status`, sup.asHost())).json();
       try {
         a.equal((await statusOf(sup)).apk.version, '0.0.2');
         const download = fetch(`http://127.0.0.1:${sup.port}/update/agent.apk`);   // waits for the mirror
@@ -2558,7 +2693,7 @@ t.test('the skip is cleared at start-up when that version is already running (no
   let sup = null;
   tt.after(async () => { await stopChild(sup && sup.child); fs.rmSync(d.dir, { recursive: true, force: true }); });
   sup = await spawnSupervisor(d.dir, { ...d.env, APPLY_SUPPORTED: '1', SERVER_BASE: 'http://127.0.0.1:9' }, /supervisor on/);
-  const s = await waitFor(async () => { const x = await (await fetch(`http://127.0.0.1:${sup.port}/update/status`)).json(); return x.checkedAt && x; }, 'status');
+  const s = await waitFor(async () => { const x = await (await fetch(`http://127.0.0.1:${sup.port}/update/status`, sup.asHost())).json(); return x.checkedAt && x; }, 'status');
   a.equal(s.autoSkipped, null);
   a.deepEqual(JSON.parse(fs.readFileSync(path.join(d.dir, 'auto.json'), 'utf8')), { auto: true, skipVersion: null });
 });
@@ -2577,7 +2712,7 @@ t.test('after a failed apply whose restore also failed, the skip is KEPT while t
   // Health fails → rollback → the restore fails: .env (and current) stay on 0.0.2, the server is left stopped.
   const env = { ...d.env, ...gh.env, APPLY_SUPPORTED: '1', SERVER_BASE: authz.base, STUB_CURL_FAIL: '1', HEALTH_TIMEOUT: '0', STUB_PSQL_FAIL: '1' };
   sup = await spawnSupervisor(d.dir, env, /supervisor on/, ['--require', gh.preload]);
-  const status = async () => (await fetch(`http://127.0.0.1:${sup.port}/update/status`)).json();
+  const status = async () => (await fetch(`http://127.0.0.1:${sup.port}/update/status`, sup.asHost())).json();
   const before = await waitFor(async () => { const x = await status(); return x.checkedAt && x; }, 'the startup poll');
   a.equal((await fetch(`http://127.0.0.1:${sup.port}/update/apply`, { method: 'POST', headers: ADMIN })).status, 202);
   const s = await waitFor(async () => { const x = await status(); return x.checkedAt > before.checkedAt && x; }, 'the post-apply poll', 20000);
@@ -2586,7 +2721,7 @@ t.test('after a failed apply whose restore also failed, the skip is KEPT while t
   a.equal(s.autoSkipped, '0.0.2', 'kept: a by-hand rollback plus a restart must not let auto re-apply 0.0.2');
   const again = await fetch(`http://127.0.0.1:${sup.port}/update/apply`, { method: 'POST', headers: ADMIN });
   a.deepEqual(await again.json(),
-    { error: 'already running 0.0.2, whose update failed: if it is not healthy, use Roll back (/recovery) to return to the previous version' });
+    { error: 'already running 0.0.2, whose update failed: if it is not healthy, roll back to the previous version on the host (docker compose exec supervisor mdmesh-recovery rollback, in the install directory)' });
 
   await stopChild(sup.child);
   sup = await spawnSupervisor(d.dir, env, /supervisor on/, ['--require', gh.preload]);

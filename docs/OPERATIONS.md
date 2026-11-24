@@ -571,8 +571,9 @@ It never touches apt packages, your proxy or the git checkout.
 - The Headwind launcher endpoints are off by default (404). MQTT push is off; agents are woken over a WebSocket.
 - The supervisor mounts the Docker socket, so it is trusted. It acts only on minisign-verified manifests, runs only
   the images they pin by digest, and answers only authorized callers (the recovery token, or the session of an admin
-  who may update: a super-admin, or the org admin of a single-customer install). Apply and rollback only recreate
-  `server` and `caddy`.
+  who may update: a super-admin, or the org admin of a single-customer install). Its status needs a signed-in console
+  session or the token. Apply and rollback only recreate `server` and `caddy`. The server passes it only the routes
+  the console and devices use, and never the recovery token, which works only on the host (`mdmesh-recovery`).
 - Setting a password ends that account's other sessions and API tokens. Password reset links work once, for 24 hours.
 - Enrollment codes are stored hashed. A code for a batch enrolls devices for anyone who has it until it expires or
   its devices are used up. If one is shared further than meant, use **Stop all codes** on the Enroll page (or

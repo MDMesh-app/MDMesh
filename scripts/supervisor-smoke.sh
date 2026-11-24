@@ -4,7 +4,7 @@
 # docker-compose.release.yml run it: working dir /project with a project dir bind-mounted there (and
 # no server.js in it), a /backups volume, no GitHub repo configured. Guards #27 — a relative
 # entrypoint resolved against a compose `working_dir` crash-looped the supervisor on every Docker
-# deploy — and checks the routes Caddy proxies to it plus the tools apply.sh/rollback.sh need. A second
+# deploy — and checks its routes, the host's recovery command, plus the tools apply.sh/rollback.sh need. A second
 # run with APPLY_SUPPORTED=0 (what setup.sh and the native installer set) checks one-click apply and rollback are
 # refused and that the recovery page stops offering Roll back; that run also sets GITHUB_REPO with GitHub unreachable
 # (--network none, api.github.com pinned to a closed loopback port so it fails fast instead of waiting on DNS), so
@@ -55,7 +55,12 @@ pass "starts under -w /project and answers /healthz"
 check() { local what="$1"; shift; if "$@"; then pass "$what"; else fail "$what"; fi; }
 # Capture bodies first (grep -q on a pipe can SIGPIPE curl under pipefail once a body outgrows the pipe buffer).
 body()         { in_c curl -fsS -m 5 "$@"; }
-status_json()  { grep -q '"applySupported":true' <<<"$(body http://127.0.0.1:9000/update/status)"; }
+# /update/status as the host reads it: with the recovery token (anonymous, it is refused).
+# shellcheck disable=SC2016  # expanded by the container's shell
+status()       { in_c sh -c 'curl -fsS -m 5 -H "X-Recovery-Token: $(cat /backups/recovery.token)" http://127.0.0.1:9000/update/status'; }
+status_json()  { grep -q '"applySupported":true' <<<"$(status)"; }
+status_gated() { [ "$(code http://127.0.0.1:9000/update/status)" = 401 ]; }
+recovery_cli() { local s; s="$(in_c mdmesh-recovery status)" && grep -qx 'version   0.0.0' <<<"$s"; }
 # server.js serves the recovery page for EVERY unmatched path (it is also Caddy's handle_errors fallback), so this
 # probe cannot test routing. It asserts the served CONTENT: the data-apply marker recoveryPage() stamps on the page,
 # plus the Roll back card that marker gates.
@@ -65,7 +70,9 @@ apk_route()    { [ "$(code http://127.0.0.1:9000/update/agent.apk)" = 404 ]; }
 apply_gated()  { [ "$(code -X POST http://127.0.0.1:9000/update/apply)" = 403 ]; }
 toolchain()    { in_c sh -c 'command -v bash && command -v minisign && command -v pg_dump && command -v psql && docker compose version' >/dev/null; }
 
-check "/update/status serves JSON (apply supported)" status_json
+check "/update/status serves JSON to the host's recovery token (apply supported)" status_json
+check "/update/status refuses an anonymous read (401)" status_gated
+check "mdmesh-recovery status reads it on the host" recovery_cli
 check "/recovery serves the recovery page, marked apply-supported (Roll back offered)" recovery_page
 check "/update/agent.apk answers (404: no verified release yet)" apk_route
 check "/update/apply is CSRF-gated (403 without the console header)" apply_gated
@@ -82,14 +89,14 @@ start "$BASE_NAME-noapply" -e APPLY_SUPPORTED=0 -e GITHUB_REPO=mdmesh-smoke/unre
   --network none --add-host api.github.com:127.0.0.1
 poll_error() { local s=""
   for _ in $(seq 1 15); do
-    s="$(body http://127.0.0.1:9000/update/status)" || return 1
+    s="$(status)" || return 1
     grep -q '"error":"not polled yet"' <<<"$s" || break
     sleep 1
   done
   running && grep -q '"checkedAt":[0-9]' <<<"$s" && grep -q '"error":"[^"]' <<<"$s" \
     && ! grep -qE '"error":"(not polled yet|GITHUB_REPO not set)"' <<<"$s"; }
 check "startup poll against an unreachable repo reports its fetch error in /update/status and keeps running" poll_error
-status_noapply() { grep -q '"applySupported":false' <<<"$(body http://127.0.0.1:9000/update/status)"; }
+status_noapply() { grep -q '"applySupported":false' <<<"$(status)"; }
 apply_501()      { [ "$(code -X POST http://127.0.0.1:9000/update/apply)" = 501 ]; }
 rollback_501()   { [ "$(code -X POST -H 'X-MDMesh-Console: 1' http://127.0.0.1:9000/update/rollback)" = 501 ]; }
 recovery_noapply() { local b; b="$(body http://127.0.0.1:9000/recovery)"

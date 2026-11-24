@@ -56,7 +56,7 @@ set_env() {
 # --- restore_db <dump> <log>: put the database back to the pre-update dump. Returns non-zero after ERR lines. ---
 # The dump is plain SQL from `pg_dump` of the database before the update. So:
 #  1. the server is STOPPED first: it holds pooled connections whose locks would block (or race) the drops, and
-#     whatever runs next must not see a half-restored schema. caddy keeps running, so /recovery stays up;
+#     whatever runs next must not see a half-restored schema. caddy keeps running, so the edge stays up;
 #  2. ONE psql session, ONE transaction, in order: BEGIN, a bounded lock_timeout, every other session on the database
 #     ended (a stray client or a stuck backend holding a lock), the schema reset, the dump, COMMIT. Same session, so no
 #     gap for a new lock to slip in between. The COMMIT is the last line of the stream, and only when the whole dump
@@ -85,7 +85,7 @@ restore_db() {
   local reset="DO \$reset\$ DECLARE o regrole; a aclitem[]; g record; BEGIN SELECT nspowner::regrole, nspacl INTO o, a FROM pg_namespace WHERE nspname = 'public'; DROP SCHEMA public CASCADE; EXECUTE format('CREATE SCHEMA public AUTHORIZATION %s', o); FOR g IN SELECT grantee, privilege_type FROM aclexplode(a) WHERE grantee <> o LOOP EXECUTE format('GRANT %s ON SCHEMA public TO %s', g.privilege_type, CASE g.grantee WHEN 0 THEN 'PUBLIC' ELSE g.grantee::regrole::text END); END LOOP; END \$reset\$"
   running="$(grep -E '^CURRENT_VERSION=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2-)"
   if ! dc stop server; then
-    errln "could not stop the server, so the database was NOT restored and nothing was changed: .env still names ${running:-the running version}, which may still be running (a failed recreate can leave it stopped). Fix the cause (see the log above), then Roll back again from /recovery."
+    errln "could not stop the server, so the database was NOT restored and nothing was changed: .env still names ${running:-the running version}, which may still be running (a failed recreate can leave it stopped). Fix the cause (see the log above), then roll back again on the host: docker compose exec supervisor mdmesh-recovery rollback (in the install directory)."
     return 1
   fi
   # Rewrite the preamble's `SET lock_timeout = 0;` (first match only, and only while still in the preamble: blank,
@@ -106,7 +106,7 @@ restore_db() {
     # /update/status, so it only points at the file.
     echo "psql: $(grep -m1 -E 'ERROR|FATAL' "$log" || tail -n1 "$log")" >&2
     errln "database restore failed: see $log"
-    errln "the server is stopped (on purpose: the old version must not run on a database it was not restored for); the database is unchanged (the restore runs in one transaction); .env still names ${running:-the running version}, the version this database belongs to; caddy and /recovery are up. Fix the cause (full psql output: docker compose exec supervisor cat $log), then Roll back again from /recovery; to restore by hand see docs/UPGRADING.md (Restoring by hand)."
+    errln "the server is stopped (on purpose: the old version must not run on a database it was not restored for); the database is unchanged (the restore runs in one transaction); .env still names ${running:-the running version}, the version this database belongs to; caddy is up. Fix the cause (full psql output: docker compose exec supervisor cat $log), then roll back again on the host: docker compose exec supervisor mdmesh-recovery rollback; to restore by hand see docs/UPGRADING.md (Restoring by hand)."
     return 1
   fi
 }
@@ -146,7 +146,7 @@ fi
 [ -n "$OLD_WEB" ] && set_env WEB_VERSION "$OLD_WEB"
 
 if ! dc up -d --no-deps server caddy; then
-  errln "could not start the old server (see the log above); .env names the old versions and the database is restored: run 'docker compose up -d server caddy' in the install directory, or Roll back again."
+  errln "could not start the old server (see the log above); .env names the old versions and the database is restored: run 'docker compose up -d server caddy' in the install directory, or roll back again: docker compose exec supervisor mdmesh-recovery rollback."
   phase failed
   exit 1
 fi

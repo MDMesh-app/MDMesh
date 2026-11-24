@@ -3,11 +3,11 @@
 #
 # Usage: tests/rollback-e2e/run.sh [first] [040] [main] [native]      (default: all four)
 #   first   what UPGRADING asks of a 0.4.x quick start: update the supervisor first (pull + up -d supervisor, :latest
-#           = this branch's), then update. The new supervisor on the 0.4.0 stack: /update/status, /recovery, an update
-#           check signed in as the admin. Then (a) an update to a release whose server never gets healthy (0.5.2, its
-#           Tomcat on another port: it migrates the database, then fails the health check) rolls back by itself to a
-#           working 0.4.0, and (b) the update to 0.5.1, then Roll back (POST /update/rollback with the recovery token,
-#           as /recovery sends it) is back on a working 0.4.0.
+#           = this branch's), then update. The new supervisor on the 0.4.0 stack: /update/status (refused anonymously,
+#           read signed in and by mdmesh-recovery), /recovery, an update check signed in as the admin. Then (a) an
+#           update to a release whose server never gets healthy (0.5.2, its Tomcat on another port: it migrates the
+#           database, then fails the health check) rolls back by itself to a working 0.4.0, and (b) the update to
+#           0.5.1, then a roll back on the host (mdmesh-recovery rollback) is back on a working 0.4.0.
 #   040     v0.4.0 quick start (its published images, its supervisor) updated to this branch (0.5.1) by v0.4.0's own
 #           apply.sh. v0.4.0's rollback.sh fails over the new schema (it can't drop a constraint that newer tables
 #           depend on, such as configurations_pr_key or devices_number_unique) and must change nothing; then the supervisor is updated as UPGRADING says and the rollback
@@ -268,7 +268,7 @@ setup_dind() {
 
 # ---------------------------------------------------------------------------------------------------------------------
 phase_first() {
-  local d=/root/rr-first r t1 t2 t3 d1 d2 n0 stamp tok st _
+  local d=/root/rr-first r t1 t2 t3 d1 d2 n0 stamp st
   say "first: v0.4.0 quick start, supervisor updated first (UPGRADING v0.5.0), then updates and rollbacks"
   push_latest_supervisor ghcr.io/mdmesh-app/mdmesh-supervisor:0.4.0
   install "$d" 0.4.0 "$WORK/v040" 0.4.0 0.4.0 latest || { teardown "$d"; return; }
@@ -283,10 +283,14 @@ phase_first() {
   check "the running supervisor is this branch's" dc "$d" exec -T supervisor grep -q 'DROP SCHEMA public CASCADE' /app/rollback.sh
   sleep 5
   r="$(http "$d" GET /update/status)"
-  check "new supervisor on 0.4.0: /update/status 200, current 0.4.0 (${r:0:120})" grep -q '^200 .*"current":"0.4.0"' <<< "$r"
+  check "new supervisor on 0.4.0: /update/status refused before sign-in (${r:0:120})" grep -q '^401 ' <<< "$r"
   check "new supervisor on 0.4.0: /recovery 200" grep -q '^200 ' <<< "$(http "$d" GET /recovery)"
   check "new supervisor on 0.4.0: console / 200" grep -q '^200 ' <<< "$(http "$d" GET /)"
   login "$d" >>"$LOG"
+  r="$(http "$d" GET /update/status)"
+  check "new supervisor on 0.4.0: /update/status signed in 200, current 0.4.0 (${r:0:120})" grep -q '^200 .*"current":"0.4.0"' <<< "$r"
+  r="$(dc "$d" exec -T supervisor mdmesh-recovery status 2>&1 | tr -d '\r')"
+  check "new supervisor on 0.4.0: mdmesh-recovery status on the host (${r:0:80})" grep -qx 'version   0.4.0' <<< "$r"
   r="$(http "$d" POST /update/check '{}' 'X-MDMesh-Console: 1')"
   check "new supervisor on 0.4.0: an update check signed in as the admin is authorized by the 0.4.0 server (${r:0:120})" \
     grep -q '^200 .*"current":"0.4.0"' <<< "$r"
@@ -307,24 +311,16 @@ phase_first() {
   check "after the automatic rollback: no 0.5.0 tables left" \
     test "$(q "$d" "SELECT count(*) FROM pg_tables WHERE schemaname = 'public' AND tablename IN ('configurationapppermissions', 'agentenrollmentkey')")" = 0
 
-  echo "-- (b) update to 0.5.1, then Roll back as /recovery does it"
+  echo "-- (b) update to 0.5.1, then roll back on the host (mdmesh-recovery rollback)"
   dc "$d" exec -T supervisor /app/apply.sh 0.5.1 "$(ref_of 0.5.1 server)" "$(ref_of 0.5.1 web)" "$(ref_of 0.5.1 supervisor)" \
     > "$WORK/first-apply.out" 2>&1
   check "0.4.0 -> 0.5.1: OK" grep -qx 'OK 0.5.1' "$WORK/first-apply.out"
   login "$d" >>"$LOG"; t3="$(mint "$d")"; r="$(enroll "$d" "$t3")"; d2="$(device_of "$r")"
   check "0.5.1: a device enrolls after the update (${d2:-$r})" test -n "$d2"
-  tok="$(dc "$d" exec -T supervisor cat /backups/recovery.token | tr -d '\r\n')"
-  # shellcheck disable=SC2016  # expanded by the container's shell
-  dc "$d" exec -T supervisor sh -c 'curl -sS -X POST -H "X-MDMesh-Console: 1" -H "X-Recovery-Token: $1" -o /tmp/rr-rb -w "%{http_code}" http://caddy:80/update/rollback' \
-    sh "$tok" > "$WORK/first-rb.code" 2>>"$LOG"
-  check "Roll back accepted (HTTP $(cat "$WORK/first-rb.code"))" grep -qx 202 "$WORK/first-rb.code"
-  st=""
-  for _ in $(seq 1 60); do
-    sleep 5
-    st="$(http "$d" GET /update/status | grep -o '"phase":"[a-z_]*"' | head -1)"
-    case "$st" in *rolled_back*|*failed*) break ;; esac
-  done
-  check "Roll back finished: $st" test "$st" = '"phase":"rolled_back"'
+  dc "$d" exec -T supervisor mdmesh-recovery rollback > "$WORK/first-rb.out" 2>&1; st=$?
+  sed 's/^/      mdmesh-recovery: /' "$WORK/first-rb.out" | tr -d '\r' | cut -c1-200
+  check "mdmesh-recovery rollback exits 0 (rc=$st)" test "$st" = 0
+  check "mdmesh-recovery rollback ends rolled back" grep -q '^update    rolled_back (0.5.1 -> 0.4.0)' "$WORK/first-rb.out"
   check "after Roll back: the server image is 0.4.0 ($(server_image "$d"))" test "$(server_image "$d")" = "ghcr.io/$OWNER/mdmesh-server:0.4.0"
   assert_old_works "$d" "after Roll back:" "$d1" "$d2" "$n0"
   r="$(enroll "$d" "$t2")"

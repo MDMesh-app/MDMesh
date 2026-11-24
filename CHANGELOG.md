@@ -20,6 +20,9 @@ Upgrading
   count for this update, get this release's supervisor first ([UPGRADING.md](docs/UPGRADING.md#unreleased)).
 - Existing installs keep their mode and settings. To move one behind your own proxy, see
   [UPGRADING, Changing the hosting mode](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#changing-the-hosting-mode).
+- `/update/status` needs a signed-in console session: on native from the update on, on a quick start once this
+  release's supervisor runs (`docker compose up -d supervisor` after the update). Point monitors at `/healthz`
+  ([UPGRADING.md](docs/UPGRADING.md#unreleased)).
 
 Heads-up
 - The edge sends HSTS for a request that came in over HTTP only when a trusted peer says `X-Forwarded-Proto: https`
@@ -57,6 +60,8 @@ New
   leaves missing. It is no longer offered as an update that then fails, or retried automatically.
 - Console extensions: a menu item (`MenuItem`, as in a list's row actions) can set `movesFocus: true` when its
   `onSelect` moves focus itself, so the menu leaves focus there rather than returning it to its trigger.
+- Recovery from the host: `docker compose exec supervisor mdmesh-recovery status` or `rollback`, in the install
+  directory. It works while the server and the console are down, and a failed update's message names it.
 
 Fixes
 - Enrollment keeps its agent through a restart with GitHub down: the updater keeps the signed manifest and agent of
@@ -112,6 +117,9 @@ Fixes
 
 Under the hood
 - CI builds the agent's instrumented tests (they still run only by hand, on an emulator).
+- The server passes the updater only the routes the console and devices use (the agent download, its health, the
+  status and the update actions), each behind its session and method checks; any other `/update` path is answered by
+  the server, and the recovery token is never passed on.
 - Agent protocol 1.12 (additive): the check-in response's `eventsAccepted`, the check-in request's `protocolVersion`
   (now always sent), and the `eventsDropped` event
   ([VERSIONING](https://github.com/MDMesh-app/MDMesh/blob/main/proto/VERSIONING.md)).

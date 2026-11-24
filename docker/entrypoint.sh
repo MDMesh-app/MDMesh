@@ -106,6 +106,8 @@ cat > "$_root_xml_tmp" <<EOF
     <Parameter name="base.directory"  value="/opt/mdmesh"/>
     <Parameter name="files.directory" value="/opt/mdmesh/files"/>
     <Parameter name="base.url"        value="${BASE_URL}"/>
+    <!-- The updater supervisor's container: UpdateProxyServlet passes it the /update routes the console uses. -->
+    <Parameter name="supervisor.base" value="http://supervisor:9000"/>
 
     <!-- Only the edge (Caddy) reaches the server: a private-network peer is the proxy, and its X-Forwarded-For names
          the client for the sign-in limit. -->

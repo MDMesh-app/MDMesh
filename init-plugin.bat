@@ -1,4 +1,5 @@
 @echo off
+REM Derived from Headwind MDM (Apache-2.0); modified by the MDMesh contributors.
 
 grep --version >NUL 2>NUL && goto hasmingw
 echo This utility requires mingw64 (grep and sed utilities)!

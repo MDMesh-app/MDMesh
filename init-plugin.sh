@@ -1,4 +1,5 @@
 #!/bin/bash
+# Derived from Headwind MDM (Apache-2.0); modified by the MDMesh contributors.
 #
 # This utility adds a new plugin to the project code
 #

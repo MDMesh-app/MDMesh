@@ -28,12 +28,17 @@ import java.util.regex.Pattern;
  * only to an agent that advertises the capability. Every other section is always sent: an agent ignores a section it
  * doesn't know, and nothing it reports, its version least of all, can make the server send less.</p>
  *
- * <p>What a device applies decides only whether it shows in sync. An agent from 0.6.0 advertises {@code configSections},
- * flattened to {@code config.<name>}, and applies exactly those. An older agent applies a section with a capability
+ * <p>What a device applies decides only whether it needs an agent update ({@link #notApplied}); never what it is sent,
+ * nor whether it runs the current revision. An agent from 0.6.0 advertises {@code configSections}, flattened to
+ * {@code config.<name>}, and applies exactly those. An older agent applies a section with a capability
  * when it advertises it, and any other section unless it reports a version below the section's {@code since}. Only a
- * version that reads as one counts: a missing or unreadable one is taken to apply them all.</p>
+ * version that reads as one, from 0.3.0 on, counts: a missing, unreadable or older one (a development build's) is taken
+ * to apply them all. An empty {@code configSections} list flattens to no tokens, so it counts as no list.</p>
  */
 public final class ConfigSections {
+
+    /** The first release whose agent applies config.apply; every section's {@code since} is this or later. */
+    static final String FIRST_CONFIG_APPLY = "0.3.0";
 
     /** Capability token prefix of the sections an agent from 0.6.0 applies ({@code capabilities.configSections}). */
     public static final String TOKEN_PREFIX = "config.";
@@ -113,20 +118,24 @@ public final class ConfigSections {
 
     /**
      * The sections of {@code doc} that ask something (not {@link #isEmpty}) and this device doesn't apply, in
-     * {@link #ALL} order: it is not in sync while there is one, and needs an agent update for it.
+     * {@link #ALL} order: the device needs an agent update for each.
      *
-     * @param agentVersion the version the agent reports; null or unreadable counts as applying every section
+     * @param agentVersion the version of the agent that applied the configuration; null, unreadable or below
+     *                     0.3.0 (the first config.apply release) counts as applying every section
      */
     public static List<Section> notApplied(DesiredConfig doc, Set<String> deviceTokens, String agentVersion) {
         Set<String> tokens = tokensOf(deviceTokens);
         List<Section> out = new ArrayList<Section>();
         if (doc == null) return out;
         boolean lists = listsSections(tokens);
+        // Below the first config.apply release reads as a version, but such an agent couldn't apply configurations: a
+        // build without a release version (a development or fork build), so it counts as unreadable.
+        String version = isBelow(agentVersion, FIRST_CONFIG_APPLY) ? null : agentVersion;
         for (Section s : ALL) {
             if (isEmpty(s.valueIn(doc))) continue;
             boolean applies = s.getCapability() == null || tokens.contains(s.getCapability());
             if (lists) applies &= tokens.contains(s.getToken());
-            else if (s.getCapability() == null) applies = !isBelow(agentVersion, s.getSince());
+            else if (s.getCapability() == null) applies = !isBelow(version, s.getSince());
             if (!applies) out.add(s);
         }
         return out;

@@ -17,9 +17,11 @@ android {
         minSdk = 24
         targetSdk = 35
         // Release CI overrides these from the git tag (see release/version.sh); the defaults are the
-        // dev/debug values. versionCode must stay monotonic across the scheme switch (115 > 16).
+        // dev/debug values. versionCode must stay monotonic across the scheme switch (115 > 16). The dev
+        // versionName is below every release, so a rollout updates such a device, and it doesn't pass for an
+        // old release: the server counts a version below 0.3.0 from a config.apply agent as unknown.
         versionCode = (project.findProperty("versionCode") as String?)?.toInt() ?: 16
-        versionName = (project.findProperty("versionName") as String?) ?: "0.1.15"
+        versionName = (project.findProperty("versionName") as String?) ?: "0.0.0-dev"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

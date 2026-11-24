@@ -44,4 +44,9 @@ public class ConfigSyncSummary {
     private int deferred;
     /** Wiped devices still on this configuration: outside {@link #total}, but they do block deleting it. */
     private int wiped;
+    /**
+     * Devices (any of {@link #total}, in sync or not) whose agent doesn't apply a section the configuration sets
+     * (ConfigStatusView#agentUpdateNeeded). Apart from the sync counts: they need an agent update, not a re-send.
+     */
+    private int agentUpdateNeeded;
 }

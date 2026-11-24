@@ -548,10 +548,10 @@ public class AgentAdminResource {
         if (state != null) { v.setAppliedRevision(state.getAppliedConfigRevision()); v.setAppliedAt(state.getAppliedConfigAt()); }
         boolean supported = AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, tokens);
         v.setSupported(supported);
-        List<String> notApplied = ConfigReconciler.notApplied(doc, tokens, state == null ? null : state.getAgentVersion());
+        v.setInSync(v.getCurrentRevision() != null && v.getCurrentRevision().equals(v.getAppliedRevision()));
+        // Apart from inSync, which stays "runs the current revision" (Retry and the kiosk state read it that way).
+        List<String> notApplied = ConfigReconciler.notApplied(doc, tokens, ConfigReconciler.applyingAgentVersion(state));
         if (!notApplied.isEmpty()) v.setAgentUpdateNeeded(notApplied);
-        v.setInSync(v.getCurrentRevision() != null && v.getCurrentRevision().equals(v.getAppliedRevision())
-                && notApplied.isEmpty());
         v.setLastCommand(ConfigStatusView.LastCommand.from(commandDAO.findLatestOfType(deviceId, DesiredConfigBuilder.COMMAND_TYPE)));
         return Response.OK(v);
     }
@@ -583,17 +583,18 @@ public class AgentAdminResource {
                 documentByConfig.put(cfgId, configReconciler.statusDocument(probe));
             }
             Set<String> tokens = AgentCapabilityTokens.flatten(row.getCapabilitiesJson());
-            // Per device: an agent without app permission support is compared with what it can apply, and one that
-            // doesn't apply a section the configuration sets is never in sync.
+            // Per device: an agent without app permission support is compared with what it can apply.
             DesiredConfig doc = documentByConfig.get(cfgId);
             String current = ConfigReconciler.statusRevision(doc, tokens);
-            boolean appliesAll = ConfigReconciler.notApplied(doc, tokens, row.getAgentVersion()).isEmpty();
             boolean supported = AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, tokens);
+            if (supported && !ConfigReconciler.notApplied(doc, tokens, row.getAgentVersion()).isEmpty()) {
+                s.setAgentUpdateNeeded(s.getAgentUpdateNeeded() + 1);
+            }
             if (!supported) {
                 s.setUnsupported(s.getUnsupported() + 1);
             } else if (row.getAppliedConfigRevision() == null) {
                 s.setNeverSeen(s.getNeverSeen() + 1);
-            } else if (row.getAppliedConfigRevision().equals(current) && appliesAll) {
+            } else if (row.getAppliedConfigRevision().equals(current)) {
                 s.setInSync(s.getInSync() + 1);
                 if (row.isLastApplyDeferred()) s.setDeferred(s.getDeferred() + 1);
             } else {

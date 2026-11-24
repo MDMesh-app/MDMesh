@@ -4,9 +4,10 @@ Open string registries. Adding a row is an additive (MINOR) change. Keep this fi
 with the agent's capability advertisement and the server's command catalog.
 
 A command's `requiresCapability` is a flattened **token**, not a bare key: the server turns each
-advertised key into `policy.<key>`, `app.<key>`, `device.<key>` or `config.<section>` (plus `remote.<tier>` and `oem.knox`;
+advertised key into `policy.<key>`, `app.<key>` or `device.<key>` (plus `remote.<tier>` and `oem.knox`;
 see `endpoints.md` and `AgentCapabilityTokens`), and delivers a command only if its token is in the
-device's set. A command with no `requiresCapability` is always delivered.
+device's set. A command with no `requiresCapability` is always delivered. The `config.<section>` tokens
+(`configSections` below) are never a command's `requiresCapability`: they only feed the configuration status.
 
 ## Capability keys
 
@@ -48,10 +49,12 @@ with a protocol bump, a capability token and a per-section outcome, in the relea
 1.12, from agent 0.6.0. The `config.apply` sections the agent applies, one key per row of `config-sections.json`
 (`policies`, `kiosk`, …), flattened to `config.<section>`. They don't gate what is sent: an agent releases a section
 it stops getting, so the server sends every section, except one with a `capability` (`appPermissions`) to an agent
-without it, as before. They decide the sync status: a device whose agent doesn't apply a section the configuration
-sets is not in sync, and its status names the section (`agentUpdateNeeded`). An agent that lists none (before 0.6.0)
-applies a section with a `capability` when it advertises it, and any other section unless it reports a version below
-the row's `since`; a missing or unreadable version counts as applying them all.
+without it, as before. Nor do they change "in sync", which still means "runs the current revision". They decide the
+configuration status's `agentUpdateNeeded`: the sections the configuration sets that the device's agent doesn't
+apply (and the summary's count of such devices). An agent that lists none (before 0.6.0, or an empty list) applies a
+section with a `capability` when it advertises it, and any other section unless the agent that applied the
+configuration reports a version below the row's `since`. A missing or unreadable version, or one below 0.3.0 (a
+development build's), counts as applying them all.
 
 ### appManagement
 | key | meaning | notes |
@@ -60,7 +63,7 @@ the row's `since`; a missing or unreadable version counts as applying them all.
 | `silentUninstall` | silent uninstall | Planned: not advertised yet. |
 | `splitApk` | split/.xapk install | Planned key: not advertised; `app.install` already takes split `parts`. |
 | `fdroidCatalog` | can pull from an F-Droid repo | Planned: not advertised yet. |
-| `runtimePermissions` | per-app runtime permission grant, denial, and release | 1.7. Device Owner and API 23+. The optional `config.apply.appPermissions` section is sent only to agents advertising `app.runtimePermissions` (from 0.6.0, `config.appPermissions`); omission is legacy/no management and an empty array releases MDMesh overrides. |
+| `runtimePermissions` | per-app runtime permission grant, denial, and release | 1.7. Device Owner and API 23+. The optional `config.apply.appPermissions` section is sent only to agents advertising `app.runtimePermissions`; omission is legacy/no management and an empty array releases MDMesh overrides. |
 
 ### remoteControl
 Advertised as an object (`tier`, `screenCapture`, `inputInjection`, `transport`). See README. The agent

@@ -69,6 +69,13 @@ public class WipedSqlTest {
     }
 
     @Test
+    public void theSyncSummaryReadsTheAgentVersionThatAppliedTheConfiguration() {
+        // ConfigReconciler.applyingAgentVersion: the agent that applied the revision decides which sections it applies.
+        String sql = squash(Fakes.sqlOf(AgentDeviceMapper.class, "listDevicesForSync")).toLowerCase();
+        assertTrue(sql, sql.contains("coalesce(s.configagentversion, s.agentversion) as agentversion"));
+    }
+
+    @Test
     public void aCheckInReadsTheMark() throws Exception {
         // AgentResource.checkIn loads the device through getDeviceByNumber: without the column it always sees null,
         // and neither way of removing the mark runs.

@@ -99,7 +99,7 @@ public class ConfigReconciler {
      * The revision the console compares with the one the device applied, for its sync status: the revision of the
      * document the device is sent, when the sections left out of it ask nothing (absent or empty), and the full
      * document's otherwise, which the device never reports: it doesn't enforce them, so it must not show as in sync.
-     * A device in sync by revision still isn't while {@link #notApplied} names a section.
+     * {@link #notApplied} says, apart from this, which sections the device's agent doesn't apply.
      *
      * @param doc the configuration's document ({@link #statusDocument}), left as it was; null gives null
      */
@@ -114,13 +114,24 @@ public class ConfigReconciler {
 
     /**
      * The names of the sections of {@code doc} that ask something and the device doesn't apply
-     * ({@link ConfigSections#notApplied}): it needs an agent update for them, and is not in sync until then. Empty for a
-     * null document.
+     * ({@link ConfigSections#notApplied}): it needs an agent update for them. Empty for a null document.
+     *
+     * @param agentVersion {@link #applyingAgentVersion}
      */
     public static List<String> notApplied(DesiredConfig doc, Set<String> deviceTokens, String agentVersion) {
         List<String> names = new ArrayList<String>();
         for (ConfigSections.Section s : ConfigSections.notApplied(doc, deviceTokens, agentVersion)) names.add(s.getName());
         return names;
+    }
+
+    /**
+     * The agent version that applied the device's configuration: the one its last completed config.apply was queued
+     * for, else (none yet) the one it runs. An agent updated since keeps the older version's verdict until the
+     * configuration is applied again under the new one. Null without a state row.
+     */
+    public static String applyingAgentVersion(com.hmdm.persistence.domain.DeviceState state) {
+        if (state == null) return null;
+        return state.getConfigAgentVersion() != null ? state.getConfigAgentVersion() : state.getAgentVersion();
     }
 
     /**

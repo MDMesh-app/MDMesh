@@ -6,7 +6,7 @@ import {
   type CommandHistoryItem,
   type CommandTemplateExt,
 } from '../api/commands';
-import { DEVICE_RESET_LABEL, SOME_DEFERRED_LABEL, staleCause, summarizeStatus, type ConfigStatus } from '../api/configSync';
+import { AGENT_UPDATE_NEEDED_PREFIX, DEVICE_RESET_LABEL, SOME_DEFERRED_LABEL, sectionLabels, staleCause, summarizeStatus, type ConfigStatus } from '../api/configSync';
 import type { DeviceEvent } from '../api/events';
 import { DO_NOT_TRACK_HINT } from '../api/locationTracking';
 import { paths } from '../routes';
@@ -237,6 +237,14 @@ export function ConfigPanel({
       <>
         Update the agent (<Link to={`${paths.settings}#updates`}>Settings → Updates</Link>) to enable configuration
         enforcement.
+      </>
+    );
+  } else if (verdict.label.startsWith(AGENT_UPDATE_NEEDED_PREFIX)) {
+    title = 'Agent update needed';
+    text = (
+      <>
+        {strongName} sets {sectionLabels(status.agentUpdateNeeded ?? [])}, which this device’s agent doesn’t apply.
+        Update the agent (<Link to={`${paths.settings}#updates`}>Settings → Updates</Link>).
       </>
     );
   } else if (verdict.label === 'Apply failed' || failed > 0) {

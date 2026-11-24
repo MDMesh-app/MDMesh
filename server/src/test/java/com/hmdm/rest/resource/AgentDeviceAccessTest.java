@@ -79,9 +79,16 @@ public class AgentDeviceAccessTest {
     private int configurationReads;
     private final Set<String> wiped = new HashSet<>();
     private String appliedRevision = "rev";
-    /** The agent version the devices report, and whether their configuration sets connectivity (since 0.4.0). */
+    /**
+     * The device state's agent versions (the one running, and the one that applied the configuration), and whether the
+     * configuration sets connectivity (since 0.4.0). The summary's query reads COALESCE(configAgentVersion,
+     * agentVersion); its fake row takes that value from {@link #applyingAgentVersion}.
+     */
     private String agentVersion;
+    private String configAgentVersion;
     private boolean connectivity;
+    /** The device state's applied revision, for the config status (null: none reported). */
+    private String stateAppliedRevision;
     private int revisionReads;
     private final List<String> enrolledQuery = new ArrayList<>();
 
@@ -136,7 +143,8 @@ public class AgentDeviceAccessTest {
             @Override public DeviceState getState(String n) {
                 DeviceState state = new DeviceState();
                 state.setAgentVersion(agentVersion);
-                state.setAppliedConfigRevision(appliedRevision);
+                state.setConfigAgentVersion(configAgentVersion);
+                state.setAppliedConfigRevision(stateAppliedRevision);
                 return state;
             }
             @Override public List listEvents(String n, long s, int l) { return new ArrayList<>(); }
@@ -165,7 +173,7 @@ public class AgentDeviceAccessTest {
                     r.setConfigurationId(5);
                     r.setCapabilitiesJson("{\"device\":[\"configApply\"]}");
                     r.setAppliedConfigRevision(appliedRevision);
-                    r.setAgentVersion(agentVersion);
+                    r.setAgentVersion(configAgentVersion != null ? configAgentVersion : agentVersion);
                     r.setLastApplyDeferred(true);
                     r.setWiped(wiped.contains(n));
                     rows.add(r);
@@ -630,35 +638,55 @@ public class AgentDeviceAccessTest {
         assertEquals("in sync, but the latest config.apply deferred something", 1, s.getDeferred());
     }
 
-    /** A device that applied the revision but whose agent doesn't apply a section the configuration sets. */
+    /**
+     * A device that runs the current revision, but whose agent doesn't apply a section the configuration sets: still in
+     * sync (it runs the revision; Retry has nothing to send), and counted apart as needing an agent update.
+     */
     @Test
     @SuppressWarnings("unchecked")
-    public void syncSummaryCountsAnAgentTooOldForASectionOutOfSync() {
+    public void syncSummaryCountsAnAgentUpdateNeededApartFromInSync() {
         connectivity = true;
         agentVersion = "0.3.8";
         ConfigSyncSummary s = ((List<ConfigSyncSummary>) resource.getSyncSummary().getData()).get(0);
-        assertEquals(0, s.getInSync());
-        assertEquals(1, s.getOutOfSync());
-        for (String applies : Arrays.asList("0.4.0", "0.4.0-rc1", "0.5.1+fork", "unknown", null)) {
+        assertEquals(1, s.getInSync());
+        assertEquals(0, s.getOutOfSync());
+        assertEquals(1, s.getAgentUpdateNeeded());
+        for (String applies : Arrays.asList("0.4.0", "0.4.0-rc1", "0.5.1+fork", "unknown", "0.1.15", null)) {
             agentVersion = applies;
             s = ((List<ConfigSyncSummary>) resource.getSyncSummary().getData()).get(0);
             assertEquals(String.valueOf(applies), 1, s.getInSync());
+            assertEquals(String.valueOf(applies), 0, s.getAgentUpdateNeeded());
         }
     }
 
+    /** The verdict goes by the agent that applied the configuration: an update since counts once it applies it again. */
     @Test
-    public void configStatusNamesTheSectionsTheAgentNeedsAnUpdateFor() {
+    @SuppressWarnings("unchecked")
+    public void anAgentUpdateCountsOnceTheNewAgentAppliedTheConfiguration() {
+        connectivity = true;
+        agentVersion = "0.4.0";
+        configAgentVersion = "0.3.8";
+        assertEquals(1, ((List<ConfigSyncSummary>) resource.getSyncSummary().getData()).get(0).getAgentUpdateNeeded());
+        assertEquals(Collections.singletonList("connectivity"), configStatus().getAgentUpdateNeeded());
+        configAgentVersion = "0.4.0";
+        assertEquals(0, ((List<ConfigSyncSummary>) resource.getSyncSummary().getData()).get(0).getAgentUpdateNeeded());
+        assertNull(configStatus().getAgentUpdateNeeded());
+    }
+
+    @Test
+    public void configStatusNamesTheSectionsTheAgentNeedsAnUpdateForAndKeepsInSyncByRevision() {
         connectivity = true;
         agentVersion = "0.3.8";
-        com.hmdm.rest.json.agent.ConfigStatusView v =
-                (com.hmdm.rest.json.agent.ConfigStatusView) resource.getConfigStatus(VISIBLE).getData();
-        assertEquals("rev", v.getAppliedRevision());
+        stateAppliedRevision = "rev";
+        com.hmdm.rest.json.agent.ConfigStatusView v = configStatus();
         assertEquals(Collections.singletonList("connectivity"), v.getAgentUpdateNeeded());
-        assertFalse(v.isInSync());
+        assertTrue("it runs the current revision: Retry has nothing to send", v.isInSync());
         agentVersion = "0.4.0";
-        v = (com.hmdm.rest.json.agent.ConfigStatusView) resource.getConfigStatus(VISIBLE).getData();
-        assertNull(v.getAgentUpdateNeeded());
-        assertTrue(v.isInSync());
+        assertNull(configStatus().getAgentUpdateNeeded());
+    }
+
+    private com.hmdm.rest.json.agent.ConfigStatusView configStatus() {
+        return (com.hmdm.rest.json.agent.ConfigStatusView) resource.getConfigStatus(VISIBLE).getData();
     }
 
     @Test

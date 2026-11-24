@@ -17,7 +17,7 @@ Both sides flatten a `CapabilityMatrix.capabilities` object into a flat `Set<Str
 | `policy[]` entry | `policy.<key>` | `policy.wifi`, `policy.camera`, `policy.factoryReset` |
 | `appManagement[]` entry | `app.<key>` | `app.silentInstall` |
 | `device[]` entry | `device.<key>` | `device.lock`, `device.wipe`, `device.configApply` |
-| `configSections[]` entry (1.12) | `config.<section>` | `config.kiosk`, `config.connectivity` (decide the sync status, not what is sent; registry.md) |
+| `configSections[]` entry (1.12) | `config.<section>` | `config.kiosk`, `config.connectivity` (only the config status's `agentUpdateNeeded`, never a command gate; registry.md) |
 | `remoteControl.tier` (if not `none`) | `remote.<tier>` | `remote.view`, `remote.control` |
 | `oem.knox` (if true) | `oem.knox` | `oem.knox` |
 

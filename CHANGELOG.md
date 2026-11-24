@@ -20,6 +20,9 @@ Upgrading
   count for this update, get this release's supervisor first ([UPGRADING.md](docs/UPGRADING.md#unreleased)).
 
 Heads-up
+- Devices whose agent is older than a setting their configuration sets (agents before 0.4.0 with Connectivity set)
+  now show "Agent update needed" on the device page and Overview. They still count as in sync. Update their agent
+  (Settings → Agent rollout).
 - New devices and rollouts get the agent of the release the server runs, never a newer one: update the server first,
   then roll out its agent from Settings → Agent rollout, which says so while a newer release waits. Only a server whose
   release isn't published (a development build, say), or whose release has no agent in its manifest, offers the latest
@@ -38,8 +41,8 @@ New
 
 Fixes
 - A device whose agent is too old for a setting its configuration sets (Connectivity needs agent 0.4.0) no longer
-  shows as in sync: it shows out of sync until its agent is updated. Its configuration status names the settings
-  (`agentUpdateNeeded`).
+  looks fully configured: the device page says "Agent update needed for: Connectivity", and Overview counts such
+  devices.
 - Enrollment keeps its agent through a restart with GitHub down: the updater keeps the signed manifest and agent of
   each release it has run, and checks both again before it serves them. When it has no agent to give new devices
   (GitHub didn't answer yet, or the release's manifest doesn't verify), the Enroll page says so on Docker installs

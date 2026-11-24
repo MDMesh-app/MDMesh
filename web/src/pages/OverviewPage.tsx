@@ -337,12 +337,14 @@ function SyncStat({ summary, failed }: { summary: ConfigSyncSummary[] | null; fa
       outOfSync: a.outOfSync + s.outOfSync,
       unsupported: a.unsupported + s.unsupported,
       neverSeen: a.neverSeen + s.neverSeen,
+      agentUpdateNeeded: a.agentUpdateNeeded + (s.agentUpdateNeeded ?? 0),
     }),
-    { total: 0, inSync: 0, outOfSync: 0, unsupported: 0, neverSeen: 0 },
+    { total: 0, inSync: 0, outOfSync: 0, unsupported: 0, neverSeen: 0, agentUpdateNeeded: 0 },
   );
   const notes: StatNote[] = [];
   if (t.outOfSync > 0) notes.push({ text: `${t.outOfSync} out of sync`, tone: 'warn' });
   if (t.unsupported > 0) notes.push({ text: `${t.unsupported} agent too old`, tone: 'warn' });
+  if (t.agentUpdateNeeded > 0) notes.push({ text: `${t.agentUpdateNeeded} agent update needed`, tone: 'warn' });
   if (t.neverSeen > 0) notes.push({ text: `${t.neverSeen} not reported` });
   if (t.total === 0) notes.push({ text: 'No device has a configuration' });
   else if (notes.length === 0) notes.push({ text: 'All in sync', tone: 'ok' });
@@ -554,6 +556,7 @@ function ByConfiguration({
       const parts = [s.inSync === s.total ? 'All in sync' : `${s.inSync} in sync`];
       if (s.outOfSync) parts.push(`${s.outOfSync} out of sync`);
       if (s.unsupported) parts.push(`${s.unsupported} agent too old`);
+      if (s.agentUpdateNeeded) parts.push(`${s.agentUpdateNeeded} agent update needed`);
       if (s.neverSeen) parts.push(`${s.neverSeen} not reported`);
       if (s.deferred) parts.push(`${s.deferred} deferred settings`);
       return {
@@ -567,7 +570,7 @@ function ByConfiguration({
           { value: s.neverSeen, tone: 'pending' },
         ],
         note: parts.join(' · '),
-        tone: s.outOfSync || s.unsupported || s.deferred ? 'warn' : s.inSync === s.total ? 'ok' : 'muted',
+        tone: s.outOfSync || s.unsupported || s.deferred || s.agentUpdateNeeded ? 'warn' : s.inSync === s.total ? 'ok' : 'muted',
       };
     });
     out.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));

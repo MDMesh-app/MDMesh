@@ -183,7 +183,7 @@ export function shortRevision(r?: string | null): string {
 /** Whether the configuration panel shows in full (anything but a clean "In sync"). */
 export function configNeedsPanel(s: ConfigStatus | null, outcomes: Outcome[]): boolean {
   if (!s || s.configurationId == null) return false;
-  if (!s.supported || !s.inSync) return true;
+  if (!s.supported || !s.inSync || s.agentUpdateNeeded?.length) return true;
   return outcomes.some((o) => o.kind !== 'applied');
 }
 

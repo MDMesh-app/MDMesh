@@ -22,8 +22,8 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 
 /**
- * A device is sent every section but one whose capability its agent lacks, and is in sync only when its agent applies
- * every section its configuration sets.
+ * A device is sent every section but one whose capability its agent lacks, and needs an agent update for each section
+ * its configuration sets that its agent doesn't apply.
  */
 public class ConfigReconcilerSectionGateTest {
     private static final class FakeUnsecureDAO extends UnsecureDAO {
@@ -127,8 +127,8 @@ public class ConfigReconcilerSectionGateTest {
     }
 
     /**
-     * An agent before 0.4.0 ignores connectivity. It is still sent it, so its revision is the configuration's, and it is
-     * not in sync: it needs an agent update for connectivity.
+     * An agent before 0.4.0 ignores connectivity. It is still sent it, so its revision is the configuration's (in sync),
+     * and it needs an agent update for connectivity.
      */
     @Test
     public void anAgentBeforeASectionsReleaseIsSentItAndIsNotInSync() {
@@ -141,14 +141,18 @@ public class ConfigReconcilerSectionGateTest {
     }
 
     /**
-     * The fleet's version strings. Only one that reads as a version below a section's release counts as not applying
-     * it; anything else counts as applying every section. Whatever the version, nothing is left out of what is sent.
+     * The fleet's version strings. Only one that reads as a version, from 0.3.0, below a section's release counts as not
+     * applying it; anything else counts as applying every section. Whatever the version, nothing is left out of what is
+     * sent.
      */
     @Test
     public void onlyAReadableVersionBelowTheSectionsReleaseNeedsAnUpdate() {
         ConfigReconciler reconciler = kioskWithConnectivity();
+        // Below 0.3.0 (no config.apply agent is): a build without a release version, such as a development build's
+        // 0.1.15 or 0.0.0-dev.
         for (String version : Arrays.asList(null, "", "  ", "unknown", "fork-0.3.0", "0.6.0", "0.6.0-rc1", "0.6.0-dev",
-                "0.5.1+fork", "0.5.1-myfork", "v0.4.0", "0.4.0-rc1", "0.4", "1.0.0", "0.4.0.1", "0.10.0")) {
+                "0.5.1+fork", "0.5.1-myfork", "v0.4.0", "0.4.0-rc1", "0.4", "1.0.0", "0.4.0.1", "0.10.0",
+                "0.1.15", "0.0.0-dev", "0.2.9", "0.0.1")) {
             assertEquals("\"" + version + "\"", Collections.<String>emptyList(), notApplied(reconciler, version));
         }
         for (String version : Arrays.asList("0.3.8", "0.3.8-rc1", "0.3.8+fork", "v0.3.0", "0.3", " 0.3.8 ")) {
@@ -157,8 +161,9 @@ public class ConfigReconcilerSectionGateTest {
     }
 
     /**
-     * A device reporting an old or bogus version still gets its kiosk, policies and location, under the same revision:
-     * the version never changes what is sent, only whether the device shows in sync.
+     * Whatever version a device reports, it gets its kiosk, policies and location under the configuration's revision:
+     * what is sent takes no version at all ({@code currentDocument(device, tokens)}), only the agent update verdict
+     * does.
      */
     @Test
     public void noReportedVersionLeavesASectionOut() {
@@ -170,8 +175,8 @@ public class ConfigReconcilerSectionGateTest {
         assertEquals(Boolean.FALSE, sent.getPolicies().get("camera"));
         assertNotNull(sent.getLocation());
         assertNotNull(sent.getConnectivity());
-        assertEquals("a version older than any config.apply agent: out of sync, never released",
-                Arrays.asList("policies", "kiosk", "location", "connectivity"), notApplied(reconciler, "0.0.1"));
+        assertEquals("nor flagged: no config.apply agent is that old", Collections.<String>emptyList(),
+                notApplied(reconciler, "0.0.1"));
     }
 
     /** An agent from 0.6.0 lists the sections it applies: a set section it doesn't list needs an update, whatever its version. */
@@ -187,7 +192,7 @@ public class ConfigReconcilerSectionGateTest {
         assertEquals(Collections.<String>emptyList(), ConfigReconciler.notApplied(doc, listed, "0.3.8"));
     }
 
-    /** A section the configuration leaves unset asks nothing: an agent that can't apply it is still in sync. */
+    /** A section the configuration leaves unset asks nothing: an agent that can't apply it needs no update. */
     @Test
     public void aSectionTheConfigurationLeavesUnsetNeedsNoUpdate() {
         Configuration configuration = new Configuration();
@@ -196,6 +201,36 @@ public class ConfigReconcilerSectionGateTest {
         ConfigReconciler reconciler = new ConfigReconciler(
                 new FakeUnsecureDAO(configuration, Collections.<Application>emptyList(), null), null, Fakes.noExtensionPoints());
         assertEquals(Collections.<String>emptyList(), notApplied(reconciler, "0.3.8"));
+    }
+
+    private static final ManagedAppPermission CAMERA_DENY = new ManagedAppPermission();
+    static {
+        CAMERA_DENY.setApplicationId(4); CAMERA_DENY.setPermission("android.permission.CAMERA"); CAMERA_DENY.setState("deny");
+    }
+
+    /**
+     * An agent that lists appPermissions but lacks the capability (not Device Owner): the capability decides both what
+     * it is sent and whether it applies the rules.
+     */
+    @Test
+    public void aListedSectionStillNeedsItsCapability() {
+        ConfigReconciler reconciler = reconciler(Collections.singletonList(CAMERA_DENY));
+        Set<String> listed = new HashSet<String>(Arrays.asList(DesiredConfigBuilder.CAPABILITY,
+                "config.policies", "config.kiosk", "config.location", "config.connectivity", "config.appPermissions"));
+        assertNull(reconciler.currentDocument(device(), listed).getAppPermissions());
+        assertEquals(Collections.singletonList("appPermissions"),
+                ConfigReconciler.notApplied(reconciler.statusDocument(device()), listed, "0.6.0"));
+    }
+
+    /** An agent with the capability whose list leaves appPermissions out: still sent the rules (never released), and named. */
+    @Test
+    public void anUnlistedSectionIsStillSentWithItsCapability() {
+        ConfigReconciler reconciler = reconciler(Collections.singletonList(CAMERA_DENY));
+        Set<String> listed = new HashSet<String>(Arrays.asList(DesiredConfigBuilder.CAPABILITY,
+                DesiredConfigBuilder.APP_PERMISSIONS_CAPABILITY, "config.policies", "config.kiosk", "config.location"));
+        assertEquals(1, reconciler.currentDocument(device(), listed).getAppPermissions().size());
+        assertEquals(Collections.singletonList("appPermissions"),
+                ConfigReconciler.notApplied(reconciler.statusDocument(device()), listed, "0.6.0"));
     }
 
     /** App permission rules an agent can't apply: left out of what it is sent (as before), and named. */

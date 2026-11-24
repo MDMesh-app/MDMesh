@@ -6,8 +6,14 @@ export interface ConfigStatus {
   currentRevision?: string | null;
   appliedRevision?: string | null;
   appliedAt?: number | null;
+  /** The device runs the configuration's current revision. */
   inSync: boolean;
   supported: boolean;
+  /**
+   * Sections the configuration sets that the device's agent doesn't apply (proto/config-sections.json names): it needs
+   * an agent update for them. Apart from inSync. Absent when none, and on older servers.
+   */
+  agentUpdateNeeded?: string[] | null;
   lastCommand?: { id: number; status: string; detail?: string | null; createdAt?: number; completedAt?: number } | null;
   /**
    * The kiosk background image the device's configuration specifies (absent without one, and on older servers). Not
@@ -29,6 +35,8 @@ export interface ConfigSyncSummary {
   deferred?: number;
   /** Wiped devices still on this configuration: outside total, but they block deleting it (absent on older servers). */
   wiped?: number;
+  /** Of total, in sync or not: devices that need an agent update for a section it sets (absent on older servers). */
+  agentUpdateNeeded?: number;
 }
 
 /** Shape of `lastCommand.detail` for config.apply (proto/payloads/config-apply-result.schema.json). */
@@ -97,6 +105,23 @@ export function staleCause(
   return latest ? STALE_CAUSES[latest.type] : null;
 }
 
+/** Configuration sections (proto/config-sections.json) by name, as the console names them. */
+const SECTION_LABEL: Readonly<Record<string, string>> = {
+  policies: 'Policies',
+  kiosk: 'Kiosk mode',
+  location: 'Location reporting',
+  connectivity: 'Connectivity',
+  appPermissions: 'App permissions',
+};
+
+/** "Connectivity, Kiosk mode": the sections a device's agent needs an update for. An unknown name is shown as is. */
+export function sectionLabels(names: ReadonlyArray<string>): string {
+  return names.map((n) => SECTION_LABEL[n] ?? n).join(', ');
+}
+
+/** Verdict label prefix: in sync or not, the agent doesn't apply a section the configuration sets. */
+export const AGENT_UPDATE_NEEDED_PREFIX = 'Agent update needed for: ';
+
 /** In sync, but the agent skipped some settings on purpose (e.g. Wi-Fi radio Off while Wi-Fi is the only network). */
 export const SOME_DEFERRED_LABEL = 'In sync (some settings deferred)';
 
@@ -104,6 +129,9 @@ export const SOME_DEFERRED_LABEL = 'In sync (some settings deferred)';
 export function summarizeStatus(s: ConfigStatus | null): { tone: 'ok' | 'warn' | 'alert' | 'idle'; label: string } {
   if (!s || s.configurationId == null) return { tone: 'idle', label: 'No configuration' };
   if (!s.supported) return { tone: 'warn', label: 'Agent too old' };
+  if (s.inSync && s.agentUpdateNeeded?.length) {
+    return { tone: 'warn', label: AGENT_UPDATE_NEEDED_PREFIX + sectionLabels(s.agentUpdateNeeded) };
+  }
   if (s.inSync) {
     const outcomes = parseOutcomes(s.lastCommand?.detail)?.outcomes ?? {};
     const deferred = Object.values(outcomes).some((o) => o.startsWith('deferred'));

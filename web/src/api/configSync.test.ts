@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AGENT_UPDATE_NEEDED_PREFIX,
   DEVICE_RESET_LABEL,
   DEVICE_RESET_REVISION,
   STALE_CAUSE_WINDOW_MS,
+  sectionLabels,
   staleCause,
   summarizeStatus,
   type ConfigStatus,
@@ -84,5 +86,31 @@ describe('a configuration out of date on the device', () => {
     expect(staleCause([], { appliedAt })).toBeNull();
     expect(staleCause([{ id: 1, type: 'boot', ts: appliedAt }], { appliedAt })).toBeNull();
     expect(staleCause(undefined, { appliedAt })).toBeNull();
+  });
+});
+
+// The device runs the current revision, but its agent doesn't apply a section the configuration sets (Connectivity on
+// an agent before 0.4.0). In sync keeps meaning "runs the current revision"; the verdict names the sections.
+describe('an agent update needed', () => {
+  const status = {
+    configurationId: 3,
+    currentRevision: 'b'.repeat(64),
+    appliedRevision: 'b'.repeat(64),
+    inSync: true,
+    supported: true,
+    agentUpdateNeeded: ['kiosk', 'connectivity', 'futureSection'],
+  } as ConfigStatus;
+
+  it('names the sections, in the console’s words', () => {
+    expect(summarizeStatus(status)).toEqual({
+      tone: 'warn',
+      label: `${AGENT_UPDATE_NEEDED_PREFIX}Kiosk mode, Connectivity, futureSection`,
+    });
+    expect(sectionLabels(['appPermissions', 'location', 'policies'])).toBe('App permissions, Location reporting, Policies');
+  });
+
+  it('is in sync without it, and an older server never sends it', () => {
+    expect(summarizeStatus({ ...status, agentUpdateNeeded: [] })).toEqual({ tone: 'ok', label: 'In sync' });
+    expect(summarizeStatus({ ...status, agentUpdateNeeded: undefined })).toEqual({ tone: 'ok', label: 'In sync' });
   });
 });

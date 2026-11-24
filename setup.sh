@@ -49,6 +49,9 @@ err()  { printf '\033[1;31m%s\033[0m\n' "$*" >&2; }
 # The hosting modes, in one table (install/lib/modes.sh).
 # shellcheck source=install/lib/modes.sh
 . ./install/lib/modes.sh
+# In domain mode, a re-run never takes the edge's ports 80/443 away (install/lib/ports.sh).
+# shellcheck source=install/lib/ports.sh
+. ./install/lib/ports.sh
 # The versions an install's hosting mode allows: the updater's own rule (supervisor/mode-guard.sh), for --update.
 # shellcheck source=supervisor/mode-guard.sh
 . ./supervisor/mode-guard.sh
@@ -450,6 +453,7 @@ if [ "$REUSE_ENV" = 1 ]; then
     esac
   fi
   mdm_mode_settings "$MODE" rerun
+  mdm_ports_guard
 else
   if [ "$RESET" = 1 ] && [ -f .env ]; then
     warn "--reset: regenerating .env. If the old database still exists it needs the OLD password —"
@@ -621,7 +625,6 @@ if [ -n "${GITHUB_REPO:-}" ] && command -v python3 >/dev/null && command -v curl
         -v "${pub_abs}:/verify/minisign.pub:ro" -v "${msg_dir}:/verify/release:ro" \
         "$SUPERVISOR_IMAGE" -V -p /verify/minisign.pub -m "/verify/release/$(basename -- "$msg")"
     }
-    # shellcheck disable=SC2086
     if { docker image inspect "$SUPERVISOR_IMAGE" >/dev/null 2>&1 || docker compose ${COMPOSE_ARGS[@]+"${COMPOSE_ARGS[@]}"} build supervisor >/dev/null 2>&1; } \
        && docker run --rm --pull never --network none --entrypoint minisign "$SUPERVISOR_IMAGE" -v >/dev/null 2>&1; then
       MDM_MINISIGN=mdm_container_minisign
@@ -657,7 +660,6 @@ setenv VITE_AGENT_APK_URL "$VITE_AGENT_APK_URL"
 export VITE_AGENT_PACKAGE VITE_AGENT_CHECKSUM VITE_AGENT_APK_URL
 
 say "Building + starting the stack…"
-# shellcheck disable=SC2086
 docker compose ${COMPOSE_ARGS[@]+"${COMPOSE_ARGS[@]}"} up -d --build \
   || { err "docker compose up failed (above). $(mdm_up_hint)"; err "Then re-run ./setup.sh (it reuses your .env)."; exit 1; }
 
@@ -728,9 +730,12 @@ fi
 # fails the run.
 EDGE_UP=1
 mdm_edge_up || EDGE_UP=0
+if [ "$MODE" = 2 ]; then mdm_ports_summary; fi
 
 echo
-if [ "$EDGE_UP" = 1 ]; then
+if [ "$EDGE_UP" = 1 ] && [ "$MODE" = 2 ] && [ -z "$EDGE_PORTS" ]; then
+  warn "== MDMesh is up, but its edge was not found to publish port 80 or 443 on this machine (see Next, below) =="
+elif [ "$EDGE_UP" = 1 ]; then
   say "== MDMesh is up =="
 else
   err "== MDMesh is installed, but its edge is not up (above), so it can't be reached yet. Fix that, then run"

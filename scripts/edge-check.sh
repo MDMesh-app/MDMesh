@@ -11,6 +11,8 @@
 #       MDMesh's CA and refuse it with another (each checks the edge's certificate).
 #   2. `docker compose config -q` for every compose file / overlay / profile combination the installers use; what the
 #      proxy overlay publishes and passes to the edge.
+#   2a. The host ports a setup.sh re-run reads from `docker compose config` (install/lib/ports.sh), per compose list and
+#      ports: spelling.
 #   2b. A digest pin comes out of `docker compose config --images` whole, as supervisor/apply.sh requires of it.
 #   3. /healthz and /healthz/supervisor (with or without a trailing slash), served by that caddy against stub upstreams:
 #      503 + reason while the upstream is down or failing (not the SPA's or the recovery page's catch-all 200), 200 "ok"
@@ -584,6 +586,33 @@ print(" ".join(sorted("%s:%s->%s" % (p.get("host_ip",""), p["published"], p["tar
   elif grep -qF 'TRUSTED_PROXIES' <<<"$out"; then pass "$file + proxy overlay refuses to load without TRUSTED_PROXIES"
   else fail "$file + proxy overlay failed without TRUSTED_PROXIES, but not naming it: $(tail -1 <<<"$out")"; fi
 done
+
+# install/lib/ports.sh's own reading of real `config` output: every spelling of ports:, and nothing that only looks like it.
+echo "Published host ports (docker compose config, as a setup.sh re-run reads it):"
+# shellcheck source=install/lib/ports.sh
+. install/lib/ports.sh
+OVR="$(mktemp -d)"
+ovr() { printf '%s\n' 'services:' "  $2: $3" > "$OVR/$1.yml"; }   # ovr NAME SERVICE MAP: a compose file, $OVR/NAME.yml
+ovr mem caddy '{mem_limit: 512m}'
+ovr label caddy '{labels: {note: "published: 443"}}'
+ovr ip caddy '{ports: ["0.0.0.0:80:80", "[::]:443:443", "443:443/udp"]}'
+ovr range caddy '{ports: ["440-445:440-445"]}'
+ovr long caddy '{ports: [{target: 443, published: 443, host_ip: 127.0.0.1}]}'
+ovr remap caddy '{ports: ["8443:443", "80"]}'
+ovr reset caddy '{ports: !reset []}'
+ovr traefik traefik '{image: traefik, ports: ["80:80", "443:443"]}'
+# env file | the files after docker-compose.yml | host ports
+for c in "$ENVF||" "$ENVF|docker-compose.domain.yml|80 443" "$ENVF_PX|docker-compose.proxy.yml|8080" "$ENVF|$OVR/mem.yml|" \
+         "$ENVF|$OVR/label.yml|" "$ENVF|$OVR/ip.yml|80 443" "$ENVF|$OVR/range.yml|440 441 442 443 444 445" "$ENVF|$OVR/long.yml|443" \
+         "$ENVF|$OVR/remap.yml|8443" "$ENVF|docker-compose.domain.yml $OVR/reset.yml|" "$ENVF|$OVR/traefik.yml|80 443"; do
+  IFS='|' read -r envf files want <<< "$c"
+  COMPOSE_ARGS=(--env-file "$envf" -f docker-compose.yml); for f in $files; do COMPOSE_ARGS+=(-f "$f"); done
+  if got="$(mdm_list_ports 2> "$OVR/err" | sort -nu | tr '\n' ' ')" && [ "${got% }" = "$want" ]; then pass "docker-compose.yml ${files//"$OVR/"/}: ${want:-none}"
+  else fail "docker-compose.yml ${files//"$OVR/"/}: host ports '${got% }', want '$want'"; tail -5 "$OVR/err" | sed 's/^/         /'; fi
+done
+COMPOSE_ARGS=(--env-file "$ENVF_NOTP" -f docker-compose.yml -f docker-compose.proxy.yml)
+if mdm_list_ports > "$OVR/out" 2> "$OVR/err"; then fail "host ports: no failure when config fails"; else pass "a config that fails is not read as no ports"; fi
+rm -r -- "$OVR"
 
 echo "Pinned images (docker compose config --images, as supervisor/apply.sh asks it):"
 PIN="0.0.0@sha256:$(printf 'a%.0s' {1..64})"

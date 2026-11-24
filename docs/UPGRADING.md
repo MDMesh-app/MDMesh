@@ -298,8 +298,9 @@ exited or credentials cleared while the older agent ran.
 - **From source, with `COMPOSE_FILE` or `COMPOSE_PROFILES` edited by hand**: `./setup.sh` and `--update` now start the
   files `COMPOSE_FILE` names (without one, as before). 0.5.x, outside the tunnel, always started `docker-compose.yml` and
   `docker-compose.domain.yml`, whatever it said. So on your own domain, with a list that leaves
-  `docker-compose.domain.yml` out, the edge would lose ports 80 and 443. Both commands then stop, before any container
-  is touched, and show the line for `.env`: your list with the domain file added, for example
+  `docker-compose.domain.yml` out and publishes neither port itself, the edge would lose ports 80 and 443. Both commands
+  then stop, before any container is touched, and show the line for `.env`: your list with the domain file added, for
+  example
 
   ```bash
   COMPOSE_FILE='docker-compose.yml:docker-compose.override.yml:docker-compose.domain.yml'
@@ -308,10 +309,10 @@ exited or credentials cleared while the older agent ran.
   Set it and run `./setup.sh` (or `./setup.sh --update`) again, before any update or rollback in the console: the
   supervisor keeps the old list until that run recreates it, and would close the ports. At the stop the clone is
   already on the new release, and the containers still run the old one. If the edge should give up its ports,
-  `docker compose rm -sf caddy` and run it again (phones can't reach MDMesh until that run ends). A run on your own
-  domain that ends with neither port published says so in its last lines. With `COMPOSE_PROFILES` listing `cloudflare`
-  and others (`cloudflare,backup`), 0.5.x published 80/443 as well as running the tunnel; now it is a tunnel install,
-  and they close.
+  `docker compose rm -sf caddy` and run it again (phones can't reach MDMesh until that run ends). With such a
+  list, a run that ends with neither port found published says so in its last lines. With `COMPOSE_PROFILES` listing
+  `cloudflare` and others (`cloudflare,backup`), 0.5.x published 80/443 as well as running the tunnel; now it is a
+  tunnel install, and they close unless `COMPOSE_FILE` lists `docker-compose.domain.yml`.
 - **New: behind your own proxy** (Docker). For a machine where nginx, Apache, Caddy or Traefik already does HTTPS
   ([DEPLOY](../DEPLOY.md#3-behind-your-own-proxy)). To move an existing install to it, update to 0.6.0 first, then
   [change the hosting mode](#changing-the-hosting-mode).

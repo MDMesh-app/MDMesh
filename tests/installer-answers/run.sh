@@ -743,6 +743,39 @@ for c in 'cloudflare|:80|--profile cloudflare' '|mdm.example.com, www.example.co
     || { fail "a 0.5.x .env (COMPOSE_PROFILES=$prof) re-run: compose args \"$(up_args)\", want \"$want\", or .env changed"; show; }
   ok
 done
+# Domain mode with a COMPOSE_FILE that leaves the domain overlay out (a hand-edited .env). Exactly the base file, with a
+# SITE_ADDRESS that names the host: the re-run adds the overlay, saying so with the line .env needs. Any other such list,
+# or a SITE_ADDRESS that doesn't: used as it is, saying so, with no overlay added. A list that has it (any spelling), and
+# the tunnel's and the proxy's: as they are, saying nothing. .env's own line stays.
+D=docker-compose.domain.yml
+for c in '|mdm.example.com|docker-compose.yml|added' '|https://mdm.example.com|docker-compose.yml|added' \
+         '|www.example.com, mdm.example.com|docker-compose.yml|added' \
+         '|:80|docker-compose.yml|kept' '||docker-compose.yml|kept' '|http://mdm.example.com|docker-compose.yml|kept' \
+         '|mdm.example.com:8443|docker-compose.yml|kept' '|other.example.com|docker-compose.yml|kept' \
+         '|mdm.example.com|docker-compose.yml:docker-compose.local.yml|kept' \
+         '|mdm.example.com|docker-compose.yml:/srv/MDMesh rules/override.yml|kept' \
+         '|mdm.example.com|/srv/m/docker-compose.yml|kept' "|mdm.example.com|docker-compose.yml:my-$D|kept" \
+         "|mdm.example.com|docker-compose.yml:docker-compose.local.yml:./$D|" "|mdm.example.com|/srv/m/docker-compose.yml:/srv/m/$D|" \
+         'cloudflare|mdm.example.com|docker-compose.yml|' 'cloudflare|mdm.example.com|docker-compose.yml:docker-compose.local.yml|' \
+         '|mdm.example.com|docker-compose.yml:docker-compose.proxy.yml:docker-compose.local.yml|'; do
+  IFS='|' read -r prof site list what <<< "$c"
+  rm -rf -- "$WORK/src7"; mkdir -p "$WORK/src7/install"; cp_setup "$WORK/src7"; cp -R -- "$REPO/install/lib" "$WORK/src7/install/"
+  printf '%s\n' DB_PASSWORD=x HASH_SECRET=y BASE_URL=https://mdm.example.com "SITE_ADDRESS=\"$site\"" \
+    "COMPOSE_FILE=\"$list\"" "COMPOSE_PROFILES=$prof" IMAGE_OWNER=local > "$WORK/src7/.env"
+  setup_run "$WORK/src7"
+  want="-f ${list//:/ -f }"; [ "$list" != docker-compose.yml ] || want=''   # the base file alone is left to COMPOSE_FILE
+  case "$what|$prof" in added*) want="-f docker-compose.yml -f $D" ;; *cloudflare) want="${want:+$want }--profile cloudflare" ;; esac
+  up=$(sed -n 's#^\S*/docker compose \(\(.*\) \)\{0,1\}up -d --build$#run \2#p' "$WORK/docker.log" | head -1)
+  { [ "$up" = "run $want" ] && grep -qxF "COMPOSE_FILE=\"$list\"" "$WORK/src7/.env"; } \
+    || { fail "a re-run with $c: compose args \"$up\", want \"run $want\", or .env changed"; show; }
+  n=$(cat "$WORK/out/o" "$WORK/out/e" | grep -cF "leaves out $D" || true)
+  case "$what" in
+    added) { [ "$n" = 1 ] && grep -qF "COMPOSE_FILE=docker-compose.yml:$D, then run this again" "$WORK/out/o"; } ;;
+    kept) { [ "$n" = 1 ] && grep -qF 'and is used as it is' "$WORK/out/o"; } ;;
+    *) [ "$n" = 0 ] ;;
+  esac || { fail "a re-run with $c does not say once what it did with the list (or says it with nothing to say)"; show; }
+  ok
+done
 
 # A site.d that already exists and others may write is not connected to the edge (never made private and then trusted),
 # and left out of .env so a later run tries again; once it is private, it is.
@@ -762,14 +795,14 @@ ok
 # release before 0.6.0 can't run the proxy mode.
 RC=0; out=$(env -i bash -c '. "$1"; . "$2"; r=""
   for l in docker-compose.yml:docker-compose.proxy.yml docker-compose.yml:./docker-compose.proxy.yml /srv/m/docker-compose.proxy.yml; do
-    mdm_compose_has_proxy "$l" || r="$r has:$l"; done
+    mdm_compose_has "$l" docker-compose.proxy.yml || r="$r has:$l"; done
   for l in docker-compose.yml:docker-compose.domain.yml docker-compose.proxy.yml.bak "" docker-compose.yml:my-docker-compose.proxy.yml.d; do
-    ! mdm_compose_has_proxy "$l" || r="$r not:$l"; done
+    ! mdm_compose_has "$l" docker-compose.proxy.yml || r="$r not:$l"; done
   export ENV_FILE=/nonexistent COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml
   for v in 0.5.9 0.5.1@sha256:aa 0.0.1; do [ -n "$(mode_problem "$v")" ] || r="$r old:$v"; done
   for v in 0.6.0 0.6.1 1.0.0 9.1.0 latest ""; do [ -z "$(mode_problem "$v")" ] || r="$r new:$v"; done
   echo "r=$r"' _ "$REPO/install/lib/modes.sh" "$REPO/supervisor/mode-guard.sh" 2>&1) || RC=$?
-[ "$out" = "r=" ] || fail "mdm_compose_has_proxy or mode_problem got these wrong: $out"
+[ "$out" = "r=" ] || fail "mdm_compose_has or mode_problem got these wrong: $out"
 ok
 
 # A setup.sh re-run to the end, with a docker stub that answers like a running stack (server booted, database seeded):
@@ -803,6 +836,24 @@ for e in restarting running; do
       && grep -qF 'its edge is not up' "$WORK/out/e" && grep -qF 'Console:' "$WORK/out/o"; } \
       || { fail "setup.sh with its edge down: repairs not run first, or no summary, or not a failure (rc $RC)"; show; }
   fi
+  ok
+done
+
+# What the summary says of 80/443 is true: a list used without the domain overlay is not called "ports 80/443".
+for c in 'docker-compose.yml|mdm.example.com|1' 'docker-compose.yml:docker-compose.domain.yml|:80|1' 'docker-compose.yml|:80|0' \
+         'docker-compose.yml:docker-compose.local.yml|mdm.example.com|0'; do
+  IFS='|' read -r list site ports <<< "$c"
+  rm -rf -- "$WORK/src10"; mkdir -p "$WORK/src10/install"; cp_setup "$WORK/src10"; cp -R -- "$REPO/install/lib" "$REPO/install/sql" "$WORK/src10/install/"
+  printf '%s\n' DB_PASSWORD=x HASH_SECRET=y BASE_URL=https://mdm.example.com "SITE_ADDRESS=$site" \
+    "COMPOSE_FILE=$list" COMPOSE_PROFILES= IMAGE_OWNER=local > "$WORK/src10/.env"
+  : > "$WORK/full.log"; RC=0
+  (cd "$WORK/src10" && env -i PATH="$WORK/stubs-full:$PATH" HOME="$WORK" STUB_LOG="$WORK/full.log" STUB_EDGE=running MDM_EDGE_SETTLE=0 \
+    bash ./setup.sh < /dev/null > "$WORK/out/o" 2> "$WORK/out/e") || RC=$?
+  [ "$RC" = 0 ] || { fail "setup.sh to the end with COMPOSE_FILE=$list, SITE_ADDRESS=$site does not succeed"; show; }
+  if [ "$ports" = 1 ]; then grep -qF 'entry point (ports 80/443)' "$WORK/out/o" && grep -qF 'ports 80/443 are open' "$WORK/out/o"
+  else grep -qF 'entry point (the ports COMPOSE_FILE in .env publishes)' "$WORK/out/o" \
+    && grep -q '^Next: .*on a port COMPOSE_FILE in .env publishes' "$WORK/out/o" && ! grep -qF 'ports 80/443 are open' "$WORK/out/o"; fi \
+    || { fail "setup.sh's summary with COMPOSE_FILE=$list, SITE_ADDRESS=$site says the wrong ports"; show; }
   ok
 done
 
@@ -1247,5 +1298,5 @@ if [ -e "$WORK/stubs.called" ]; then fail "a dry run ran a command that changes 
 TREE=$(git -c safe.directory='*' -C "$REPO" describe --always --dirty 2>&1) || TREE='?'
 TREE="$REPO at $TREE"
 if [ "$FAILS" != 0 ]; then echo "installer answers: $FAILS failure(s) ($TREE)" >&2; exit 1; fi
-if [ "$CHECKS" -lt 651 ]; then echo "installer answers: only $CHECKS checks ran, expected at least 651 ($TREE)" >&2; exit 1; fi
+if [ "$CHECKS" -lt 672 ]; then echo "installer answers: only $CHECKS checks ran, expected at least 672 ($TREE)" >&2; exit 1; fi
 echo "installer answers: all $CHECKS checks passed ($TREE)"

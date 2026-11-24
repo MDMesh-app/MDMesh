@@ -741,14 +741,21 @@ EOF
 # when COMPOSE_FILE lists docker-compose.proxy.yml, else domain.
 mdm_mode_of_env() {
   case ",$(printf '%s' "${COMPOSE_PROFILES:-}" | tr -d ' ')," in *,cloudflare,*) echo 1; return ;; esac
-  if mdm_compose_has_proxy "${COMPOSE_FILE:-}"; then echo 3; return; fi
+  if mdm_compose_has "${COMPOSE_FILE:-}" docker-compose.proxy.yml; then echo 3; return; fi
   echo 2
 }
 
-# mdm_compose_has_proxy LIST: the COMPOSE_FILE list LIST names docker-compose.proxy.yml (as the installers write it, or
-# ./docker-compose.proxy.yml or a path ending in it, as a hand edit might).
-mdm_compose_has_proxy() {
-  case ":$1:" in *:docker-compose.proxy.yml:*|*/docker-compose.proxy.yml:*) return 0 ;; esac
+# mdm_compose_has LIST FILE: the COMPOSE_FILE list LIST names FILE (as the installers write it, or ./FILE or a path
+# ending in it, as a hand edit might).
+mdm_compose_has() {
+  case ":$1:" in *:"$2":*|*/"$2":*) return 0 ;; esac
+  return 1
+}
+
+# _mdm_site_is_host: SITE_ADDRESS (of an existing .env) lists HOST, or https://HOST, as domain mode writes it: the edge
+# serves that name with its own certificate. Empty, :80 or another name doesn't say so.
+_mdm_site_is_host() {
+  case ",$(printf '%s' "${SITE_ADDRESS:-}" | tr ' \t' ',,')," in *",$HOST,"*|*",https://$HOST,"*) return 0 ;; esac
   return 1
 }
 
@@ -776,8 +783,26 @@ mdm_mode_settings() {
     *) _mdm_answer_fail "internal: unknown hosting mode $1" ;;
   esac
   COMPOSE_ARGS=()
-  # A re-run uses the list its .env saved (an override of the operator's own included), else the mode's.
-  [ "${2:-}" != rerun ] || [ -z "${COMPOSE_FILE:-}" ] || file=$COMPOSE_FILE
+  # A re-run uses the list its .env saved (an override of the operator's own included), else the mode's. Domain mode is
+  # what is left when .env names no other, so a list without the domain overlay gets it only when it is exactly the base
+  # file and SITE_ADDRESS says the edge serves HOST (setup.sh before 0.6.0 added it always). Any other list is used as it
+  # is: it may publish the edge its own way, and compose would add 80/443 to that.
+  if [ "${2:-}" = rerun ] && [ -n "${COMPOSE_FILE:-}" ]; then
+    if [ "$1" != 2 ] || mdm_compose_has "$COMPOSE_FILE" docker-compose.domain.yml; then
+      file=$COMPOSE_FILE
+    elif [ "$COMPOSE_FILE" = docker-compose.yml ] && _mdm_site_is_host; then
+      warn "COMPOSE_FILE in .env leaves out docker-compose.domain.yml, which publishes ports 80/443: this run adds it. A plain"
+      warn "docker compose up, and updates from the console, go by .env and start the edge without it. In .env, set"
+      warn "COMPOSE_FILE=$file, then run this again."
+    else
+      file=$COMPOSE_FILE
+      warn "COMPOSE_FILE in .env leaves out docker-compose.domain.yml, which publishes ports 80/443, and is used as it is"
+      warn "(setup.sh before 0.6.0 added that file). If MDMesh is to publish 80/443 itself, add it there, with"
+      warn "SITE_ADDRESS=$HOST, then run this again."
+      ENTRY="the ports COMPOSE_FILE in .env publishes"
+      EXTRA_NOTE="Make sure ${HOST} reaches the edge on a port COMPOSE_FILE in .env publishes: it leaves out docker-compose.domain.yml (ports 80/443)."
+    fi
+  fi
   # compose's own default file is left to COMPOSE_FILE (.env), as setup.sh always did in tunnel mode. Split on ":"
   # only: a path may hold blanks.
   if [ "$file" != docker-compose.yml ]; then

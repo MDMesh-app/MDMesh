@@ -140,6 +140,10 @@ def used(part, listed, allowed, elections):
                 error(f"{part}: {name} is offered under {' or '.join(licences)}, and {RECORD[part]} records no choice "
                       "for exactly that offer: record the one MDMesh uses (docs/licenses/policy.md)")
                 continue
+            if choice[1] not in licences:
+                error(f"{part}: {RECORD[part]} chooses {choice[1]} for {name}, which isn't one of the licences it is "
+                      f"offered under ({' or '.join(licences)})")
+                continue
             licences = [choice[1]]
         if licences[0] not in allowed:
             error(f"{part}: {name} is under {licences[0]}, which {ALLOWED} doesn't allow (docs/licenses/policy.md)")

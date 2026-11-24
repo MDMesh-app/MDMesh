@@ -36,5 +36,9 @@ true
 
 printf '# %s\n' "What ${REF} holds (scripts/licenses/image-packages.sh)."
 printf '# %s\n' "package	version	source package	source version	licence ('-': see /usr/share/doc/<package>/copyright)"
+# The licence may hold parentheses of its own ("(MIT AND (GPL-2.0-or-later OR LGPL-3.0-only))"): greedy up to the last
+# ") [installed]". Every line that isn't a comment must come out as exactly five columns, or the list fails.
 docker run --rm --network none --entrypoint sh "$REF" -c "$LIST" \
-  | sed -E 's/^(.+)-([^-]+-r[0-9]+) [^ ]+ \{([^}]*)\} \(([^)]*)\) \[installed\]$/\1\t\2\t\3\t\2\t\4/'
+  | sed -E 's/^(.+)-([^-]+-r[0-9]+) [^ ]+ \{([^}]*)\} \((.*)\) \[installed\]$/\1\t\2\t\3\t\2\t\4/' \
+  | awk -F '\t' '!/^#/ && NF != 5 { print "image-packages.sh: not a package line: " $0 | "cat 1>&2"; bad = 1 }
+                 { print } END { exit bad }'

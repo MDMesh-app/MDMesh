@@ -54,4 +54,9 @@ public class DesiredConfig {
     private DesiredConnectivity connectivity;
     /** Null for a legacy configuration row; empty means release all managed app permission overrides. */
     private List<DesiredAppPermissions> appPermissions;
+    /**
+     * Present = ensure Enhanced Factory Reset Protection with this payload (protocol 1.13). Absent (null) = the
+     * configuration does not manage EFRP; the agent releases it only if the previously applied document had it.
+     */
+    private DesiredFactoryResetProtection factoryResetProtection;
 }

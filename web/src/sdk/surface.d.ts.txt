@@ -176,6 +176,8 @@ export interface Configuration {
     name: string;
     description?: string;
     qrCodeKey?: string;
+    factoryResetProtection?: boolean | null;
+    factoryResetProtectionAccounts?: string | null;
     applications?: ConfigApp[];
     extensions?: Record<string, unknown>;
     [key: string]: unknown;

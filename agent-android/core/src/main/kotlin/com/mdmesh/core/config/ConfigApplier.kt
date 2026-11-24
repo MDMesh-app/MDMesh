@@ -6,6 +6,8 @@ import com.mdmesh.core.store.configuredKiosk
 import com.mdmesh.kiosk.KioskResult
 import com.mdmesh.policy.PolicyOutcome
 import com.mdmesh.policy.ReleasablePolicy
+import com.mdmesh.policy.TogglePolicy
+import com.mdmesh.policy.factoryresetprotection.FactoryResetProtectionPolicy
 import com.mdmesh.policy.ResolvedToggles
 import com.mdmesh.policy.AppRuntimePermissions
 import com.mdmesh.policy.AppPermissionOutcome
@@ -40,7 +42,7 @@ import kotlinx.coroutines.sync.withLock
  * @param setPowerMode sets the live-connection mode for the `connectivity` section (1.5), as `device.powerMode` does.
  *   Only called with a mode this agent knows; another one is reported unsupported.
  */
-@Suppress("TooManyFunctions") // Coordinator for independently releasable desired-state sections.
+@Suppress("TooManyFunctions", "LongParameterList") // Coordinator for independently releasable desired-state sections.
 class ConfigApplier(
     private val toggles: () -> ResolvedToggles,
     private val kiosk: KioskApplier,
@@ -48,6 +50,11 @@ class ConfigApplier(
     private val store: ConfigStateStore,
     private val setPowerMode: (String) -> Unit,
     private val appPermissions: AppRuntimePermissions = UnsupportedAppRuntimePermissions,
+    /**
+     * Enhanced Factory Reset Protection (EFRP, 1.13), or `null` when the device does not support it. Not a
+     * [TogglePolicy]: its desired state carries the account allow-list too, so it is applied by its own section.
+     */
+    private val factoryResetProtection: FactoryResetProtectionPolicy? = null,
 ) {
     private val mutex = Mutex()
 
@@ -132,6 +139,7 @@ class ConfigApplier(
 
     private fun manages(doc: ConfigApplyPayload, outcomeKey: String): Boolean = when {
         outcomeKey == KIOSK -> doc.kiosk != null
+        outcomeKey == FACTORY_RESET_PROTECTION -> doc.factoryResetProtection != null
         outcomeKey.startsWith(POLICIES) -> outcomeKey.removePrefix(POLICIES) in doc.policies
         outcomeKey.startsWith(APP_PERMISSIONS) -> appPermissionKeys(doc).contains(outcomeKey)
         else -> true
@@ -186,6 +194,7 @@ class ConfigApplier(
             }
         }
         applyAppPermissions(doc, previous, unreleased, outcomes)
+        applyFactoryResetProtection(doc, previous, unreleased, outcomes)
         val result = ConfigApplyResult(doc.revision, outcomes)
         if (persist && succeeded(result)) store.save(doc)
         return result
@@ -317,6 +326,32 @@ class ConfigApplier(
     }
 
     /**
+     * Applies the Enhanced Factory Reset Protection section (protocol 1.13). A present section is applied through
+     * [factoryResetProtection]; an absent one releases the policy only when a previously applied document managed
+     * it (turning it off is a configuration change, not a revert). A release that fails is reported so it stays in
+     * [ConfigStateStore.unreleased] and is retried with the next document. Unsupported (API below 30 / not Device
+     * Owner) is final and never blocks.
+     */
+    private fun applyFactoryResetProtection(
+        doc: ConfigApplyPayload,
+        previous: List<ConfigApplyPayload>,
+        unreleased: Set<String>,
+        outcomes: MutableMap<String, String>,
+    ) {
+        val desired = doc.factoryResetProtection
+        if (desired != null) {
+            outcomes[FACTORY_RESET_PROTECTION] =
+                toOutcome(factoryResetProtection?.apply(desired.enabled, desired.accounts))
+            return
+        }
+        val previouslyManaged = previous.any { it.factoryResetProtection != null } ||
+            FACTORY_RESET_PROTECTION in unreleased
+        if (!previouslyManaged) return
+        val o = toOutcome(factoryResetProtection?.release())
+        if (ConfigOutcome.isFailed(o)) outcomes[FACTORY_RESET_PROTECTION] = o
+    }
+
+    /**
      * Re-run the newest document the server delivered (after boot / self-update, or when a wipe hold ends), or the
      * last saved one on a store from before delivered documents were kept. Null when there is none.
      *
@@ -355,6 +390,7 @@ class ConfigApplier(
     companion object {
         private const val POLICIES = "policies."
         private const val KIOSK = "kiosk"
+        private const val FACTORY_RESET_PROTECTION = "factoryResetProtection"
         private const val CONNECTIVITY = "connectivity"
         private const val APP_PERMISSIONS = "appPermissions."
         private const val NOT_REQUESTED = "not-requested"

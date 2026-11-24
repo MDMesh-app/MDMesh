@@ -20,7 +20,7 @@ export type FieldType =
   | 'switch' | 'tri' | 'flag' | 'time' | 'color' | 'app';
 
 export type FieldGroup =
-  | 'Identity' | 'Apps' | 'Kiosk' | 'Kiosk appearance' | 'Network' | 'Restrictions' | 'Enrollment'
+  | 'Identity' | 'Apps' | 'Kiosk' | 'Kiosk appearance' | 'Network' | 'Restrictions' | 'Security & Reset' | 'Enrollment'
   | 'Security' | 'Display' | 'Updates' | 'Advanced';
 
 export interface FieldOption {
@@ -78,9 +78,12 @@ const WIFI_RADIO_MORE = 'Off is skipped (shown as deferred) while Wi-Fi is the o
 const CONNECTIVITY_MORE = 'Older agents ignore it. Battery-saver holds the live connection only while the screen is on or the device is charging, so a command sent to a locked phone on battery waits for the next heartbeat (about 10 minutes, longer in deep Doze) or for the screen to come on. Always-on keeps the connection up 24/7, so commands such as Lock, Ring or Wipe reach a locked phone without waiting for the heartbeat, at a battery cost. The mode set here is applied again when the configuration changes, the device restarts or the agent updates, so a mode set on a device page lasts only until then. To keep a lost device on Always-on, set its configuration to Always-on (or move the device to one that is). To switch devices back, choose Battery-saver; — (not managed) leaves each device as it is.';
 const LOCATION_MORE = 'Do not track collects no location with agent 0.3.4 or later, and the server drops any location an older agent still reports. Last known (passive) reports the location the device already has at each check-in; GPS (fresh fix) asks for a new fix each time (more accurate, more battery).';
 const LOCATION_SERVICES_MORE = 'Needs an Android 11+ Device Owner device; older agents report it unsupported. While managed, the user cannot change the setting. Not managed restores the user setting control but leaves Location services in their current state. This is separate from Location reporting, which controls what MDMesh collects.';
+const FRP_HELP = 'Needs Device Owner and Android 11 (API 30) or later. On makes a wiped device demand an authorized Google account at setup; the Google account IDs below are allowed to unlock it. Off disables Factory Reset Protection. This does not prevent a wipe — it decides whether the reset device demands an account afterwards. Not managed leaves the device as it is (an earlier policy is only cleared when the configuration stops managing the field).';
+const FRP_ACCOUNTS_HELP = 'Google account ID allowed to unlock a wiped device: the account e-mail (e.g. admin@acme.com).';
+const FRP_ACCOUNTS_MORE = 'Enter the Google account ID, which is the e-mail address of the Google account (the one added under Settings → Passwords & accounts → Google on the device, or the one typed when the device was set up). Several accounts: one per line or comma-separated. Empty keeps the platform default: the device\'s last account before the reset.';
 
 export const GROUP_ORDER: FieldGroup[] = [
-  'Identity', 'Apps', 'Kiosk', 'Kiosk appearance', 'Network', 'Restrictions', 'Enrollment',
+  'Identity', 'Apps', 'Kiosk', 'Kiosk appearance', 'Network', 'Restrictions', 'Security & Reset', 'Enrollment',
   'Security', 'Display', 'Updates', 'Advanced',
 ];
 
@@ -91,6 +94,7 @@ export const GROUP_NOTES: Partial<Record<FieldGroup, string>> = {
   Network: 'Not managed leaves a setting as it is, except Wi-Fi radio and Location services: Not managed lifts their lock.',
   Restrictions:
     'Not managed leaves a setting as it is, except Camera (agent 0.5.0+: it restores access after an MDMesh block) and Safe Mode (see its setting).',
+  'Security & Reset': 'Factory Reset Protection (EFRP) needs Android 11+ Device Owner devices and agent 0.3.5 or later. It does not prevent a wipe.',
   Enrollment: 'Not sent to devices: the Enroll page can put this Wi-Fi in the enrollment QR.',
 };
 
@@ -147,6 +151,8 @@ export const CONFIG_FIELDS: FieldDef[] = [
   { key: 'disableScreenshots', label: 'Screenshots', type: 'tri', group: 'Restrictions', enforced: true, segments: ALLOW_BLOCK_INVERTED, help: 'Block prevents screenshots and screen recording.' },
   { key: 'usbStorage', label: 'USB storage', type: 'tri', group: 'Restrictions', enforced: true, segments: ALLOW_BLOCK, help: 'Block stops USB file transfer and mounting external storage.' },
   { key: 'camera', label: 'Camera', type: 'tri', group: 'Restrictions', enforced: true, segments: ALLOW_BLOCK, help: 'Block stops every app using the camera hardware.', more: 'It does not hide camera apps, install one, or remove photos. On agent 0.5.0 or later, Not managed restores access after MDMesh blocked it. On older agents, choose Allow to lift a block.' },
+  { key: 'factoryResetProtection', label: 'Factory Reset Protection (FRP)', type: 'tri', group: 'Security & Reset', enforced: true, segments: DEFAULT_SEGMENTS, help: FRP_HELP },
+  { key: 'factoryResetProtectionAccounts', label: 'FRP unlock Google account IDs', type: 'textarea', group: 'Security & Reset', enforced: true, help: FRP_ACCOUNTS_HELP, more: FRP_ACCOUNTS_MORE },
   { key: 'blockStatusBar', label: 'Lock status bar', type: 'switch', group: 'Restrictions', help: 'Headwind launcher covered the status bar.' },
   { key: 'lockVolume', label: 'Lock volume (legacy)', type: 'tri', group: 'Restrictions', help: 'Headwind launcher blocked volume changes.' },
   { key: 'allowedClasses', label: 'Allowed app classes', type: 'text', group: 'Restrictions', help: 'Headwind launcher allowlist of settings screens.' },

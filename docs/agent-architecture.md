@@ -70,6 +70,7 @@ finishes the entry even if the screen goes away (a rotation); once in kiosk it q
 | Kiosk | `mainAppId`, `kioskMode`, `kioskExit`, `kioskHome`, `kioskRecents`, `kioskNotifications`, `kioskSystemInfo`, `kioskKeyguard`, `kioskLockButtons`, `kioskLockVolume`, `password` (exit PIN: 6 to 12 digits; one saved before 0.5.0 may be any text and is applied as stored) |
 | Launcher look | `backgroundColor`, `textColor`, `iconSize` (colours: see below); also the kiosk background image (`backgroundImageFileId`, set in the Kiosk section, agent 0.5.0; see below) |
 | Device policy | `wifi`, `wifiRadio`, `locationServices`, `bluetooth`, `camera`, `usbStorage`, `disableScreenshots`, `disableFactoryReset`, `disableSafeBoot` |
+| Security & Reset | `factoryResetProtection` (EFRP on/off), `factoryResetProtectionAccounts` (allow-list) |
 | Location | `requestUpdates` (location capture mode) |
 | Connectivity | `connectivityMode` (live-connection mode, 1.5) |
 | App permissions | `managedAppPermissions` (per installed app: Grant or Deny a runtime permission, 1.7) |
@@ -100,17 +101,6 @@ agents use both colours as sent.
     so it's a separate opt-in. `kioskLockButtons` blocks only the power menu.
   - New columns are NULL on upgrade, so revisions only change for configurations that use them, and for
     Do-not-track configurations (whose devices get one `config.apply`).
-- **1.5:** the `connectivity` section (`connectivityMode`): `adaptive` (Battery-saver, the agent's default) holds the
-  wake socket only while the screen is on or charging; `alwaysOn` holds it 24/7, so commands reach a locked device
-  without waiting for the next heartbeat. Applied through the same `PowerModeStore` as `device.powerMode`. NULL is not
-  managed: the section is omitted, so existing revisions don't move, and each device keeps its mode, including one set
-  by `device.powerMode`. A managed mode wins over `device.powerMode`: the newest delivered document is applied again
-  after every boot and agent update (`ConfigReapplyWorker`), and the server re-sends `config.apply` when the agent
-  version changes, so a device-level mode lasts only until then. Switching a configuration from `alwaysOn` back to not
-  managed leaves its devices on `alwaysOn`; set `adaptive` to switch them back. Older agents ignore it.
-- **1.6:** the `locationServices` policy key: Android 11+ Device Owners turn Android Location services on or off and
-  lock the setting while managed; Not managed (NULL, the upgrade value) lifts the lock and leaves the switch as it is.
-  It is separate from `requestUpdates`. Agents without it, and Android 10 and older, report `unsupported`.
 - **1.7:** the `appPermissions` section: per app the configuration installs, runtime permissions set to `grant` or
   `deny` (`DevicePolicyManager.setPermissionGrantState`, Device Owner). A rule left out goes back to Default, the
   device-wide auto-grant set at enrollment. An empty list releases every override the agent set; an absent section
@@ -119,6 +109,13 @@ agents use both colours as sent.
   agent applies its rules as soon as its `app.install` succeeds, also after an update. Only agents that advertise
   `app.runtimePermissions` get the section; the others get the document without it, under that document's revision,
   and show as out of sync while the configuration has a rule.
+- **1.13:** Enhanced Factory Reset Protection (`factoryResetProtection` + `factoryResetProtectionAccounts`) is sent as
+  `config.apply.factoryResetProtection = { enabled, accounts }` and applied through
+  `setFactoryResetProtectionPolicy` (API 30+, Device Owner). It does not prevent a wipe: it decides whether a
+  wiped device demands an authorized Google account and which accounts may unlock it. An agent below API 30 or
+  without Device Owner reports the key `unsupported`. Clearing the field (Not managed) releases the platform
+  policy, but only on devices whose previously applied document had it. New columns are NULL on upgrade, so
+  existing revisions do not move.
 
 **Kiosk background image.** A configuration's managed image is an uploaded file (`backgroundImageFileId`). On
 save the server refuses anything but a PNG, JPEG or WebP of at most 10 MB and 16 megapixels (read from the header),

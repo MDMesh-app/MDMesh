@@ -30,7 +30,7 @@ import java.util.regex.Pattern;
 public final class AgentProtocol {
 
     /** The protocol version advertised and required by the v1 endpoints. */
-    public static final String VERSION = "1.12";
+    public static final String VERSION = "1.13";
 
     private static final Pattern MAJOR_MINOR = Pattern.compile("^(\\d{1,9})\\.(\\d{1,9})$");
 

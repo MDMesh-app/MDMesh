@@ -7,7 +7,7 @@ security issue has a Security section, and only such a release has one. Feature 
 weeks; patch releases (0.x.y) only for a security fix or something broken in the field. Each PR adds its line under
 Unreleased.
 
-## Unreleased
+## v0.6.0 — 2026-11-23
 
 Upgrading
 - Forks that publish their own releases: record your release certificate's checksum in
@@ -57,6 +57,9 @@ New
   leaves missing. It is no longer offered as an update that then fails, or retried automatically.
 - Console extensions: a menu item (`MenuItem`, as in a list's row actions) can set `movesFocus: true` when its
   `onSelect` moves focus itself, so the menu leaves focus there rather than returning it to its trigger.
+- Configurations: Enhanced Factory Reset Protection (FRP) for Android 11+ Device Owner devices. A wiped device can
+  require an authorized Google account, and the configuration lists the accounts allowed to unlock it. The agent
+  applies it through the device policy; the console's "Security & Reset" fields manage it (agent protocol 1.13).
 
 Fixes
 - Enrollment keeps its agent through a restart with GitHub down: the updater keeps the signed manifest and agent of

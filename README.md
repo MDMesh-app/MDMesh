@@ -92,7 +92,7 @@ ports to open), on your own domain (ports 80 and 443 reach the host), or behind 
 already run ([which one is for me?](DEPLOY.md#which-install-is-for-me)):
 
 ```bash
-bash <(curl -fsSL https://github.com/MDMesh-app/MDMesh/releases/latest/download/quickstart.sh)
+bash <(curl -fsSL https://github.com/Keidevk/MDMesh/releases/latest/download/quickstart.sh)
 ```
 
 To check `quickstart.sh` against the signed release before it runs, use the

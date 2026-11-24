@@ -432,8 +432,15 @@ object AgentModule {
         store: ConfigStateStore,
         power: PowerModeStore,
         appPermissions: AppRuntimePermissions,
-    ): ConfigApplier = ConfigApplier(registry::togglePolicies, kiosk, location::set, store,
-        setPowerMode = power::set, appPermissions = appPermissions)
+    ): ConfigApplier = ConfigApplier(
+        registry::togglePolicies,
+        kiosk,
+        location::set,
+        store,
+        setPowerMode = power::set,
+        appPermissions = appPermissions,
+        factoryResetProtection = registry.factoryResetProtection(),
+    )
 
     @Provides
     @Singleton

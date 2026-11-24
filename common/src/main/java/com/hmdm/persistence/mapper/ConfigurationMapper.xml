@@ -35,7 +35,7 @@
                                     kioskNotifications, kioskSystemInfo, kioskKeyguard, kioskLockButtons, kioskScreenOn, launcherUrl, restrictions, autoUpdate,
                                     blockStatusBar, systemUpdateType, systemUpdateFrom, systemUpdateTo,
                                     scheduleAppUpdate, appUpdateFrom, appUpdateTo, downloadUpdates, defaultFilePath, disableFactoryReset, disableSafeBoot, wifiRadio, locationServices, kioskLockVolume, connectivityMode,
-                                    extensions)
+                                    factoryResetProtection, factoryResetProtectionAccounts, extensions)
         VALUES (#{name}, #{description}, #{type}, #{password}, #{backgroundColor}, #{textColor}, #{backgroundImageUrl}, #{backgroundImageFileId}, #{backgroundImageSha256}, #{backgroundImageFit}, #{backgroundImageFocalX}, #{backgroundImageFocalY},
                 #{iconSize}, #{desktopHeader}, #{desktopHeaderTemplate}, #{displayStatus}, #{useDefaultDesignSettings}, #{customerId},
                 #{gps}, #{bluetooth}, #{camera}, #{wifi}, #{mobileData}, #{usbStorage}, #{requestUpdates}, #{disableLocation}, #{appPermissions},
@@ -47,7 +47,7 @@
                 #{kioskNotifications}, #{kioskSystemInfo}, #{kioskKeyguard}, #{kioskLockButtons}, #{kioskScreenOn}, #{launcherUrl}, #{restrictions}, #{autoUpdate},
                 #{blockStatusBar}, #{systemUpdateType}, #{systemUpdateFrom}, #{systemUpdateTo},
                 #{scheduleAppUpdate}, #{appUpdateFrom}, #{appUpdateTo}, #{downloadUpdates}, #{defaultFilePath}, #{disableFactoryReset}, #{disableSafeBoot}, #{wifiRadio}, #{locationServices}, #{kioskLockVolume}, #{connectivityMode},
-                COALESCE(CAST(#{extensions} AS jsonb), '{}'::jsonb))
+                #{factoryResetProtection}, #{factoryResetProtectionAccounts}, COALESCE(CAST(#{extensions} AS jsonb), '{}'::jsonb))
     </insert>
 
     <insert id="insertConfigurationApplications">

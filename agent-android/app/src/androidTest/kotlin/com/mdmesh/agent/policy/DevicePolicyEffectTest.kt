@@ -17,6 +17,8 @@ import com.mdmesh.policy.camera.CameraPolicy
 import com.mdmesh.policy.factoryreset.FactoryResetPolicy
 import com.mdmesh.policy.factoryreset.FactoryResetPolicyFactory
 import com.mdmesh.policy.factoryreset.FactoryResetWipeHold
+import com.mdmesh.policy.factoryresetprotection.FactoryResetProtectionPolicy
+import com.mdmesh.policy.factoryresetprotection.FactoryResetProtectionPolicyFactory
 import com.mdmesh.policy.location.LocationServicesPolicy
 import com.mdmesh.policy.safeboot.SafeBootPolicy
 import com.mdmesh.policy.safeboot.SafeBootPolicyFactory
@@ -25,6 +27,7 @@ import com.mdmesh.policy.wifi.DpmHandle
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Before
@@ -110,9 +113,50 @@ class DevicePolicyEffectTest {
         )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             assertTrue(
+                "an API 30+ Device Owner must advertise factoryResetProtection (EFRP)",
+                FactoryResetProtectionPolicy.CAPABILITY_KEY in CapabilityRegistry(handle).supportedPolicyKeys(),
+            )
+            assertTrue(
                 "Android 11+ Device Owners must advertise location-services control",
                 LocationServicesPolicy.CAPABILITY_KEY in toggles,
             )
+        }
+    }
+
+    /**
+     * EFRP is not a user restriction: it goes through setFactoryResetProtectionPolicy and carries the
+     * account allow-list. Read the real policy back from the DPM, then restore the pre-test one.
+     */
+    @Test
+    fun factoryResetProtectionAppliesTheAccountAllowListAndReleasesIt() {
+        assumeTrue("EFRP requires API 30", Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
+        val policy = requireNotNull(FactoryResetProtectionPolicyFactory.create(handle)) {
+            "factoryResetProtection resolved no strategy on an API 30+ Device Owner — the probe chain is broken"
+        }
+        val previousPolicy = dpm.getFactoryResetProtectionPolicy(handle.admin)
+        try {
+            assertEquals(
+                "the DPM must accept the EFRP policy",
+                PolicyOutcome.Applied,
+                policy.apply(true, listOf("admin@acme.com")),
+            )
+            val applied = requireNotNull(dpm.getFactoryResetProtectionPolicy(handle.admin)) {
+                "the DPM accepted the EFRP policy but reads back null"
+            }
+            assertTrue("FRP must be enabled on the real device", applied.isFactoryResetProtectionEnabled)
+            assertEquals(
+                "the account allow-list must reach the platform",
+                listOf("admin@acme.com"),
+                applied.factoryResetProtectionAccounts,
+            )
+
+            assertEquals(PolicyOutcome.Applied, policy.release())
+            assertNull(
+                "Not managed must clear the policy back to the platform default",
+                dpm.getFactoryResetProtectionPolicy(handle.admin),
+            )
+        } finally {
+            dpm.setFactoryResetProtectionPolicy(handle.admin, previousPolicy)
         }
     }
 

@@ -62,6 +62,10 @@ export interface Configuration {
   name: string;
   description?: string;
   qrCodeKey?: string;
+  /** Enhanced FRP: null = not managed, true = wiped device needs an authorized account, false = FRP off. */
+  factoryResetProtection?: boolean | null;
+  /** Enhanced FRP unlock allow-list: comma/newline separated Google account ids. */
+  factoryResetProtectionAccounts?: string | null;
   applications?: ConfigApp[];
   /**
    * Server plugins' and extensions' data by namespace (an extension id, or `<id>.<name>`), each a JSON object. The

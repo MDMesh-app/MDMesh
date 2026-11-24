@@ -8,6 +8,7 @@ import com.hmdm.persistence.domain.Configuration;
 import com.hmdm.persistence.domain.RequestUpdatesType;
 import com.hmdm.rest.json.agent.DesiredConfig;
 import com.hmdm.rest.json.agent.DesiredConnectivity;
+import com.hmdm.rest.json.agent.DesiredFactoryResetProtection;
 import com.hmdm.rest.json.agent.DesiredKiosk;
 import com.hmdm.rest.json.agent.DesiredKioskBackgroundImage;
 import com.hmdm.rest.json.agent.DesiredKioskFeatures;
@@ -22,6 +23,7 @@ import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -47,6 +49,7 @@ public final class DesiredConfigBuilder {
     public static final String POLICY_PREFIX = "policies.";
     public static final String KEY_KIOSK = "kiosk";
     public static final String KEY_LOCATION = "location";
+    public static final String KEY_FACTORY_RESET_PROTECTION = "factoryResetProtection";
     public static final String CONNECTIVITY_ADAPTIVE = "adaptive";
     public static final String CONNECTIVITY_ALWAYS_ON = "alwaysOn";
     /** {@code configurationApplications.action} meaning "install this app". */
@@ -83,6 +86,7 @@ public final class DesiredConfigBuilder {
             d.setConnectivity(c);
         }
         d.setAppPermissions(appPermissions(cfg, appList));
+        d.setFactoryResetProtection(factoryResetProtection(cfg));
         // Last, once core's sections are built from cfg, so a contributor can't change them.
         contribute(policies, cfg, Collections.unmodifiableList(appList), contributors);
         d.setRevision(revision(d));
@@ -224,6 +228,35 @@ public final class DesiredConfigBuilder {
 
     private static void putIfManaged(Map<String, Boolean> p, String key, Boolean v) {
         if (v != null) p.put(key, v);
+    }
+
+    /**
+     * Enhanced Factory Reset Protection (EFRP, protocol 1.5). The section is present when the admin manages the
+     * enabled flag or lists accounts; accounts alone imply enabled (listing them for a policy that is off would do
+     * nothing). An explicit {@code false} wins and drops the accounts, so the policy can never carry the
+     * contradictory "disabled + allow-list". A NULL column (every existing configuration) leaves the section
+     * absent, so the golden revisions do not move.
+     */
+    private static DesiredFactoryResetProtection factoryResetProtection(Configuration cfg) {
+        Boolean enabled = cfg.getFactoryResetProtection();
+        List<String> accounts = splitAccounts(cfg.getFactoryResetProtectionAccounts());
+        if (enabled == null && accounts.isEmpty()) return null;
+        boolean on = enabled == null || enabled;
+        DesiredFactoryResetProtection frp = new DesiredFactoryResetProtection();
+        frp.setEnabled(on);
+        if (on && !accounts.isEmpty()) frp.setAccounts(accounts);
+        return frp;
+    }
+
+    /** Splits a comma/newline separated account list, trims, drops blanks and de-dupes (order preserved). */
+    static List<String> splitAccounts(String raw) {
+        if (raw == null) return Collections.emptyList();
+        Set<String> distinct = new LinkedHashSet<String>();
+        for (String part : raw.split("[,\\r\\n]+")) {
+            String account = part.trim();
+            if (!account.isEmpty()) distinct.add(account);
+        }
+        return new ArrayList<String>(distinct);
     }
 
     /**

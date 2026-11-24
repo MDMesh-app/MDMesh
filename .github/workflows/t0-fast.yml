@@ -126,6 +126,11 @@ jobs:
       - if: matrix.name == 'server' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).server)
         name: Build WAR
         run: mvn -B -DskipTests package
+      # The WAR's LICENSE, NOTICE and third-party list: every jar listed, each under an allowed licence (or a recorded
+      # choice), compared with docs/licenses/inventory/ (docs/licenses/policy.md). Differences there only warn.
+      - if: matrix.name == 'server' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).server)
+        name: Licences in the WAR
+        run: scripts/licenses/inventory.py --war server/target/launcher.war
       - if: matrix.name == 'server' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).server)
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
@@ -149,6 +154,10 @@ jobs:
       - if: matrix.name == 'web' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).web)
         working-directory: web
         run: npm run build
+      # As the server's: the console build's /licenses/ files (docs/licenses/policy.md).
+      - if: matrix.name == 'web' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).web)
+        name: Licences in the console build
+        run: scripts/licenses/inventory.py --web web/dist
 
       # --- agent (from agent.yml) ---
       - if: matrix.name == 'agent' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).agent)
@@ -185,6 +194,10 @@ jobs:
         # tests and resolves their dependencies, so neither a change to the classes they use nor a test-only dependency
         # conflict breaks them unseen. Running them needs an emulator (agent-android/README.md).
         run: ./gradlew --no-daemon detekt assembleDebug lintDebug testDebugUnitTest assembleDebugAndroidTest :proto:test
+      # As the server's: the APK's assets/licenses/ (docs/licenses/policy.md).
+      - if: matrix.name == 'agent' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).agent)
+        name: Licences in the APK
+        run: scripts/licenses/inventory.py --apk agent-android/app/build/outputs/apk/debug/app-debug.apk
 
       # --- supervisor (#27): build the image, run its unit tests on the shipped Node, then run it the
       # way docker-compose runs it (working_dir /project + project mounted) and probe its routes. ---

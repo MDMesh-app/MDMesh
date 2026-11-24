@@ -753,8 +753,8 @@ mkdir -p "$WORK/stubs-ports"
 printf '%s\n' '#!/bin/sh' 'echo "docker $*" >> "$STUB_LOG"' \
   'no() { [ "$1" != fail ] || { echo "the $2 error" >&2; exit 1; }; }' 'case "$*" in' \
   '  "compose ps -a -q caddy") no "$STUB_IDS" ps; printf "%s\n" $STUB_IDS ;;' \
-  '  "inspect --format {{json .HostConfig.PortBindings}} "*) no "$STUB_BIND" inspect' \
-  '    shift 3; for i; do case "$i" in idle) echo "{}" ;; *) printf "%s\n" "$STUB_BIND" ;; esac; done ;;' \
+  '  "inspect --format {{json .HostConfig.PortBindings}}"*) no "$STUB_BIND" inspect; shift 3' \
+  '    [ "$#" != 0 ] || no fail inspect; for i; do case "$i" in idle) echo "{}" ;; *) printf "%s\n" "$STUB_BIND" ;; esac; done ;;' \
   '  compose*" config") [ "$STUB_CONFIG" != fail ] || echo "      POSTGRES_PASSWORD: s3cr3t-pw"; no "$STUB_CONFIG" config; cat "$STUB_CONFIG" ;;' \
   '  compose*" up "*) echo "up env COMPOSE_FILE=${COMPOSE_FILE-unset}" >> "$STUB_LOG"; exit 99 ;;' \
   'esac' 'exit 0' > "$WORK/stubs-ports/docker"
@@ -819,7 +819,7 @@ ok
 ports_run only443 "$EDGE_BOTH" docker-compose.yml:mine.yml; stopped "a list that drops 80 alone" 'port 80 would close' 'publish it in your own compose file'
 ports_run other "$EDGE_443" docker-compose.yml:mine.yml; stopped "a list that publishes 8080 and 4430 instead of 443" 'port 443 would close' "'docker-compose.yml:mine.yml:$D'"
 # Any of the edge's containers counts, the first or not (a stopped one too: HostConfig, in ps -a).
-STUB_IDS='idle edge1'; ports_run none "$EDGE_BOTH" docker-compose.yml; stopped "the second of the edge's containers on 80/443"; unset STUB_IDS
+for STUB_IDS in 'idle edge1' 'edge1 idle'; do ports_run none "$EDGE_BOTH" docker-compose.yml; stopped "one of the containers $STUB_IDS on 80/443"; done; unset STUB_IDS
 # What can't be answered stops too, in its own words, and shows no line of config's output.
 for c in ps inspect config; do
   bind=$EDGE_BOTH; conf=none; STUB_IDS=edge1
@@ -1388,5 +1388,5 @@ if [ -e "$WORK/stubs.called" ]; then fail "a dry run ran a command that changes 
 TREE=$(git -c safe.directory='*' -C "$REPO" describe --always --dirty 2>&1) || TREE='?'
 TREE="$REPO at $TREE"
 if [ "$FAILS" != 0 ]; then echo "installer answers: $FAILS failure(s) ($TREE)" >&2; exit 1; fi
-if [ "$CHECKS" -lt 691 ]; then echo "installer answers: only $CHECKS checks ran, expected at least 691 ($TREE)" >&2; exit 1; fi
+if [ "$CHECKS" -lt 692 ]; then echo "installer answers: only $CHECKS checks ran, expected at least 692 ($TREE)" >&2; exit 1; fi
 echo "installer answers: all $CHECKS checks passed ($TREE)"

@@ -1,10 +1,13 @@
 # Licences (docs/licenses/policy.md). The server, console and agent builds check their own third-party components
 # against docs/licenses/allowed.txt wherever CI is set, so T0's entries already refuse a component under another
-# licence. This workflow checks what no single build sees, path-filtered:
+# licence. This workflow checks what no single build sees:
+#   tools      the licence scripts' own tests, on every change (fails)
+# and, path-filtered:
 #   images     every image and package docker/*.Dockerfile uses is named in docs/licenses/images.md (fails)
 #   inventory  builds the WAR, the console and the debug APK; each must carry LICENSE, NOTICE and its third-party list,
-#              and the WAR's list every jar it holds (fails); then compares the lists with docs/licenses/inventory/
-#              (warns only: a new component is for review, not a red build)
+#              and the WAR's list every jar it holds; every listed licence must be allowed, and a choice among
+#              several recorded (fails); then compares the lists with docs/licenses/inventory/ (warns only: a new
+#              component is for review, not a red build)
 name: licences
 
 on:
@@ -36,6 +39,14 @@ jobs:
             images: docker/**, docs/licenses/images.md, scripts/licenses/**
             # What decides the three builds' third-party components and the licence files they ship.
             inventory: LICENSE, NOTICE, docs/licenses/**, scripts/licenses/**, **/pom.xml, server/src/license/**, web/package.json, web/package-lock.json, web/vite.config.ts, web/vite.licences.ts, agent-android/**/*.gradle.kts, agent-android/gradle/**
+
+  tools:
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: inventory.py's own tests
+        run: tests/licenses/inventory-test.sh
 
   images:
     needs: paths

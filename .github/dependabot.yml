@@ -121,10 +121,14 @@ updates:
     schedule: { interval: weekly, day: monday }
     groups:
       compose-images: { patterns: ["*"] }
-    # Scans docker-compose*.yml. Our own ghcr.io/.../mdmesh-* images use ${VAR:-latest} tags and are skipped;
-    # cloudflared is :latest (nothing to bump).
+    # Scans docker-compose*.yml. Our own ghcr.io/.../mdmesh-* images use ${VAR:-latest} tags and are skipped.
+    # postgres and cloudflared are pinned as tag@sha256:<index digest> in both files; a bump moves both together, and
+    # T0 runs scripts/third-party-images.sh lint + verify on it (one image per release platform, postgres's major and
+    # Debian release). A same-tag rebuild isn't picked up: bump that by hand (CONTRIBUTING.md).
+    # No other ignores: cloudflared's YYYY.M.P versions make every January a "major", and it must still move.
     ignore:
-      # Postgres stays on 14.x: a new major cannot open an existing 14 data directory (dump/restore or
-      # pg_upgrade). Move it only in a planned database migration.
+      # Postgres stays on 14.x-trixie: a new major cannot open an existing 14 data directory (dump/restore or
+      # pg_upgrade), and another Debian release can change text sort order. Move it only in a planned database
+      # migration (PG_MAJOR in scripts/third-party-images.sh).
       - dependency-name: "postgres"
         update-types: ["version-update:semver-major"]

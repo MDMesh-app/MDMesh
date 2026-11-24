@@ -56,6 +56,39 @@ The supervisor you run decides whether updates are pinned, and how a rollback re
 update ([v0.5.0](#v050)); every update from then on is pinned. If you set `SUPERVISOR_VERSION` yourself, see
 [v0.5.0](#v050).
 
+### PostgreSQL and cloudflared images
+
+Updates never change `docker-compose.yml`, so a quick start keeps the `postgres` and `cloudflared` images it was set
+up with. From 0.6.0 both are pinned by digest there: `docker compose pull` no longer brings a newer cloudflared.
+Cloudflare supports a cloudflared release for a year after the newest one, so at least once a year (or to pick up a
+release's pins on an older quick start), copy the two `image:` lines from the release you run. This downloads that
+release's `docker-compose.release.yml` and signed manifest, checks the signature and the file's SHA-256 in the
+manifest, and only then edits `docker-compose.yml`. Run it in the install directory; it needs `minisign`:
+
+```bash
+(
+  V=X.Y.Z   # the release you run (Settings → Updates)
+  R=https://github.com/MDMesh-app/MDMesh
+  d=$(mktemp -d) || exit 1; trap 'rm -f -- "$d"/*; rmdir -- "$d"' EXIT
+  curl -fsSL -o "$d/manifest.json" "$R/releases/download/v$V/manifest.json" &&
+    curl -fsSL -o "$d/manifest.json.minisig" "$R/releases/download/v$V/manifest.json.minisig" &&
+    curl -fsSL -o "$d/compose.yml" "https://raw.githubusercontent.com/MDMesh-app/MDMesh/refs/tags/v$V/docker-compose.release.yml" &&
+    minisign -V -m "$d/manifest.json" -P RWQbf0pIhddaWnDsFknIG4X325wHR05pUxEQJmuuQRdBlQm3zi8/Eqcd &&
+    grep -qxF "  \"version\": \"$V\"," "$d/manifest.json" &&
+    grep -qF "\"docker-compose.release.yml\": \"$(sha256sum "$d/compose.yml" | cut -d' ' -f1)\"" "$d/manifest.json" ||
+    { echo "A download or check failed (see above). Nothing was changed." >&2; exit 1; }
+  for i in postgres cloudflare/cloudflared; do
+    line=$(grep -m1 -E "^    image: $i[:@]" "$d/compose.yml") || { echo "v$V names no $i image" >&2; exit 1; }
+    sed -i -E "s#^    image: $i[:@].*#$line#" docker-compose.yml
+  done
+  grep -E '^    image: (postgres|cloudflare/cloudflared)[:@]' docker-compose.yml && docker compose up -d
+)
+```
+
+`docker compose up -d` recreates only what changed: the database restarts for a few seconds, and the tunnel
+reconnects. The PostgreSQL major and Debian release never change this way (another major can't open the data, and
+another Debian release can sort text differently); they move only in a release whose notes say how.
+
 ## From-source Docker installs
 
 ```bash
@@ -292,6 +325,17 @@ exited or credentials cleared while the older agent ran.
   a newer one. Update the server, then roll out its agent from **Settings → Agent rollout**. After a rollback, a
   rollout of the newer agent stops: cancel it, or update the server again. A server whose release isn't published
   (a development build), or has no agent in its manifest, gets the latest release's agent.
+- **PostgreSQL and cloudflared run pinned images.** Both compose files name them by digest:
+  `postgres:14.25-trixie` (PostgreSQL 14 on Debian 13, what `postgres:14` has been since August 2025, so the same
+  major and the same text sort order as before) and `cloudflared` 2026.11.2. From source, `./setup.sh --update`
+  recreates the database container on the pinned image: it restarts for a few seconds. Quick-start installs keep
+  their compose file, and so the cloudflared they installed; take the release's images with
+  [the step above](#postgresql-and-cloudflared-images), and do it at least once a year (Cloudflare supports a
+  cloudflared release for a year).
+  - Only a database container created before August 2025 runs Debian 12, whose C library sorts some text differently.
+    Check before you move to the pinned image: if `docker compose exec postgres cat /etc/debian_version` prints `12.x`,
+    rebuild the indexes once right after:
+    `docker compose exec postgres psql -U mdmesh -d mdmesh -c 'REINDEX DATABASE mdmesh'`.
 - **Existing installs keep their hosting mode.** Cloudflare Tunnel and own-domain installs, quick start or from
   source, keep their mode, `.env` and compose files through the update. Answers files and `MDMESH_MODE=1` or `2` mean
   what they meant before; `3` (or `proxy`) is the new mode. Native is unchanged.

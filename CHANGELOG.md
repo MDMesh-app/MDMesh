@@ -20,6 +20,12 @@ Upgrading
   count for this update, get this release's supervisor first ([UPGRADING.md](docs/UPGRADING.md#unreleased)).
 - Existing installs keep their mode and settings. To move one behind your own proxy, see
   [UPGRADING, Changing the hosting mode](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#changing-the-hosting-mode).
+- PostgreSQL and cloudflared now run exact, digest-pinned images (`postgres:14.25-trixie`, the same database major and
+  Debian release `postgres:14` gave every install, and `cloudflared` 2026.11.2). From source, `./setup.sh --update`
+  restarts the database for a few seconds. Quick-start installs keep the compose file they were set up with, and so
+  the cloudflared they installed: Cloudflare supports a cloudflared release for a year, so move to the release's
+  images with the step in UPGRADING at least once a year
+  ([UPGRADING.md](docs/UPGRADING.md#postgresql-and-cloudflared-images)).
 
 Heads-up
 - The edge sends HSTS for a request that came in over HTTP only when a trusted peer says `X-Forwarded-Proto: https`
@@ -59,6 +65,8 @@ New
   `onSelect` moves focus itself, so the menu leaves focus there rather than returning it to its trigger.
 
 Fixes
+- The updater no longer checks for releases in a tight loop when `POLL_INTERVAL_HOURS` is 0 or not a number (it uses
+  6), and keeps it between 15 minutes and a week.
 - Enrollment keeps its agent through a restart with GitHub down: the updater keeps the signed manifest and agent of
   each release it has run, and checks both again before it serves them. When it has no agent to give new devices
   (GitHub didn't answer yet, or the release's manifest doesn't verify), the Enroll page says so on Docker installs

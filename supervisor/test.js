@@ -2,7 +2,7 @@ const t = require('node:test');
 const a = require('node:assert');
 const { semverGt, isReleaseVersion, agentOffer, pickRelease, shapeStatus, updateBlocked, blockedLogLine, missedSecurity, imageTags, nextPhase, isTerminal, apkAsset, sha256Matches, recoveryPage, isPublishTemp,
   assetRequest, fetchAsset, envValue, applyLine, applyRefusal, imagePins, deploymentAdminVerdict,
-  legacyDeploymentAdmin } = require('./lib');
+  legacyDeploymentAdmin, pollInterval } = require('./lib');
 
 // The digest-pinned refs server.js passes apply.sh after the signed manifest verified (components.images).
 const PIN = { server: 'ghcr.io/mdmesh-app/mdmesh-server@sha256:' + 'a'.repeat(64),
@@ -275,6 +275,26 @@ t.test('fetchAsset — no token: browser_download_url; non-redirect errors are r
   await a.rejects(fetchAsset({ browser_download_url: 'https://h/a' }, '', loop), /too many redirects/);
   a.equal(loop.calls.length, 6);
   await a.rejects(fetchAsset({}, 'tok', mockFetch({})), /no download URL/);
+});
+
+t.test('pollInterval — POLL_INTERVAL_HOURS within 15 minutes and a week; anything else is the default 6 hours', () => {
+  const H = 3600 * 1000;
+  a.deepEqual(pollInterval(undefined), { ms: 6 * H, note: null });
+  a.deepEqual(pollInterval(''), { ms: 6 * H, note: null });
+  a.deepEqual(pollInterval('12'), { ms: 12 * H, note: null });
+  a.deepEqual(pollInterval(' 0.5 '), { ms: 0.5 * H, note: null });
+  // 0 or junk used to poll (and retry) in a tight loop: setInterval(fn, 0) or NaN.
+  for (const v of ['0', '-1', 'six', 'NaN', 'Infinity', '1e400']) {
+    const r = pollInterval(v);
+    a.equal(r.ms, 6 * H, v);
+    a.match(r.note, /POLL_INTERVAL_HOURS=.* is not a number of hours above 0; using 6/, v);
+  }
+  a.deepEqual(pollInterval('0.01'), { ms: 0.25 * H, note: 'POLL_INTERVAL_HOURS=0.01 is below 0.25 hours; using 0.25' });
+  // Past 2^31 - 1 ms (about 24.8 days) Node fires a timer after 1 ms instead: a hot loop again.
+  a.deepEqual(pollInterval('1000'), { ms: 168 * H, note: 'POLL_INTERVAL_HOURS=1000 is above 168 hours (a week); using 168' });
+  a.equal(pollInterval('168').ms, 168 * H);
+  a.equal(pollInterval('0.25').ms, 0.25 * H);
+  a.deepEqual(pollInterval('0.0003', 0), { ms: 0.0003 * H, note: null }, 'the tests lift the floor');
 });
 
 t.test('envValue — reads KEY=value from .env text the way apply.sh get_env does (first match), tolerating quotes/CRLF', () => {
@@ -1936,7 +1956,7 @@ async function withDeploy(envText, ghOpts, body) {
 
 const OLDER = { version: '0.0.1', apk: RUNNING_AGENT, versionCode: 1 };
 const GH = (older = {}) => ({ version: '0.0.2', apk: NEW_AGENT, older: { ...OLDER, ...older } });
-const FAST = { POLL_INTERVAL_HOURS: '0.0003' };   // a poll (and a retry) about every second
+const FAST = { POLL_INTERVAL_HOURS: '0.0003', POLL_INTERVAL_MIN_HOURS: '0' };   // a poll (and a retry) about every second (the 15-minute floor lifted)
 const logCount = (sup, re) => (sup.log().match(new RegExp(re.source, 'g')) || []).length;
 
 t.test('an agent is never offered ahead of the server: the running release\'s, blocked or not; the latest\'s once the '
@@ -2387,7 +2407,7 @@ t.test('a failed lookup is retried within the retry interval, not only at the ne
     await withDeploy(envOf('mdmesh-app'), GH({ unlisted: true }), async (d, gh, authz) => {
       gh.control.tagStatus = 403;
       // A poll every 36 s, so a retry every 3.6 s: the agent must come from a retry, with no second poll.
-      const sup = await supervisorOn(d, gh, authz, { POLL_INTERVAL_HOURS: '0.01' });
+      const sup = await supervisorOn(d, gh, authz, { POLL_INTERVAL_HOURS: '0.01', POLL_INTERVAL_MIN_HOURS: '0' });
       try {
         const st = await statusOf(sup);
         a.equal(st.apk, null);

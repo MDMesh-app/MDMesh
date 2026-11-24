@@ -8,7 +8,7 @@ const cp = require('child_process');
 const path = require('path');
 const crypto = require('crypto');
 const { semverGt, isReleaseVersion, agentOffer, pickRelease, shapeStatus, updateBlocked, blockedLogLine, hostPlatform, imageTags, imagePins, isTerminal, apkAsset, sha256Matches, recoveryPage, isPublishTemp, fetchAsset,
-  envValue, applyLine, applyRefusal, deploymentAdminVerdict, legacyDeploymentAdmin } = require('./lib');
+  envValue, applyLine, applyRefusal, deploymentAdminVerdict, legacyDeploymentAdmin, pollInterval } = require('./lib');
 
 const PORT = +(process.env.SUPERVISOR_PORT || 9000);
 // Bind address. Docker keeps the default (all interfaces — the container has no published ports);
@@ -27,7 +27,9 @@ const APPLY_SUPPORTED = process.env.APPLY_SUPPORTED !== '0';
 // /files/agent.apk to this process directly.
 const PUBLISH_APK_TO = process.env.PUBLISH_APK_TO || '';
 const APPLY_SCRIPT = path.join(__dirname, 'apply.sh');
-const POLL_MS = (+(process.env.POLL_INTERVAL_HOURS || 6)) * 3600 * 1000;
+const POLL = pollInterval(process.env.POLL_INTERVAL_HOURS, process.env.POLL_INTERVAL_MIN_HOURS ? +process.env.POLL_INTERVAL_MIN_HOURS : undefined);
+if (POLL.note) console.log('[poll]', POLL.note);
+const POLL_MS = POLL.ms;
 // A running release that couldn't be looked up is asked again this soon (5 min; sooner with a short poll interval),
 // not only at the next poll.
 const RETRY_MS = Math.min(POLL_MS / 10, 5 * 60 * 1000);

@@ -118,6 +118,12 @@ Dependabot opens grouped PRs every Monday ([`.github/dependabot.yml`](.github/de
   moves in one PR, a few months after the next even line becomes LTS.
 - **Base images float**, so rebuilds pick up patches. The edge's `caddy` image is pinned, so the Caddyfile parser only
   changes through a Dependabot PR that T0's `edge` check has passed.
+- **postgres and cloudflared are pinned** as `tag@sha256:<index digest>`, the same line in `docker-compose.yml` and
+  `docker-compose.release.yml`. Dependabot bumps both on a new tag. To take a same-tag rebuild, or bump by hand: run
+  `docker buildx imagetools inspect cloudflare/cloudflared:<tag>` (or `postgres:14.<n>-trixie`), copy the top-level
+  `Digest`, edit both files, then run `scripts/third-party-images.sh lint` and `scripts/third-party-images.sh verify`
+  (T0 and the release gate run them too). postgres's major and Debian release (`PG_MAJOR` in that script) move only
+  in a planned database migration.
 - **Vendored CI actions** (`.github/actions/ci-kit/`) change only by re-running `scripts/vendor.sh` in the
   upstream ci-kit repository (see `.github/actions/ci-kit/VENDORED.txt`).
 

@@ -13,7 +13,9 @@
 # and every update pin them by digest from the signed release manifest (0.5.0@sha256:…: docker pulls by the digest).
 services:
   postgres:
-    image: postgres:14
+    # Pinned by index digest, the same line in both compose files (scripts/third-party-images.sh). The major and the
+    # Debian release are part of the data: they change only in a planned database migration.
+    image: postgres:14.25-trixie@sha256:c0e9c0e9bac7e4c1834b698217a03ee5c708de30d313c84a506972de0e24b059
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${DB_NAME:-mdmesh}
@@ -108,7 +110,9 @@ services:
       - backups:/backups
 
   cloudflared:
-    image: cloudflare/cloudflared:latest
+    # Pinned like postgres. Cloudflare supports a cloudflared release for a year after the newest one; Dependabot
+    # bumps it, and quick starts take the release's line by hand (UPGRADING, PostgreSQL and cloudflared images).
+    image: cloudflare/cloudflared:2026.11.2@sha256:55c7e3e8d89d5e8d20b75a82f3602cbf98e06db406e73e282073cfdc5a9a3af6
     restart: unless-stopped
     profiles: ["cloudflare"]
     depends_on:

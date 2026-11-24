@@ -48,7 +48,7 @@ of [your own edge rules](../DEPLOY.md#your-own-edge-rules).
 |---------|-------|---------|---------|
 | `GITHUB_REPO` | `.env`; native env → `supervisor.env` | the clone's `origin` (quick start asks); native re-runs: the value you set, else the current `origin` | `owner/repo` to poll. Without it, there are no updates. On native, `GITHUB_REPO=` goes back to following `origin`. |
 | `UPDATE_CHANNEL` | `.env` (native: always `stable`) | `stable` | `beta` also offers prereleases. |
-| `POLL_INTERVAL_HOURS` | `.env` (native: always `6`) | `6` | How often to check. |
+| `POLL_INTERVAL_HOURS` | `.env` (native: always `6`) | `6` | How often to check, in hours: at least 0.25, at most 168 (a week). Anything that isn't a number above 0 counts as 6. |
 | `GITHUB_TOKEN` | `.env`; native env → `supervisor.env` | empty | Needed for a private repo; raises rate limits. See note. |
 | `IMAGE_OWNER` | `.env` | quick start `mdmesh-app`; from source `local` | GHCR owner (lowercase). `local` means built from the clone. |
 | `SERVER_VERSION`, `WEB_VERSION` | `.env` | the installed release | Image tags, without the `v` (`0.3.2`), or pinned by digest (`0.5.0@sha256:…`). Updates set them to the signed digests. |

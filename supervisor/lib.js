@@ -265,6 +265,21 @@ function envValue(text, key) {
   return v || null;
 }
 
+/** How often to poll for releases, from POLL_INTERVAL_HOURS: {ms, note}, note saying why the value given wasn't used
+ *  (null when it was). Unset → 6 h. Not a number above 0 → 6 h: 0 or junk would poll (and retry) in a tight loop.
+ *  Below 15 minutes → 15 minutes (GitHub's unauthenticated API allows 60 requests an hour); above a week → a week (a
+ *  security release waits no longer, and past 2^31 - 1 ms Node runs a timer after 1 ms). minHours lowers the floor
+ *  for the tests only (POLL_INTERVAL_MIN_HOURS, as HEALTH_TIMEOUT_MIN does for apply.sh). */
+function pollInterval(raw, minHours = 0.25) {
+  const H = 3600 * 1000, given = String(raw == null ? '' : raw).trim();
+  if (given === '') return { ms: 6 * H, note: null };
+  const h = Number(given);
+  if (!Number.isFinite(h) || h <= 0) return { ms: 6 * H, note: `POLL_INTERVAL_HOURS=${given} is not a number of hours above 0; using 6` };
+  if (h < minHours) return { ms: minHours * H, note: `POLL_INTERVAL_HOURS=${given} is below ${minHours} hours; using ${minHours}` };
+  if (h > 168) return { ms: 168 * H, note: `POLL_INTERVAL_HOURS=${given} is above 168 hours (a week); using 168` };
+  return { ms: h * H, note: null };
+}
+
 // Apply is a linear state machine the console + recovery page poll. The happy path advances
 // authorizing → backup → pull → recreate → healthcheck → done. On any failure apply.sh jumps to
 // `rollback` (transient) and ends at `rolled_back` or, if rollback itself fails, `failed`.
@@ -356,5 +371,5 @@ module.exports = {
   parseSemver, semverGt, isReleaseVersion, agentOffer, pickRelease, shapeStatus, updateBlocked, blockedLogLine, hostPlatform, missedSecurity,
   imageTags, imagePins, nextPhase, isTerminal, APPLY_PHASES, APPLY_TERMINAL,
   apkAsset, sha256Matches, recoveryPage, isPublishTemp, assetRequest, fetchAsset, envValue, applyLine, applyRefusal,
-  deploymentAdminVerdict, legacyDeploymentAdmin,
+  deploymentAdminVerdict, legacyDeploymentAdmin, pollInterval,
 };

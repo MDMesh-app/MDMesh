@@ -22,7 +22,7 @@
 # Everything runs in a privileged docker:dind container (its own daemon: nothing reaches this host's stacks) next to a TLS
 # registry that answers as ghcr.io, on an internal network; the client is a container on that network. Images (on this
 # host): ghcr.io/local/mdmesh-{server,web,supervisor}:$E2E_NEW_TAG (this branch, default px-e2e: docker build -f
-# docker/<name>.Dockerfile -t ... .), postgres:14, registry:3, docker:28.5.2-dind, curlimages/curl, node:24-alpine, nginx:1.26-alpine,
+# docker/<name>.Dockerfile -t ... .), the pinned postgres (pulled here if missing), registry:3, docker:28.5.2-dind, curlimages/curl, node:24-alpine, nginx:1.26-alpine,
 # httpd:2.4-alpine, the caddy image docker/web.Dockerfile builds from, and traefik:$E2E_TRAEFIK (pulled when missing).
 # Containers and networks are named $E2E_PREFIX-* (default px-e2e) and removed by name at the end. E2E_KEEP=1 keeps
 # the work directory.
@@ -79,6 +79,8 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+# shellcheck source=tests/lib/pinned-images.sh
+. "$ROOT/tests/lib/pinned-images.sh"
 in_dind() { docker exec -i "$DIND" "$@"; }
 dc()      { docker exec -i -w "$D" "$DIND" docker compose "$@"; }
 q()       { dc exec -T postgres psql -X -U mdmesh -d mdmesh -tAc "$1" 2>>"$LOG" | tr -d '\r'; }
@@ -208,12 +210,15 @@ setup() {
   echo "-- dind $DIND_IP, client $CLIENT_IP; loading images"
   local imgs=()
   for n in server web supervisor; do imgs+=("ghcr.io/local/mdmesh-$n:$NEW_TAG"); done
-  imgs+=(postgres:14 nginx:1.26-alpine httpd:2.4-alpine "$CADDY_IMAGE" "$TRAEFIK")
+  local pg
+  pg=$(pinned_tags postgres) || return 1
+  imgs+=("$pg" nginx:1.26-alpine httpd:2.4-alpine "$CADDY_IMAGE" "$TRAEFIK")
   # Each one here first (a clean host has pulled none of the public ones yet).
   for img in "${imgs[@]}"; do
     docker image inspect "$img" >>"$LOG" 2>&1 || docker pull -q "$img" >>"$LOG" 2>&1 || { echo "could not pull $img"; return 1; }
   done
   docker save "${imgs[@]}" | docker exec -i "$DIND" docker load >>"$LOG" 2>&1 || return 1
+  in_dind docker image inspect "$pg" >>"$LOG" 2>&1 || { echo "the pinned $pg is not in the dind"; return 1; }
   echo "-- releases 0.6.0 and 0.6.1 (this branch's images, each its own digest) in the registry"
   push 0.6.0 || return 1
   push 0.6.1 || return 1
@@ -286,6 +291,7 @@ install_proxy_mode() {
   in_dind mkdir -p "$D/site.d" /root/front
   in_dind touch /root/front/origin-ca.crt
   docker cp "$ROOT/docker-compose.release.yml" "$DIND:$D/docker-compose.yml" >>"$LOG"
+  in_dind sed -i -E "$UNPIN_SED" "$D/docker-compose.yml"   # the pinned images by their tags (tests/lib/pinned-images.sh)
   docker cp "$ROOT/docker-compose.proxy.yml" "$DIND:$D/docker-compose.proxy.yml" >>"$LOG"
   {
     printf '%s\n' DB_NAME=mdmesh DB_USER=mdmesh "DB_PASSWORD=$(openssl rand -hex 12)" "BASE_URL=https://$HOSTNAME_" \

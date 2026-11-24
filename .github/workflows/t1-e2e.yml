@@ -49,7 +49,9 @@ jobs:
             # updater, the compose files and the ready proxy configurations, the database migrations (rollback-e2e
             # rolls back across a schema change), the docs whose restore commands rollback-e2e runs as written, and the
             # tests themselves.
-            lifecycle: quickstart.sh, setup.sh, install/**, docker/**, docker-compose*.yml, supervisor/**, docs/proxies/**, docs/OPERATIONS.md, docs/UPGRADING.md, **/src/main/resources/liquibase/**, tests/proxy-e2e/**, tests/rollback-e2e/**, .dockerignore
+            # The pinned postgres on a 0.5.1 install's database (tests/pg-pin-upgrade).
+            pins: docker-compose*.yml, scripts/third-party-images.sh, tests/pg-pin-upgrade/**
+            lifecycle: quickstart.sh, setup.sh, install/**, docker/**, docker-compose*.yml, supervisor/**, docs/proxies/**, docs/OPERATIONS.md, docs/UPGRADING.md, **/src/main/resources/liquibase/**, tests/proxy-e2e/**, tests/rollback-e2e/**, tests/lib/**, scripts/third-party-images.sh, .dockerignore
 
   agent-e2e:
     name: agent-e2e
@@ -183,10 +185,11 @@ jobs:
       - name: Pull the images the suite loads into its docker:dind
         run: |
           caddy=$(awk 'tolower($1) == "from" && $2 ~ /^caddy[:@]/ { print $2; exit }' docker/web.Dockerfile)
+          pg=$(scripts/third-party-images.sh list | grep '^postgres:')   # the compose files' pinned postgres
           if [ "${{ matrix.suite }}" = proxy-e2e ]; then
-            imgs="postgres:14 nginx:1.26-alpine httpd:2.4-alpine $caddy"
+            imgs="$pg nginx:1.26-alpine httpd:2.4-alpine $caddy"
           else
-            imgs="postgres:14 postgres:16 ghcr.io/mdmesh-app/mdmesh-server:0.4.0 ghcr.io/mdmesh-app/mdmesh-web:0.4.0 ghcr.io/mdmesh-app/mdmesh-supervisor:0.4.0"
+            imgs="$pg postgres:14 postgres:16 ghcr.io/mdmesh-app/mdmesh-server:0.4.0 ghcr.io/mdmesh-app/mdmesh-web:0.4.0 ghcr.io/mdmesh-app/mdmesh-supervisor:0.4.0"
           fi
           for i in $imgs; do docker pull -q "$i"; done
           df -h /
@@ -215,10 +218,25 @@ jobs:
             docker rmi "ghcr.io/local/mdmesh-$n:$E2E_NEW_TAG" "ghcr.io/local/mdmesh-$n:$E2E_OLD_TAG" >/dev/null 2>&1 || true
           done
 
+  # The compose files' pinned postgres on the databases installs have: a 0.5.1 quick start on an older postgres:14
+  # image, then this branch's compose file as ./setup.sh --update brings it in. Same major, same collation and C
+  # library collation version (no REINDEX), every B-tree index consistent (amcheck), the 0.5.1 server answering.
+  pg-pin-upgrade:
+    needs: paths
+    if: needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).pins
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0   # the v0.5.1 tag's compose file
+          persist-credentials: false
+      - run: tests/pg-pin-upgrade/run.sh
+
   # A red T1 on main means main is broken for real devices: open/update one tracking issue.
   # PR failures are already visible on the PR, so they do not file issues.
   report:
-    needs: [agent-e2e, lifecycle-e2e]
+    needs: [agent-e2e, lifecycle-e2e, pg-pin-upgrade]
     if: failure() && github.event_name == 'push'
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 5

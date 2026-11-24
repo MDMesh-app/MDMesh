@@ -72,6 +72,13 @@ jobs:
           git fetch --force --quiet origin "refs/tags/${REF_NAME}:refs/tags/${REF_NAME}"
           release/changelog-section.sh --check "$REF_NAME" "$GITHUB_SHA" \
             || { echo "::error::${REF_NAME} is not its CHANGELOG.md section on ${GITHUB_SHA} (details above; RELEASING.md)"; exit 1; }
+      # The release compose file (signed through the manifest's files) runs postgres and cloudflared by
+      # tag@sha256:<index digest>: each must hold an image for every platform this release publishes (the release
+      # job's PLATFORMS, which the script reads), and postgres must be the major and Debian release installs run.
+      - name: Third-party image pins
+        run: |
+          scripts/third-party-images.sh lint
+          scripts/third-party-images.sh verify
 
   # --- The server, web and supervisor images, for linux/amd64 and linux/arm64 ---
   # Each platform is built on its own GitHub runner (x86_64, and the native Arm64 one: no emulation) and pushed by
@@ -174,6 +181,7 @@ jobs:
       # The platforms every image's index must hold (one image each, the images job's matrix), recorded in the signed
       # manifest as components.platforms: the quick start refuses a host whose platform is not listed.
       # Keep it the images job's matrix.arch list (linux/<arch> each): the step that joins them reads one digest per entry.
+      # The gate's third-party pin check (scripts/third-party-images.sh) reads this line too: keep it one line.
       PLATFORMS: linux/amd64,linux/arm64
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1

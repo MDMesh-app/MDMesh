@@ -9,12 +9,12 @@ import { ConfigPanel } from './DeviceDetailControl';
 
 const REVISION = 'b'.repeat(64);
 
-function panel(status: ConfigStatus) {
+function panel(status: ConfigStatus, isDeviceOwner = true) {
   renderInConsole(
     <ConfigPanel
       status={status}
       configName="Warehouse"
-      isDeviceOwner
+      isDeviceOwner={isDeviceOwner}
       androidSdkInt={34}
       busy={false}
       onRetry={() => {}}
@@ -38,11 +38,28 @@ describe('the configuration panel when the agent needs an update', () => {
     expect(screen.getByText('Agent update needed')).toBeTruthy();
     expect(document.body.textContent).toContain('Warehouse sets Connectivity, which this device’s agent doesn’t apply.');
     expect(screen.queryByRole('button', { name: /Retry apply/ })).toBeNull();
+    // Where agent updates are, as on Overview and Devices.
+    expect(screen.getByRole('link', { name: 'Settings → Agent rollout' }).getAttribute('href')).toMatch(/#agent-rollout$/);
+  });
+
+  it('adds that app permissions also need device owner when the agent isn’t', () => {
+    panel({ ...status, agentUpdateNeeded: ['appPermissions'] }, false);
+    expect(document.body.textContent).toContain('App permissions also need the agent to be device owner.');
   });
 
   it('is the plain in-sync panel without it', () => {
     panel({ ...status, agentUpdateNeeded: undefined });
     expect(screen.getByText('Configuration in sync')).toBeTruthy();
     expect(screen.queryByText('Agent update needed')).toBeNull();
+  });
+});
+
+// A current agent that isn't device owner can't take app permission rules: the server doesn't call that an agent update
+// (no newer agent would apply them), and the panel says why the device stays out of sync.
+describe('the configuration panel for an agent that isn’t device owner', () => {
+  it('names device owner as the reason it is out of sync', () => {
+    panel({ configurationId: 3, currentRevision: REVISION, appliedRevision: 'a'.repeat(64), inSync: false, supported: true }, false);
+    expect(screen.getByText('Configuration out of sync')).toBeTruthy();
+    expect(document.body.textContent).toContain('Its agent isn’t device owner, so settings that need it, such as app permissions, can’t apply.');
   });
 });

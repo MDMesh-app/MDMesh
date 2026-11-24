@@ -209,16 +209,16 @@ public class ConfigReconcilerSectionGateTest {
     }
 
     /**
-     * An agent that lists appPermissions but lacks the capability (not Device Owner): the capability decides both what
-     * it is sent and whether it applies the rules.
+     * An agent that lists appPermissions but lacks the capability (not Device Owner): it isn't sent the rules, and it
+     * doesn't need an agent update for them either: a newer agent wouldn't apply them without Device Owner.
      */
     @Test
-    public void aListedSectionStillNeedsItsCapability() {
+    public void aListedSectionWithoutItsCapabilityIsWithheldButNeedsNoUpdate() {
         ConfigReconciler reconciler = reconciler(Collections.singletonList(CAMERA_DENY));
         Set<String> listed = new HashSet<String>(Arrays.asList(DesiredConfigBuilder.CAPABILITY,
                 "config.policies", "config.kiosk", "config.location", "config.connectivity", "config.appPermissions"));
         assertNull(reconciler.currentDocument(device(), listed).getAppPermissions());
-        assertEquals(Collections.singletonList("appPermissions"),
+        assertEquals(Collections.<String>emptyList(),
                 ConfigReconciler.notApplied(reconciler.statusDocument(device()), listed, "0.6.0"));
     }
 
@@ -233,16 +233,24 @@ public class ConfigReconcilerSectionGateTest {
                 ConfigReconciler.notApplied(reconciler.statusDocument(device()), listed, "0.6.0"));
     }
 
-    /** App permission rules an agent can't apply: left out of what it is sent (as before), and named. */
+    /**
+     * App permission rules an agent can't apply are left out of what it is sent (as before). They need an agent update
+     * only on an agent before 0.5.0. A 0.5.0 or later agent without the capability isn't Device Owner, which no update
+     * fixes, and neither does a version that doesn't read.
+     */
     @Test
-    public void permissionRulesTheAgentCantApplyNeedAnUpdate() {
-        ManagedAppPermission rule = new ManagedAppPermission();
-        rule.setApplicationId(4); rule.setPermission("android.permission.CAMERA"); rule.setState("deny");
-        ConfigReconciler reconciler = reconciler(Collections.singletonList(rule));
+    public void permissionRulesNeedAnUpdateOnlyOnAnAgentThatPredatesThem() {
+        ConfigReconciler reconciler = reconciler(Collections.singletonList(CAMERA_DENY));
         DesiredConfig doc = reconciler.statusDocument(device());
-        assertEquals(Collections.singletonList("appPermissions"), ConfigReconciler.notApplied(doc, OLD_AGENT, "0.5.1"));
-        assertEquals(Collections.<String>emptyList(), ConfigReconciler.notApplied(doc, NEW_AGENT, "0.5.1"));
+        assertNull(reconciler.currentDocument(device(), OLD_AGENT).getAppPermissions());
+        assertEquals(Collections.singletonList("appPermissions"), ConfigReconciler.notApplied(doc, OLD_AGENT, "0.4.2"));
+        for (String current : Arrays.asList("0.5.0", "0.5.1", "0.6.0-rc1", "0.5.1+fork", null, "unknown", "0.1.15")) {
+            assertEquals(String.valueOf(current), Collections.<String>emptyList(),
+                    ConfigReconciler.notApplied(doc, OLD_AGENT, current));
+        }
+        assertEquals(Collections.<String>emptyList(), ConfigReconciler.notApplied(doc, NEW_AGENT, "0.4.2"));
         assertEquals("no rules: nothing to apply", Collections.<String>emptyList(), ConfigReconciler.notApplied(
-                reconciler(Collections.<ManagedAppPermission>emptyList()).statusDocument(device()), OLD_AGENT, "0.5.1"));
+                reconciler(Collections.<ManagedAppPermission>emptyList()).statusDocument(device()), OLD_AGENT, "0.4.2"));
     }
+
 }

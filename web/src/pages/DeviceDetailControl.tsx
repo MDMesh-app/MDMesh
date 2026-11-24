@@ -244,7 +244,10 @@ export function ConfigPanel({
     text = (
       <>
         {strongName} sets {sectionLabels(status.agentUpdateNeeded ?? [])}, which this device’s agent doesn’t apply.
-        Update the agent (<Link to={`${paths.settings}#updates`}>Settings → Updates</Link>).
+        Update the agent (<Link to={`${paths.settings}#agent-rollout`}>Settings → Agent rollout</Link>).
+        {isDeviceOwner === false && status.agentUpdateNeeded?.includes('appPermissions')
+          ? ' App permissions also need the agent to be device owner.'
+          : null}
       </>
     );
   } else if (verdict.label === 'Apply failed' || failed > 0) {
@@ -294,6 +297,15 @@ export function ConfigPanel({
     text = (
       <>
         {strongName}: {outcomeSummary(outcomes)}
+      </>
+    );
+  } else if (verdict.label === 'Out of sync' && isDeviceOwner === false) {
+    // Not device owner: a current agent can't take settings that need it (app permissions), so the device may stay out
+    // of sync however often the configuration is sent.
+    text = (
+      <>
+        The device doesn’t run the current revision of {strongName}. Its agent isn’t device owner, so settings that need
+        it, such as app permissions, can’t apply.
       </>
     );
   }

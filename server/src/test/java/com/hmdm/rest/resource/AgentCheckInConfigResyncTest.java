@@ -498,6 +498,37 @@ public class AgentCheckInConfigResyncTest {
         }
     }
 
+    /**
+     * The verdict goes by the agent that applied the configuration: one updated since (0.3.8 applied, 0.4.0 runs) still
+     * needs the update for connectivity until the configuration is applied under it. Retry sends it again then.
+     */
+    @Test
+    public void a_retry_after_an_agent_update_resends_and_the_verdict_follows_the_applying_agent() throws Exception {
+        unsecureDAO.configuration.setConnectivityMode(DesiredConfigBuilder.CONNECTIVITY_ALWAYS_ON);
+        String full = DesiredConfigBuilder.build(unsecureDAO.configuration, Collections.<Application>emptyList(),
+                NO_CONTRIBUTORS).getRevision();
+        assertEquals(1, checkIn("0.3.8", null).size());
+        checkIn("0.3.8", full);
+        commandDAO.getState(NUMBER).setAgentVersion("0.4.0"); // updated, not checked in since
+
+        assertEquals("applied by 0.3.8", Collections.singletonList("connectivity"), verdict().agentUpdateNeeded);
+        assertEquals("the new agent hasn't had it", ConfigReconciler.Retry.QUEUED, retry());
+        assertEquals(1, checkIn("0.4.0", full).size());
+        assertEquals("still 0.3.8's until it comes back done", Collections.singletonList("connectivity"),
+                verdict().agentUpdateNeeded);
+        checkIn("0.4.0", full); // acked done
+        assertEquals("0.4.0", commandDAO.getState(NUMBER).getConfigAgentVersion());
+        assertEquals(Collections.<String>emptyList(), verdict().agentUpdateNeeded);
+        assertEquals(ConfigReconciler.Retry.IN_SYNC, retry());
+    }
+
+    private ConfigReconciler.Sync verdict() {
+        DeviceState state = commandDAO.getState(NUMBER);
+        return ConfigReconciler.syncOf(reconciler.statusDocument(unsecureDAO.device),
+                com.hmdm.util.AgentCapabilityTokens.flatten(commandDAO.caps), state.getAppliedConfigRevision(),
+                ConfigReconciler.applyingAgentVersion(state));
+    }
+
     @Test
     public void a_retry_for_an_agent_without_configurations_queues_nothing() {
         commandDAO.caps = "{\"device\":[\"lock\"]}";

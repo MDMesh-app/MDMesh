@@ -31,7 +31,9 @@ import java.util.regex.Pattern;
  * <p>What a device applies decides only whether it needs an agent update ({@link #notApplied}); never what it is sent,
  * nor whether it runs the current revision. An agent from 0.6.0 advertises {@code configSections}, flattened to
  * {@code config.<name>}, and applies exactly those. An older agent applies a section with a capability
- * when it advertises it, and any other section unless it reports a version below the section's {@code since}. Only a
+ * when it advertises it, and any other section unless it reports a version below the section's {@code since}. A
+ * section is named as needing an update only when a newer agent would apply it: one whose capability a current agent
+ * lacks (appPermissions without Device Owner) is not. Only a
  * version that reads as one, from 0.3.0 on, counts: a missing, unreadable or older one (a development build's) is taken
  * to apply them all. An empty {@code configSections} list flattens to no tokens, so it counts as no list.</p>
  */
@@ -117,8 +119,10 @@ public final class ConfigSections {
     }
 
     /**
-     * The sections of {@code doc} that ask something (not {@link #isEmpty}) and this device doesn't apply, in
-     * {@link #ALL} order: the device needs an agent update for each.
+     * The sections of {@code doc} that ask something (not {@link #isEmpty}) and this device's agent doesn't apply
+     * because it is too old, in {@link #ALL} order: the device needs an agent update for each. A section whose
+     * capability the agent lacks is named only when the agent predates the section; a current agent lacks it for a
+     * reason an update doesn't fix.
      *
      * @param agentVersion the version of the agent that applied the configuration; null, unreadable or below
      *                     0.3.0 (the first config.apply release) counts as applying every section
@@ -133,9 +137,16 @@ public final class ConfigSections {
         String version = isBelow(agentVersion, FIRST_CONFIG_APPLY) ? null : agentVersion;
         for (Section s : ALL) {
             if (isEmpty(s.valueIn(doc))) continue;
-            boolean applies = s.getCapability() == null || tokens.contains(s.getCapability());
-            if (lists) applies &= tokens.contains(s.getToken());
-            else if (s.getCapability() == null) applies = !isBelow(version, s.getSince());
+            boolean applies;
+            if (s.getCapability() != null && !tokens.contains(s.getCapability())) {
+                // Without the capability the agent doesn't apply it, but an update helps only an agent that predates
+                // the section: a current one lacks it for another reason (app.runtimePermissions: not Device Owner).
+                applies = !isBelow(version, s.getSince());
+            } else if (lists) {
+                applies = tokens.contains(s.getToken());
+            } else {
+                applies = s.getCapability() != null || !isBelow(version, s.getSince());
+            }
             if (!applies) out.add(s);
         }
         return out;

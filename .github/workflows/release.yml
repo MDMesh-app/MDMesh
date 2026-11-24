@@ -8,13 +8,15 @@ name: release
 # Requires these `release` environment secrets (see RELEASING.md): MDM_RELEASE_STORE_B64, MDM_RELEASE_STORE_PASSWORD,
 # MDM_RELEASE_KEY_ALIAS, MDM_RELEASE_KEY_PASSWORD, MINISIGN_SECRET_KEY, MINISIGN_PASSWORD.
 #
-# Jobs: gate → images (each image on each platform, pushed by digest, untagged) → release (signed APK, held to the
-# recorded signing checksum; :VERSION tags, signed manifest, GitHub Release, :latest).
+# Jobs: gate → images (each image on each platform, pushed by digest, untagged) → packages (read-only: lists what each
+# pushed image holds, by digest) → release (signed APK, held to the recorded signing checksum; :VERSION tags, signed
+# manifest, GitHub Release with the six image package lists NOTICE's source offer relies on, :latest).
 # Who may release: the `gate` job (no secrets, read-only token) refuses a tag whose commit is not on main. The `release`
 # job, which alone holds the signing secrets, runs in the `release` environment: it waits for a required reviewer, and
 # the secrets live there as environment secrets, so a workflow edited on an unmerged commit can't reach them without
 # that approval. `images` (a package write token, no secrets) runs before it, but only pushes untagged builds, which
-# nothing pulls: every tag, the manifest and the Release come from the approved job. Repo settings this relies on are
+# nothing pulls: every tag, the manifest and the Release come from the approved job. `packages` (package read only, no
+# secrets) runs between them and only lists packages inside the pushed images. Repo settings this relies on are
 # listed in RELEASING.md.
 
 on:
@@ -173,6 +175,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
       - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550  # v4.8.0
         with:
           registry: ghcr.io

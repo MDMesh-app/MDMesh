@@ -142,7 +142,10 @@ you can also run locally): the workflow's `gate` job checks that first. The `ima
 and `ubuntu-24.04-arm`, no emulation), pushes them by digest, untagged (nothing pulls them), and checks the pushed
 builds on both: the supervisor's smoke test, and the server's JVM (`scripts/server-jvm-check.sh`). It needs no secrets; the web image's enrollment QR gets the APK signing checksum recorded
 in `release/agent-signature-checksum`. The `release` job (the only one with the signing secrets) starts once those
-builds pass and waits for a reviewer's approval in the `release` environment (setup step 4). It runs the changelog
+builds pass and waits for a reviewer's approval in the `release` environment (setup step 4). In between, the
+read-only `packages` job (package read token, no secrets) pulls each pushed build by its digest and lists what it holds
+(`scripts/licenses/image-packages.sh`: every OS package with its version and source package, and the runtimes); the
+release waits for it. It runs the changelog
 check again when it starts and just before it publishes, and fails if the tag no longer points at the commit it
 checked out.
 
@@ -150,8 +153,10 @@ The `release` job: runs the agent unit tests + builds the **signed** release APK
 checksum is the recorded one (see [step 1](#1-apk-release-keystore--never-rotate)); joins each image's two builds into
 one multi-platform index tagged `:VERSION`, reads back each index's digest and checks it holds exactly one image per
 platform (`release/image-digest.sh`); builds a **minisign-signed manifest**, and publishes a **GitHub Release** with
-`mdmesh-agent.apk`, `manifest.json`, `manifest.json.minisig` and `quickstart.sh` (the tagged commit's copy, which the
-README's install command downloads from the latest release). Before the upload it checks that `quickstart.sh` is the
+`mdmesh-agent.apk`, `manifest.json`, `manifest.json.minisig`, `quickstart.sh` (the tagged commit's copy, which the
+README's install command downloads from the latest release) and the six package lists
+`mdmesh-<image>-linux-<arch>.packages.tsv`, which NOTICE's source pointers and written offer rely on
+([docs/licenses/images.md](docs/licenses/images.md)); it stops unless all six are there. Before the upload it checks that `quickstart.sh` is the
 file the signed manifest hashes, and after it reads the published asset back and checks it again. The fleet auto-updater consumes that signed manifest
 to apply/roll-out updates.
 

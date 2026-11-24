@@ -86,5 +86,12 @@ grep -qx 'spark-md5	MIT' "$WORK/repo/docs/licenses/inventory/web.tsv" || fail 'w
 printf '[{"name":"dual","version":"1","identifier":"(MIT OR GPL-2.0-only)"}]' > "$WORK/dist/licenses/THIRD-PARTY.json"
 run 1 'web: dual is offered under MIT or GPL-2.0-only.*elections.tsv' 'web: no election' --web "$WORK/dist"
 
+# A recorded choice must be one of the licences offered.
+printf '# fixture\nweb\tdual\t(GPL-2.0-only OR GPL-3.0-only)\tMIT\n' > "$WORK/repo/docs/licenses/elections.tsv"
+printf '[{"name":"dual","version":"1","identifier":"(GPL-2.0-only OR GPL-3.0-only)"}]' \
+  > "$WORK/dist/licenses/THIRD-PARTY.json"
+run 1 "chooses MIT for dual, which isn't one of the licences it is offered under" 'web: election not offered' \
+  --web "$WORK/dist"
+
 if [ "$FAILS" -ne 0 ]; then echo "$FAILS check(s) failed" >&2; exit 1; fi
 echo "inventory.py: all checks passed"

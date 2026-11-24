@@ -58,6 +58,7 @@ jobs:
         run: |
           tests/licenses/headers-test.sh
           tests/licenses/inventory-test.sh
+          tests/licenses/image-packages-test.sh
 
   images:
     needs: paths

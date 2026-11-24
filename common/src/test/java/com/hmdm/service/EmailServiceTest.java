@@ -86,9 +86,10 @@ public class EmailServiceTest {
 
     @Test
     public void mailsNameTheProductMDMeshWhenNoRebrandingNameIsSet() throws Exception {
-        File subj = tmp.newFile("recovery_subj_en.txt");
+        // As install/emails/<language>/recovery_subj.txt, which email.recovery.subj names with _LANGUAGE_.
+        File subj = new File(tmp.newFolder("en"), "recovery_subj.txt");
         Files.write(subj.toPath(), "${appName} password recovery".getBytes(StandardCharsets.UTF_8));
-        String template = subj.getPath().replace("_en.txt", "_LANGUAGE_.txt");
+        String template = new File(new File(tmp.getRoot(), "_LANGUAGE_"), "recovery_subj.txt").getPath();
         EmailService unbranded = new EmailService("smtp.example.com", 587, false, true, "", "", "mdm", "pw",
                 "mdm@example.com", "", "https://mdm.example.com", template, "");
         assertEquals("MDMesh password recovery", unbranded.getRecoveryEmailSubj("en"));

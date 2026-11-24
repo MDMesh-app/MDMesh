@@ -82,11 +82,11 @@ Under the hood
 - CI builds the agent's instrumented tests (they still run only by hand, on an emulator).
 - Licences: the server WAR, the console and the agent APK each carry LICENSE, NOTICE and a list of the third-party
   components they bundle, with their licences (the console at `/licenses/`); the server and supervisor images carry
-  them in `/usr/share/doc/mdmesh/`. Each release attaches an SBOM for every image, and NOTICE says where the source of
-  the GPL software in the images and the agent is, with a written offer for it. The web image pins its Caddy base by
-  digest. CI refuses a component under a licence outside `docs/licenses/allowed.txt`, or one offered under several
-  with no recorded choice ([policy](https://github.com/MDMesh-app/MDMesh/blob/main/docs/licenses/policy.md)). The
-  server no longer ships SpotBugs' annotations (LGPL-2.1), which nothing used at runtime.
+  them in `/usr/share/doc/mdmesh/`. Each release attaches a package list for every image, and NOTICE says where the
+  source of the GPL software in the images and the agent is, with a written offer for it. The web image pins its
+  Caddy base by digest. CI refuses a component under a licence outside `docs/licenses/allowed.txt`, or one offered
+  under several with no recorded choice ([policy](https://github.com/MDMesh-app/MDMesh/blob/main/docs/licenses/policy.md)).
+  The server no longer ships SpotBugs' annotations (LGPL-2.1), which nothing used at runtime.
 - Agent protocol 1.12 (additive): the check-in response's `eventsAccepted`, the check-in request's `protocolVersion`
   (now always sent), and the `eventsDropped` event
   ([VERSIONING](https://github.com/MDMesh-app/MDMesh/blob/main/proto/VERSIONING.md)).

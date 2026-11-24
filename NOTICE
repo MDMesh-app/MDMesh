@@ -100,14 +100,15 @@ Source code of the GPL and LGPL software MDMesh redistributes:
   agent contains desugar_jdk_libs (above).
 
   What each image contains: every MDMesh release on GitHub
-  (https://github.com/MDMesh-app/MDMesh/releases) carries an SBOM for each
-  image and platform (mdmesh-<image>-linux-<arch>.spdx.json), naming every
-  package with its exact version and the source package it was built
-  from. docs/licenses/images.md in the source repository explains them.
+  (https://github.com/MDMesh-app/MDMesh/releases) carries a package list
+  for each image and platform (mdmesh-<image>-linux-<arch>.packages.tsv),
+  naming every package with its exact version and the source package it
+  was built from, and the runtimes (JDK, Tomcat, Node, Caddy).
+  docs/licenses/images.md in the source repository explains them.
 
   Where the source is: the corresponding source of those packages is
   published by the distributions they come from, for the versions the
-  SBOM names:
+  list names:
     Alpine Linux packages: the build recipes and patches in
       https://gitlab.alpinelinux.org/alpine/aports (the branch of the
       image's Alpine release), with their source archives at
@@ -116,7 +117,7 @@ Source code of the GPL and LGPL software MDMesh redistributes:
       https://launchpad.net/ubuntu/+source/<source package>/<version>
       (or "apt-get source <source package>=<version>")
     Eclipse Temurin: https://github.com/adoptium/jdk17u, at the tag of
-      the JDK version the SBOM names
+      the JDK version the list names
     desugar_jdk_libs: Google publishes its source at
       https://github.com/google/desugar_jdk_libs; the offer below covers
       the exact version in each APK

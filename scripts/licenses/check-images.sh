@@ -5,9 +5,10 @@
 # under which licences, and NOTICE's source offer covers the GPL software among it (docs/licenses/policy.md).
 # Names, not versions: a tag or package bump doesn't need the page changed. Run from anywhere; needs no Docker.
 #
-# A cheap pull-request nudge, not the record: each release's per-image SBOM (release.yml) is what lists everything an
-# image holds. Known blind spots: software that arrives another way (COPY --from=<an outside image>, pip install,
-# npm install -g, curl | tar, a downloaded binary), and the packages an installed package pulls in.
+# A cheap pull-request nudge, not the record: each release's per-image package list (release.yml's packages job,
+# image-packages.sh) is what lists everything an image holds. Known blind spots: software that arrives another way
+# (COPY --from=<an outside image>, pip install, npm install -g, curl | tar, a downloaded binary), and the packages an
+# installed package pulls in.
 #
 # Usage: scripts/licenses/check-images.sh
 set -euo pipefail

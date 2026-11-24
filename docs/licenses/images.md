@@ -5,21 +5,22 @@ MDMesh redistributes unmodified, under their own licences ([policy.md](policy.md
 to them). Some of that software is under the GPL or the LGPL: NOTICE says where its source is, and has a written offer
 for it.
 
-**Each release records what its images hold.** The release workflow scans every pushed image with
-[Syft](https://github.com/anchore/syft) and attaches the result to the GitHub Release as
-`mdmesh-<image>-linux-<arch>.spdx.json` (SPDX JSON): every package with its exact version, and for distribution
-packages the source package it was built from. That is what the source pointers in NOTICE resolve against:
+**Each release records what its images hold.** The release workflow's `packages` job pulls every pushed image by its
+digest and lists what it holds with the image's own package manager (`scripts/licenses/image-packages.sh`), and the
+release attaches the list as `mdmesh-<image>-linux-<arch>.packages.tsv`: every OS package with its exact version, the
+source package it was built from and, for Alpine, its licence; then the runtimes that don't come as packages (the JDK
+and Tomcat, Node, Caddy). That is what the source pointers in NOTICE resolve against:
 
 - Alpine packages (mdmesh-web, mdmesh-supervisor): the recipe and patches in
   [aports](https://gitlab.alpinelinux.org/alpine/aports), on the branch of the image's Alpine release, and the source
   archives at <https://distfiles.alpinelinux.org/distfiles/>. GPL-3.0 among them: `bash` and `readline` in
   mdmesh-supervisor.
 - Ubuntu packages (mdmesh-server): `https://launchpad.net/ubuntu/+source/<source package>/<version>`, or
-  `apt-get source <source package>=<version>`. GPL-3.0 among them: bash, coreutils, tar, and others the SBOM names.
-- The Temurin JDK: <https://github.com/adoptium/jdk17u>, at the tag of the version the SBOM names.
+  `apt-get source <source package>=<version>`. GPL-3.0 among them: bash, coreutils, tar, and others the list names.
+- The Temurin JDK: <https://github.com/adoptium/jdk17u>, at the tag of the version the list names.
 
-The base images are pinned by digest (tomcat, caddy) or are the Node LTS line (node), so the SBOM of a release is the
-image as shipped.
+The list is made from each pushed image itself, so it is the image as shipped, whether its base is pinned by digest
+(tomcat, caddy) or follows the Node LTS line (node).
 
 `scripts/licenses/check-images.sh` (the licences workflow) fails when a `docker/*.Dockerfile` starts from an image or
 installs a package this page doesn't name. Update the tables in the same pull request.

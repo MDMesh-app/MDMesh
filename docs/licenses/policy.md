@@ -19,7 +19,7 @@ Each also ships `LICENSE` and `NOTICE` next to its list.
 The container images also hold an operating system and runtimes that MDMesh doesn't link with: the Alpine or Ubuntu
 packages, Tomcat, the JDK, Node and Caddy. They are shipped unmodified beside MDMesh, not combined with it, so they
 keep their own licences and this allowlist doesn't apply to them. [images.md](images.md) lists what each image is built
-from; each release attaches an SBOM per image, and NOTICE says where the source of the GPL and LGPL software among
+from; each release attaches a package list per image, and NOTICE says where the source of the GPL and LGPL software among
 them is, with a written offer for it.
 
 ## Allowed licences

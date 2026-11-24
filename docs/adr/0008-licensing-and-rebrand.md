@@ -13,7 +13,7 @@ obligations to the upstream code (headers, `NOTICE`, change notices, no use of t
 [docs/licenses/policy.md](../licenses/policy.md) records the allowed licences and the choices made for components
 offered under several. Each part of MDMesh ships LICENSE, NOTICE and its third-party list, and NOTICE carries the
 pointers to, and a written offer for, the source of the GPL software in the images and the agent (each release
-attaches an SBOM per image).
+attaches a package list per image).
 
 ## Context
 

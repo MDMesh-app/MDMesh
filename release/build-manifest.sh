@@ -48,8 +48,8 @@ images = {
 }
 
 # The files quickstart.sh downloads from raw.githubusercontent.com/<repo>/v<VERSION>/ (keep the two lists in step).
-QUICKSTART_FILES = ["docker-compose.release.yml", "docker-compose.domain.yml", "install/sql/hmdm_init.en.sql",
-                    "install/sql/post_seed.sql", "install/lib/db.sh"]
+QUICKSTART_FILES = ["docker-compose.release.yml", "docker-compose.domain.yml", "docker-compose.proxy.yml",
+                    "install/sql/hmdm_init.en.sql", "install/sql/post_seed.sql", "install/lib/db.sh"]
 files = {f: sha(os.path.join(root, f)) for f in QUICKSTART_FILES}
 # The release asset quickstart.sh (release.yml uploads this same file); the quick start itself never reads this entry.
 files["quickstart.sh"] = sha(os.path.join(root, "quickstart.sh"))

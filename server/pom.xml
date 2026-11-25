@@ -35,6 +35,11 @@
         <version>0.1.0</version>
     </parent>
 
+    <properties>
+        <!-- Whether a licence outside docs/licenses/allowed.txt fails the build: in CI only (licences-ci below). -->
+        <licences.enforce>false</licences.enforce>
+    </properties>
+
     <repositories>
         <repository>
             <id>jitpack.io</id>
@@ -180,7 +185,91 @@
                     <argLine>--add-opens java.base/java.lang=ALL-UNNAMED</argLine>
                 </configuration>
             </plugin>
+            <!-- Licences (docs/licenses/policy.md). Every build writes META-INF/THIRD-PARTY.txt into the WAR: each
+                 third-party jar and the licence we use it under, as an SPDX id (the merges below map the POMs' names
+                 to one; src/license/override-THIRD-PARTY.properties records the choice where a jar offers several).
+                 A jar under a licence docs/licenses/allowed.txt doesn't list, or with none, fails the build where CI
+                 is set (the licences-ci profile below) and is only reported elsewhere, so an image or native install
+                 build never stops on licence policy. The template lists two jars the plugin can't read. -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>license-maven-plugin</artifactId>
+                <version>2.9.0</version>
+                <executions>
+                    <execution>
+                        <id>third-party</id>
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>add-third-party</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <excludedScopes>test,provided,system</excludedScopes>
+                    <!-- This repository's own modules: core under com.hmdm, a fork's plugins under com.hmdm or com.mdmesh
+                         (plugins/fork/README.md). -->
+                    <excludedGroups>^com\.(hmdm|mdmesh)\b</excludedGroups>
+                    <!-- Read the POMs already resolved; don't look for third-party descriptors in the repositories. -->
+                    <useRepositoryMissingFiles>false</useRepositoryMissingFiles>
+                    <outputDirectory>${project.build.directory}/licenses/META-INF</outputDirectory>
+                    <addOutputDirectoryAsResourceDir>false</addOutputDirectoryAsResourceDir>
+                    <fileTemplate>${project.basedir}/src/license/THIRD-PARTY.ftl</fileTemplate>
+                    <overrideFile>src/license/override-THIRD-PARTY.properties</overrideFile>
+                    <includedLicenses>file:${project.basedir}/../docs/licenses/allowed.txt</includedLicenses>
+                    <failOnBlacklist>${licences.enforce}</failOnBlacklist>
+                    <failOnMissing>${licences.enforce}</failOnMissing>
+                    <!-- Each POM licence name the WAR's jars use, mapped to its SPDX id (the first entry). A
+                         GPL-family name is never merged into an allowed licence: a jar that offers one is listed in
+                         the override file with the licence we take instead. -->
+                    <licenseMerges>
+                        <licenseMerge>Apache-2.0|The Apache Software License, Version 2.0|Apache License, Version 2.0|The Apache License, Version 2.0|Apache License 2.0|Apache License v2|Apache 2.0|Apache 2|ASF 2.0</licenseMerge>
+                        <licenseMerge>MIT|The MIT License (MIT)|The MIT License</licenseMerge>
+                        <licenseMerge>BSD-2-Clause|The BSD 2-Clause License</licenseMerge>
+                        <licenseMerge>BSD-3-Clause|EDL 1.0|Eclipse Distribution License - v 1.0</licenseMerge>
+                        <licenseMerge>BSD-3-Clause-No-Nuclear-Warranty|BSD 3-clause License w/nuclear disclaimer</licenseMerge>
+                        <licenseMerge>EPL-2.0|Eclipse Public License - Version 2.0|Eclipse Public License 2.0|EPL 2.0</licenseMerge>
+                        <licenseMerge>CDDL-1.0|COMMON DEVELOPMENT AND DISTRIBUTION LICENSE (CDDL) Version 1.0</licenseMerge>
+                        <licenseMerge>CDDL-1.1|CDDL 1.1</licenseMerge>
+                        <licenseMerge>LicenseRef-Public-Domain|Public Domain</licenseMerge>
+                    </licenseMerges>
+                </configuration>
+            </plugin>
+            <!-- META-INF/LICENSE, NOTICE and THIRD-PARTY.txt in the WAR (Apache-2.0 section 4). -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-war-plugin</artifactId>
+                <configuration>
+                    <webResources>
+                        <resource>
+                            <directory>${project.build.directory}/licenses</directory>
+                        </resource>
+                        <resource>
+                            <directory>${project.basedir}/..</directory>
+                            <targetPath>META-INF</targetPath>
+                            <includes>
+                                <include>LICENSE</include>
+                                <include>NOTICE</include>
+                            </includes>
+                        </resource>
+                    </webResources>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!-- CI (GitHub Actions sets CI): a jar under a licence outside docs/licenses/allowed.txt fails the build. -->
+        <profile>
+            <id>licences-ci</id>
+            <activation>
+                <property>
+                    <name>env.CI</name>
+                </property>
+            </activation>
+            <properties>
+                <licences.enforce>true</licences.enforce>
+            </properties>
+        </profile>
+    </profiles>
 
 </project>

@@ -6,6 +6,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
+    alias(libs.plugins.licensee)
 }
 
 android {
@@ -98,6 +99,48 @@ android {
         unitTests.all { it.maxHeapSize = "2g" }
         // The shared legibility vectors live outside the module: a change to them must rerun the tests.
         unitTests.all { it.inputs.file(rootProject.file("../proto/vectors/kiosk-scrim.json")) }
+    }
+}
+
+// Licences (docs/licenses/policy.md). Every runtime dependency must be under a licence docs/licenses/allowed.txt lists,
+// or the build fails (Licensee). The APK carries the report as assets/licenses/third-party.json, next to LICENSE.txt
+// and NOTICE.txt from the repository root. desugar_jdk_libs (coreLibraryDesugaring) isn't on the runtime classpath
+// Licensee reads: NOTICE lists it.
+licensee {
+    rootProject.file("../docs/licenses/allowed.txt").readLines()
+        .map { it.substringBefore('#').trim() }
+        // Licensee takes ids from the SPDX list only, not a LicenseRef- (the server's public-domain jars).
+        .filter { it.isNotEmpty() && !it.startsWith("LicenseRef-") }
+        .forEach { allow(it) }
+    // The list is shared with the server and the console: most of it is for them.
+    unusedAction(app.cash.licensee.UnusedAction.IGNORE)
+    bundleAndroidAsset.set(true)
+    androidAssetReportPath.set("licenses/third-party.json")
+}
+
+/** LICENSE and NOTICE from the repository root, as the APK's assets/licenses/LICENSE.txt and NOTICE.txt. */
+abstract class LicenceAssets : DefaultTask() {
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.NAME_ONLY)
+    abstract val files: ConfigurableFileCollection
+
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    @TaskAction
+    fun copy() {
+        val dir = outputDir.get().dir("licenses").asFile
+        dir.deleteRecursively()
+        files.forEach { it.copyTo(dir.resolve("${it.name}.txt")) }
+    }
+}
+
+androidComponents {
+    onVariants { variant ->
+        val licenceAssets = tasks.register<LicenceAssets>("${variant.name}LicenceAssets") {
+            files.from(rootProject.file("../LICENSE"), rootProject.file("../NOTICE"))
+        }
+        variant.sources.assets?.addGeneratedSourceDirectory(licenceAssets, LicenceAssets::outputDir)
     }
 }
 

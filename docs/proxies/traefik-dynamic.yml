@@ -1,0 +1,29 @@
+# MDMesh behind Traefik v3, dynamic configuration (file provider; traefik.yml loads it). Forwards everything for
+# mdm.example.com to MDMesh's edge, keeping the Host; WebSockets need nothing more.
+http:
+  routers:
+    mdmesh:
+      rule: Host(`mdm.example.com`)
+      entryPoints: [websecure]
+      service: mdmesh
+      tls: {}
+  services:
+    mdmesh:
+      loadBalancer:
+        passHostHeader: true
+        servers:
+          - url: http://127.0.0.1:8080
+        # MDMesh on another machine with MDMESH_ORIGIN_TLS=1: instead of the url above (192.0.2.20:8080 is MDMESH_BIND
+        # there), and the serversTransports block below:
+        # servers:
+        #   - url: https://192.0.2.20:8080
+        # serversTransport: mdmesh-origin
+  # serversTransports:
+  #   mdmesh-origin:
+  #     serverName: mdm.example.com
+  #     rootCAs:
+  #       - /etc/traefik/mdmesh-origin-ca.crt   # docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt ...
+tls:
+  certificates:
+    - certFile: /etc/letsencrypt/live/mdm.example.com/fullchain.pem
+      keyFile: /etc/letsencrypt/live/mdm.example.com/privkey.pem

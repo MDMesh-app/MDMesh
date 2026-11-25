@@ -1,13 +1,14 @@
 // The What's new dialog in the console: once per version per browser after sign-in, never on a first visit or over
 // the signed-out pages, and again from Settings. The bundled notes are this file's (the virtual module, mocked).
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { describe, expect, it, vi } from 'vitest';
 import { AppRoutes } from '../App';
-import { ROLES, renderInConsole, stubApi } from '../test/console';
+import { ROLES, renderInConsole, settled, stubApi } from '../test/console';
 import { parseNotes } from './changelog';
 import { NotesView } from './NotesView';
 import { readHistoryAgain, seenKey } from './seen';
+import { render } from '../test/render';
 
 const BODY = [
   'Upgrading',
@@ -76,8 +77,12 @@ function visit(
 
 const SIGNED_IN = { 'hmdm.admin.user': JSON.stringify(ROLES.superAdmin) };
 const dialog = () => screen.queryByRole('dialog', { name: /What’s new/ });
-/** Long enough for the status, the notes and a dialog that would open. */
-const settle = () => waitFor(() => expect(screen.getByRole('main')).toBeTruthy()).then(() => new Promise((r) => setTimeout(r, 50)));
+/** Until the status, the notes and a dialog that would open have come. */
+const settle = async () => {
+  await screen.findByRole('main');
+  await settled();
+  await new Promise((r) => setTimeout(r, 50));
+};
 
 describe('What’s new: when it opens by itself', () => {
   it('opens once after an upgrade (this browser used the console before), and not again', async () => {
@@ -98,6 +103,7 @@ describe('What’s new: when it opens by itself', () => {
   it('opens after an upgrade from a version that already had it', async () => {
     visit('/', { before: { [seenKey('0.3.7')]: 'seen' }, user: ROLES.admin });
     expect(await screen.findByRole('dialog', { name: 'What’s new in 0.4.0' })).toBeTruthy();
+    await settled();
   });
 
   it('stays closed on a version this browser has seen', async () => {
@@ -142,6 +148,7 @@ describe('What’s new: when it opens by itself', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
     expect(await screen.findByRole('dialog', { name: 'What’s new in 0.4.0' })).toBeTruthy();
     expect(localStorage.getItem(seenKey('0.4.0'))).toBe('seen');
+    await settled();
   });
 
   it('counts the v0.3 density key as history, but not the theme key this console writes itself', async () => {
@@ -179,6 +186,7 @@ describe('What’s new: when it opens by itself', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
     expect(await screen.findByRole('dialog', { name: 'What’s new in 0.4.0' })).toBeTruthy();
     expect(localStorage.getItem(seenKey('0.4.0'))).toBe('seen');
+    await settled();
   });
 
   it('doesn’t decide while an update is still applying', async () => {
@@ -229,6 +237,7 @@ describe('What’s new: when it opens by itself', () => {
 
   it.each(['/login', '/set-password'])('never opens over %s', async (path) => {
     visit(path, { before: SIGNED_IN, user: null });
+    await settled();
     await new Promise((r) => setTimeout(r, 100));
     expect(dialog()).toBeNull();
     expect(localStorage.getItem(seenKey('0.4.0'))).toBeNull();
@@ -281,6 +290,7 @@ describe('What’s new: the dialog', () => {
       fireEvent.click(within(d).getByRole('link', { name: 'Updates' }));
       await waitFor(() => expect(dialog()).toBeNull());
       expect(await screen.findByRole('heading', { name: 'Settings', level: 1 })).toBeTruthy();
+      await settled();
     } finally {
       delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
     }

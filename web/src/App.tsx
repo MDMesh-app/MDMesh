@@ -1,4 +1,5 @@
 import { Suspense } from 'react';
+import { defineMessages, FormattedMessage, useIntl } from 'react-intl';
 import { createBrowserRouter, Navigate, Route, RouterProvider, Routes, useLocation } from 'react-router';
 import { AuthProvider } from './auth/AuthContext';
 import { ProtectedRoute } from './auth/ProtectedRoute';
@@ -6,6 +7,7 @@ import { ThemeProvider } from './ui/theme';
 import { ToastProvider } from './ui/toast';
 import { TooltipProvider } from './ui/Tooltip';
 import { AppErrorBoundary } from './ui/AppErrorBoundary';
+import { IntlRoot } from './i18n/IntlRoot';
 import { legacyRedirect, paths } from './routes';
 import { AppShell } from './ui/AppShell';
 import { ButtonLink } from './ui/Button';
@@ -21,21 +23,32 @@ import { lazyComponent } from './ext/types';
 const LoginPage = lazyComponent(() => import('./pages/LoginPage'), 'LoginPage');
 const SetPasswordPage = lazyComponent(() => import('./pages/SetPasswordPage'), 'SetPasswordPage');
 
+const messages = defineMessages({
+  title: { id: 'app.notFound.title', defaultMessage: 'Page not found' },
+  subtitle: {
+    id: 'app.notFound.subtitle',
+    defaultMessage: 'There is nothing at this address. Check the link, or start from the Overview.',
+  },
+  empty: { id: 'app.notFound.empty', defaultMessage: 'No page here' },
+  home: { id: 'app.notFound.home', defaultMessage: 'Go to the Overview', description: 'Button back to the Overview page' },
+});
+
 /**
  * Unknown paths (old bookmarks were moved on in AppRoutes): the page doesn't exist, said inside the shell (a mistyped
  * device link no longer lands on the Overview without a word).
  */
 function Fallback() {
   const { pathname } = useLocation();
+  const intl = useIntl();
   return (
     <>
-      <PageHeader title="Page not found" subtitle="There is nothing at this address. Check the link, or start from the Overview." />
+      <PageHeader title={intl.formatMessage(messages.title)} subtitle={intl.formatMessage(messages.subtitle)} />
       <Card>
         <EmptyState
-          title="No page here"
+          title={intl.formatMessage(messages.empty)}
           action={
             <ButtonLink to={paths.overview} variant="primary">
-              Go to the Overview
+              <FormattedMessage {...messages.home} />
             </ButtonLink>
           }
         >
@@ -103,16 +116,18 @@ const router = createBrowserRouter([
 
 export default function App() {
   return (
-    <AuthProvider>
-      <ThemeProvider>
-        <ToastProvider>
-          <TooltipProvider>
-            <RegistryProvider registry={registry}>
-              <RouterProvider router={router} />
-            </RegistryProvider>
-          </TooltipProvider>
-        </ToastProvider>
-      </ThemeProvider>
-    </AuthProvider>
+    <IntlRoot>
+      <AuthProvider>
+        <ThemeProvider>
+          <ToastProvider>
+            <TooltipProvider>
+              <RegistryProvider registry={registry}>
+                <RouterProvider router={router} />
+              </RegistryProvider>
+            </TooltipProvider>
+          </ToastProvider>
+        </ThemeProvider>
+      </AuthProvider>
+    </IntlRoot>
   );
 }

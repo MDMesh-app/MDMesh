@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { Menu } from './Menu';
 import { Modal } from './Modal';
 import { useStickyValue } from './useStickyValue';
+import { render } from '../test/render';
 
 /** Opens a Radix menu from the keyboard and picks `item`, as a keyboard user would. */
 function pick(trigger: HTMLElement, item: string) {

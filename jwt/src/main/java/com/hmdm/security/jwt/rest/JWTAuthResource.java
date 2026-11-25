@@ -154,37 +154,31 @@ public class JWTAuthResource {
                 return Response.status(Response.Status.UNAUTHORIZED).build();
             }
             loginThrottle.succeeded(verdict.attempt());
-            if (userDAO.isTwoFactorRequired(user)) {
-                // A token is issued on the password alone, so it can't be issued where a second factor is required
-                log.warn("Token not issued for user {}: two-factor authentication is required", user.getLogin());
-                return Response.status(Response.Status.FORBIDDEN).build();
-            } else {
-                this.taskRunner.submitTask(() -> {
-                    this.customerDAO.recordLastLoginTime(user.getCustomerId(), System.currentTimeMillis());
-                });
+            this.taskRunner.submitTask(() -> {
+                this.customerDAO.recordLastLoginTime(user.getCustomerId(), System.currentTimeMillis());
+            });
 
-                if (user.getAuthToken() == null || user.getAuthToken().length() == 0) {
-                    user.setAuthToken(PasswordUtil.generateToken());
-                    userDAO.setAuthTokenUnsecure(user);
-                }
-                user.setPassword(null);
-
-                String token = tokenProvider.createToken(user, false);
-                if (req != null) {
-                    // The audit record of this sign-in names the user (public route: no context, no session)
-                    req.setAttribute(JWTFilter.REQUEST_USER, user);
-                }
-
-                JWTToken result = new JWTToken(token);
-
-                Response.ResponseBuilder response = Response.ok(result);
-                response.header(AUTHORIZATION_HEADER, "Bearer " + token);
-                // A full sign-in: this client and its address now know the account, as a console browser does, so
-                // someone failing sign-ins for it can't lock out a client that keeps cookies, or its host (LoginThrottle).
-                response.header("Set-Cookie", loginThrottle.signedIn(verdict.attempt(), user));
-
-                return response.build();
+            if (user.getAuthToken() == null || user.getAuthToken().length() == 0) {
+                user.setAuthToken(PasswordUtil.generateToken());
+                userDAO.setAuthTokenUnsecure(user);
             }
+            user.setPassword(null);
+
+            String token = tokenProvider.createToken(user, false);
+            if (req != null) {
+                // The audit record of this sign-in names the user (public route: no context, no session)
+                req.setAttribute(JWTFilter.REQUEST_USER, user);
+            }
+
+            JWTToken result = new JWTToken(token);
+
+            Response.ResponseBuilder response = Response.ok(result);
+            response.header(AUTHORIZATION_HEADER, "Bearer " + token);
+            // A full sign-in: this client and its address now know the account, as a console browser does, so
+            // someone failing sign-ins for it can't lock out a client that keeps cookies, or its host (LoginThrottle).
+            response.header("Set-Cookie", loginThrottle.signedIn(verdict.attempt(), user));
+
+            return response.build();
         } catch (Exception e) {
             log.error("Unexpected error when authenticating user", e);
             return Response.serverError().build();

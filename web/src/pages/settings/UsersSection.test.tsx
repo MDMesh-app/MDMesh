@@ -123,6 +123,7 @@ describe('Users & roles administration', () => {
   it('keeps Settings available without exposing administration to roles without settings', async () => {
     const fetch = open({ user: ROLES.observer });
     await screen.findByRole('heading', { name: 'Account' });
+    await settled();
     await waitFor(() => expect(screen.queryByRole('heading', { name: 'Users & roles' })).toBeNull());
     expect(fetch.mock.calls.some(([p]) => String(p).endsWith('/users/all'))).toBe(false);
     expect(
@@ -136,6 +137,7 @@ describe('Users & roles administration', () => {
   it('hides the section and its anchor when the server denies administration', async () => {
     const fetch = open({ manageUsers: false });
     await screen.findByRole('heading', { name: 'Account' });
+    await settled();
     await waitFor(() => expect(screen.queryByRole('heading', { name: 'Users & roles' })).toBeNull());
     expect(fetch.mock.calls.some(([p]) => String(p).endsWith('/users/all'))).toBe(false);
     expect(
@@ -193,6 +195,7 @@ describe('Users & roles administration', () => {
       }),
     );
     expect(await screen.findByText('User saved')).toBeTruthy();
+    await settled();
   });
 
   it('preserves restricted access on an edit and never forwards account secrets or a reset flag', async () => {
@@ -218,6 +221,7 @@ describe('Users & roles administration', () => {
         configurations: [{ id: 4 }],
       }),
     );
+    await settled();
   });
 
   it('refuses mismatching passwords without sending a write', async () => {
@@ -331,6 +335,7 @@ describe('Users & roles administration', () => {
     fireEvent.submit(form);
     await waitFor(() => expect(body(fetch, '/private/users')?.oldPassword).toBe(MY_SECRET_MD5));
     expect(await screen.findByText('User saved')).toBeTruthy();
+    await settled();
   });
 
   it('asks for the caller’s own password to change another account’s email or password', async () => {
@@ -352,6 +357,7 @@ describe('Users & roles administration', () => {
       expect(body(fetch, '/private/users')).toMatchObject({ newPassword: PASSWORD_MD5, oldPassword: MY_SECRET_MD5 }),
     );
     expect(await screen.findByText('User saved')).toBeTruthy();
+    await settled();
   });
 
   it('says plainly when the caller’s own password is wrong or the change is beyond their access', async () => {
@@ -399,6 +405,7 @@ describe('Users & roles administration', () => {
       expect(body(fetch, '/private/users/other/8', 'DELETE')).toEqual({ oldPassword: MY_SECRET_MD5 }),
     );
     expect(await screen.findByText('User deleted')).toBeTruthy();
+    await settled();
   });
 
   it('keeps a delete refused over the caller’s password open, with the reason', async () => {
@@ -450,6 +457,7 @@ describe('Users & roles administration', () => {
         permissions: [{ id: 10 }, { id: 11 }],
       }),
     );
+    await settled();
   });
 
   it('keeps a refused role deletion open and explains that the role is still assigned', async () => {

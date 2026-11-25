@@ -5,7 +5,7 @@ import { fireEvent, screen, waitFor } from '@testing-library/react';
 import axe from 'axe-core';
 import { describe, expect, it } from 'vitest';
 import { AppRoutes } from '../App';
-import { ROLES, renderInConsole, stubApi } from '../test/console';
+import { ROLES, renderInConsole, settled, stubApi } from '../test/console';
 
 const NOW = Date.now();
 const DEVICES = [
@@ -85,6 +85,7 @@ describe('axe: every signed-in route', () => {
     await screen.findByRole('heading', { level: 1, name: heading });
     expect((await screen.findAllByText(loaded)).length).toBeGreaterThan(0);
     // Let the page's data settle (lists, counts) before the scan.
+    await settled();
     await waitFor(() => expect(document.querySelector('[aria-busy="true"]')).toBeNull());
     // 2.4.2: every page names itself in the tab.
     await waitFor(() => expect(document.title).toMatch(/^.+ · MDMesh$/));
@@ -111,6 +112,7 @@ describe('axe: signed-out pages', () => {
     stubApi(api);
     renderInConsole(<AppRoutes />, { user: null, path: '/login' });
     await screen.findByRole('heading', { level: 1, name: 'Sign in' });
+    await settled();
     await waitFor(() => expect(document.title).toBe('Sign in · MDMesh'));
     expect(await violations()).toEqual([]);
   });
@@ -130,6 +132,7 @@ describe('axe: signed-out pages', () => {
     const login = await screen.findByLabelText('Username');
     await waitFor(() => expect(login.getAttribute('aria-invalid')).toBe('true'));
     expect(login.getAttribute('aria-describedby')).toBeTruthy();
+    await settled();
     expect(await violations()).toEqual([]);
   });
 });

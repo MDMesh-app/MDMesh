@@ -1,0 +1,27 @@
+# MDMesh behind Traefik v3 (DEPLOY.md, "Behind your own proxy"), with the file provider. Two documents: the static
+# configuration (traefik.yml) and the dynamic one (traefik-dynamic.yml, next to this file), which this one loads.
+# Traefik on this machine: run it on the host, or in a container with network_mode: host, so 127.0.0.1:8080 is
+# MDMesh's edge. Replace mdm.example.com in the dynamic file, the certificate paths and, if you changed MDMESH_BIND,
+# 127.0.0.1:8080. MDMesh's .env: TRUSTED_PROXIES="host".
+entryPoints:
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+  websecure:
+    address: ":443"
+    # No time limit while a request body is read (APK uploads up to 500 MB) or a WebSocket sits idle (the agent's
+    # wake socket; the agent pings every 50 s).
+    transport:
+      respondingTimeouts:
+        readTimeout: 0s
+        writeTimeout: 0s
+        idleTimeout: 3600s
+    # Traefik replaces the X-Forwarded-* headers a client sends with its own (no forwardedHeaders.trustedIPs here) and
+    # names the client in X-Forwarded-For. No request body limit unless a buffering middleware sets one.
+providers:
+  file:
+    filename: /etc/traefik/traefik-dynamic.yml

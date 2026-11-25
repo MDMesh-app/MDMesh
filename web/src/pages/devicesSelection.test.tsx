@@ -5,7 +5,7 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { useLocation } from 'react-router';
 import { describe, expect, it } from 'vitest';
 import { AppRoutes } from '../App';
-import { renderInConsole, stubApi } from '../test/console';
+import { renderInConsole, settled, stubApi } from '../test/console';
 
 const LOAD = { timeout: 10_000 };
 const NOW = Date.now();
@@ -61,6 +61,7 @@ describe.each([
     await main().findByText('Charlie', {}, LOAD);
     clickDevice('Charlie');
     await waitFor(() => expect(here).toBe('/devices/D-3'));
+    await settled();
   });
 
   it('once one is selected, a click toggles a device instead of opening it, and the count is announced', async () => {
@@ -87,6 +88,7 @@ describe.each([
   it('Shift+click selects the range backward, and on a checkbox too', async () => {
     open(path);
     await main().findByText('Charlie', {}, LOAD);
+    await settled();
     fireEvent.click(box(5));
     fireEvent.click(box(2), { shiftKey: true });
     expect(checked()).toEqual([2, 3, 4, 5]);
@@ -95,6 +97,7 @@ describe.each([
   it('Shift+Space on a checkbox selects the range, without toggling the box on its own', async () => {
     open(path);
     await main().findByText('Charlie', {}, LOAD);
+    await settled();
     fireEvent.click(box(1));
     fireEvent.keyDown(box(3), { key: ' ', shiftKey: true });
     // Shift let go before Space: the keyup is still the range's, not a toggle of its own.
@@ -105,6 +108,7 @@ describe.each([
   it('a Shift+Space whose keyup was lost does not swallow the next plain Space', async () => {
     open(path);
     await main().findByText('Charlie', {}, LOAD);
+    await settled();
     fireEvent.click(box(1));
     fireEvent.keyDown(box(3), { key: ' ', shiftKey: true });
     // Focus went elsewhere before the keyup; later, a plain Space on the same box.
@@ -125,6 +129,7 @@ describe.each([
   it('a click on a disabled control in its tooltip wrapper is not a click on the device', async () => {
     open(path);
     await main().findByText('Charlie', {}, LOAD);
+    await settled();
     fireEvent.click(box(1));
     const wrap = main().getByText('Charlie').closest('tr, li')!.querySelector('.v2-tooltip-wrap');
     expect(wrap).not.toBeNull();
@@ -135,6 +140,7 @@ describe.each([
   it('Shift+click clears the range when the last device toggled was cleared', async () => {
     open(path);
     await main().findByText('Charlie', {}, LOAD);
+    await settled();
     fireEvent.click(box(1));
     clickDevice('Echo', { shiftKey: true });
     expect(checked()).toEqual([1, 2, 3, 4, 5]);

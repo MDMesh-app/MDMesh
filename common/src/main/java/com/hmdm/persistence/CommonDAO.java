@@ -93,10 +93,6 @@ public class CommonDAO extends AbstractDAO<Settings> {
         });
     }
 
-    public void setTwoFactor(Settings settings) {
-        insertRecord(settings, this.mapper::setTwoFactor);
-    }
-
     /**
      * Saves the design settings of a new customer account. Super-admin only (CustomerDAO.insertCustomer).
      * @param settings

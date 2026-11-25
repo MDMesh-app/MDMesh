@@ -948,7 +948,10 @@ t.test('an unverifiable release logs why (HTTP status / minisign), without secre
 // thing. Failure knobs (env): STUB_FAIL_RE (egrep on the args → exit 1), STUB_PSQL_FAIL=1 (the restore psql, the one
 // run with -c BEGIN, prints an ERROR and exits 3, as psql -v ON_ERROR_STOP=1 does). Like the real restore, the stub
 // psql fails when its input does not end with the COMMIT apply.sh/rollback.sh add after a complete dump (they send a
-// RAISE instead). curl succeeds unless STUB_CURL_FAIL=1. ---
+// RAISE instead). curl succeeds unless STUB_CURL_FAIL=1. The edge (caddy) is up and stays up, unless STUB_EDGE says
+// otherwise: "restarting" (its config doesn't load), "flapping" (it restarted between two looks), "dies-late" (up for
+// the first two looks, then exited), or "gone" (no container); with STUB_EDGE_BAD_WEB, only while .env's WEB_VERSION starts with that value (an edge the new web image
+// can't start, the old one can). ---
 function makeStubs(dir) {
   const fs = require('fs'), path = require('path');
   const bin = path.join(dir, 'bin');
@@ -967,6 +970,19 @@ case "$*" in
   "image inspect "*)
     # RepoDigests of the image named by the last argument: that very ref, unless STUB_REPO_DIGESTS says otherwise.
     printf '%s\n' "\${STUB_REPO_DIGESTS:-\${@: -1}}";;
+  "compose ps -a -q caddy")
+    edge=\${STUB_EDGE:-up}
+    if [ -n "\${STUB_EDGE_BAD_WEB:-}" ] && ! grep -q "^WEB_VERSION=\${STUB_EDGE_BAD_WEB}" .env; then edge=up; fi
+    [ "$edge" = gone ] || echo edge1;;
+  "inspect --format "*)
+    edge=\${STUB_EDGE:-up}
+    if [ -n "\${STUB_EDGE_BAD_WEB:-}" ] && ! grep -q "^WEB_VERSION=\${STUB_EDGE_BAD_WEB}" .env; then edge=up; fi
+    case "$edge" in
+      restarting) echo "restarting 2026-11-01T00:00:00Z";;
+      flapping) echo "running 2026-11-01T00:00:0$(grep -c '^inspect ' "$STUB_LOG")Z";;
+      dies-late) if [ "$(grep -c '^inspect ' "$STUB_LOG")" -le 2 ]; then echo "running 2026-11-01T00:00:00Z"; else echo "exited 2026-11-01T00:00:00Z"; fi;;
+      *) echo "running 2026-11-01T00:00:00Z";;
+    esac;;
   *" pg_dump "*) echo "-- stub dump"; echo "SELECT 1;"; echo "-- PostgreSQL database dump complete";;
   *" psql "*"-c BEGIN "*)
     cat > "$STUB_LOG.stdin"
@@ -975,7 +991,10 @@ case "$*" in
 esac
 exit 0
 `, { mode: 0o755 });
-  fs.writeFileSync(path.join(bin, 'curl'), '#!/usr/bin/env bash\n[ "${STUB_CURL_FAIL:-0}" = 1 ] && exit 7\nexit 0\n', { mode: 0o755 });
+  // STUB_CURL_OK_TIMES=N: the first N calls succeed, then it fails (a server that stops answering).
+  fs.writeFileSync(path.join(bin, 'curl'), '#!/usr/bin/env bash\n[ "${STUB_CURL_FAIL:-0}" = 1 ] && exit 7\n'
+    + 'if [ -n "${STUB_CURL_OK_TIMES:-}${STUB_CURL_FAIL_AT:-}" ]; then n=0; [ ! -f "$STUB_LOG.curl" ] || n=$(cat "$STUB_LOG.curl"); n=$((n + 1)); echo "$n" > "$STUB_LOG.curl"; '
+    + '[ -z "${STUB_CURL_OK_TIMES:-}" ] || [ "$n" -le "$STUB_CURL_OK_TIMES" ] || exit 7; [ "$n" != "${STUB_CURL_FAIL_AT:-}" ] || exit 7; fi\nexit 0\n', { mode: 0o755 });
   return bin;
 }
 /** A deploy dir (project/.env) + backups dir + stubs under a fresh temp dir. HEALTH_TIMEOUT is 5, not 1: healthy()
@@ -991,7 +1010,7 @@ function makeDeploy(envText) {
   const log = path.join(dir, 'docker.log');
   fs.writeFileSync(log, '');
   const env = { ...process.env, PATH: bin + path.delimiter + process.env.PATH, STUB_LOG: log, COMPOSE_PROJECT_DIR: project,
-    BACKUP_DIR: backups, HEALTH_TIMEOUT: '5', HEALTH_TIMEOUT_MIN: '0', HEALTH_URL: 'http://stub/health' };
+    BACKUP_DIR: backups, HEALTH_TIMEOUT: '5', HEALTH_TIMEOUT_MIN: '0', HEALTH_URL: 'http://stub/health', EDGE_SETTLE: '0' };
   return { dir, project, backups, log, env,
     envFile: () => fs.readFileSync(path.join(project, '.env'), 'utf8'),
     calls: () => fs.readFileSync(log, 'utf8').split('\n').filter(Boolean) };
@@ -1072,6 +1091,89 @@ t.test('rollback.sh restores CURRENT_VERSION from the snapshot (not SERVER_VERSI
     a.equal(r.code, 0, r.all);
     a.match(d.envFile(), /^CURRENT_VERSION=0\.0\.1$/m);
   } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+});
+
+t.test('behind your own proxy, apply.sh and rollback.sh refuse a release before 0.6.0 and change nothing (mode-guard.sh)', () => {
+  const fs = require('fs'), path = require('path');
+  const proxyEnv = 'SERVER_VERSION=0.6.0\nWEB_VERSION=0.6.0\nCURRENT_VERSION=0.6.0\n'
+    + 'COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml\n';
+  // apply.sh to 0.5.9: refused before the backup, .env untouched.
+  let d = makeDeploy(proxyEnv);
+  try {
+    const r = runScript('apply.sh', applyArgs('0.5.9'), d.env);
+    a.notEqual(r.code, 0, r.all);
+    a.match(r.all, /^ERR this install runs behind your own proxy .*came in 0\.6\.0, so it can't go to 0\.5\.9/m);
+    a.match(r.all, /^PHASE failed$/m);
+    a.ok(!d.calls().some((c) => c.includes('pg_dump') || c.includes(' up ')), 'nothing was backed up or recreated');
+    a.equal(d.envFile(), proxyEnv);
+    // Its own mode allows 0.6.1, and the same .env without the overlay allows 0.5.9.
+    a.equal(runScript('apply.sh', applyArgs('0.6.1'), d.env).code, 0);
+  } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+  // The overlay named as a hand edit might (./, a path ending in it, with a comment after it, or quoted) counts the same.
+  for (const cf of ['docker-compose.yml:./docker-compose.proxy.yml', '/srv/mdmesh/docker-compose.yml:/srv/mdmesh/docker-compose.proxy.yml',
+    'docker-compose.yml:docker-compose.proxy.yml # behind our nginx', '"docker-compose.yml:docker-compose.proxy.yml" # ok',
+    'docker-compose.yml:docker-compose.proxy.yml   ', 'docker-compose.yml:docker-compose.domain.yml\nCOMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml',
+    'docker-compose.yml:docker-compose.domain.yml\nexport COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml',
+    'docker-compose.yml:docker-compose.domain.yml\nCOMPOSE_FILE = docker-compose.yml:docker-compose.proxy.yml',
+    'docker-compose.yml:docker-compose.domain.yml\nCOMPOSE_FILE: docker-compose.yml:docker-compose.proxy.yml',
+    ' "docker-compose.yml:docker-compose.proxy.yml"']) {
+    // (trailing blanks; a later line wins, as compose reads .env; and an "export " before it)
+    d = makeDeploy(`SERVER_VERSION=0.6.0\nWEB_VERSION=0.6.0\nCURRENT_VERSION=0.6.0\nCOMPOSE_FILE=${cf}\n`);
+    try {
+      const r = runScript('apply.sh', applyArgs('0.5.9'), d.env);
+      a.notEqual(r.code, 0, cf + ': ' + r.all);
+      a.match(r.all, /^ERR this install runs behind your own proxy/m);
+    } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+  }
+  // A last "COMPOSE_FILE=" with no newline after it empties it for compose: not the proxy mode any more.
+  d = makeDeploy('SERVER_VERSION=0.6.0\nWEB_VERSION=0.6.0\nCURRENT_VERSION=0.6.0\nCOMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml\nCOMPOSE_FILE=');
+  try {
+    const r = runScript('apply.sh', applyArgs('0.5.9'), d.env);
+    a.doesNotMatch(r.all, /behind your own proxy/, r.all);
+  } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+  // Moved out of the proxy mode with TRUSTED_PROXIES="host" left: an older edge would hand it to Caddy and not start.
+  for (const tp of ['"host"', 'host,192.0.2.10']) {
+    const envText = `SERVER_VERSION=0.6.0\nWEB_VERSION=0.6.0\nCURRENT_VERSION=0.6.0\nCOMPOSE_FILE=docker-compose.yml:docker-compose.domain.yml\nTRUSTED_PROXIES=${tp}\n`;
+    d = makeDeploy(envText);
+    try {
+      const r = runScript('apply.sh', applyArgs('0.5.9'), d.env);
+      a.notEqual(r.code, 0, tp + ': ' + r.all);
+      a.match(r.all, /^ERR TRUSTED_PROXIES in \.env still says host .*Set TRUSTED_PROXIES= in \.env/m);
+      a.ok(!d.calls().some((c) => c.includes('pg_dump') || c.includes(' up ')), 'nothing was backed up or recreated');
+      a.equal(d.envFile(), envText);
+      a.equal(runScript('apply.sh', applyArgs('0.6.1'), d.env).code, 0, 'a 0.6.x edge drops host: allowed');
+    } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+  }
+  d = makeDeploy('SERVER_VERSION=0.6.0\nWEB_VERSION=0.6.0\nCURRENT_VERSION=0.6.0\nTRUSTED_PROXIES="host"\n');
+  try {
+    fs.writeFileSync(path.join(d.backups, 'latest'), '20261101-120000\n');
+    fs.writeFileSync(path.join(d.backups, '20261101-120000.env'), 'SERVER_VERSION=0.5.1@sha256:aa\nWEB_VERSION=0.5.1@sha256:bb\nCURRENT_VERSION=0.5.1\n');
+    fs.writeFileSync(path.join(d.backups, '20261101-120000.sql'), 'SELECT 1;\n-- PostgreSQL database dump complete\n');
+    const r = runScript('rollback.sh', [], d.env);
+    a.notEqual(r.code, 0, r.all);
+    a.match(r.all, /^ERR TRUSTED_PROXIES in \.env still says host/m);
+    a.ok(!d.calls().some((c) => c.includes('psql') || c.includes(' up ')), 'nothing was restored');
+  } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+  d = makeDeploy('SERVER_VERSION=0.6.0\nWEB_VERSION=0.6.0\nCURRENT_VERSION=0.6.0\nCOMPOSE_FILE=docker-compose.yml:docker-compose.domain.yml\n');
+  try {
+    a.equal(runScript('apply.sh', applyArgs('0.5.9'), d.env).code, 0, 'another mode is not held back');
+  } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+
+  // rollback.sh to a 0.5.x snapshot: refused before the database is restored; the supervisor's own COMPOSE_FILE counts too.
+  for (const [envText, extra] of [[proxyEnv, {}],
+    ['SERVER_VERSION=0.6.0\nWEB_VERSION=0.6.0\nCURRENT_VERSION=0.6.0\n', { COMPOSE_FILE: 'docker-compose.yml:docker-compose.proxy.yml' }]]) {
+    d = makeDeploy(envText);
+    try {
+      fs.writeFileSync(path.join(d.backups, 'latest'), '20261101-120000\n');
+      fs.writeFileSync(path.join(d.backups, '20261101-120000.env'), 'SERVER_VERSION=0.5.1@sha256:aa\nWEB_VERSION=0.5.1@sha256:bb\nCURRENT_VERSION=0.5.1\n');
+      fs.writeFileSync(path.join(d.backups, '20261101-120000.sql'), 'SELECT 1;\n-- PostgreSQL database dump complete\n');
+      const r = runScript('rollback.sh', [], { ...d.env, ...extra });
+      a.notEqual(r.code, 0, r.all);
+      a.match(r.all, /^ERR this install runs behind your own proxy .*can't go to 0\.5\.1/m);
+      a.ok(!d.calls().some((c) => c.includes('psql') || c.includes('stop server') || c.includes(' up ')), 'nothing was restored');
+      a.equal(d.envFile(), envText);
+    } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+  }
 });
 
 t.test('with AUTO_UPDATE on, a rollback is not undone by auto-applying the release just rolled away from',
@@ -1263,7 +1365,8 @@ function resolveHealthTimeout(script, envText, extraEnv) {
     const src = fs.readFileSync(path.join(__dirname, script), 'utf8');
     const fn = /health_timeout\(\) \{[\s\S]*?\n\}\n/.exec(src)[0];
     const env = { PATH: process.env.PATH, ...extraEnv };
-    const r = cp.spawnSync('bash', ['-c', `ENV_FILE=${JSON.stringify(envFile)}\n${fn}health_timeout`], { env, encoding: 'utf8' });
+    const guard = JSON.stringify(path.join(__dirname, 'mode-guard.sh'));
+    const r = cp.spawnSync('bash', ['-c', `. ${guard}\nENV_FILE=${JSON.stringify(envFile)}\n${fn}health_timeout`], { env, encoding: 'utf8' });
     return { value: r.stdout.trim(), err: r.stderr };
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 }
@@ -1281,6 +1384,12 @@ t.test('HEALTH_TIMEOUT: 180 by default; below 30 (0 included, not "no limit") is
     a.equal(resolveHealthTimeout(script, 'HEALTH_TIMEOUT=900#slow\n', { HEALTH_TIMEOUT: '240' }).value, '240',
       `${script}: no whitespace before # (compose keeps it in the value): not a number`);
     a.equal(resolveHealthTimeout(script, '# HEALTH_TIMEOUT=900\n', {}).value, '180', `${script}: a commented-out line`);
+    // The other forms compose reads (supervisor/mode-guard.sh's _mode_env): "export ", blanks around =, KEY: v, the last line.
+    a.equal(resolveHealthTimeout(script, 'export HEALTH_TIMEOUT=900\n', {}).value, '900', `${script}: export`);
+    a.equal(resolveHealthTimeout(script, '  HEALTH_TIMEOUT = 900\n', {}).value, '900', `${script}: blanks`);
+    a.equal(resolveHealthTimeout(script, 'HEALTH_TIMEOUT: 900\n', {}).value, '900', `${script}: KEY: v`);
+    a.equal(resolveHealthTimeout(script, 'HEALTH_TIMEOUT=900\nHEALTH_TIMEOUT=', {}).value, '180',
+      `${script}: a last empty line with no newline after it`);
     for (const low of ['0', '29']) {
       const r = resolveHealthTimeout(script, `HEALTH_TIMEOUT=${low}\n`, { HEALTH_TIMEOUT: '240' });
       a.equal(r.value, '240', `${script}: ${low} falls through to the environment`);
@@ -1318,6 +1427,71 @@ t.test('apply.sh: a failed health check rolls back with the same safe restore; a
     const c2 = d.calls();
     a.equal(c2.slice(idx(c2, PSQL_RE) + 1).filter((c) => /^compose up /.test(c)).length, 0, 'server left stopped:\n' + c2.join('\n'));
   } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+});
+
+t.test('apply.sh and rollback.sh: healthy means the edge stays up too; an edge the new release cannot start is rolled back', () => {
+  const fs = require('fs');
+  const base = 'SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n';
+  // The new web image's edge doesn't start (a site.d rule it refuses, say), the old one does: rolled back, and the reason
+  // names the edge and where to look.
+  for (const edge of ['restarting', 'flapping', 'gone']) {
+    const d = makeDeploy(base);
+    try {
+      const r = runScript('apply.sh', applyArgs('0.0.2'), { ...d.env, STUB_EDGE: edge, STUB_EDGE_BAD_WEB: '0.0.2' });
+      a.equal(r.code, 1, edge + ': ' + r.all);
+      a.match(r.err, /^ERR the edge \(caddy\) did not stay up.*docker compose logs caddy/m, edge);
+      a.match(r.out, /PHASE rollback/);
+      a.match(r.out, /PHASE rolled_back/, edge + ': the old edge starts: ' + r.all);
+      const calls = d.calls();
+      assertSafeRestoreOrder(calls.slice(idx(calls, /^compose up /) + 1), r.all);
+      a.match(d.envFile(), /^WEB_VERSION=0\.0\.1$/m);
+    } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+  }
+  // An edge that stays up is healthy: the update is done (and the server's health alone is not enough: above).
+  let d = makeDeploy(base);
+  try {
+    const r = runScript('apply.sh', applyArgs('0.0.2'), d.env);
+    a.equal(r.code, 0, r.all);
+    a.match(r.out, /PHASE done/);
+    a.ok(d.calls().some((c) => c === 'compose ps -a -q caddy'), 'the edge was looked at');
+  } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+  // rollback.sh: an edge that doesn't stay up after the rollback fails it, saying so.
+  d = makeDeploy('SERVER_VERSION=0.0.2\nWEB_VERSION=0.0.2\nCURRENT_VERSION=0.0.2\n');
+  try {
+    fs.writeFileSync(require('path').join(d.backups, 'latest'), '20261101-120000\n');
+    fs.writeFileSync(require('path').join(d.backups, '20261101-120000.env'), base);
+    fs.writeFileSync(require('path').join(d.backups, '20261101-120000.sql'), 'SELECT 1;\n-- PostgreSQL database dump complete\n');
+    const r = runScript('rollback.sh', [], { ...d.env, STUB_EDGE: 'restarting' });
+    a.notEqual(r.code, 0, r.all);
+    a.match(r.err, /^ERR the edge \(caddy\) did not stay up/m);
+    a.match(r.out, /PHASE failed/);
+  } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+});
+
+t.test('apply.sh: healthy means the server still answers after the edge settles', () => {
+  const fs = require('fs');
+  const d = makeDeploy('SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n');
+  try {
+    const r = runScript('apply.sh', applyArgs('0.0.2'), { ...d.env, STUB_CURL_OK_TIMES: '1', HEALTH_TIMEOUT: '5', HEALTH_RETRY_WAIT: '0' });
+    a.notEqual(r.code, 0, r.all);
+    a.match(r.err, /^ERR the server stopped answering /m);
+    a.match(r.out, /PHASE rollback/);
+  } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+  // An edge that stops after it looked steady, while the server is rechecked: not healthy.
+  const d3 = makeDeploy('SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n');
+  try {
+    const r = runScript('apply.sh', applyArgs('0.0.2'), { ...d3.env, STUB_EDGE: 'dies-late', HEALTH_RETRY_WAIT: '0' });
+    a.notEqual(r.code, 0, r.all);
+    a.match(r.err, /^ERR the edge \(caddy\) did not stay up \(exited /m);
+    a.doesNotMatch(r.out, /PHASE done/);
+  } finally { fs.rmSync(d3.dir, { recursive: true, force: true }); }
+  // One slow answer in that recheck (the next one fine) is no failure: the update is done.
+  const d2 = makeDeploy('SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n');
+  try {
+    const r = runScript('apply.sh', applyArgs('0.0.2'), { ...d2.env, STUB_CURL_FAIL_AT: '2', HEALTH_TIMEOUT: '5', HEALTH_RETRY_WAIT: '0' });
+    a.equal(r.code, 0, r.all);
+    a.match(r.out, /PHASE done/);
+  } finally { fs.rmSync(d2.dir, { recursive: true, force: true }); }
 });
 
 t.test('apply.sh: a failed pull changed no container, so it resets .env only: no stop, no restore, no downtime', () => {

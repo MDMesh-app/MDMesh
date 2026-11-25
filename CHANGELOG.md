@@ -18,17 +18,51 @@ Upgrading
 - Quick start: `HEALTH_TIMEOUT` in `.env` sets how many seconds an updated server gets to answer before the update is
   rolled back (default 180, at least 30). Raise it before an update whose database work may take longer; to have it
   count for this update, get this release's supervisor first ([UPGRADING.md](docs/UPGRADING.md#unreleased)).
+- Existing installs keep their mode. To move one behind your own proxy, see
+  [UPGRADING, Changing the hosting mode](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#changing-the-hosting-mode).
+- From source, with a `COMPOSE_FILE` you edited by hand: `./setup.sh` and `--update` now start the files it names. On
+  your own domain they stop, before any container is touched, if that would close port 80 or 443 on the edge, and show
+  the `.env` line to set. With a `COMPOSE_PROFILES` you edited by hand, `cloudflare` among several profiles now means
+  the tunnel, which closes 80/443 unless the files `COMPOSE_FILE` lists publish them. The `.env` an installer
+  wrote is not affected ([UPGRADING.md](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#unreleased)).
+- On its first start the server removes the unused two-factor setting from the database. A rollback puts it back
+  with the old database ([UPGRADING.md](docs/UPGRADING.md#unreleased)). Forks: code that used it no longer compiles
+  ([UPGRADING.md](docs/UPGRADING.md#v060-for-forks)).
+- Forks with console extensions: an extension's own test that ends with an API call still unanswered now fails.
+  End it with `await settled()`, new in `@mdmesh/console/testing` ([EXTENDING.md](web/EXTENDING.md#testing)).
+  `stubApi`'s answers now arrive a moment later: wait with `findBy…` or `settled()`, not `act(async () => {})`. The
+  same goes for tests of your own in core ([UPGRADING.md](docs/UPGRADING.md#v060-for-forks-that-change-the-console)).
 
 Heads-up
 - Devices whose agent is older than a setting their configuration sets (agents before 0.4.0 with Connectivity set)
   now show "Agent update needed" on the device page and Overview. They still count as in sync. Update their agent
   (Settings → Agent rollout).
+- The edge sends HSTS for a request that came in over HTTP only when a trusted peer says `X-Forwarded-Proto: https`
+  (Cloudflare Tunnel, or a proxy in `TRUSTED_PROXIES`). A proxy of your own in front of port 80 without
+  `TRUSTED_PROXIES` no longer gets HSTS added: list it in `TRUSTED_PROXIES`, or use the new proxy mode.
+- The quick start refuses an install directory, or a file in it, that isn't yours (or root's) or that other users may
+  write. For a directory of yours it shows the `chmod` to run; anything else, install into a directory of your own.
+- The updater (Settings → Updates, and Roll back) and `./setup.sh --update` (also with `--allow-downgrade`) refuse
+  a release before 0.6.0 while the install runs behind your own proxy, or while `TRUSTED_PROXIES` still says `host`:
+  move the install back to its earlier hosting mode and set `TRUSTED_PROXIES=` first (either alone is still refused).
+- Your own edge rules load only from files nobody but their owner can change (`site.d`'s owner's or root's,
+  `chmod 644`, not a link); the edge leaves any other out at start, saying why in its log.
+  The documented check before a restart (`MDMESH_RAW_SITE_D=1 … caddy validate`) validates exactly what the restart
+  would load, and fails if the restart would leave a file out or there is no file to check (`site.d` not mounted);
+  `caddy validate` and `adapt` run as the edge's own user, so they never leave root-owned files in its data volume.
 - New devices and rollouts get the agent of the release the server runs, never a newer one: update the server first,
   then roll out its agent from Settings → Agent rollout, which says so while a newer release waits. Only a server whose
   release isn't published (a development build, say), or whose release has no agent in its manifest, offers the latest
   release's agent.
 
 New
+- Install behind the nginx, Apache, Caddy or Traefik you already run: the quick start's third choice (or `--proxy`),
+  with ready configurations for each. Thanks @lared3294, @detobel36.
+- The quick start asks one plain question, how your phones will reach MDMesh; `--tunnel`, `--domain` and `--proxy` answer it.
+- Your own edge rules: Caddy imports `site.d/*.caddy` from the install directory, and updates never touch it.
+- A quick start that stopped part way (a failed pull, a slow first start) can be finished: run it again with
+  `MDMESH_DIR=<its directory>`, and it carries on with the same `.env` (past a seeded database too, with a new
+  temporary admin password).
 - Arm64: the server, web and supervisor images are built for linux/amd64 and linux/arm64, so the quick start and
   one-click updates run on Arm64 hosts such as Oracle Ampere (#205, thanks @sgofferj). On any other architecture,
   or on Arm64 with an `MDMESH_VERSION` that has no Arm64 images, the quick start stops and says why before it pulls
@@ -41,8 +75,12 @@ New
 
 Fixes
 - A device whose agent is too old for a setting its configuration sets (Connectivity needs agent 0.4.0) no longer
-  looks fully configured: the device page says "Agent update needed for: Connectivity", and Overview counts such
-  devices.
+  looks fully configured: the device page says "Agent update needed" and names the setting, and Overview counts such
+  devices. App permissions on a device whose agent isn't device owner show "Device owner needed" there, and Retry apply
+  no longer answers "Already applied" while the device shows out of sync.
+- Devices search finds IMEIs reported by current agents, in either SIM slot and by part of the number, also for devices
+  that haven't checked in since the update. When a search matches more devices than one request returns (1,000 in the
+  console), the best matches are now kept rather than the weakest; a reported IMEI counts like one set by an administrator.
 - Enrollment keeps its agent through a restart with GitHub down: the updater keeps the signed manifest and agent of
   each release it has run, and checks both again before it serves them. When it has no agent to give new devices
   (GitHub didn't answer yet, or the release's manifest doesn't verify), the Enroll page says so on Docker installs
@@ -71,6 +109,16 @@ Fixes
   from library stays in its "…" rather than becoming a button next to the row.
 - Console: after you delete a configuration, an app from the library, a user or a role, keyboard focus moves to the
   next card or row instead of to the top of the page. Any dialog whose opener is gone when it closes does the same.
+- The quick start, or `./setup.sh` in a new clone, run in a second directory no longer takes over an install that
+  already exists elsewhere on the machine (both use the Docker project `mdmesh`): it stops before changing anything,
+  names that install's directory and says how to update it. Over the data volumes of an install whose containers are
+  gone, it stops too, instead of starting with a database password that can't work.
+- The quick start and `./setup.sh` fail, showing the edge's last log lines, when the edge (Caddy) doesn't stay up;
+  before, they reported MDMesh up. `./setup.sh` still runs its database repairs first.
+- A `caddy reload` through `docker compose exec` keeps the edge's trusted peers (before, in tunnel mode, every client
+  then counted as one address for the sign-in limits) and, behind your own proxy, its HTTPS origin.
+- An update (or Roll back) counts as healthy only when the edge stays up too, not just the server: an edge the new
+  release can't start, say over a rule in `site.d`, is rolled back instead of leaving the console unreachable.
 - Events: a device that was offline for a while no longer loses all but 100 of the events it kept. The server update
   alone fixes it for devices on older agents. When an agent's buffer of 500 fills, the device's events say how many
   older ones it dropped.
@@ -83,9 +131,18 @@ Fixes
   on (it read "0.5.1 → 0.5.1" on a host still running 0.5.0). Answering "no" to the installer's question no longer
   wipes the previous run's log, and when the clone is ahead of the install it says the install is unchanged and how to
   finish the update.
+- An organization whose settings had two-factor sign-in turned on (possible only in a database carried over from
+  Headwind MDM, or edited by hand) couldn't sign in at all, in the console or through the API. MDMesh has no second
+  sign-in step yet, so the unused setting is removed. Those accounts now sign in with their password alone (no
+  authenticator code is asked for) and get API tokens again, which v0.3.3 had stopped. Two-factor sign-in for each
+  user is planned for a later release. The settings and user answers no longer include `twoFactor`; a request that
+  still sends it is accepted, and the field ignored.
 
 Under the hood
 - CI builds the agent's instrumented tests (they still run only by hand, on an emulator).
+- Console: the groundwork for translations. New console text is written as react-intl messages (English stays in
+  the code), and a test fails on most new untranslated text in core files; existing text moves over area by area. No
+  other language ships yet ([web/README.md](web/README.md#translatable-text)).
 - Agent protocol 1.12 (additive): the check-in response's `eventsAccepted`, the check-in request's `protocolVersion`
   (now always sent), and the `eventsDropped` event
   ([VERSIONING](https://github.com/MDMesh-app/MDMesh/blob/main/proto/VERSIONING.md)).

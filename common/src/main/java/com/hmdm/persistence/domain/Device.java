@@ -26,6 +26,7 @@ import java.util.List;
 
 import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.hmdm.rest.json.LookupItem;
 
@@ -107,8 +108,19 @@ public class Device implements CustomerData, Serializable {
     private String serial;
     @ApiModelProperty("Stable per-device hardware id (enrollment-specific id / ANDROID_ID)")
     private String hardwareId;
+    /** device_state.reportedImeis, read by the device list only; the check-in owns it. */
+    @JsonIgnore
+    private String[] reportedImeis;
 
     public Device() {
+    }
+
+    public String[] getReportedImeis() {
+        return this.reportedImeis;
+    }
+
+    public void setReportedImeis(String[] reportedImeis) {
+        this.reportedImeis = reportedImeis;
     }
 
     public String getHardwareId() {

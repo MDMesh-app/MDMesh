@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { AppRoutes } from '../App';
-import { renderInConsole, stubApi } from '../test/console';
+import { renderInConsole, settled, stubApi } from '../test/console';
 
 const LOAD = { timeout: 10_000 };
 
@@ -36,6 +36,7 @@ describe('Enroll: a Wi-Fi that stays out of the code', () => {
     // The same live region now carries the warning that the password is in the code.
     expect(document.getElementById('v2-enroll-wifi-issue')).toBeNull();
     expect(main.getByText(/The Wi-Fi password is written into the QR code/).closest('[role="status"]')).not.toBeNull();
+    await settled();
   });
 
   it('keeps the live region in the tree while it is empty, so Open → WPA is read out', async () => {
@@ -60,6 +61,7 @@ describe('Enroll: a Wi-Fi that stays out of the code', () => {
     await waitFor(() => expect(region.textContent).toMatch(/Enter the Wi-Fi password/), LOAD);
     expect(document.getElementById('v2-enroll-wifi-issue')).toBe(region);
     expect(region.isConnected).toBe(true);
+    await settled();
   });
 
   it('never takes the empty region out of the accessibility tree with display: none', () => {

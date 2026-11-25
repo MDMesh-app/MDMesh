@@ -117,6 +117,7 @@ describe('wiped devices on Devices', () => {
     ] as typeof DEVICES;
     open('/devices', null, twins);
     await main().findByRole('link', { name: /Re-enrolled/ }, LOAD);
+    await settled();
     expect(main().queryByRole('button', { name: /^Duplicates/ })).toBeNull();
   }, SLOW);
 

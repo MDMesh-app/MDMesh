@@ -64,13 +64,15 @@ describe('settled', () => {
   });
 });
 
-/** Shows 'loading', then what GET /x answers. */
+/** Shows 'loading', then what GET /x answers; unmounting aborts the call, as the console's pages do. */
 function Loads() {
   const [text, setText] = useState('loading');
   useEffect(() => {
-    void fetch('/x')
+    const unmount = new AbortController();
+    void fetch('/x', { signal: unmount.signal })
       .then((r) => r.json())
       .then((b: { data: string }) => setText(b.data));
+    return () => unmount.abort();
   }, []);
   return <p>{text}</p>;
 }
@@ -97,5 +99,9 @@ describe('a test that ends before its page has loaded', () => {
   it.fails('fails', () => {
     stubApi();
     render(<Loads />);
+  });
+
+  it('and leaves the next test clean', () => {
+    expect(pendingCalls()).toBe(0);
   });
 });

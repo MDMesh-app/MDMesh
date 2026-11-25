@@ -14,27 +14,7 @@
       "description": "Acks for previously-delivered commands.",
       "items": { "$ref": "command-result.schema.json" }
     },
-    "state": {
-      "type": "object",
-      "additionalProperties": true,
-      "description": "Compact device-state snapshot (AgentDeviceStateDto): battery, charging, locked, kioskActive, androidRelease, lastBootAt, and optional fields such as agentVersion and powerMode.",
-      "properties": {
-        "config": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["revision", "sections"],
-          "description": "Protocol 1.12, from agent 0.6.0: how the agent's last config.apply went, per section, for the revision it reports. Sent on every check-in once the agent can apply configurations; older agents leave it out.",
-          "properties": {
-            "revision": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "The revision these sections are for: the document's revision, or 64 zeros when the agent has no applied document it can vouch for (its store was lost, or a newer document is still being applied)." },
-            "sections": {
-              "type": "object",
-              "description": "One word per section of the document the revision names (config-sections.json), and unsupported for any other top-level key it carried. With 64 zeros as the revision every section is stale.",
-              "additionalProperties": { "type": "string", "enum": ["applied", "failed", "deferred", "unsupported", "stale"] }
-            }
-          }
-        }
-      }
-    },
+    "state": { "type": "object", "additionalProperties": true, "description": "Compact device-state snapshot (AgentDeviceStateDto): battery, charging, locked, kioskActive, androidRelease, lastBootAt, and optional fields such as agentVersion and powerMode." },
     "telemetry": { "type": "object", "additionalProperties": true, "description": "Full device census (TelemetrySnapshot); supersedes state." },
     "events": { "type": "array", "items": { "type": "object", "additionalProperties": true }, "description": "Buffered lifecycle events (TelemetryEventDto) flushed on this check-in, oldest first. The response's eventsAccepted (protocol 1.12) says how many the server consumed; a server without it stores the first 100 and drops the rest, so send at most 100 until a response carries it. A type outside ^[A-Za-z0-9._-]{1,64}$ is skipped." },
     "hardwareId": { "type": "string", "description": "The same stable, permission-free device id as on enroll, so an enrolled device can backfill it." }

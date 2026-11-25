@@ -26,14 +26,11 @@ and a fresh agent on Android 16 talk to the same server without special-casing.
 
 ## History
 
-From v0.6.0 on, one row per release. A release's wire changes all go in its row, as additions to its notes, and the release cut
-freezes the row: the next release's first wire change adds the next row (and bumps `AgentProtocol.VERSION` and the
-agent's `PROTOCOL_VERSION` with it). 1.12 is the v0.6.0 row; every 0.6.0 change appends to it. Before 0.6.0 each
+From v0.6.0 on, one row per release. A release's wire changes all go in its row, as additions to its notes, and the
+release cut freezes the row: the next release's first wire change adds the next row (and bumps `AgentProtocol.VERSION`
+and the agent's `PROTOCOL_VERSION` with it). 1.12 is the v0.6.0 row; every 0.6.0 change appends to it. Before 0.6.0 each
 change took its own number, so v0.5.0 has several rows. A patch release built from an older tag speaks that tag's
 version; one cut from `main` would take the open row with it, and the next feature release would start the next one.
-
-The configuration sections a `config.apply` document can carry, and the release whose agent first applies each, are
-in [config-sections.json](config-sections.json) ([README](README.md#configuration-sections)).
 
 | version | release | notes |
 |---------|---------|-------|
@@ -47,4 +44,4 @@ in [config-sections.json](config-sections.json) ([README](README.md#configuratio
 | 1.9 | v0.5.0 | enroll request `enrollAttempt` (optional; a retried enrollment whose response was lost gets its device back, with the same secret; servers before 1.9 ignore it) and `resumeOnly` (optional; the agent's credential recovery, resumes only); enroll response `resumeSupported`; retryable enroll errors `error.agent.enrollment.failed` (rolled back), `error.agent.enrollment.inProgress` (the enrollment couldn't get its locks in time, or too many enrollments with the token are running) and `error.agent.enrollment.deviceLimit` (the customer is at its device limit); `error.agent.enrollment.notResumable` (final for a resume-only request). 1.8 was reserved for a later release and stays unused. |
 | 1.10 | v0.5.0 | config.apply / kiosk.enter `theme.backgroundImage.fit` (`fit`: whole, letterboxed; absent = fill) and `focalX`/`focalY` (0..1 of the image, what a fill crop keeps in view; absent = the centre), sent only when not the default (additive: no agent before 0.5.0 draws a background image, so older agents ignore the image and these with it; existing revisions don't move). |
 | 1.11 | v0.5.0 | `kiosk.clearPinLockout` command + `kioskClearPinLockout` device capability (additive; the console's Clear PIN lockout; the server holds it from agents that don't advertise the capability). |
-| 1.12 | v0.6.0 | check-in response `eventsAccepted` (additive): how many of the request's `events`, counted from the first, the server consumed (stored, or skipped as invalid); the agent resends the rest. Absent (an older server) means the first 100, the most those store, so an agent sends at most 100 events until a response carries it, then up to 500. The check-in request's `protocolVersion` is always sent (it was left out as a default): a database error that stops the events fails the check-in of an agent that doesn't send 1.12 or later, which drops its whole batch on success. Event type `eventsDropped` (open registry): a full agent buffer dropped older events; its `detail` starts with how many. Check-in request `state.config` (additive, from agent 0.6.0): `revision` plus one word per configuration section (`applied`, `failed`, `deferred`, `unsupported`, `stale`), shape in `agent-checkin-request.schema.json`; servers before 0.6.0 ignore it. |
+| 1.12 | v0.6.0 | check-in response `eventsAccepted` (additive): how many of the request's `events`, counted from the first, the server consumed (stored, or skipped as invalid); the agent resends the rest. Absent (an older server) means the first 100, the most those store, so an agent sends at most 100 events until a response carries it, then up to 500. The check-in request's `protocolVersion` is always sent (it was left out as a default): a database error that stops the events fails the check-in of an agent that doesn't send 1.12 or later, which drops its whole batch on success. Event type `eventsDropped` (open registry): a full agent buffer dropped older events; its `detail` starts with how many. |

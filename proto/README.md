@@ -33,22 +33,6 @@ a content-addressed `revision`, and the server re-sends it only when the revisio
 differs from the one it just computed. See `payloads/config-apply.schema.json` for the command payload and
 `payloads/config-apply-result.schema.json` for the per-key outcome shape in the command result's `detail`.
 
-### Configuration sections
-
-`config-sections.json` lists the document's sections (its top-level keys other than `revision` and
-`configurationId`), in the order agents apply them, one row each:
-
-| field | meaning |
-|-------|---------|
-| `name` | the section's key in the document |
-| `since` | the release whose agent first applies it (a release in `VERSIONING.md`) |
-| `capability` | optional: the capability an agent advertises when it applies the section. An agent before 0.6.0 applies a section with `capability` when it advertises it, and one without when it runs `since` or later |
-| `label` | the console's message id for the section's name |
-
-A new section adds one row, with the release it ships in, and its wire change in that release's `VERSIONING.md` row.
-Rows are never removed. A server plugin's policy keys (`policies.x.<pluginId>.<key>`) are part of `policies` and have
-no row of their own.
-
 ## Transport
 
 Commands are delivered in the `/checkin` response (see `endpoints.md`). To get them there quickly,

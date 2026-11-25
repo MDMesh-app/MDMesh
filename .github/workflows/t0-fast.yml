@@ -42,10 +42,9 @@ jobs:
           filters: |
             # CHANGELOG.md and proto/VERSIONING.md are read by AgentProtocolVersionTest: the advertised protocol version is
             # VERSIONING.md's highest row, and a held bump must still be under Unreleased (so a release PR runs it).
-            # ConfigSectionsLedgerTest checks proto/config-sections.json against VERSIONING.md and the config.apply schema.
             # docker/Caddyfile is read by PublicRouteInventoryTest (the edge's @backend against the server's routes).
             # LICENSE to inventory.py (server, web and agent): the licence policy each entry's inventory.py checks.
-            server: pom.xml, common/**, jwt/**, notification/**, plugins/**, server/**, CHANGELOG.md, proto/VERSIONING.md, proto/config-sections.json, proto/payloads/config-apply.schema.json, docker/Caddyfile, LICENSE, NOTICE, docs/licenses/**, scripts/licenses/inventory.py
+            server: pom.xml, common/**, jwt/**, notification/**, plugins/**, server/**, CHANGELOG.md, proto/VERSIONING.md, docker/Caddyfile, LICENSE, NOTICE, docs/licenses/**, scripts/licenses/inventory.py
             # CHANGELOG.md is built into the console (What's new) and its tests read every release's section, checked
             # against release/changelog-section.sh, and its Security labels against release/security-releases.py.
             web: web/**, CHANGELOG.md, release/changelog-section.sh, release/security-releases.py, LICENSE, NOTICE, docs/licenses/**, scripts/licenses/inventory.py

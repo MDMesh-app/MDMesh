@@ -146,8 +146,6 @@ Under the hood
 - Agent protocol 1.12 (additive): the check-in response's `eventsAccepted`, the check-in request's `protocolVersion`
   (now always sent), and the `eventsDropped` event
   ([VERSIONING](https://github.com/MDMesh-app/MDMesh/blob/main/proto/VERSIONING.md)).
-- The configuration sections an agent can apply, and the release that added each, are listed in
-  [proto/config-sections.json](https://github.com/MDMesh-app/MDMesh/blob/main/proto/config-sections.json).
 
 ## v0.5.1 — 2026-11-20
 

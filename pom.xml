@@ -153,7 +153,7 @@
         <dependency>
             <groupId>io.swagger</groupId>
             <artifactId>swagger-jersey2-jaxrs</artifactId>
-            <version>1.6.16</version>
+            <version>1.6.17</version>
         </dependency>
 
         <!-- https://mvnrepository.com/artifact/com.fasterxml.jackson.core/jackson-databind -->

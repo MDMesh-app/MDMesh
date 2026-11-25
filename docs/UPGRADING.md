@@ -286,7 +286,7 @@ exited or credentials cleared while the older agent ran.
   updates on (`AUTO_UPDATE=1`), do this as soon as you can: until then the old supervisor may apply the release
   itself, with its 180-second limit.
 - **The unused two-factor setting is removed.** MDMesh has no second sign-in step, so an organization whose settings
-  had two-factor sign-in on (a database carried over from Headwind MDM, or edited by hand) couldn't sign in at all.
+  had two-factor sign-in on (a database carried over from the upstream project, or edited by hand) couldn't sign in at all.
   On its first start the server drops the setting. Those accounts then sign in with their password alone (no
   authenticator code is asked for), and get API tokens again. Two-factor sign-in for each user is planned for a later
   release. **Roll back**

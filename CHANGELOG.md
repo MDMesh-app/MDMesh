@@ -116,7 +116,7 @@ Fixes
   wipes the previous run's log, and when the clone is ahead of the install it says the install is unchanged and how to
   finish the update.
 - An organization whose settings had two-factor sign-in turned on (possible only in a database carried over from
-  Headwind MDM, or edited by hand) couldn't sign in at all, in the console or through the API. MDMesh has no second
+  the upstream project, or edited by hand) couldn't sign in at all, in the console or through the API. MDMesh has no second
   sign-in step yet, so the unused setting is removed. Those accounts now sign in with their password alone (no
   authenticator code is asked for) and get API tokens again, which v0.3.3 had stopped. Two-factor sign-in for each
   user is planned for a later release. The settings and user answers no longer include `twoFactor`; a request that
@@ -153,7 +153,7 @@ Upgrading
   `quickstart.sh`, as it already did for earlier releases.
 
 Heads-up
-- With `LEGACY_DEVICE_API=1`, Headwind launcher devices need a configuration that no MDMesh agent device uses and no
+- With `LEGACY_DEVICE_API=1`, legacy launcher devices need a configuration that no MDMesh agent device uses and no
   agent enrollment code enrolls into: the launcher's routes no longer serve such a configuration or create devices in
   it, and answer requests for an agent device with the launcher's device-not-found error
   ([UPGRADING, v0.5.1](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v051)).

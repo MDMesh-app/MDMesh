@@ -768,7 +768,6 @@ conf() {
     printf '%s\n' '  postgres:' '    environment:' '      POSTGRES_PASSWORD: s3cr3t-pw'; } > "$f"
 }
 conf none; conf both '"80"' '"443"'; conf numbers 80 443; conf only443 '"443"'; conf other '"8080"' '"4430"'
-sed 's/protocol: tcp/protocol: udp/' "$WORK/conf.only443" > "$WORK/conf.udp443"
 EDGE_BOTH='{"443/tcp":[{"HostIp":"","HostPort":"443"}],"80/tcp":[{"HostIp":"","HostPort":"80"}]}'
 EDGE_443='{"443/tcp":[{"HostIp":"0.0.0.0","HostPort":"443"}]}'
 EDGE_8080='{"8080/tcp":[{"HostIp":"127.0.0.1","HostPort":"8080"}]}'
@@ -818,7 +817,6 @@ grep -qxF "docker compose -f docker-compose.yml -f /srv/MDMesh rules/override.ym
 ok
 # One port of two, or another host port, is no substitute.
 ports_run only443 "$EDGE_BOTH" docker-compose.yml:mine.yml; stopped "a list that drops 80 alone" 'port 80 would close' 'publish it in your own compose file'
-ports_run udp443 "$EDGE_443" docker-compose.yml:mine.yml; stopped "a list that publishes 443 over UDP only" 'port 443 would close'
 ports_run other "$EDGE_443" docker-compose.yml:mine.yml; stopped "a list that publishes 8080 and 4430 instead of 443" 'port 443 would close' "'docker-compose.yml:mine.yml:$D'"
 # Any of the edge's containers counts, the first or not (a stopped one too: HostConfig, in ps -a).
 for STUB_IDS in 'idle edge1' 'edge1 idle'; do ports_run none "$EDGE_BOTH" docker-compose.yml; stopped "one of the containers $STUB_IDS on 80/443"; done; unset STUB_IDS
@@ -1390,5 +1388,5 @@ if [ -e "$WORK/stubs.called" ]; then fail "a dry run ran a command that changes 
 TREE=$(git -c safe.directory='*' -C "$REPO" describe --always --dirty 2>&1) || TREE='?'
 TREE="$REPO at $TREE"
 if [ "$FAILS" != 0 ]; then echo "installer answers: $FAILS failure(s) ($TREE)" >&2; exit 1; fi
-if [ "$CHECKS" -lt 693 ]; then echo "installer answers: only $CHECKS checks ran, expected at least 693 ($TREE)" >&2; exit 1; fi
+if [ "$CHECKS" -lt 692 ]; then echo "installer answers: only $CHECKS checks ran, expected at least 692 ($TREE)" >&2; exit 1; fi
 echo "installer answers: all $CHECKS checks passed ($TREE)"

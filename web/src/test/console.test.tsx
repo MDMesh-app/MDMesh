@@ -101,7 +101,12 @@ describe('a test that ends before its page has loaded', () => {
     render(<Loads />);
   });
 
-  it('and leaves the next test clean', () => {
+  it.fails('fails on a call that is never answered', () => {
+    stubApi().mockImplementation(() => new Promise(() => {}));
+    void fetch('/held');
+  });
+
+  it('leaves the next test clean', () => {
     expect(pendingCalls()).toBe(0);
   });
 });

@@ -931,7 +931,26 @@ if [ -n "$GITHUB_REPO" ]; then
     if mdm_fetch_release_apk "$GITHUB_REPO" "$REPO/release/minisign.pub" "$AGENT_FETCH_DIR" "$LOGFILE"; then
       AGENT_CK=$MDM_AGENT_CK; AGENT_APK="$AGENT_FETCH_DIR/agent.apk"
     else
-      info "${MDM_RELEASE_PROBLEM}${soft}"
+      # A stored GITHUB_REPO (an earlier install's setting) may name another repo whose releases are signed with a
+      # different key than this checkout's release/minisign.pub. Such a release can never verify here. Retry once
+      # with the clone's origin: it is the repo this checkout belongs to and the one whose key it carries. A
+      # successful retry becomes the updater's repository too (written to supervisor.env below).
+      local _first_problem="$MDM_RELEASE_PROBLEM" _tried_origin=0
+      if [ -z "$_repo_in_env" ] && [ -n "$_origin" ] && [ "${GITHUB_REPO,,}" != "${_origin,,}" ]; then
+        _tried_origin=1
+        info "The release of ${GITHUB_REPO} did not verify; retrying with this clone's origin (${_origin})"
+        if mdm_fetch_release_apk "$_origin" "$REPO/release/minisign.pub" "$AGENT_FETCH_DIR" "$LOGFILE"; then
+          GITHUB_REPO=$_origin; GITHUB_REPO_FROM=origin
+          AGENT_CK=$MDM_AGENT_CK; AGENT_APK="$AGENT_FETCH_DIR/agent.apk"
+        fi
+      fi
+      if [ -z "$AGENT_APK" ]; then
+        info "${_first_problem}${soft}"
+        if [ "$_tried_origin" = 1 ]; then info "${MDM_RELEASE_PROBLEM}${soft}"; fi
+        if [ -n "$_origin" ] && [ "${GITHUB_REPO,,}" != "${_origin,,}" ]; then
+          info "  this clone's origin is ${_origin}: pass GITHUB_REPO= to follow it (its releases are signed with this checkout's release/minisign.pub)"
+        fi
+      fi
     fi
     if [ -n "$MDM_RELEASE_NOTE" ]; then
       printf '  %s!%s %s. The updater uses it too: re-run with GITHUB_TOKEN=<new token>, or GITHUB_TOKEN= to remove it\n' \
@@ -948,6 +967,13 @@ if [ -n "$GITHUB_REPO" ]; then
   fi
 else
   info "No GitHub repo detected — skipping release fetch; host /files/agent.apk manually"
+fi
+# A stale APK from an earlier install stays at /files/agent.apk when nothing was fetched. The console then uses its
+# debug enrollment defaults (package com.mdmesh.agent.debug, debug signing checksum), so that APK cannot match the QR:
+# say so, or enrollment fails with a signature mismatch the device cannot explain.
+if [ -z "$AGENT_APK" ] && [ -e "$BASE_DIR/files/agent.apk" ]; then
+  printf '  %s!%s %sThe existing %s/files/agent.apk is kept, but the console is using its debug enrollment defaults: that APK cannot match the QR. Replace it with the release APK or re-run once the release fetch works.%s\n' \
+    "$c_yel" "$c_reset" "$c_yel" "$BASE_DIR" "$c_reset"
 fi
 
 step "Building the admin console"

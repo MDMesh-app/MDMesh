@@ -613,10 +613,29 @@ if [ -n "${GITHUB_REPO:-}" ] && command -v python3 >/dev/null && command -v curl
       MDM_MINISIGN=mdm_container_minisign
     fi
   fi
+  # mdm_verify_release_apk: verify the release APK of GITHUB_REPO (manifest signature against this checkout's
+  # release/minisign.pub, plus the APK's sha256). When that repo's release does not verify and the clone's origin is a
+  # different repo, retry once with the origin — the repo whose key this checkout carries — and adopt it (persisted to
+  # .env) so the supervisor mirrors the same repo. A stale GITHUB_REPO from an earlier install is the usual cause.
+  mdm_verify_release_apk() {
+    mdm_fetch_release_apk "$GITHUB_REPO" ./release/minisign.pub "$REL_DIR" /dev/null && return 0
+    local first="$MDM_RELEASE_PROBLEM" origin
+    origin=$(git remote get-url origin 2>/dev/null | sed -E 's#(git@|https?://)[^/:]+[/:]##; s#\.git$##' || true)
+    [ -n "$origin" ] && [ "${GITHUB_REPO,,}" != "${origin,,}" ] || return 1
+    say "The release of ${GITHUB_REPO} did not verify; retrying with this clone's origin (${origin})…"
+    if mdm_fetch_release_apk "$origin" ./release/minisign.pub "$REL_DIR" /dev/null; then
+      GITHUB_REPO=$origin
+      setenv GITHUB_REPO "$GITHUB_REPO"
+      export GITHUB_REPO
+      return 0
+    fi
+    MDM_RELEASE_PROBLEM="$first; retried with the clone's origin (${origin}): $MDM_RELEASE_PROBLEM"
+    return 1
+  }
   REL_DIR=$(mktemp -d 2>/dev/null || true)
   if [ -z "$REL_DIR" ]; then
     warn "Could not create a temporary directory for the release files — the console keeps its debug enrollment defaults."
-  elif mdm_fetch_release_apk "$GITHUB_REPO" ./release/minisign.pub "$REL_DIR" /dev/null; then
+  elif mdm_verify_release_apk; then
     if agent_ck_ok "$MDM_AGENT_CK"; then
       VITE_AGENT_PACKAGE="com.mdmesh.agent"; VITE_AGENT_CHECKSUM="$MDM_AGENT_CK"; VITE_AGENT_APK_URL="/files/agent.apk"
       say "Release APK verified (manifest signature + sha256; signing checksum ${MDM_AGENT_CK}) — the QR will point at /files/agent.apk."

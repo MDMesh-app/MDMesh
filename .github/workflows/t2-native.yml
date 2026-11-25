@@ -94,6 +94,10 @@ jobs:
       T2_FROM_REF: ${{ needs.plan.outputs.from-ref }}
       DISTRO: ${{ matrix.distro }}
       SCENARIO: ${{ matrix.scenario }}
+      # The repo whose releases the rig installs and verifies. It must be the repo whose key signed the release:
+      # the PR head's repo for a fork PR, this repo otherwise. Leaving it at the upstream default made the rig
+      # verify upstream's manifest with this checkout's key and fail (it must verify the checkout's own release).
+      T2_ORIGIN_URL: https://github.com/${{ github.event.pull_request.head.repo.full_name || github.repository }}.git
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:

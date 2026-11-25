@@ -610,4 +610,30 @@ public class AgentCheckInLimitsTest {
         assertEquals(52.1, row.getLat(), 0.0);
         assertFalse(commands.telemetry, commands.telemetry.contains("provider"));
     }
+
+    @Test
+    public void reportedImeisAreTheFirstFourPrintableStrings() {
+        // The update that added device_state.reportedImeis applies the same rules to stored telemetry.
+        ObjectNode tel = JsonNodeFactory.instance.objectNode();
+        tel.putObject("identity").putArray("imei").add("359881234567890").add(359889876543210L).addNull().add("")
+                .add("with space").add("a\0b").add("123456789012345678901234567890123").add("A0000012345678")
+                .add("2").add("3").add("4");
+        assertEquals(Arrays.asList("359881234567890", "A0000012345678", "2", "3"),
+                Arrays.asList(AgentResource.reportedImeis(tel)));
+    }
+
+    @Test
+    public void noReportedImeisIsNull() {
+        JsonNodeFactory nodes = JsonNodeFactory.instance;
+        assertNull(AgentResource.reportedImeis(null));
+        assertNull(AgentResource.reportedImeis(nodes.objectNode()));
+        assertNull(AgentResource.reportedImeis(nodes.arrayNode()));
+        ObjectNode tel = nodes.objectNode();
+        tel.putObject("identity").put("imei", "359881234567890");
+        assertNull(AgentResource.reportedImeis(tel));
+        tel.putObject("identity").putArray("imei");
+        assertNull(AgentResource.reportedImeis(tel));
+        tel.putObject("identity").putArray("imei").add(" ");
+        assertNull(AgentResource.reportedImeis(tel));
+    }
 }

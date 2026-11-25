@@ -1,10 +1,11 @@
 // "Uploaded images": list, choose, delete only unused (with a confirmation), refusals shown, paging; axe-clean.
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import axe from 'axe-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { KioskGalleryItem } from '../../api/configurations';
 import { ToastProvider } from '../../ui/toast';
 import { KioskGallery } from './KioskGallery';
+import { render } from '../../test/render';
 
 const sha = (c: string) => c.repeat(64);
 const item = (n: number, over: Partial<KioskGalleryItem> = {}): KioskGalleryItem => ({

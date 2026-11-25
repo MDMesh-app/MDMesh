@@ -1,6 +1,6 @@
 // #222: the agent reports `wipeNotStarted` when an accepted factory reset didn't reboot the device in time. It is a
 // warning wherever device events show, like the kiosk's crash loop, never the plain info row.
-import { render, screen, within } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { describe, expect, it } from 'vitest';
 import { EVENT_LABELS, EVENT_VERBS } from '../data/deviceActivity';
@@ -10,6 +10,7 @@ import { renderInConsole, settled, stubApi } from '../test/console';
 import { EventIcon } from './DeviceDetailTabs';
 import { eventTone } from './deviceDetailFormat';
 import { eventView } from './overview/eventView';
+import { render } from '../test/render';
 
 /** What the agent sends with the event (agent AgentModule WIPE_NOT_STARTED_DETAIL). */
 const DETAIL = "The device didn't reset within 10 minutes. It is back in use, and its configuration is applied again.";

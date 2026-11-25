@@ -2,6 +2,10 @@
 @floating-ui/dom	MIT
 @floating-ui/react-dom	MIT
 @floating-ui/utils	MIT
+@formatjs/fast-memoize	MIT
+@formatjs/icu-messageformat-parser	MIT
+@formatjs/icu-skeleton-parser	MIT
+@formatjs/intl	MIT
 @radix-ui/number	MIT
 @radix-ui/primitive	MIT
 @radix-ui/react-collection	MIT
@@ -34,10 +38,12 @@
 aria-hidden	MIT
 dijkstrajs	MIT
 get-nonce	MIT
+intl-messageformat	BSD-3-Clause
 leaflet	BSD-2-Clause
 qrcode	MIT
 react	MIT
 react-dom	MIT
+react-intl	BSD-3-Clause
 react-remove-scroll	MIT
 react-remove-scroll-bar	MIT
 react-router	MIT

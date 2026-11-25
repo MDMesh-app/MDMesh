@@ -1,11 +1,11 @@
 // The location map keeps the user's view across reloads: it fits the path on its first draw and on a new time range
 // only; the same fixes again change nothing, and new ones redraw the path in place.
-import { render } from '@testing-library/react';
 import L from 'leaflet';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { StrictMode, type ReactElement } from 'react';
+import type { ReactElement } from 'react';
 import { IconClose, IconPlus } from './icons';
 import { LocationMap, MAP_ICONS } from './LocationMap';
+import { render } from '../test/render';
 
 const fix = (id: number, lat: number, lon: number) => ({ id, lat, lon, capturedAt: 1_700_000_000_000 + id * 60_000 });
 const FIXES = [fix(3, 37.78, -122.42), fix(2, 37.77, -122.41), fix(1, 37.76, -122.4)];
@@ -38,11 +38,9 @@ describe('LocationMap', () => {
 
   it('draws its view and path under StrictMode (effects run, clean up and run again on one set of refs)', () => {
     const fitBounds = vi.spyOn(L.Map.prototype, 'fitBounds');
-    const { container } = render(
-      <StrictMode>
-        <LocationMap fixes={FIXES} fitKey={0} label="Map" />
-      </StrictMode>,
-    );
+    // StrictMode at the root, around the test's providers: as an element inside the wrapper it didn't run the
+    // effects twice here.
+    const { container } = render(<LocationMap fixes={FIXES} fitKey={0} label="Map" />, { reactStrictMode: true });
     // The map left standing is the second one: it has its own view and path.
     const maps = fitBounds.mock.contexts;
     expect(maps[maps.length - 1]).not.toBe(maps[0]);

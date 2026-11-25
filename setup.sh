@@ -49,6 +49,9 @@ err()  { printf '\033[1;31m%s\033[0m\n' "$*" >&2; }
 # The hosting modes, in one table (install/lib/modes.sh).
 # shellcheck source=install/lib/modes.sh
 . ./install/lib/modes.sh
+# On your own domain, a re-run stops rather than close the edge's ports 80/443 (install/lib/ports.sh).
+# shellcheck source=install/lib/ports.sh
+. ./install/lib/ports.sh
 # The versions an install's hosting mode allows: the updater's own rule (supervisor/mode-guard.sh), for --update.
 # shellcheck source=supervisor/mode-guard.sh
 . ./supervisor/mode-guard.sh
@@ -450,6 +453,7 @@ if [ "$REUSE_ENV" = 1 ]; then
     esac
   fi
   mdm_mode_settings "$MODE" rerun
+  mdm_ports_guard
 else
   if [ "$RESET" = 1 ] && [ -f .env ]; then
     warn "--reset: regenerating .env. If the old database still exists it needs the OLD password —"
@@ -728,6 +732,11 @@ fi
 # fails the run.
 EDGE_UP=1
 mdm_edge_up || EDGE_UP=0
+# An edge that lost its ports earlier (a console update on a list that leaves the domain file out).
+if [ "$MODE" = 2 ] && ! mdm_list_has_domain && [ -z "$(mdm_edge_ports)" ]; then
+  ENTRY="no port 80 or 443 found published"
+  EXTRA_NOTE="Unless something of yours forwards ${HOST} to the edge, set in .env  COMPOSE_FILE='${COMPOSE_FILE}:docker-compose.domain.yml'  and run ./setup.sh again, before any update or rollback in the console."
+fi
 
 echo
 if [ "$EDGE_UP" = 1 ]; then

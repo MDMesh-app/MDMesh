@@ -18,8 +18,13 @@ Upgrading
 - Quick start: `HEALTH_TIMEOUT` in `.env` sets how many seconds an updated server gets to answer before the update is
   rolled back (default 180, at least 30). Raise it before an update whose database work may take longer; to have it
   count for this update, get this release's supervisor first ([UPGRADING.md](docs/UPGRADING.md#unreleased)).
-- Existing installs keep their mode and settings. To move one behind your own proxy, see
+- Existing installs keep their mode. To move one behind your own proxy, see
   [UPGRADING, Changing the hosting mode](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#changing-the-hosting-mode).
+- From source, with a `COMPOSE_FILE` you edited by hand: `./setup.sh` and `--update` now start the files it names. On
+  your own domain they stop, before any container is touched, if that would close port 80 or 443 on the edge, and show
+  the `.env` line to set. With a `COMPOSE_PROFILES` you edited by hand, `cloudflare` among several profiles now means
+  the tunnel, which closes 80/443 unless the files `COMPOSE_FILE` lists publish them. The `.env` an installer
+  wrote is not affected ([UPGRADING.md](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#unreleased)).
 - On its first start the server removes the unused two-factor setting from the database. A rollback puts it back
   with the old database ([UPGRADING.md](docs/UPGRADING.md#unreleased)). Forks: code that used it no longer compiles
   ([UPGRADING.md](docs/UPGRADING.md#v060-for-forks)).
@@ -133,6 +138,9 @@ Under the hood
   The server no longer ships SpotBugs' annotations (LGPL-2.1), which nothing used at runtime.
 - Every file kept from the upstream project that MDMesh changed now says so, and CI checks it
   ([policy](https://github.com/MDMesh-app/MDMesh/blob/main/docs/licenses/policy.md#files-kept-from-upstream)).
+- Console: the groundwork for translations. New console text is written as react-intl messages (English stays in
+  the code), and a test fails on most new untranslated text in core files; existing text moves over area by area. No
+  other language ships yet ([web/README.md](web/README.md#translatable-text)).
 - Agent protocol 1.12 (additive): the check-in response's `eventsAccepted`, the check-in request's `protocolVersion`
   (now always sent), and the `eventsDropped` event
   ([VERSIONING](https://github.com/MDMesh-app/MDMesh/blob/main/proto/VERSIONING.md)).

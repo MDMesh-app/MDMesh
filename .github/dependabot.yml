@@ -55,6 +55,10 @@ updates:
     directory: "/web"
     schedule: { interval: weekly, day: monday }
     groups:
+      # TypeScript on its own (first matching group wins): the literals ratchet (web/src/i18n/literals.test.ts) uses
+      # its `typescript/unstable/*` API, which a 7.x release may change, so a bump that breaks it can't hold up the
+      # other web updates. package.json pins it exactly for the same reason.
+      web-typescript: { patterns: ["typescript"] }
       web-npm: { patterns: ["*"] }
     open-pull-requests-limit: 5
     ignore:

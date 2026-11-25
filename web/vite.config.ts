@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import { changelogNotes } from './vite.changelog.ts';
+import { THIRD_PARTY, licences } from './vite.licences.ts';
 
 // Dev server. Every same-origin path the console calls is proxied to the dev stack's edge (Caddy on :8088, see
 // docker-compose.dev.yml), which routes it exactly as production does: /rest, /files and /agent/ws to the server,
@@ -14,7 +15,7 @@ export default defineConfig(({ mode }) => {
   const route = (ws = false) => ({ target, changeOrigin: true, cookieDomainRewrite: '', ws });
 
   return {
-    plugins: [react(), changelogNotes(env.VITE_APP_VERSION)],
+    plugins: [react(), changelogNotes(env.VITE_APP_VERSION), licences()],
     resolve: {
       // The public surface extensions import (web/src/sdk), and what their tests import; tsconfig.app.json maps the
       // same names for the compiler. Exact matches, so `@mdmesh/console/<anything else>` resolves to nothing.
@@ -33,6 +34,8 @@ export default defineConfig(({ mode }) => {
       fsModuleCache: false,
     },
     build: {
+      // The bundled packages and their licences, served at /licenses/THIRD-PARTY.json; licences() checks them.
+      license: { fileName: THIRD_PARTY },
       rolldownOptions: {
         output: {
           // Third-party code in its own chunks: the app chunk stays under Vite's 500 kB warning, and a console

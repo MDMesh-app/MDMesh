@@ -1,0 +1,5 @@
+# The licence the console and the agent use a component under, where it is offered under several (the server records
+# its choices in server/src/license/override-THIRD-PARTY.properties). Tab-separated: part (web or agent), component,
+# the licences it is offered under as its list writes them, and the one MDMesh uses. scripts/licenses/inventory.py
+# fails a component offered under several that has no line here, or whose offer changed. docs/licenses/policy.md.
+web	spark-md5	(WTFPL OR MIT)	MIT

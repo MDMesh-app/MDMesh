@@ -3,7 +3,13 @@
 ==  the Apache License, Version 2.0                                    ==
 =========================================================================
 
-This product is a derivative work based on Headwind MDM (Apache-2.0).
+MDMesh
+(c) 2026 the MDMesh contributors.
+
+This product is a derivative work based on Headwind MDM (Apache-2.0):
+the server from https://github.com/h-mdm/hmdm-server at upstream commit
+daed2099c9d50e68248ced38135180ffea6902ce (May 2026, after release 5.39.2),
+and parts of the Android agent from https://github.com/h-mdm/hmdm-android.
 
 -------------------------------------------------------------------------
 Upstream attribution (retained per Apache-2.0 section 4d):
@@ -25,8 +31,6 @@ Upstream attribution (retained per Apache-2.0 section 4d):
 -------------------------------------------------------------------------
 This product and its modifications:
 
-  (c) 2026 the MDMesh contributors.
-
   New components (the protocol under proto/ and the web admin under web/)
   are original works. The agent v1 server endpoints were written for MDMesh,
   though some carry the upstream header. Files derived from the upstream
@@ -37,6 +41,36 @@ This product and its modifications:
   and version handling, crash-loop protection, and some Device Owner policy
   code. Those files carry the upstream copyright and license header and
   state what was changed.
+
+-------------------------------------------------------------------------
+Third-party components:
+
+  Each part of MDMesh ships the list of third-party components it bundles,
+  with the licence MDMesh uses each one under:
+
+    server (launcher.war)   META-INF/THIRD-PARTY.txt
+    web console             /licenses/THIRD-PARTY.json
+    Android agent (APK)     assets/licenses/third-party.json
+
+  Where a component is offered under a choice of licences, MDMesh uses it
+  under the one those lists name: the Jersey, HK2, JAX-RS, JAXB,
+  javax.annotation and MIME streaming jars under CDDL-1.1
+  (osgi-resource-locator under CDDL-1.0) (not GPL-2.0 with the Classpath
+  Exception); the HK2 Guice bridge, jakarta.inject and the Jakarta
+  Messaging API under EPL-2.0; Jakarta Mail under the Eclipse
+  Distribution License 1.0 (BSD-3-Clause); Javassist and Reflections under
+  Apache-2.0; spark-md5 under MIT. docs/licenses/policy.md in the source
+  repository has the full record.
+
+  MDMesh uses the CDDL- and EPL-licensed jars unmodified. Their source code
+  is published with each of their releases on Maven Central (the "-sources"
+  jars).
+
+  The Android agent also contains, compiled into its code,
+  desugar_jdk_libs from Google (Maven coordinates
+  com.android.tools:desugar_jdk_libs), which is derived from OpenJDK and
+  licensed under the GNU General Public License, version 2, with the
+  Classpath Exception (GPL-2.0-only WITH Classpath-exception-2.0).
 
 -------------------------------------------------------------------------
 Third-party fonts bundled with the web console (web/):
@@ -52,3 +86,47 @@ Third-party fonts bundled with the web console (web/):
   package for the kiosk background preview; the licence ships with the
   console at /licenses/Roboto-OFL-1.1.txt
   (web/public/licenses/Roboto-OFL-1.1.txt).
+
+-------------------------------------------------------------------------
+Source code of the GPL and LGPL software MDMesh redistributes:
+
+  The MDMesh container images (mdmesh-server, mdmesh-web and
+  mdmesh-supervisor) contain, unmodified, software that the MDMesh
+  contributors did not write and that is licensed under the GNU General
+  Public License (GPL) or the GNU Lesser General Public License (LGPL):
+  among them BusyBox and apk-tools (GPL-2.0) in the Alpine-based images,
+  bash and readline (GPL-3.0) in mdmesh-supervisor, and the Ubuntu
+  packages (GPL-2.0, GPL-3.0, LGPL...) and the Eclipse Temurin JDK
+  (GPL-2.0 with the Classpath Exception) in mdmesh-server. The Android
+  agent contains desugar_jdk_libs (above).
+
+  What each image contains: every MDMesh release on GitHub
+  (https://github.com/MDMesh-app/MDMesh/releases) carries a package list
+  for each image and platform (mdmesh-<image>-linux-<arch>.packages.tsv),
+  naming every package with its exact version and the source package it
+  was built from, and the runtimes (JDK, Tomcat, Node, Caddy).
+  docs/licenses/images.md in the source repository explains them.
+
+  Where the source is: the corresponding source of those packages is
+  published by the distributions they come from, for the versions the
+  list names:
+    Alpine Linux packages: the build recipes and patches in
+      https://gitlab.alpinelinux.org/alpine/aports (the branch of the
+      image's Alpine release), with their source archives at
+      https://distfiles.alpinelinux.org/distfiles/
+    Ubuntu packages: the source packages at
+      https://launchpad.net/ubuntu/+source/<source package>/<version>
+      (or "apt-get source <source package>=<version>")
+    Eclipse Temurin: https://github.com/adoptium/jdk17u, at the tag of
+      the JDK version the list names
+    desugar_jdk_libs: Google publishes its source at
+      https://github.com/google/desugar_jdk_libs; the offer below covers
+      the exact version in each APK
+
+  Written offer: for at least three years after we last distribute a
+  given image or APK release, we will also give anyone who asks, for a
+  charge no more than our cost of physically performing source
+  distribution, a complete machine-readable copy of the corresponding
+  source code of that GPL- and LGPL-licensed software. To ask, open an
+  issue at https://github.com/MDMesh-app/MDMesh/issues titled "Source
+  request", naming the image or APK and its version.

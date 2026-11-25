@@ -6,6 +6,8 @@ ksp = "2.0.20-1.0.25"
 desugarJdkLibs = "2.1.5"
 # Static analysis (root-level `detekt` task; baseline in config/detekt/)
 detekt = "1.23.8"
+# Licence check and the APK's third-party report (app/build.gradle.kts, docs/licenses/policy.md)
+licensee = "1.14.1"
 
 # AndroidX core
 coreKtx = "1.13.1"
@@ -95,3 +97,4 @@ kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", versi
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
 detekt = { id = "io.gitlab.arturbosch.detekt", version.ref = "detekt" }
+licensee = { id = "app.cash.licensee", version.ref = "licensee" }

@@ -44,14 +44,15 @@ jobs:
             # VERSIONING.md's highest row, and a held bump must still be under Unreleased (so a release PR runs it).
             # ConfigSectionsLedgerTest checks proto/config-sections.json against VERSIONING.md and the config.apply schema.
             # docker/Caddyfile is read by PublicRouteInventoryTest (the edge's @backend against the server's routes).
-            server: pom.xml, common/**, jwt/**, notification/**, plugins/**, server/**, CHANGELOG.md, proto/VERSIONING.md, proto/config-sections.json, proto/payloads/config-apply.schema.json, docker/Caddyfile
+            # LICENSE to inventory.py (server, web and agent): the licence policy each entry's inventory.py checks.
+            server: pom.xml, common/**, jwt/**, notification/**, plugins/**, server/**, CHANGELOG.md, proto/VERSIONING.md, proto/config-sections.json, proto/payloads/config-apply.schema.json, docker/Caddyfile, LICENSE, NOTICE, docs/licenses/**, scripts/licenses/inventory.py
             # CHANGELOG.md is built into the console (What's new) and its tests read every release's section, checked
             # against release/changelog-section.sh, and its Security labels against release/security-releases.py.
-            web: web/**, CHANGELOG.md, release/changelog-section.sh, release/security-releases.py
+            web: web/**, CHANGELOG.md, release/changelog-section.sh, release/security-releases.py, LICENSE, NOTICE, docs/licenses/**, scripts/licenses/inventory.py
             # The console's browser accessibility sweep (scripts/shots/a11y.mjs) reads the built console and the
             # shots fixtures; CHANGELOG.md is built into the console.
             a11y: web/**, scripts/shots/**, CHANGELOG.md
-            agent: agent-android/**, proto/**
+            agent: agent-android/**, proto/**, LICENSE, NOTICE, docs/licenses/**, scripts/licenses/inventory.py
             supervisor: supervisor/**, docker/supervisor.Dockerfile, release/minisign.pub, scripts/supervisor-smoke.sh, .dockerignore
             # Listed explicitly: the kit's fail-closed **/Dockerfile* does not match docker/web.Dockerfile. web/**,
             # web-entrypoint.sh, edge-peers.sh, CHANGELOG.md and .dockerignore are the web image build's inputs.
@@ -135,6 +136,11 @@ jobs:
       - if: matrix.name == 'server' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).server)
         name: Build WAR
         run: mvn -B -DskipTests package
+      # The WAR's LICENSE, NOTICE and third-party list: every jar listed, each under an allowed licence (or a recorded
+      # choice), compared with docs/licenses/inventory/ (docs/licenses/policy.md). Differences there only warn.
+      - if: matrix.name == 'server' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).server)
+        name: Licences in the WAR
+        run: scripts/licenses/inventory.py --war server/target/launcher.war
       - if: matrix.name == 'server' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).server)
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
@@ -158,6 +164,10 @@ jobs:
       - if: matrix.name == 'web' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).web)
         working-directory: web
         run: npm run build
+      # As the server's: the console build's /licenses/ files (docs/licenses/policy.md).
+      - if: matrix.name == 'web' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).web)
+        name: Licences in the console build
+        run: scripts/licenses/inventory.py --web web/dist
 
       # --- agent (from agent.yml) ---
       - if: matrix.name == 'agent' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).agent)
@@ -194,6 +204,10 @@ jobs:
         # tests and resolves their dependencies, so neither a change to the classes they use nor a test-only dependency
         # conflict breaks them unseen. Running them needs an emulator (agent-android/README.md).
         run: ./gradlew --no-daemon detekt assembleDebug lintDebug testDebugUnitTest assembleDebugAndroidTest :proto:test
+      # As the server's: the APK's assets/licenses/ (docs/licenses/policy.md).
+      - if: matrix.name == 'agent' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).agent)
+        name: Licences in the APK
+        run: scripts/licenses/inventory.py --apk agent-android/app/build/outputs/apk/debug/app-debug.apk
 
       # --- supervisor (#27): build the image, run its unit tests on the shipped Node, then run it the
       # way docker-compose runs it (working_dir /project + project mounted) and probe its routes. ---

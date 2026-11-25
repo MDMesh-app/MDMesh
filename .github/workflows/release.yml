@@ -8,13 +8,15 @@ name: release
 # Requires these `release` environment secrets (see RELEASING.md): MDM_RELEASE_STORE_B64, MDM_RELEASE_STORE_PASSWORD,
 # MDM_RELEASE_KEY_ALIAS, MDM_RELEASE_KEY_PASSWORD, MINISIGN_SECRET_KEY, MINISIGN_PASSWORD.
 #
-# Jobs: gate → images (each image on each platform, pushed by digest, untagged) → release (signed APK, held to the
-# recorded signing checksum; :VERSION tags, signed manifest, GitHub Release, :latest).
+# Jobs: gate → images (each image on each platform, pushed by digest, untagged) → packages (read-only: lists what each
+# pushed image holds, by digest) → release (signed APK, held to the recorded signing checksum; :VERSION tags, signed
+# manifest, GitHub Release with the six image package lists NOTICE's source offer relies on, :latest).
 # Who may release: the `gate` job (no secrets, read-only token) refuses a tag whose commit is not on main. The `release`
 # job, which alone holds the signing secrets, runs in the `release` environment: it waits for a required reviewer, and
 # the secrets live there as environment secrets, so a workflow edited on an unmerged commit can't reach them without
 # that approval. `images` (a package write token, no secrets) runs before it, but only pushes untagged builds, which
-# nothing pulls: every tag, the manifest and the Release come from the approved job. Repo settings this relies on are
+# nothing pulls: every tag, the manifest and the Release come from the approved job. `packages` (package read only, no
+# secrets) runs between them and only lists packages inside the pushed images. Repo settings this relies on are
 # listed in RELEASING.md.
 
 on:
@@ -155,10 +157,60 @@ jobs:
           path: ${{ runner.temp }}/digest/${{ matrix.image }}-${{ matrix.arch }}
           if-no-files-found: error
 
+  # What each pushed image holds, for the GitHub Release (NOTICE's source pointers and written offer resolve against
+  # it; docs/licenses/images.md): every OS package with its version and source package, and the runtimes. A job of its
+  # own after the images job, so nothing runs where the package write token is: read-only, it pulls each image by the
+  # digest the images job recorded and runs only the image's own tools in it (scripts/licenses/image-packages.sh), with
+  # no network. On each image's own platform, as the images job.
+  packages:
+    needs: images
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      matrix:
+        image: [server, web, supervisor]
+        arch: [amd64, arm64]
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550  # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: digest-${{ matrix.image }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digest
+      - name: Packages in ${{ matrix.image }}, linux/${{ matrix.arch }}
+        env:
+          OWNER: ${{ github.repository_owner }}
+          IMAGE: ${{ matrix.image }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          O=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
+          D=$(cat "$RUNNER_TEMP/digest/${IMAGE}-${ARCH}")
+          echo "$D" | grep -Eqx 'sha256:[0-9a-f]{64}' || { echo "::error::no digest for ${IMAGE} linux/${ARCH} (got '${D}')"; exit 1; }
+          REF="ghcr.io/${O}/mdmesh-${IMAGE}@${D}"
+          docker pull --quiet "$REF"
+          mkdir -p "$RUNNER_TEMP/packages"
+          OUT="$RUNNER_TEMP/packages/mdmesh-${IMAGE}-linux-${ARCH}.packages.tsv"
+          scripts/licenses/image-packages.sh "$REF" > "$OUT"
+          grep -qv '^#' "$OUT" || { echo "::error::no packages listed for ${REF}"; exit 1; }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: packages-${{ matrix.image }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/packages/mdmesh-${{ matrix.image }}-linux-${{ matrix.arch }}.packages.tsv
+          if-no-files-found: error
+
   # The release itself, only once every image build passed: the signed APK (held to the recorded signing checksum),
   # then the :VERSION tags, the signed manifest, the GitHub Release and :latest.
   release:
-    needs: [gate, images]
+    needs: [gate, images, packages]
     # Required reviewers + the signing secrets live on this environment (RELEASING.md).
     environment: release
     # Pinned, not ubuntu-latest: a tag push must not silently change OS (ubuntu-latest moves to 26.04 on
@@ -245,6 +297,17 @@ jobs:
           pattern: digest-*
           path: ${{ runner.temp }}/digest
           merge-multiple: true
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          pattern: packages-*
+          path: packages
+          merge-multiple: true
+      # One package list per image and platform (the packages job's matrix), or the Release would publish without the
+      # record NOTICE's source pointers rely on.
+      - name: Every image has its package list
+        run: |
+          n=$(find packages -name 'mdmesh-*-linux-*.packages.tsv' | wc -l)
+          [ "$n" = 6 ] || { echo "::error::expected 6 image package lists (3 images x 2 platforms), found ${n}"; exit 1; }
 
       # The gate's check again, right before anything is tagged: "Re-run failed jobs" on an older release's run, after a
       # newer release, must not re-tag its images or move :latest back to them. Reads the tags from origin, not the
@@ -372,6 +435,7 @@ jobs:
             manifest.json
             manifest.json.minisig
             quickstart.sh
+            packages/*.packages.tsv
 
       # --- Read the published quickstart.sh back (README's install block downloads it) ---
       # A Release whose quickstart.sh isn't the file the signed manifest hashes must not get :latest.

@@ -111,8 +111,10 @@ Dependabot opens grouped PRs every Monday ([`.github/dependabot.yml`](.github/de
 - **Ignored lines wait for their migration.** Each `ignore` names the migration that lifts it; remove it in that
   migration's PR, never piecemeal. The `agent-toolchain` group (AGP 9 and everything coupled to it) stays red until
   the AGP 9 migration and is never merged piecemeal.
-- **License changes** (e.g. Liquibase 5 → FSL) are blocked until reviewed against
-  [ADR-0008](docs/adr/0008-licensing-and-rebrand.md).
+- **Licences.** Every build checks its third-party components against
+  [docs/licenses/allowed.txt](docs/licenses/allowed.txt) and fails in CI on any other licence (Liquibase 5 and later is
+  FSL, for one). [docs/licenses/policy.md](docs/licenses/policy.md) says what to do then, and how to update the
+  inventory when `t0-fast` warns that the components changed.
 - **One JDK, one Node line.** The server is **JDK 17** everywhere. Node is the current LTS (today **24**); every place
   that names it (`web/package.json` `engines`, `@types/node`, both Node images, the native installer's `NODE_VER`)
   moves in one PR, a few months after the next even line becomes LTS.

@@ -1,0 +1,29 @@
+# Licences (docs/licenses/policy.md). The server, console and agent builds check their own third-party components
+# against docs/licenses/allowed.txt wherever CI is set, and T0's server, web and agent entries run
+# scripts/licenses/inventory.py on what they built, on a dependency or a licence policy change too. This workflow runs
+# the licence scripts' own tests, on every change.
+name: licences
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  tools:
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: inventory.py's and image-packages.sh's own tests
+        run: |
+          tests/licenses/inventory-test.sh
+          tests/licenses/image-packages-test.sh

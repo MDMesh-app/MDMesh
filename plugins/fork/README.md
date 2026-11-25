@@ -11,7 +11,9 @@ plugin's classes in a package under `com.mdmesh`, by convention `com.mdmesh.<pac
 without dashes. The server finds a `PluginConfiguration`, and serves JAX-RS resources, only below `com.mdmesh` and
 `com.hmdm`; `com.hmdm` is core's. List the plugin's public routes (any not below `/private/`) in `public-routes.txt`,
 and put its `/private/` routes through `AuthFilter` and then `PluginAccessFilter` in its `ServletModule`, or the server
-build's tests fail. Don't use `init-plugin.sh`: it edits core's poms.
+build's tests fail. Keep the plugin's groupId under `com.hmdm` (the parent's `com.hmdm.plugin`) or `com.mdmesh`: the
+server's licence check (docs/licenses/policy.md) treats a jar under any other groupId as third-party. Don't use
+`init-plugin.sh`: it edits core's poms.
 
 [web/EXTENDING.md](../../web/EXTENDING.md#server-plugin) is the guide: the pom, the one-id rule, the conventions (REST,
 tables, Liquibase, permissions, the `plugins` row), public routes, configuration data and its validator, policy keys

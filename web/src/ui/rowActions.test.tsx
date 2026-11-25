@@ -2,13 +2,14 @@
 // (loneButtonItem); and after an action removes its item, focus moves to a neighbour, not to the page
 // (useRefocusAfterRemove), or, when it is gone before the dialog closes, from the Modal itself (ui/focusPlace).
 import { useState } from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { loneButtonItem } from './loneAction';
 import type { MenuEntry } from './Menu';
 import { Modal } from './Modal';
 import { focusPlace, placeOf } from './focusPlace';
 import { useRefocusAfterRemove } from './useRefocusAfterRemove';
+import { render } from '../test/render';
 
 const noop = () => {};
 

@@ -43,7 +43,6 @@ import javax.servlet.http.HttpSession;
 public class AuthFilter implements Filter {
 
     public static final String sessionCredentials = "credentials";
-    public static final String twoFactorNeeded = "twofactor";
 
     private UserDAO userDAO;
 
@@ -99,23 +98,6 @@ public class AuthFilter implements Filter {
                 ConsoleSession.endSession(session);
                 ((HttpServletResponse)servletResponse).sendError(403);
                 return;
-            } else {
-
-                if (session.getAttribute(twoFactorNeeded) != null) {
-                    // Two-factor auth needed
-                    String path = ((HttpServletRequest) servletRequest).getServletPath();
-                    // At this step, allow only resources in TwoFactorAuthResource
-                    // After the two-factor auth is completed, the session attribute
-                    // should be cleared by the authentication completion method
-                    if (!path.contains("/rest/private/twofactor")) {
-                        session.removeAttribute(sessionCredentials);
-                        session.removeAttribute(twoFactorNeeded);
-                        ((HttpServletResponse)servletResponse).sendError(403);
-                        return;
-                    }
-                    // 2FA methods receive the user information,
-                    // so we proceed with the authentication
-                }
             }
         }
 

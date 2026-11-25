@@ -2,12 +2,13 @@
 # "no clone, no build" deploy. Easiest via quickstart.sh, or by hand:
 #
 #   curl -fsSLO https://raw.githubusercontent.com/MDMesh-app/MDMesh/refs/tags/vX.Y.Z/docker-compose.release.yml   # the release you run
-#   # write a .env (DB_PASSWORD, HASH_SECRET, BASE_URL, IMAGE_OWNER, …) — see quickstart.sh. For the tunnel, include
-#   # COMPOSE_PROFILES=cloudflare: --profile alone doesn't reach caddy, which then won't believe cloudflared's
-#   # CF-Connecting-IP (docker/edge-peers.sh)
-#   docker compose -f docker-compose.release.yml --profile cloudflare up -d                 # tunnel
-#   docker compose -f docker-compose.release.yml -f docker-compose.domain.yml up -d         # own domain
-#   docker compose -f docker-compose.release.yml -f docker-compose.proxy.yml up -d          # behind your own proxy
+#   # write a .env (DB_PASSWORD, HASH_SECRET, BASE_URL, IMAGE_OWNER, …) — see quickstart.sh — with the mode in it:
+#   #   COMPOSE_FILE=docker-compose.release.yml and COMPOSE_PROFILES=cloudflare          # tunnel
+#   #   COMPOSE_FILE=docker-compose.release.yml:docker-compose.domain.yml                # own domain
+#   #   COMPOSE_FILE=docker-compose.release.yml:docker-compose.proxy.yml                 # behind your own proxy
+#   # (not with -f and --profile: they don't reach the supervisor, whose updates and rollbacks then use another list,
+#   # nor caddy, which then won't believe cloudflared's CF-Connecting-IP: docker/edge-peers.sh)
+#   docker compose up -d
 #
 # Pin SERVER_VERSION/WEB_VERSION/SUPERVISOR_VERSION in .env for production; they default to :latest. The quick start
 # and every update pin them by digest from the signed release manifest (0.5.0@sha256:…: docker pulls by the digest).

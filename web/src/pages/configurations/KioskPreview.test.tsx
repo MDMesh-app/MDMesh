@@ -1,7 +1,7 @@
 // The kiosk background preview: one large view at device scale with Phone/Tablet and Rotate, four thumbnails that
 // select it, the dim and plates the agent draws, and the readouts; free of axe violations. jsdom has no canvas, so the
 // image's cells come from a colour function of the position in image pixels.
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import axe from 'axe-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { KioskBackgroundImageInfo } from '../../api/configurations';
@@ -29,6 +29,7 @@ vi.mock('../../data/kioskScrim', async (importOriginal) => {
 
 import { kioskColours } from '../../data/kioskScrim';
 import { KioskBackgroundPreview, ROTATE_MS, THUMBNAILS, readout, thumbnailGrid, viewLabel } from './KioskPreview';
+import { render } from '../../test/render';
 
 const INFO: KioskBackgroundImageInfo = {
   fileId: 42,

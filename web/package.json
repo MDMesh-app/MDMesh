@@ -13,7 +13,10 @@
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
     "test": "vitest run",
-    "lint:css": "stylelint \"src/**/*.css\""
+    "lint:css": "stylelint \"src/**/*.css\"",
+    "i18n:extract": "formatjs extract \"src/**/*.{ts,tsx}\" --ignore \"src/**/*.test.*\" --ignore \"src/**/*.d.ts\" --out-file src/i18n/locales/en.json --throws",
+    "i18n:pseudo": "formatjs compile src/i18n/locales/en.json --ast --pseudo-locale en-XA --out-file src/i18n/pseudo/en-XA.json",
+    "i18n:baseline": "vitest run src/i18n/literals.test.ts"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "5.3.0",
@@ -28,10 +31,12 @@
     "qrcode": "^1.5.4",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
+    "react-intl": "12.1.7",
     "react-router": "^8.5.1",
     "spark-md5": "^3.0.2"
   },
   "devDependencies": {
+    "@formatjs/cli": "6.18.1",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/react": "^16.3.3",
     "@types/leaflet": "^1.9.22",
@@ -45,7 +50,7 @@
     "jsdom": "^31.0.1",
     "stylelint": "^18.0.0",
     "stylelint-declaration-strict-value": "^1.13.0",
-    "typescript": "^7.0.2",
+    "typescript": "7.0.2",
     "vite": "^8.3.8",
     "vitest": "^5.1.0"
   }

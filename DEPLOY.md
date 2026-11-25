@@ -321,12 +321,14 @@ The stack runs `postgres`, `server` (Tomcat), `caddy` (the edge, serving the con
 recovery page) and, in tunnel mode, `cloudflared`. Postgres and the server publish **no** host ports.
 
 ```bash
-docker compose --profile cloudflare up -d                                   # cloudflare mode
-docker compose -f docker-compose.yml -f docker-compose.domain.yml up -d     # own-domain mode
-docker compose -f docker-compose.yml -f docker-compose.proxy.yml up -d      # behind your own proxy
+docker compose up -d
 docker compose logs -f server
 docker compose down
 ```
+
+Each reads the mode from `.env`: `COMPOSE_FILE` and `COMPOSE_PROFILES`, as [each mode](#how-phones-reach-mdmesh) shows
+them. Starting the stack by hand, set them there too, not with `-f` or `--profile`: the supervisor gets them from
+`.env`, so an update or rollback in the console would otherwise recreate the edge without its ports.
 
 Re-runs reuse `.env` and never re-seed a database that holds data. `./setup.sh --reset` regenerates `.env` and its
 secrets. It is only safe on an empty database, so run `docker compose down -v` first, which deletes all data.

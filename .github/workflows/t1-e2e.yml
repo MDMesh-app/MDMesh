@@ -97,6 +97,37 @@ jobs:
           API=$(docker compose --env-file docker/dev.env port server 8080)
           scripts/agent-v1-e2e.sh "http://$API"
 
+      # A database whose settings still say twoFactor (carried over from Headwind): the column is put back as true, its
+      # drop forgotten, and the server restarted. The drop runs again; the console and the API sign in. Before the drop,
+      # the console's first request after sign-in and every API sign-in were refused.
+      - name: Sign-in with a carried-over two-factor setting
+        run: |
+          DC=(docker compose --env-file docker/dev.env)
+          PSQL=("${DC[@]}" exec -T postgres psql -U mdmesh -d mdmesh -v ON_ERROR_STOP=1 -tA)
+          "${PSQL[@]}" -c "ALTER TABLE settings ADD COLUMN twoFactor BOOLEAN NOT NULL DEFAULT false" \
+            -c "DELETE FROM databasechangelog WHERE id = '26.11.23-settings-twoFactor-drop'"
+          set_rows=$("${PSQL[@]}" -c "WITH s AS (UPDATE settings SET twoFactor = true RETURNING 1) SELECT count(*) FROM s")
+          [ "$set_rows" -gt 0 ] || { echo "::error::no settings row to set twoFactor on"; exit 1; }
+          "${DC[@]}" restart server
+          API="http://$("${DC[@]}" port server 8080)"
+          up=
+          for _ in $(seq 1 36); do
+            curl -fs -o "$RUNNER_TEMP/options" -m 5 "$API/rest/public/auth/options" && { up=1; break; }
+            sleep 5
+          done
+          [ -n "$up" ] || { echo "::error::the server didn't come back within 3 minutes of its restart"; exit 1; }
+          test "$("${PSQL[@]}" -c "SELECT count(*) FROM information_schema.columns
+            WHERE table_name = 'settings' AND column_name = 'twofactor'")" = 0
+          MD5=$(printf '%s' "$ADMIN_PW" | md5sum | awk '{print toupper($1)}')
+          BODY="{\"login\":\"admin\",\"password\":\"$MD5\"}"
+          curl -fsS -c "$RUNNER_TEMP/cj" -H 'Content-Type: application/json' -d "$BODY" -o "$RUNNER_TEMP/login" \
+            "$API/rest/public/auth/login"
+          grep -q '"status":"OK"' "$RUNNER_TEMP/login"
+          curl -fsS -b "$RUNNER_TEMP/cj" -o "$RUNNER_TEMP/console" "$API/rest/private/users/current"
+          TOKEN=$(curl -fsS -H 'Content-Type: application/json' -d "$BODY" "$API/rest/public/jwt/login" \
+            | python3 -c 'import sys,json; print(json.load(sys.stdin)["id_token"])')
+          curl -fsS -H "Authorization: Bearer $TOKEN" -o "$RUNNER_TEMP/api" "$API/rest/private/users/current"
+
       - name: Collect logs
         if: failure() || cancelled()   # cancelled covers the job timeout
         run: |
@@ -157,6 +188,16 @@ jobs:
           df -h / /var/lib/docker || df -h /
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
           df -h /
+      # The Maven repository T0's server entry (setup-java, cache: maven) saved for these poms; the server image builds
+      # start from it. Restore only: no Maven runs on this runner, so a save from here would be empty, under T0's key.
+      # The path is T0's as written there (it is part of the cache's identity). No entry: an empty directory, and Maven
+      # downloads everything.
+      - name: Empty Maven repository
+        run: mkdir -p /home/runner/.m2/repository
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: /home/runner/.m2/repository
+          key: setup-java-Linux-x64-maven-${{ hashFiles('**/pom.xml') }}
       # build TAG CONTEXT: the three images, quietly; one that fails is built once more, a minute later, with its output
       # shown, so the cause is in the log (a download that failed, say Maven Central's 429 to a busy runner address, goes
       # through then; a real error shows).
@@ -164,9 +205,11 @@ jobs:
         run: |
           build() {
             for n in server web supervisor; do
-              docker build -q -f "$2/docker/$n.Dockerfile" -t "ghcr.io/local/mdmesh-$n:$1" "$2" \
+              docker build -q --build-context m2=/home/runner/.m2/repository \
+                -f "$2/docker/$n.Dockerfile" -t "ghcr.io/local/mdmesh-$n:$1" "$2" \
                 || { echo "::warning::the $n image failed to build; once more in a minute, with its output"; sleep 60
-                     docker build --progress=plain -f "$2/docker/$n.Dockerfile" -t "ghcr.io/local/mdmesh-$n:$1" "$2"; }
+                     docker build --progress=plain --build-context m2=/home/runner/.m2/repository \
+                       -f "$2/docker/$n.Dockerfile" -t "ghcr.io/local/mdmesh-$n:$1" "$2"; }
             done
           }
           declare -f build > "$RUNNER_TEMP/build.sh"

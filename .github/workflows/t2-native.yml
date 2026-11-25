@@ -106,6 +106,9 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     env:
+      # The Ubuntu guest's apt mirror (tests/native/Dockerfile): Azure's, next to the runner, as on an Azure VM. The public
+      # archive alone has been slow enough to run ubuntu-24.04's fresh/update/upgrade into the 45-minute timeout.
+      MDMESH_TEST_UBUNTU_MIRROR: http://azure.archive.ubuntu.com/ubuntu/
       T2_FROM_REF: ${{ matrix.from-ref || needs.plan.outputs.from-ref }}
       DISTRO: ${{ matrix.distro }}
       SCENARIO: ${{ matrix.scenario }}

@@ -285,16 +285,41 @@ exited or credentials cleared while the older agent ran.
   Updates**. That update pins `SUPERVISOR_VERSION` to the release's supervisor by digest again. With automatic
   updates on (`AUTO_UPDATE=1`), do this as soon as you can: until then the old supervisor may apply the release
   itself, with its 180-second limit.
-- **Going back to 0.5.1 without a restore** (`--allow-downgrade`) works: 0.5.1 starts on the new database unchanged.
-  It keeps the links, so in 0.5.1 too, deleting a device deletes its history and renaming one carries it. A check-in
-  or command that races a delete gets a server error in 0.5.1 (this release answers it as for an unknown device).
+- **The unused two-factor setting is removed.** MDMesh has no second sign-in step, so an organization whose settings
+  had two-factor sign-in on (a database carried over from Headwind MDM, or edited by hand) couldn't sign in at all.
+  On its first start the server drops the setting. Those accounts then sign in with their password alone (no
+  authenticator code is asked for), and get API tokens again. Two-factor sign-in for each user is planned for a later
+  release. **Roll back**
+  restores the old database, setting included, so such an organization can't sign in again until it updates again.
+- **Going back to 0.5.1 without a restore** (`--allow-downgrade`, or a native install's WAR swapped back) works: 0.5.1
+  starts on the new database unchanged. It keeps the links, so in 0.5.1 too, deleting a device deletes its history and
+  renaming one carries it. A check-in or command that races a delete gets a server error in 0.5.1 (this release
+  answers it as for an unknown device). The two-factor setting stays off: 0.5.1 reads it as off once it is gone.
 - **The server first, then its agent.** New devices and rollouts get the agent of the release the server runs, never
   a newer one. Update the server, then roll out its agent from **Settings → Agent rollout**. After a rollback, a
   rollout of the newer agent stops: cancel it, or update the server again. A server whose release isn't published
   (a development build), or has no agent in its manifest, gets the latest release's agent.
 - **Existing installs keep their hosting mode.** Cloudflare Tunnel and own-domain installs, quick start or from
-  source, keep their mode, `.env` and compose files through the update. Answers files and `MDMESH_MODE=1` or `2` mean
-  what they meant before; `3` (or `proxy`) is the new mode. Native is unchanged.
+  source, keep their mode and the `.env` an installer wrote through the update. Answers files and `MDMESH_MODE=1` or
+  `2` mean what they meant before; `3` (or `proxy`) is the new mode. Native is unchanged.
+- **From source, with `COMPOSE_FILE` or `COMPOSE_PROFILES` edited by hand**: `./setup.sh` and `--update` now start the
+  files `COMPOSE_FILE` names (without one, as before). 0.5.x, outside the tunnel, always started `docker-compose.yml` and
+  `docker-compose.domain.yml`, whatever it said. So on your own domain, with a list that leaves
+  `docker-compose.domain.yml` out and publishes neither port itself, the edge would lose ports 80 and 443. Both commands
+  then stop, before any container is touched, and show the line for `.env`: your list with the domain file added, for
+  example
+
+  ```bash
+  COMPOSE_FILE='docker-compose.yml:docker-compose.override.yml:docker-compose.domain.yml'
+  ```
+
+  Set it and run `./setup.sh` (or `./setup.sh --update`) again, before any update or rollback in the console: the
+  supervisor keeps the old list until that run recreates it, and would close the ports. At the stop the clone is
+  already on the new release, and the containers still run the old one. If the edge should give up its ports,
+  `docker compose rm -sf caddy` and run it again (phones can't reach MDMesh until that run ends). With such a
+  list, a run that ends with neither port found published says so in its last lines. With `COMPOSE_PROFILES` listing
+  `cloudflare` and others (`cloudflare,backup`), 0.5.x published 80/443 as well as running the tunnel; now it is a
+  tunnel install, and they close unless the files `COMPOSE_FILE` lists publish them.
 - **New: behind your own proxy** (Docker). For a machine where nginx, Apache, Caddy or Traefik already does HTTPS
   ([DEPLOY](../DEPLOY.md#3-behind-your-own-proxy)). To move an existing install to it, update to 0.6.0 first, then
   [change the hosting mode](#changing-the-hosting-mode).
@@ -327,6 +352,21 @@ tags or publishes anything, but either may leave untagged images in your GHCR pa
   needs a paid Arm runner under that label, or drops Arm64: remove `arm64` from the `images` job's `matrix.arch` and
   `linux/arm64` from the release job's `PLATFORMS`, in the same commit. Its releases then serve x86_64 only, and its
   quick start and updater say so on Arm64.
+
+For forks with their own server code: `Settings.twoFactor`, `User.twoFactor`, `UnsecureDAO.isTwoFactorRequired` and
+`AuthFilter.twoFactorNeeded` are gone, so code that used them no longer compiles. There is no replacement until
+two-factor sign-in is built.
+
+### v0.6.0 for forks that change the console
+
+New text in core console files should be a react-intl message; `npm test` fails on most text that isn't
+(`web/src/i18n/literals.test.ts` names the file and lists its strings). That includes text you added before merging
+this release: make it a message ([web/README.md](../web/README.md#translatable-text)), or raise that file's count in
+`web/src/i18n/literals-baseline.json`. If you removed core text, it fails with "fewer literals": run
+`npm run i18n:baseline` in `web/`. Extensions in `web/src/extensions/` are not checked.
+
+A test that ends with a `stubApi` call still unanswered now fails, and `stubApi`'s answers arrive a moment later: wait
+with `findBy…` or `settled()` (in `web/src/test/console.tsx`), not `act(async () => {})`.
 
 ### v0.5.1
 

@@ -32,6 +32,10 @@ export interface DeviceView {
   /** Last sync time, ms since epoch. */
   lastUpdate?: number;
   imei?: string;
+  /** Legacy agent info. */
+  info?: { imei?: string };
+  /** IMEIs the current agent reported in its last check-in, one per SIM slot. */
+  reportedImeis?: string[];
   phone?: string;
   publicIp?: string;
   serial?: string;

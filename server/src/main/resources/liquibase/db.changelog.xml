@@ -3306,4 +3306,37 @@
         <rollback>ALTER TABLE settings ADD COLUMN IF NOT EXISTS twoFactor BOOLEAN NOT NULL DEFAULT false;</rollback>
     </changeSet>
 
+    <changeSet id="26.11.23-deviceState-reportedImeis" author="lared3294" context="common">
+        <comment>Column,new: device_state#reportedImeis, the IMEIs in the telemetry of the device's last check-in
+            (identity.imei: one per SIM slot), so the device search matches them without reading the telemetry.
+            The check-in writes it from the telemetry it has already parsed: string elements of 1-32 printable ASCII
+            characters, the first 4. NULL when there are none. Filled here for every device that has reported, so a
+            device that has been offline since the update is found too. A telemetry text PostgreSQL can't read as
+            JSONB (an escaped NUL, a lone surrogate, a number out of range) leaves that device NULL until it next
+            checks in; it can't fail the update. Rows without "imei" in their text aren't parsed at all.</comment>
+        <sql splitStatements="false"><![CDATA[
+            ALTER TABLE device_state ADD COLUMN reportedImeis TEXT[];
+            CREATE FUNCTION pg_temp.mdm_reported_imeis(snapshot TEXT) RETURNS TEXT[] LANGUAGE plpgsql AS $$
+            DECLARE
+                imeis JSONB;
+            BEGIN
+                imeis := snapshot::jsonb #> '{identity,imei}';
+                IF jsonb_typeof(imeis) IS DISTINCT FROM 'array' THEN
+                    RETURN NULL;
+                END IF;
+                RETURN (SELECT array_agg(v ORDER BY n) FROM (
+                    SELECT e #>> '{}' AS v, n FROM jsonb_array_elements(imeis) WITH ORDINALITY AS a(e, n)
+                    WHERE jsonb_typeof(e) = 'string' AND e #>> '{}' ~ '^[!-~]{1,32}$'
+                    ORDER BY n LIMIT 4) first);
+            EXCEPTION WHEN data_exception OR program_limit_exceeded THEN
+                RETURN NULL;
+            END;
+            $$;
+            UPDATE device_state SET reportedImeis = pg_temp.mdm_reported_imeis(telemetry)
+            WHERE telemetry LIKE '%"imei"%';
+            DROP FUNCTION pg_temp.mdm_reported_imeis(TEXT);
+        ]]></sql>
+        <rollback>ALTER TABLE device_state DROP COLUMN reportedImeis;</rollback>
+    </changeSet>
+
 </databaseChangeLog>

@@ -114,6 +114,12 @@ public class AgentResource {
     private static final int MAX_AGENT_VERSION_CHARS = 64;
     private static final int MAX_POWER_MODE_CHARS = 16;
     private static final int MAX_TELEMETRY_CHARS = 256 * 1024;
+    /**
+     * device_state.reportedImeis: the first 4 identity.imei strings of 1-32 printable ASCII characters (one IMEI per
+     * SIM slot). The update that added the column fills it from stored telemetry by the same rules.
+     */
+    private static final int MAX_REPORTED_IMEIS = 4;
+    private static final Pattern REPORTED_IMEI = Pattern.compile("[!-~]{1,32}");
     // Each result is one UPDATE. Current agents send at most 1000 per check-in; the rest of a backlog follows on the
     // next ones. Past this count the server stops and reports how many it took (resultsAccepted), so the agent
     // resends the remainder rather than losing it. Older agents that send everything at once never get near it.
@@ -471,6 +477,7 @@ public class AgentResource {
                 telJson = null;
             }
             row.setTelemetry(telJson);
+            row.setReportedImeis(reportedImeis(tel));
             row.setUpdatedAt(System.currentTimeMillis());
             commandDAO.upsertState(row);
             // Mirror the Android version into the device row (infojson) so the device LIST — which
@@ -891,6 +898,27 @@ public class AgentResource {
         if (!PROVIDER_NAME.matcher(loc.get("provider").asText()).matches()) {
             ((com.fasterxml.jackson.databind.node.ObjectNode) loc).remove("provider");
         }
+    }
+
+    /**
+     * The IMEIs this check-in's telemetry reports, for the device search; null when there are none. Read from the
+     * telemetry as sent, so a device whose snapshot is too large to store is still found by its IMEI.
+     */
+    static String[] reportedImeis(JsonNode tel) {
+        JsonNode imeis = tel == null ? null : tel.path("identity").path("imei");
+        if (imeis == null || !imeis.isArray()) {
+            return null;
+        }
+        List<String> found = new ArrayList<>();
+        for (JsonNode imei : imeis) {
+            if (imei.isTextual() && REPORTED_IMEI.matcher(imei.textValue()).matches()) {
+                found.add(imei.textValue());
+                if (found.size() == MAX_REPORTED_IMEIS) {
+                    break;
+                }
+            }
+        }
+        return found.isEmpty() ? null : found.toArray(new String[0]);
     }
 
     /** Pull dynamic.location out of the telemetry JSON and append it to the device's trail. */

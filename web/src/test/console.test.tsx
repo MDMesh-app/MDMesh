@@ -107,6 +107,11 @@ describe('a test that ends before its page has loaded', () => {
     expect(screen.getByText('done')).toBeTruthy();
   });
 
+  it('passes one that awaited a refused call', async () => {
+    refuse();
+    await expect(apiClient.get('/x')).rejects.toThrow('HTTP 500');
+  });
+
   // Passes only because the guard fails it: take the guard out, and this reads "Expect test to fail".
   it.fails('fails', () => {
     stubApi();
@@ -118,11 +123,7 @@ describe('a test that ends before its page has loaded', () => {
     void fetch('/held');
   });
 
-  it('passes one that awaited a refused call', async () => {
-    refuse();
-    await expect(apiClient.get('/x')).rejects.toThrow('HTTP 500');
-  });
-
+  // Right after the test above: a stubApi() in between would start a fresh count by itself.
   it('leaves the next test clean', () => {
     expect(pendingCalls()).toBe(0);
   });

@@ -903,6 +903,16 @@ describe('enrollment setup settings', () => {
     expect(await screen.findByText(/PROVISIONING_WIFI_SSID: not used\. Wi-Fi comes from the setup Wi-Fi above/)).toBeTruthy();
   });
 
+  it('opens a configuration whose setting holds an array with no unsaved change, also after Discard', async () => {
+    open({ config: { qrParameters: '"android.app.extra.PROVISIONING_LOCALE": []' } });
+    await screen.findByRole('switch', { name: 'Skip intro screens' });
+    expect(screen.queryByText(/unsaved change/)).toBeNull();
+    fireEvent.click(screen.getByRole('switch', { name: 'Skip intro screens' }));
+    expect(await screen.findByText('1 unsaved change')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    await waitFor(() => expect(screen.queryByText(/unsaved change/)).toBeNull());
+  });
+
   it('says on its row when a setting value is not one Android takes (a Headwind fr-FR)', async () => {
     open({ config: { qrParameters: '"android.app.extra.PROVISIONING_LOCALE": "fr-FR"' } });
     expect(await screen.findByText(/“fr-FR” isn't a value Android takes here/)).toBeTruthy();

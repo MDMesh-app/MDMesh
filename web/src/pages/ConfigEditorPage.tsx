@@ -440,9 +440,14 @@ function changedKeys(before: Configuration, after: Configuration, typed: TypedQr
       if (norm(qrRestOf(before, typed) || null) !== norm(qrRestOf(after, typed) || null)) out.add(f.key);
       continue;
     }
-    const was = f.qrKey ? qrSettingOf(before, f.qrKey, typed) : before[f.key];
-    const is = f.qrKey ? qrSettingOf(after, f.qrKey, typed) : after[f.key];
-    if (norm(was) !== norm(is)) out.add(f.key);
+    if (f.qrKey) {
+      // Parsed from text: compare values, not identities (an array or object parses anew each time).
+      const was = JSON.stringify(qrSettingOf(before, f.qrKey, typed));
+      const is = JSON.stringify(qrSettingOf(after, f.qrKey, typed));
+      if (was !== is) out.add(f.key);
+      continue;
+    }
+    if (norm(before[f.key]) !== norm(after[f.key])) out.add(f.key);
   }
   // The background image picker is a managed asset control rather than a generic CONFIG_FIELDS control.
   // Its identity must still participate in the editor's dirty state and save/apply flow.

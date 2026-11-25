@@ -274,6 +274,16 @@ const WIFI_PREFIX = 'android.app.extra.PROVISIONING_WIFI_';
 const EXTRA_WIFI_KEYS: ReadonlySet<string> = new Set([`${WIFI_PREFIX}HIDDEN`]);
 
 const isBool = (v: unknown) => typeof v === 'boolean';
+
+/** A time zone the browser's IANA database knows, aliases included (UTC, Etc/GMT+1, US/Eastern); not "Europe/Pariss". */
+function knownTimeZone(zone: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: zone });
+    return true;
+  } catch {
+    return false;
+  }
+}
 const shortText = (max: number, pattern?: RegExp) => (v: unknown) =>
   typeof v === 'string' && v.length > 0 && v.length <= max && (!pattern || pattern.test(v));
 
@@ -285,7 +295,7 @@ const shortText = (max: number, pattern?: RegExp) => (v: unknown) =>
 // A Map, not an object: a typed key such as "constructor" or "__proto__" must not find an inherited member.
 export const QR_EXTRA_TYPES: ReadonlyMap<string, (v: unknown) => boolean> = new Map<string, (v: unknown) => boolean>([
   ['PROVISIONING_LOCALE', shortText(16, /^[a-z]{2,3}(_[A-Z]{2})?$/)],
-  ['PROVISIONING_TIME_ZONE', shortText(64, /^[A-Za-z0-9_+\-/]+$/)],
+  ['PROVISIONING_TIME_ZONE', (v) => shortText(64, /^[A-Za-z0-9_+\-/]+$/)(v) && knownTimeZone(v as string)],
   ['PROVISIONING_SKIP_EDUCATION_SCREENS', isBool],
   ['PROVISIONING_USE_MOBILE_DATA', isBool],
   ['PROVISIONING_WIFI_HIDDEN', isBool],

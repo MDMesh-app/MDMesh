@@ -365,3 +365,12 @@ describe('review: setting values Android does not take', () => {
     expect(qrSettingValueOk('constructor', 'x')).toBe(false);
   });
 });
+
+describe('review: time zones Android takes', () => {
+  it('accepts IANA names and aliases, and rejects a misspelt one', () => {
+    for (const z of ['Europe/Paris', 'UTC', 'Etc/GMT+1', 'America/Argentina/Buenos_Aires']) {
+      expect(qrSettingValueOk('PROVISIONING_TIME_ZONE', z)).toBe(true);
+    }
+    expect(qrSettingValueOk('PROVISIONING_TIME_ZONE', 'Europe/Pariss')).toBe(false);
+  });
+});

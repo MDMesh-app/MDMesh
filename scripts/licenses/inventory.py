@@ -14,7 +14,7 @@ changes licence.
       allow, or under several with no recorded choice. Warn, without failing, where the lists and the inventory differ.
       Each option checks one part, so each build can check its own.
   scripts/licenses/inventory.py --write [--war WAR] [--web DIST] [--apk APK]
-      the same checks, then rewrite those parts' inventory from the artifacts
+      the same checks, then, if they all pass, rewrite those parts' inventory from the artifacts
 
 Messages are GitHub Actions annotations (::error:: and ::warning::), which read as plain lines elsewhere.
 """
@@ -91,8 +91,11 @@ def server(war):
 
 
 def offered(expression):
-    """The licences an SPDX expression offers a choice of: "(WTFPL OR MIT)" -> [WTFPL, MIT]. AND stays one item."""
+    """The licences an SPDX expression offers a choice of: "(WTFPL OR MIT)" -> [WTFPL, MIT]. One with an AND
+    stays whole, which no allowed licence matches, so it fails: a person has to read it."""
     expression = expression.strip()
+    if re.search(r"\bAND\b", expression):
+        return [expression]
     while expression.startswith("(") and expression.endswith(")"):
         expression = expression[1:-1].strip()
     return [part.strip() for part in expression.split(" OR ")] if expression else []
@@ -171,6 +174,7 @@ def main():
             part, name, offer, choice = line.split("\t")
             elections[(part, name)] = (offered(offer), choice)
 
+    staged = {}
     for name, read, artifact in parts:
         if not os.path.exists(artifact):
             error(f"{artifact} not found: build the {name} first (docs/licenses/policy.md)")
@@ -179,9 +183,7 @@ def main():
         rel = f"{INVENTORY}/{name}.tsv"
         path = os.path.join(ROOT, rel)
         if args.write:
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            with open(path, "w") as f:
-                f.write(new)
+            staged[path] = new
             continue
         try:
             with open(path) as f:
@@ -194,7 +196,12 @@ def main():
                 "ones against docs/licenses/policy.md, then update it (scripts/licenses/inventory.py --write)"
             )
             sys.stdout.writelines(difflib.unified_diff(old.splitlines(True), new.splitlines(True), rel, "build"))
-    return 1 if errors else 0
+    if errors:
+        return 1
+    for path, new in staged.items():
+        with open(path, "w") as f:
+            f.write(new)
+    return 0
 
 
 if __name__ == "__main__":

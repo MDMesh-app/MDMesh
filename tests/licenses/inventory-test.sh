@@ -6,7 +6,8 @@
 # Checks that it passes artifacts that match the policy, and fails: a jar the WAR's list leaves out (but not a module
 # of this repository, nor a classifier jar its list names), a listed jar the WAR doesn't hold, a missing NOTICE, a
 # component under a licence the allowlist doesn't allow, and one offered under several licences with no recorded
-# choice (a new version of an elected jar, say); and that a recorded choice is used. Needs: bash, python3.
+# choice (a new version of an elected jar, say); that a recorded choice is used; and that a failed --write writes
+# nothing. Needs: bash, python3.
 set -euo pipefail
 HERE=$(cd -P -- "$(dirname -- "$0")" && pwd)
 REPO=$(cd -P -- "$HERE/../.." && pwd)
@@ -85,6 +86,18 @@ printf '[%s,%s]' '{"name":"spark-md5","version":"3","identifier":"(WTFPL OR MIT)
 grep -qx 'spark-md5	MIT' "$WORK/repo/docs/licenses/inventory/web.tsv" || fail 'web: the recorded choice is not used'
 printf '[{"name":"dual","version":"1","identifier":"(MIT OR GPL-2.0-only)"}]' > "$WORK/dist/licenses/THIRD-PARTY.json"
 run 1 'web: dual is offered under MIT or GPL-2.0-only.*elections.tsv' 'web: no election' --web "$WORK/dist"
+
+# A failed check leaves the inventory alone.
+run 1 'web: dual is offered' 'web: failed write' --write --web "$WORK/dist"
+grep -qx 'spark-md5	MIT' "$WORK/repo/docs/licenses/inventory/web.tsv" || fail 'web: a failed --write changed the inventory'
+
+# An expression with an AND fails whole, even with a choice recorded for it.
+EXPR='(MIT OR Apache-2.0) AND (GPL-2.0-only OR GPL-3.0-only)'
+for expr in "$EXPR" 'MIT AND Apache-2.0'; do
+  printf 'web\tboth\t%s\tMIT\n' "$expr" > "$WORK/repo/docs/licenses/elections.tsv"
+  printf '[{"name":"both","version":"1","identifier":"%s"}]' "$expr" > "$WORK/dist/licenses/THIRD-PARTY.json"
+  run 1 'web: both is under .* AND .*allow' "web: $expr" --web "$WORK/dist"
+done
 
 # A recorded choice must be one of the licences offered.
 printf '# fixture\nweb\tdual\t(GPL-2.0-only OR GPL-3.0-only)\tMIT\n' > "$WORK/repo/docs/licenses/elections.tsv"

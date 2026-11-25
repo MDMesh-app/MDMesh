@@ -318,6 +318,7 @@ describe('list.column, list.rowAction, list.bulkAction on Devices', () => {
     ]);
     open('/devices', { registry: registryOf(broken) });
     await main().findByRole('link', { name: /Front desk/ });
+    await settled();
     expect(firstColumn('Throws')).toEqual(['—', '—']);
     expect(firstColumn('Object')).toEqual(['Error', 'Error']);
     expect(firstColumn('Device')).toEqual([expect.stringContaining('Front desk'), expect.stringContaining('Back office')]);
@@ -425,6 +426,7 @@ describe('list.column, list.rowAction, list.bulkAction on Devices', () => {
   it('puts an extension bulk action among core’s, and hands it the selected devices', async () => {
     open('/devices');
     await main().findByRole('link', { name: /Front desk/ });
+    await settled();
     fireEvent.click(main().getByRole('checkbox', { name: 'Select all on this page' }));
     await screen.findByRole('region', { name: 'Selection' });
     expect(bulkButtons()).toEqual(['Run action', 'Change configuration', 'Demo export', 'Delete']);

@@ -1,8 +1,9 @@
 // settled(): a test helper that has to hold until the page's loading is over, including a request that an earlier
-// answer's effect sends (no placeholder in between to wait on), and one whose body the app never reads.
+// answer's effect sends (no placeholder in between to wait on), and a refused one, whose body the app never reads.
 import { render, screen } from '@testing-library/react';
 import { useEffect, useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
+import { apiClient } from '../api/client';
 import { settled, stubApi } from './console';
 import { pendingCalls } from './pending';
 
@@ -24,6 +25,8 @@ function Chained() {
   return <p>{[first, second].filter(Boolean).join(' then ') || 'nothing yet'}</p>;
 }
 
+const refuse = () => stubApi().mockImplementation(async () => new Response('', { status: 500 }));
+
 describe('settled', () => {
   it('waits through a chain of requests, to the last answer set as state', async () => {
     stubApi((path) => (path === '/first' ? 'one' : 'two'));
@@ -32,11 +35,20 @@ describe('settled', () => {
     expect(screen.getByText('one then two')).toBeTruthy();
   });
 
-  it('counts an answer whose body is never read (an error status) once the app has had it', async () => {
-    const fetch = stubApi();
-    fetch.mockImplementation(async () => new Response('', { status: 500 }));
-    render(<p>page</p>);
-    void globalThis.fetch('/refused');
+  it('counts a refused call as answered, though its body is never read', async () => {
+    refuse();
+    void fetch('/refused');
+    await settled();
+  });
+
+  it('works after an answer that came under fake timers', async () => {
+    refuse();
+    vi.useFakeTimers();
+    try {
+      await expect(apiClient.get('/x')).rejects.toThrow('HTTP 500');
+    } finally {
+      vi.useRealTimers();
+    }
     await settled();
   });
 
@@ -104,6 +116,11 @@ describe('a test that ends before its page has loaded', () => {
   it.fails('fails on a call that is never answered', () => {
     stubApi().mockImplementation(() => new Promise(() => {}));
     void fetch('/held');
+  });
+
+  it('passes one that awaited a refused call', async () => {
+    refuse();
+    await expect(apiClient.get('/x')).rejects.toThrow('HTTP 500');
   });
 
   it('leaves the next test clean', () => {

@@ -173,7 +173,6 @@ describe('AuthProvider: other tabs', () => {
   it('ignores other keys', async () => {
     stubApi();
     const { result } = signedInAs(ROLES.admin);
-    await settled();
     act(() => window.dispatchEvent(new StorageEvent('storage', { key: 'mdmesh-theme', newValue: 'dark' })));
     await settled();
     expect(result.current.user).toEqual(ROLES.admin);

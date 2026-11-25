@@ -30,6 +30,8 @@ Upgrading
   ([UPGRADING.md](docs/UPGRADING.md#v060-for-forks)).
 - Forks with console extensions: an extension's own test that ends with an API call still unanswered now fails.
   End it with `await settled()`, new in `@mdmesh/console/testing` ([EXTENDING.md](web/EXTENDING.md#testing)).
+  `stubApi`'s answers now arrive a moment later: wait with `findBy…` or `settled()`, not `act(async () => {})`. The
+  same goes for tests of your own in core ([UPGRADING.md](docs/UPGRADING.md#v060-for-forks-that-change-the-console)).
 
 Heads-up
 - The edge sends HSTS for a request that came in over HTTP only when a trusted peer says `X-Forwarded-Proto: https`

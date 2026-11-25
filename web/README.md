@@ -53,6 +53,44 @@ A fork adds to the console in `src/extensions/<id>/` and to the server in `plugi
 `npm run dev` also serves a component gallery at `/_gallery`, behind sign-in like every console page (production
 builds include it only with `VITE_GALLERY=1`).
 
+## Translatable text
+
+Console text is written as [react-intl](https://formatjs.github.io/docs/react-intl) messages, with an explicit id and
+the English beside it in the code:
+
+```tsx
+const messages = defineMessages({
+  title: { id: 'devices.list.title', defaultMessage: 'Devices' },
+});
+<PageHeader title={intl.formatMessage(messages.title)} />            // a string prop (useIntl())
+<FormattedMessage id="devices.list.empty" defaultMessage="No devices yet" />   // JSX text
+```
+
+Ids are lowerCamel segments joined by dots, at least two and usually three (`area.topic.purpose`), and never change
+with the wording. Plurals and variables use ICU
+(`{count, plural, one {# device} other {# devices}}`), not string concatenation. A destructive action's message gets a
+`description` starting `DESTRUCTIVE:`, so translators and reviewers see it.
+
+- `npm run i18n:extract` writes `src/i18n/locales/en.json`, the source for translators. Commit it with the change;
+  `npm test` fails while it is out of date, on a message without an id, and on a translation that adds ids or changes
+  a message's placeholders. A translation with messages missing passes and shows those in English.
+- `npm test` also counts the English written straight into the UI, per file (`src/i18n/literals.test.ts`): JSX text
+  and children, UI props (`title`, `label`, `header`, `aria-label`…) and capitalised sentences, not console or Error
+  messages. A file's count may not go up; the failure lists the file's strings with their lines. It is a count, so
+  converting one string makes room for another in the same file: review catches that. When a change turns text into
+  messages, `npm run i18n:baseline` lowers the counts in `src/i18n/literals-baseline.json`; commit that too.
+- Component tests render with `render` from `src/test/render.tsx` (Testing Library's, inside `IntlRoot`), and page
+  tests with `renderInConsole`, so a component whose text is a message finds its provider.
+- `npm run i18n:pseudo`, then `localStorage.setItem('mdmesh-locale', 'en-XA')` in the dev console's browser, shows
+  every message accented and padded; text that stays plain English isn't a message yet. Remove the key to go back.
+
+Two things to know:
+- The console's locale is a language (`en`), not a region: an en-GB browser gets `en`, so dates and numbers formatted
+  through react-intl come out US-style. Passing the browser's full tag when its language matches is for later.
+- `formatjs` (extract, compile, verify) is a native binary, published for Linux (x64 and arm64, glibc and musl),
+  macOS and Windows, with no JavaScript fallback; `npm ci --omit=optional` leaves it out. The production build doesn't
+  run it, only `npm test` and the `i18n:*` scripts do.
+
 ## How the dev server reaches the API
 
 Sign-in is session-cookie based (`JSESSIONID`), so the console has to be same-origin with the API. The Vite dev

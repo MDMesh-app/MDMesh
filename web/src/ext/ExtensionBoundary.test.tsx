@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, screen, within } from '@testing-library/react';
 import { createElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { registryOf } from '../test/console';
@@ -7,6 +7,7 @@ import { PageErrorBoundary } from '../ui/PageErrorBoundary';
 import { ExtensionBoundary } from './ExtensionBoundary';
 import type { SlotEntry } from './registry';
 import { defineExtension, lazyComponent, type OverviewCardContribution } from './types';
+import { render } from '../test/render';
 
 let crash = true;
 function Flaky() {

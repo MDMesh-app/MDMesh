@@ -1,6 +1,7 @@
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { Notice } from './Card';
+import { render } from '../test/render';
 
 describe('Notice', () => {
   it('is named by its title, or by aria-label when one is given', () => {

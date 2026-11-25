@@ -8,8 +8,12 @@ it, so what this record says about a proprietary product and keeping our code cl
 obligations to the upstream code (headers, `NOTICE`, change notices, no use of the Headwind marks) still do;
 [NOTICE](../../NOTICE) has the current position.
 
-**Amended (2026-11-23):** The dependency licence scan
-(obligation 5) now runs in every build; the legal sign-off it also asks for is still open.
+**Amended (2026-11-23):** Where the record below says that some agent v1 endpoints carry the upstream header, that new
+files need no header (obligation 1) and that retained server files carry no change notice yet (obligation 3), it no
+longer applies: files written for MDMesh, the agent v1 endpoints among them, carry the MDMesh header, and every kept
+file MDMesh changed says so, checked in CI ([docs/licenses/upstream-files.tsv](../licenses/upstream-files.tsv)). The
+dependency licence scan (obligation 5) now runs in every build; it found one jar offered only under the LGPL (SpotBugs'
+annotations), which MDMesh no longer ships. The legal sign-off obligation 5 also asks for is still open.
 [docs/licenses/policy.md](../licenses/policy.md) records the allowed licences and the choices made for components
 offered under several. Each part of MDMesh ships LICENSE, NOTICE and its third-party list, and NOTICE carries the
 pointers to, and a written offer for, the source of the GPL software in the images and the agent (each release

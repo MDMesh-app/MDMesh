@@ -73,7 +73,7 @@ org.glassfish.hk2:guice-bridge	EPL-2.0
 org.glassfish.hk2:hk2-api	CDDL-1.1
 org.glassfish.hk2:hk2-locator	CDDL-1.1
 org.glassfish.hk2:hk2-utils	CDDL-1.1
-org.glassfish.hk2:osgi-resource-locator	CDDL-1.1
+org.glassfish.hk2:osgi-resource-locator	CDDL-1.0
 org.glassfish.jersey.bundles.repackaged:jersey-guava	CDDL-1.1
 org.glassfish.jersey.containers:jersey-container-servlet	CDDL-1.1
 org.glassfish.jersey.containers:jersey-container-servlet-core	CDDL-1.1

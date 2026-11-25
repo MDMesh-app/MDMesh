@@ -86,7 +86,8 @@ Where a component is offered under several licences, MDMesh uses it under this o
 
 | Component | Offered under | MDMesh uses it under |
 |---|---|---|
-| Jersey 2.25.1, HK2 2.5 (api, locator, utils, aopalliance-repackaged, javax.inject), osgi-resource-locator, javax.ws.rs-api 2.0.1, JAXB 2.2.11 (api, core, impl), javax.annotation-api 1.2, mimepull | CDDL-1.1 or GPL-2.0 with the Classpath Exception | CDDL-1.1 |
+| Jersey 2.25.1, HK2 2.5 (api, locator, utils, aopalliance-repackaged, javax.inject), javax.ws.rs-api 2.0.1, JAXB 2.2.11 (api, core, impl), javax.annotation-api 1.2, mimepull | CDDL-1.1 or GPL-2.0 with the Classpath Exception | CDDL-1.1 |
+| osgi-resource-locator 1.0.1 | CDDL-1.0 or GPL-2.0 with the Classpath Exception | CDDL-1.0 |
 | HK2 guice-bridge 2.6.1, jakarta.inject 2.6.1 (HK2), Jakarta Messaging API 2.0.3 | EPL-2.0 or GPL-2.0 with the Classpath Exception | EPL-2.0 |
 | Jakarta Mail 1.6.8 | EDL-1.0, EPL-2.0 or GPL-2.0 with the Classpath Exception | EDL-1.0 (BSD-3-Clause) |
 | Javassist 3.20.0 | MPL-1.1, LGPL-2.1 or Apache-2.0 | Apache-2.0 |

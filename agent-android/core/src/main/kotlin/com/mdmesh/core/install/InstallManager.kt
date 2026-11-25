@@ -36,7 +36,6 @@ import android.os.Process
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import com.mdmesh.core.di.DownloadHttpClient
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -180,7 +179,6 @@ class InstallManager @Inject constructor(
         try {
             for (part in parts) {
                 val file = runCatching { obtainPart(part, downloaded) }
-                    .onFailure { if (it is CancellationException) throw it }
                     .getOrElse { return InstallOutcome.Failure(null, "apk fetch failed: ${it.message}") }
                 fetched += file
                 part.sha256?.trim()?.let { expected ->
@@ -193,7 +191,6 @@ class InstallManager @Inject constructor(
 
             // 3. Create + write EVERY part into ONE session + commit, awaiting the broadcast result.
             val outcome = runCatching { commitInstall(req.packageName, fetched) }
-                .onFailure { if (it is CancellationException) throw it }
                 .getOrElse { return InstallOutcome.Failure(null, "install session error: ${it.message}") }
 
             // 4. Optionally launch the app on success.
@@ -233,8 +230,6 @@ class InstallManager @Inject constructor(
             packageInstaller.uninstall(packageName, resultSender(sessionId).intentSender)
             resultBus.await(sessionId, RESULT_TIMEOUT_MS)?.let(::mapResult)
                 ?: InstallOutcome.Failure(null, "uninstall result timed out")
-        } catch (e: CancellationException) {
-            throw e
         } catch (e: Exception) {
             InstallOutcome.Failure(null, "uninstall error: ${e.message}")
         }

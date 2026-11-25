@@ -18,9 +18,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -271,8 +269,6 @@ class CheckInCoordinator @Inject constructor(
             // Record each command outcome as a timeline event (flushed next cycle).
             eventSink.record(EventType.COMMAND_RESULT, "${result.commandId}:${result.status}")
         }
-        // Cancelled meanwhile: the dispatcher gave every command a result, saved above without suspending. Now stop.
-        currentCoroutineContext().ensureActive()
         return data.commands.isNotEmpty()
     }
 }

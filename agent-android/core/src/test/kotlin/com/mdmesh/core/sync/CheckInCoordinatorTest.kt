@@ -476,34 +476,6 @@ class CheckInCoordinatorTest {
     }
 
     @Test
-    fun `a cycle stopped while a command runs reports every command, and stays stopped`() = runTest {
-        val hang = CommandEnvelope(commandId = "c1", issuedAt = "2026-01-01T00:00:00Z", type = "test.hang")
-        val api = FakeMdmApi().apply {
-            checkInResponse = ResponseEnvelope(
-                status = "OK",
-                data = AgentCheckInResponse(commands = listOf(hang, command("c2"))),
-            )
-        }
-        val backup = FakeBackup()
-        val coordinator = coordinator(api, PendingResults(backup))
-        val running = launch { coordinator.runOnce() } // a worker WorkManager stops, or the service's scope
-        testScheduler.advanceUntilIdle()
-        val waiter = async { coordinator.runOrHandOff() }
-        testScheduler.advanceUntilIdle()
-
-        running.cancel()
-        testScheduler.advanceUntilIdle()
-
-        assertEquals(
-            listOf("c1" to CommandDispatcher.INTERRUPTED, "c2" to null), // c2 doesn't wait: it ran
-            PendingResults(backup).drain().map { it.commandId to it.detail },
-        )
-        assertTrue(running.isCancelled)
-        assertEquals(CheckInOutcome.NOT_SERVED, waiter.await())
-        assertEquals("no trailing cycle", 1, api.checkInRequests.size)
-    }
-
-    @Test
     fun `a request that finds the lock held but no cycle open runs its own once it can`() = runTest {
         // The moment a holder opens or lets go: nothing to hand off to, so it must not count as served.
         val api = FakeMdmApi()

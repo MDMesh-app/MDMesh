@@ -117,9 +117,8 @@ Fixes
   older ones it dropped.
 - Check-ins: a device whose reported Android release, agent version or power mode the server can't store (too long,
   or with a control character) no longer fails every check-in; the server ignores that value and logs it.
-- Agent: a command Android interrupts (the check-in running it is stopped) shows as expired, and that it may have
-  taken effect, instead of as failed. Check-ins wait 30 seconds for a busy server instead of 10, and an app download
-  from an HTTPS address no longer follows a redirect to HTTP.
+- Agent: check-ins wait 30 seconds for a busy server's answer instead of 10, and an app download from an HTTPS address
+  no longer follows a redirect to HTTP (one from HTTP to HTTPS still works).
 - Enrollment and check-ins: a hardware id longer than 128 characters or with a control character is ignored, so the
   device enrolls and checks in without it. Before, one too long or holding a NUL failed the enrollment on every
   retry, and every check-in.

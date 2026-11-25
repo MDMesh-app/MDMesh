@@ -4,9 +4,6 @@ import com.mdmesh.core.command.handlers.PolicyApplyHandler
 import com.mdmesh.proto.CommandEnvelope
 import com.mdmesh.proto.CommandResult
 import com.mdmesh.proto.DeviceAction
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.isActive
 
 /**
  * Routes a [CommandEnvelope] to the [CommandHandler] registered for its `type`.
@@ -29,12 +26,6 @@ import kotlinx.coroutines.isActive
  * lost). A Block sent by `policy.apply` meanwhile is reported deferred and is not re-applied at the
  * hold's end: a `policy.apply` lasts only until the next `config.apply`, and that re-apply is one.
  * Another `device.wipe` runs: a lost device is always wiped.
- *
- * Stopped: when the check-in running the commands is cancelled (WorkManager stops its worker, the
- * service ends), a command whose handler the cancellation ends is reported `expired` ([INTERRUPTED]),
- * not `failed`: how far it got isn't known. The commands after it are still dispatched, since the
- * server doesn't send a delivered command again: a lock, a passcode reset or a wipe doesn't suspend, so
- * it takes effect. The caller rethrows the cancellation once it has every result.
  */
 class CommandDispatcher(
     handlers: List<CommandHandler>,
@@ -61,14 +52,8 @@ class CommandDispatcher(
         val handler = handlersByType[command.type]
             ?: return CommandResults.unsupported(command, "unknown command type: ${command.type}")
 
-        return runCatching { handler.handle(command) }.getOrElse {
-            // Any other cancellation is the handler's own (a time limit, say), and a failure like the rest.
-            if (it is CancellationException && !currentCoroutineContext().isActive) {
-                CommandResults.expired(command, INTERRUPTED)
-            } else {
-                CommandResults.failed(command, it.message ?: "handler threw")
-            }
-        }
+        return runCatching { handler.handle(command) }
+            .getOrElse { CommandResults.failed(command, it.message ?: "handler threw") }
     }
 
     private fun isExpired(command: CommandEnvelope): Boolean {
@@ -82,8 +67,6 @@ class CommandDispatcher(
 
     companion object {
         const val NOT_RUN_WIPING = "not run: a factory reset is under way"
-        const val INTERRUPTED = "the agent was stopped before this finished; it may have taken effect"
-
         val RUN_WHILE_WIPING = setOf(DeviceAction.WIPE, DeviceAction.CONFIG_APPLY, PolicyApplyHandler.TYPE)
     }
 }

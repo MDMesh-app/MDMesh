@@ -4,12 +4,7 @@ import com.mdmesh.policy.factoryreset.FactoryResetWipeHold
 import com.mdmesh.proto.CommandEnvelope
 import com.mdmesh.proto.CommandResult
 import com.mdmesh.proto.CommandStatus
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.awaitCancellation
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -126,61 +121,6 @@ class CommandDispatcherTest {
         assertEquals(CommandStatus.EXPIRED, within.status)
         assertEquals(CommandStatus.DONE, after.status)
         assertEquals(1, expired)
-    }
-
-    private class FuncHandler(override val type: String, val run: suspend (CommandEnvelope) -> CommandResult) :
-        CommandHandler {
-        override suspend fun handle(command: CommandEnvelope) = run(command)
-    }
-
-    /** Dispatches [types] one after the other in a job that is stopped while the first is running. */
-    private fun TestScope.dispatchStopped(dispatcher: CommandDispatcher, vararg types: String): List<CommandResult> {
-        val results = mutableListOf<CommandResult>()
-        val job = launch { types.forEach { results += dispatcher.dispatch(envelope(it).copy(commandId = it)) } }
-        testScheduler.runCurrent()
-        job.cancel()
-        testScheduler.advanceUntilIdle()
-        return results
-    }
-
-    /** Nothing sends them again: what a stopped check-in can still run must not be dropped for what it can't. */
-    @Test
-    fun `a stop ends the commands that wait, and the others in the batch still run`() = runTest {
-        val ran = mutableListOf<String>()
-        fun echo(type: String) = FuncHandler(type) { ran += type; CommandResults.done(it) }
-        val others = listOf("device.passcodeReset", "device.lock", "device.wipe")
-        val waiting = listOf("app.install", "app.uninstall").map { FuncHandler(it) { awaitCancellation() } }
-
-        val results = dispatchStopped(
-            CommandDispatcher(waiting + others.map(::echo)), "app.install", "app.uninstall", *others.toTypedArray(),
-        )
-
-        assertEquals(others, ran)
-        val interrupted = CommandStatus.EXPIRED to CommandDispatcher.INTERRUPTED
-        assertEquals(
-            listOf(interrupted, interrupted) + others.map { CommandStatus.DONE to null },
-            results.map { it.status to it.detail },
-        )
-    }
-
-    @Test
-    fun `a command that ended despite the stop keeps its own result`() = runTest {
-        for (failing in listOf(false, true)) {
-            val gate = CompletableDeferred<Unit>()
-            val handler = FuncHandler("kiosk.enter") {
-                runCatching { gate.await() } // stopped here, then it ends on its own
-                check(!failing) { "refused" }
-                CommandResults.done(it)
-            }
-            val result = dispatchStopped(CommandDispatcher(listOf(handler)), "kiosk.enter").single()
-            assertEquals(if (failing) CommandStatus.FAILED else CommandStatus.DONE, result.status)
-        }
-    }
-
-    @Test
-    fun `a handler's own time limit is its failure, not a stop`() = runTest {
-        val handler = FuncHandler("app.install") { withTimeout(1_000) { awaitCancellation() } }
-        assertEquals(CommandStatus.FAILED, CommandDispatcher(listOf(handler)).dispatch(envelope("app.install")).status)
     }
 
     @Test

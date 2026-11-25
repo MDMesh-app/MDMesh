@@ -13,14 +13,16 @@ import org.apache.ibatis.annotations.Update;
 public interface DeviceStateMapper {
 
     @Insert({"INSERT INTO device_state " +
-            "(deviceNumber, battery, charging, locked, kioskActive, androidRelease, lastBootAt, updatedAt, agentVersion, powerMode, telemetry, appliedConfigRevision, appliedConfigAt) " +
+            "(deviceNumber, battery, charging, locked, kioskActive, androidRelease, lastBootAt, updatedAt, agentVersion, powerMode, telemetry, reportedImeis, appliedConfigRevision, appliedConfigAt) " +
             "VALUES (#{deviceNumber}, #{battery}, #{charging}, #{locked}, #{kioskActive}, " +
-            "#{androidRelease}, #{lastBootAt}, #{updatedAt}, #{agentVersion}, #{powerMode}, #{telemetry}, #{appliedConfigRevision}, #{appliedConfigAt}) " +
+            "#{androidRelease}, #{lastBootAt}, #{updatedAt}, #{agentVersion}, #{powerMode}, #{telemetry}, " +
+            "#{reportedImeis,jdbcType=ARRAY,typeHandler=org.apache.ibatis.type.ArrayTypeHandler}, #{appliedConfigRevision}, #{appliedConfigAt}) " +
             "ON CONFLICT (deviceNumber) DO UPDATE SET " +
             "battery = EXCLUDED.battery, charging = EXCLUDED.charging, locked = EXCLUDED.locked, " +
             "kioskActive = EXCLUDED.kioskActive, androidRelease = EXCLUDED.androidRelease, " +
             "lastBootAt = EXCLUDED.lastBootAt, updatedAt = EXCLUDED.updatedAt, " +
             "agentVersion = EXCLUDED.agentVersion, powerMode = EXCLUDED.powerMode, telemetry = EXCLUDED.telemetry, " +
+            "reportedImeis = EXCLUDED.reportedImeis, " +
             // Keep the last known applied revision when a check-in omits it (state without config info).
             "appliedConfigRevision = COALESCE(EXCLUDED.appliedConfigRevision, device_state.appliedConfigRevision), " +
             "appliedConfigAt = CASE WHEN EXCLUDED.appliedConfigRevision IS NULL THEN device_state.appliedConfigAt " +

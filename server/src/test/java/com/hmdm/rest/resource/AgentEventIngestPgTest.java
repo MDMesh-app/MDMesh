@@ -3,6 +3,10 @@
  */
 package com.hmdm.rest.resource;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.inject.Guice;
 import com.google.inject.Inject;
 import com.google.inject.Injector;
@@ -40,6 +44,7 @@ import org.mybatis.guice.datasource.builtin.PooledDataSourceProvider;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
+import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -314,6 +319,76 @@ public class AgentEventIngestPgTest {
                 "SELECT " + field.getName() + " FROM " + schema + ".device_state")) {
             assertTrue(rs.next());
             return rs.getString(1);
+        }
+    }
+
+    @Test
+    public void aSnapshotJsonbCannotHoldIsStoredWholeAndItsImeisSearchable() throws Exception {
+        // Telemetry is stored as the text the agent sent. A value JSONB can't hold (an SSID is any bytes, so an
+        // escaped NUL is real) must not cost the device its snapshot, nor its IMEIs in the search.
+        JsonNodeFactory nodes = JsonNodeFactory.instance;
+        List<ObjectNode> incompatible = Arrays.asList(
+                nodes.objectNode().put("ssid", "a\0b"),
+                nodes.objectNode().put("bad\0key", "model"),
+                nodes.objectNode().put("value", new BigDecimal("1e1000000")));
+        for (ObjectNode telemetry : incompatible) {
+            telemetry.putObject("identity").putArray("imei").add("359881234567890").add("359889876543210");
+            String stored = storedTelemetry(telemetry);
+            assertEquals(telemetry.toString(), stored);
+            assertEquals(Arrays.asList("359881234567890", "359889876543210"), storedImeis());
+        }
+    }
+
+    @Test
+    public void eachCheckInReplacesTheReportedImeis() throws Exception {
+        ObjectNode telemetry = JsonNodeFactory.instance.objectNode();
+        telemetry.putObject("identity").putArray("imei").add("359881234567890");
+        storedTelemetry(telemetry);
+        assertEquals(Collections.singletonList("359881234567890"), storedImeis());
+        telemetry.putObject("identity").putArray("imei").add("359889876543210");
+        storedTelemetry(telemetry);
+        assertEquals(Collections.singletonList("359889876543210"), storedImeis());
+        storedTelemetry(JsonNodeFactory.instance.objectNode());
+        assertNull(storedImeis());
+    }
+
+    /** device_state.reportedImeis of the test device. */
+    private static List<String> storedImeis() throws Exception {
+        try (Connection c = connect(); Statement s = c.createStatement(); ResultSet rs = s.executeQuery(
+                "SELECT reportedImeis FROM " + schema + ".device_state")) {
+            assertTrue(rs.next());
+            java.sql.Array imeis = rs.getArray(1);
+            return imeis == null ? null : Arrays.asList((String[]) imeis.getArray());
+        }
+    }
+
+    @Test
+    public void compatibleTelemetryKeepsLiteralEscapesAndUnicode() throws Exception {
+        ObjectNode telemetry = JsonNodeFactory.instance.objectNode();
+        telemetry.put("literal", "\\u0000");
+        telemetry.put("literal\\u0000key", "a\\b");
+        telemetry.put("unicode", "ñ\ud83d\ude00\n");
+        telemetry.putObject("identity").putArray("imei").add("359881234567890");
+        assertEquals(telemetry, new ObjectMapper().readTree(storedTelemetry(telemetry)));
+        assertNull(storedTelemetry(null));
+    }
+
+    private static String storedTelemetry(JsonNode telemetry) throws Exception {
+        AgentCheckInRequest req = new AgentCheckInRequest();
+        req.setDeviceId(AgentCheckInLimitsTest.DEVICE);
+        AgentDeviceState state = new AgentDeviceState();
+        state.setBattery(73);
+        req.setState(state);
+        req.setTelemetry(telemetry);
+        assertEquals(Response.ResponseStatus.OK,
+                resource.checkin("Bearer " + AgentCheckInLimitsTest.SECRET, null, req).getStatus());
+        try (Connection c = connect(); Statement s = c.createStatement(); ResultSet rs = s.executeQuery(
+                "SELECT battery, telemetry FROM " + schema + ".device_state")) {
+            assertTrue(rs.next());
+            assertEquals(73, rs.getInt("battery"));
+            String stored = rs.getString("telemetry");
+            assertFalse(rs.next());
+            return stored;
         }
     }
 

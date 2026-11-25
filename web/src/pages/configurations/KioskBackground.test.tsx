@@ -1,11 +1,12 @@
 // The kiosk background image in the console: the editor's viewer (what is set) and the device page's line, and that
 // they are free of axe violations.
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, screen, within } from '@testing-library/react';
 import axe from 'axe-core';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { KioskBackgroundImageInfo } from '../../api/configurations';
 import { DeviceKioskBackground, KioskBackgroundField, hostedPath } from './KioskBackground';
+import { render } from '../../test/render';
 
 const INFO: KioskBackgroundImageInfo = {
   fileId: 42,

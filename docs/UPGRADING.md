@@ -357,6 +357,14 @@ For forks with their own server code: `Settings.twoFactor`, `User.twoFactor`, `U
 `AuthFilter.twoFactorNeeded` are gone, so code that used them no longer compiles. There is no replacement until
 two-factor sign-in is built.
 
+### v0.6.0 for forks that change the console
+
+New text in core console files should be a react-intl message; `npm test` fails on most text that isn't
+(`web/src/i18n/literals.test.ts` names the file and lists its strings). That includes text you added before merging
+this release: make it a message ([web/README.md](../web/README.md#translatable-text)), or raise that file's count in
+`web/src/i18n/literals-baseline.json`. If you removed core text, it fails with "fewer literals": run
+`npm run i18n:baseline`. Extensions in `web/src/extensions/` are not checked.
+
 ### v0.5.1
 
 - **Account changes take your own password.** Scripts and API clients that create or delete users or customers,

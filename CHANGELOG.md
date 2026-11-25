@@ -126,6 +126,9 @@ Fixes
 
 Under the hood
 - CI builds the agent's instrumented tests (they still run only by hand, on an emulator).
+- Console: the groundwork for translations. New console text is written as react-intl messages (English stays in
+  the code), and a test fails on most new untranslated text in core files; existing text moves over area by area. No
+  other language ships yet ([web/README.md](web/README.md#translatable-text)).
 - Agent protocol 1.12 (additive): the check-in response's `eventsAccepted`, the check-in request's `protocolVersion`
   (now always sent), and the `eventsDropped` event
   ([VERSIONING](https://github.com/MDMesh-app/MDMesh/blob/main/proto/VERSIONING.md)).

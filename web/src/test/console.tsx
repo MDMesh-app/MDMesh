@@ -10,6 +10,7 @@ import { CORE_EXTENSION } from '../ext/core';
 import { createRegistry, type Registry } from '../ext/registry';
 import { RegistryProvider } from '../ext/RegistryContext';
 import type { ExtensionDefinition } from '../ext/types';
+import { IntlRoot } from '../i18n/IntlRoot';
 import { ThemeProvider } from '../ui/theme';
 import { ToastProvider } from '../ui/toast';
 
@@ -162,14 +163,16 @@ export function renderInConsole(
   if (user) localStorage.setItem('hmdm.admin.user', JSON.stringify(user));
   const router = createMemoryRouter([{ path: '*', element: ui }], { initialEntries: entries, initialIndex: entries.length - 1 });
   return render(
-    <AuthProvider>
-      <ThemeProvider>
-        <ToastProvider>
-          <RegistryProvider registry={registry}>
-            <RouterProvider router={router} />
-          </RegistryProvider>
-        </ToastProvider>
-      </ThemeProvider>
-    </AuthProvider>,
+    <IntlRoot>
+      <AuthProvider>
+        <ThemeProvider>
+          <ToastProvider>
+            <RegistryProvider registry={registry}>
+              <RouterProvider router={router} />
+            </RegistryProvider>
+          </ToastProvider>
+        </ThemeProvider>
+      </AuthProvider>
+    </IntlRoot>,
   );
 }

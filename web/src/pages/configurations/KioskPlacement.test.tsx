@@ -1,10 +1,11 @@
 // Fill / Fit and the focal point picker: keyboard, pointer, reset, and off in Fit; free of axe violations.
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 import axe from 'axe-core';
 import { useState } from 'react';
 import { describe, expect, it } from 'vitest';
 import type { FitMode, FocalPoint } from '../../data/kioskScrim';
 import { KioskPlacement } from './KioskPlacement';
+import { render } from '../../test/render';
 
 function Harness({ initialFit = 'fill' as FitMode, onChange }: { initialFit?: FitMode; onChange?: (f: FocalPoint, m: FitMode) => void }) {
   const [fit, setFit] = useState<FitMode>(initialFit);

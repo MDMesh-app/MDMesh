@@ -319,7 +319,7 @@ exited or credentials cleared while the older agent ran.
   `docker compose rm -sf caddy` and run it again (phones can't reach MDMesh until that run ends). With such a
   list, a run that ends with neither port found published says so in its last lines. With `COMPOSE_PROFILES` listing
   `cloudflare` and others (`cloudflare,backup`), 0.5.x published 80/443 as well as running the tunnel; now it is a
-  tunnel install, and they close unless `COMPOSE_FILE` lists `docker-compose.domain.yml`.
+  tunnel install, and they close unless the files `COMPOSE_FILE` lists publish them.
 - **New: behind your own proxy** (Docker). For a machine where nginx, Apache, Caddy or Traefik already does HTTPS
   ([DEPLOY](../DEPLOY.md#3-behind-your-own-proxy)). To move an existing install to it, update to 0.6.0 first, then
   [change the hosting mode](#changing-the-hosting-mode).

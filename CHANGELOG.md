@@ -23,7 +23,7 @@ Upgrading
 - From source, with a `COMPOSE_FILE` you edited by hand: `./setup.sh` and `--update` now start the files it names. On
   your own domain they stop, before any container is touched, if that would close port 80 or 443 on the edge, and show
   the `.env` line to set. With a `COMPOSE_PROFILES` you edited by hand, `cloudflare` among several profiles now means
-  the tunnel, which closes 80/443 unless `COMPOSE_FILE` lists `docker-compose.domain.yml`. The `.env` an installer
+  the tunnel, which closes 80/443 unless the files `COMPOSE_FILE` lists publish them. The `.env` an installer
   wrote is not affected ([UPGRADING.md](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#unreleased)).
 - On its first start the server removes the unused two-factor setting from the database. A rollback puts it back
   with the old database ([UPGRADING.md](docs/UPGRADING.md#unreleased)). Forks: code that used it no longer compiles

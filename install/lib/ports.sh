@@ -13,10 +13,11 @@ mdm_edge_ports() {
   for p in 80 443; do case "$bound" in *"\"HostPort\":\"$p\""*) echo "$p" ;; esac; done
 }
 
-# mdm_list_ports: the host ports this run's compose files publish (any service's), one per line. `config` prints the
+# mdm_list_ports: the TCP host ports this run's compose files publish (any service's), one per line. `config` prints the
 # secrets too: they stay in the pipe.
 mdm_list_ports() {
-  docker compose ${COMPOSE_ARGS[@]+"${COMPOSE_ARGS[@]}"} config | sed -nE 's/^ +published: "?([0-9]+)"?$/\1/p'
+  docker compose ${COMPOSE_ARGS[@]+"${COMPOSE_ARGS[@]}"} config |
+    sed -nE '/^ +published:/{N;s/^ +published: "?([0-9]+)"?\n +protocol: tcp$/\1/p;}'
 }
 
 # mdm_list_has_domain: the list has the domain overlay, which publishes 80 and 443 (a re-run without a list adds it).

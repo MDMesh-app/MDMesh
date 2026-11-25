@@ -63,6 +63,7 @@
         <result property="oldNumber" column="oldNumber"/>
         <result property="fastSearch" column="fastSearch"/>
         <result property="hardwareId" column="hardwareid"/>
+        <result property="reportedImeis" column="reportedImeis" typeHandler="org.apache.ibatis.type.ArrayTypeHandler"/>
 
         <collection property="groups" ofType="com.hmdm.rest.json.LookupItem">
             <result property="id" column="groupId"/>
@@ -92,6 +93,13 @@
                             AND configurations.customerId = devices.customerId))
     </update>
 
+    <!-- Current agents report IMEIs in telemetry, one per SIM slot; the check-in keeps them in
+         device_state.reportedImeis. Needs device_state joined as deviceState. Shared by the page query, its
+         ranking and its count, inside their access filters. -->
+    <sql id="reportedImeiMatches">
+        EXISTS (SELECT 1 FROM unnest(deviceState.reportedImeis) AS reportedImei WHERE reportedImei ILIKE #{value})
+    </sql>
+
     <sql id="allowedDevicesSelect">
         SELECT DISTINCT deviceId AS deviceId, LOWER(deviceNumber) AS deviceNumber, searchPriority, sortingValue
         FROM
@@ -102,7 +110,7 @@
         <if test="value != null &amp;&amp; !fastSearch">
         (
             COALESCE(CASE WHEN devices.number ILIKE #{value} THEN 16 END, 0) +
-            COALESCE(CASE WHEN devices.imei ILIKE #{value} THEN 8 END, 0) +
+            COALESCE(CASE WHEN devices.imei ILIKE #{value} OR <include refid="reportedImeiMatches"/> THEN 8 END, 0) +
             COALESCE(CASE WHEN devices.phone ILIKE #{value} THEN 4 END, 0) +
             COALESCE(CASE WHEN devices.description ILIKE #{value} THEN 2 END, 0)
             )
@@ -152,6 +160,7 @@
         LEFT JOIN deviceGroups ON devices.id = deviceGroups.deviceId
         LEFT JOIN groups ON deviceGroups.groupId = groups.id
         LEFT JOIN userDeviceGroupsAccess access ON groups.id = access.groupId AND access.userId = users.id
+        LEFT JOIN device_state deviceState ON deviceState.deviceNumber = devices.number
         WHERE devices.customerId = #{customerId}
         AND (users.allDevicesAvailable = TRUE OR NOT access.id IS NULL)
         <if test="value != null &amp;&amp; !fastSearch">
@@ -162,6 +171,7 @@
             OR devices.phone ILIKE #{value}
             OR devices.publicIp ILIKE #{value}
             OR devices.infojson -&gt;&gt; 'imei' ILIKE #{value}
+            OR <include refid="reportedImeiMatches"/>
             OR devices.infojson -&gt;&gt; 'phone' ILIKE #{value}
             OR devices.infojson -&gt;&gt; 'model' ILIKE #{value}
             OR devices.infojson -&gt;&gt; 'serial' ILIKE #{value}
@@ -249,7 +259,7 @@
         </if>
         ) allowedDevicesInner
         ORDER BY sortingValue <if test="sortDir.equalsIgnoreCase(&quot;desc&quot;)">DESC</if>,
-                 searchPriority, LOWER(deviceNumber)
+                 searchPriority DESC, LOWER(deviceNumber)
         OFFSET (#{pageNum} - 1) * #{pageSize}
         LIMIT #{pageSize}
     </sql>
@@ -263,7 +273,7 @@
                devices.infojson ->> 'androidVersion' AS androidVersion,
                devices.infojson ->> 'serial' AS serial,
                devices.custom1, devices.custom2, devices.custom3, devices.oldNumber, devices.fastSearch,
-               devices.hardwareid,
+               devices.hardwareid, deviceState.reportedImeis,
                groups.id AS groupId, groups.name AS groupName,
                configurations.name as configName,
                applications.pkg AS launcherPkg,
@@ -275,6 +285,7 @@
                END AS statusCode
         FROM devices
         INNER JOIN (<include refid="allowedDevicesSelect"/>) allowedDevices ON allowedDevices.deviceId = devices.id
+        LEFT JOIN device_state deviceState ON deviceState.deviceNumber = devices.number
         LEFT JOIN configurations ON devices.configurationId = configurations.id
         LEFT JOIN deviceGroups ON devices.id = deviceGroups.deviceId
         LEFT JOIN groups ON deviceGroups.groupId = groups.id
@@ -295,6 +306,7 @@
         LEFT JOIN deviceGroups ON devices.id = deviceGroups.deviceId
         LEFT JOIN groups ON deviceGroups.groupId = groups.id
         LEFT JOIN userDeviceGroupsAccess access ON groups.id = access.groupId AND access.userId = users.id
+        LEFT JOIN device_state deviceState ON deviceState.deviceNumber = devices.number
         WHERE devices.customerId = #{customerId}
         AND (users.allDevicesAvailable = TRUE OR NOT access.id IS NULL)
         <if test="value != null &amp;&amp; !fastSearch">
@@ -305,6 +317,7 @@
             OR devices.phone ILIKE #{value}
             OR devices.publicIp ILIKE #{value}
             OR devices.infojson -&gt;&gt; 'imei' ILIKE #{value}
+            OR <include refid="reportedImeiMatches"/>
             OR devices.infojson -&gt;&gt; 'phone' ILIKE #{value}
             OR devices.infojson -&gt;&gt; 'model' ILIKE #{value}
             OR devices.infojson -&gt;&gt; 'serial' ILIKE #{value}
@@ -494,13 +507,16 @@
                         devices.info   AS info,
                         (
                                 COALESCE(CASE WHEN devices.number ILIKE #{filter} THEN 4 END, 0) +
-                                COALESCE(CASE WHEN devices.imei ILIKE #{filter} THEN 2 END, 0) +
+                                COALESCE(CASE WHEN devices.imei ILIKE #{filter}
+                                    OR EXISTS (SELECT 1 FROM unnest(deviceState.reportedImeis) AS reportedImei
+                                               WHERE reportedImei ILIKE #{filter}) THEN 2 END, 0) +
                                 COALESCE(
                                         CASE WHEN devices.infojson -&gt;&gt; 'imei' ILIKE #{filter} THEN 1 END,
                                         0)
                             )          AS searchPriority
                  FROM devices
                           INNER JOIN users ON users.id = #{userId}
+                          LEFT JOIN device_state deviceState ON deviceState.deviceNumber = devices.number
                  WHERE devices.customerId = #{customerId}
                    AND (users.allDevicesAvailable = TRUE
                      OR
@@ -515,6 +531,8 @@
                          devices.number ILIKE #{filter}
                          OR devices.imei ILIKE #{filter}
                          OR devices.infojson -&gt;&gt; 'imei' ILIKE #{filter}
+                         OR EXISTS (SELECT 1 FROM unnest(deviceState.reportedImeis) AS reportedImei
+                                    WHERE reportedImei ILIKE #{filter})
                      )
                  ORDER BY searchPriority DESC
              ) searchRsults

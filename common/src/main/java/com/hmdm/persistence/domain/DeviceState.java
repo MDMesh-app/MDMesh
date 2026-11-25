@@ -16,6 +16,8 @@ public class DeviceState implements Serializable {
     private String agentVersion;
     private String powerMode;
     private String telemetry;
+    /** The IMEIs in {@link #telemetry} (identity.imei), kept apart so the device search needs no JSON. */
+    private String[] reportedImeis;
     private String appliedConfigRevision;
     private Long appliedConfigAt;
     /** Server-owned sequence for kiosk-changing commands queued for this device. */
@@ -56,6 +58,8 @@ public class DeviceState implements Serializable {
     public void setPowerMode(String v) { this.powerMode = v; }
     public String getTelemetry() { return telemetry; }
     public void setTelemetry(String v) { this.telemetry = v; }
+    public String[] getReportedImeis() { return reportedImeis; }
+    public void setReportedImeis(String[] v) { this.reportedImeis = v; }
     public String getAppliedConfigRevision() { return appliedConfigRevision; }
     public void setAppliedConfigRevision(String v) { this.appliedConfigRevision = v; }
     public Long getAppliedConfigAt() { return appliedConfigAt; }

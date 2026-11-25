@@ -3,7 +3,13 @@
 # same image serves any deployment. JDK 17 is required — dependencies (e.g. activemq-broker) ship
 # Java-11+ bytecode, so Java 8 fails to both compile and run.
 
+# A Maven repository to start from, empty unless the build passes one (T1: --build-context m2=DIR, so that Maven Central's
+# 429 to a busy runner address doesn't fail it). Only the build stage uses it. COPY, not RUN --mount: setup.sh's Docker
+# may not have BuildKit.
+FROM scratch AS m2
+
 FROM maven:3.9-eclipse-temurin-17 AS build
+COPY --from=m2 / /root/.m2/repository/
 WORKDIR /src
 COPY pom.xml ./
 COPY common ./common

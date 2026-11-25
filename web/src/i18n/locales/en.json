@@ -11,5 +11,41 @@
   },
   "app.notFound.title": {
     "defaultMessage": "Page not found"
+  },
+  "configEditor.enrollment.qrDuplicates": {
+    "defaultMessage": "{keys}: use the setting above instead. Once that is set, it wins over this entry."
+  },
+  "configEditor.enrollment.qrInvalid": {
+    "defaultMessage": "Not valid JSON yet. It is saved as typed; the Enroll page leaves it out until it is fixed."
+  },
+  "configEditor.enrollment.setupScreens": {
+    "defaultMessage": "Setup screens"
+  },
+  "configEditor.enrollment.setupScreensHelp": {
+    "defaultMessage": "Android applies these while the device sets itself up."
+  },
+  "enroll.setup.hiddenWifi": {
+    "defaultMessage": "hidden Wi-Fi"
+  },
+  "enroll.setup.label": {
+    "defaultMessage": "Setup"
+  },
+  "enroll.setup.mobileData": {
+    "defaultMessage": "mobile data"
+  },
+  "enroll.setup.nothing": {
+    "defaultMessage": "Nothing added"
+  },
+  "enroll.setup.others": {
+    "defaultMessage": "{count, plural, one {# other entry} other {# other entries}}"
+  },
+  "enroll.setup.protectedLeftOut": {
+    "defaultMessage": "{summary} ({count} protected left out)"
+  },
+  "enroll.setup.skipIntro": {
+    "defaultMessage": "intro screens skipped"
+  },
+  "enroll.setup.unreadable": {
+    "defaultMessage": "Extra QR parameters left out: {error}"
   }
 }

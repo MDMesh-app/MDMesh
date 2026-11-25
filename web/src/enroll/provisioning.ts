@@ -68,8 +68,20 @@ export interface ExtraQrParameters {
  * A trailing comma is allowed. Empty or blank text adds nothing.
  */
 export function parseExtraQrParameters(text: unknown): ExtraQrParameters {
-  const none: ExtraQrParameters = { entries: {}, ignored: [], error: null };
-  if (typeof text !== 'string' || text.trim() === '') return none;
+  const read = readQrParameters(text);
+  if ('error' in read) return { entries: {}, ignored: [], error: read.error };
+  const entries: Record<string, unknown> = {};
+  const ignored: string[] = [];
+  for (const [key, value] of Object.entries(read.entries)) {
+    if (PROTECTED_QR_KEYS.has(key)) ignored.push(key);
+    else entries[key] = value;
+  }
+  return { entries, ignored, error: null };
+}
+
+/** Every entry of a configuration's Extra QR parameters, protected ones included, or why the text can't be read. */
+export function readQrParameters(text: unknown): { entries: Record<string, unknown> } | { error: string } {
+  if (typeof text !== 'string' || text.trim() === '') return { entries: {} };
   let body = text.trim();
   if (body.startsWith('{')) body = body.replace(/,\s*}\s*$/, '}');
   else if (!body.startsWith('[')) body = `{${body.replace(/,\s*$/, '')}}`;
@@ -77,18 +89,133 @@ export function parseExtraQrParameters(text: unknown): ExtraQrParameters {
   try {
     parsed = JSON.parse(body);
   } catch (e) {
-    return { ...none, error: `Extra QR parameters aren't valid JSON: ${(e as Error).message}` };
+    return { error: `invalid JSON (${(e as Error).message})` };
   }
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    return { ...none, error: 'Extra QR parameters must be JSON members ("key": value), or one JSON object.' };
+    return { error: 'not JSON members ("key": value) or one JSON object' };
   }
+  return { entries: parsed as Record<string, unknown> };
+}
+
+/** What a configuration's QR entries do, for the Enroll page's summary (it words them). */
+export interface QrExtrasSummary {
+  locale: string | null;
+  timeZone: string | null;
+  skipIntro: boolean;
+  mobileData: boolean;
+  hiddenWifi: boolean;
+  /** Entries other than those above. */
+  others: number;
+}
+
+export function summarizeQrExtras(entries: Record<string, unknown>): QrExtrasSummary {
+  const p = QR_EXTRA_PREFIX;
+  const known = ['LOCALE', 'TIME_ZONE', 'SKIP_EDUCATION_SCREENS', 'USE_MOBILE_DATA', 'WIFI_HIDDEN'].map((k) => `${p}PROVISIONING_${k}`);
+  const text = (k: string) => {
+    const v = entries[`${p}PROVISIONING_${k}`];
+    return typeof v === 'string' && v ? v : null;
+  };
+  return {
+    locale: text('LOCALE'),
+    timeZone: text('TIME_ZONE'),
+    skipIntro: entries[`${p}PROVISIONING_SKIP_EDUCATION_SCREENS`] === true,
+    mobileData: entries[`${p}PROVISIONING_USE_MOBILE_DATA`] === true,
+    hiddenWifi: entries[`${p}PROVISIONING_WIFI_HIDDEN`] === true,
+    others: Object.keys(entries).filter((k) => !known.includes(k)).length,
+  };
+}
+
+/** The `android.app.extra.` prefix every provisioning entry carries. */
+export const QR_EXTRA_PREFIX = 'android.app.extra.';
+
+/**
+ * Entries the configuration editor shows as settings of their own (names without the prefix). They are kept in the
+ * Extra QR parameters, first, one per line, and the editor's Extra QR parameters field shows only what follows them.
+ */
+export const QR_SETTING_KEYS: readonly string[] = [
+  'PROVISIONING_WIFI_HIDDEN',
+  'PROVISIONING_SKIP_EDUCATION_SCREENS',
+  'PROVISIONING_LOCALE',
+  'PROVISIONING_TIME_ZONE',
+];
+
+/** The Extra QR parameters, split: the settings (by short name) and the other entries' text, as typed. */
+export interface QrParametersSplit {
+  settings: Record<string, unknown>;
+  rest: string;
+}
+
+const SETTING_LINE = new RegExp(
+  `^\\s*"${QR_EXTRA_PREFIX.replace(/\./g, '\\.')}(${QR_SETTING_KEYS.join('|')})"\\s*:\\s*(.+?)\\s*,?\\s*$`,
+);
+
+/**
+ * Splits the Extra QR parameters into the settings and the rest. The settings are the leading lines the editor
+ * writes; the rest is kept exactly as typed, even when it isn't valid JSON yet. A setting written anywhere else stays
+ * in the rest, where the editor points it out (settingsInRest): nothing is moved without the user seeing it.
+ */
+export function splitQrParameters(text: unknown): QrParametersSplit {
+  const lines = typeof text === 'string' ? text.split('\n') : [];
+  const settings: Record<string, unknown> = {};
+  let i = 0;
+  for (; i < lines.length; i++) {
+    const m = SETTING_LINE.exec(lines[i]);
+    if (!m) break;
+    try {
+      settings[m[1]] = JSON.parse(m[2]);
+    } catch {
+      break;
+    }
+  }
+  return { settings, rest: lines.slice(i).join('\n') };
+}
+
+/**
+ * The Extra QR parameters text for these settings and other entries: the settings that are set (not null, empty or
+ * false, Android's own default for each), one per line, then the rest as typed. An object typed as the rest is
+ * written back as members, so the two join.
+ */
+export function joinQrParameters(settings: Record<string, unknown>, rest: string): string {
+  const lines = QR_SETTING_KEYS.filter((k) => settings[k] != null && settings[k] !== false && settings[k] !== '').map(
+    (k) => `${JSON.stringify(QR_EXTRA_PREFIX + k)}: ${JSON.stringify(settings[k])}`,
+  );
+  let tail = rest.trim() === '' ? '' : rest;
+  if (tail.trim().startsWith('{')) {
+    const read = readQrParameters(tail);
+    if (!('error' in read)) tail = membersText(read.entries);
+  }
+  if (tail) lines.push(tail);
+  return lines.join(',\n');
+}
+
+/** Entries of the rest that have a setting of their own: that setting wins over them once it is set. */
+export function settingsInRest(rest: string): string[] {
+  const read = readQrParameters(rest);
+  if ('error' in read) return [];
+  return QR_SETTING_KEYS.filter((k) => QR_EXTRA_PREFIX + k in read.entries);
+}
+
+function membersText(entries: Record<string, unknown>): string {
+  return Object.entries(entries)
+    .map(([k, v]) => `${JSON.stringify(k)}: ${JSON.stringify(v)}`)
+    .join(',\n');
+}
+
+/**
+ * What a configuration adds to the enrollment QR: its setup settings, the other Extra QR parameters (left out, with
+ * the reason, while they aren't valid JSON), and PROVISIONING_USE_MOBILE_DATA when "Enroll over mobile data" is on.
+ * A setting that is set wins over the same entry among the others; those win over mobile data.
+ */
+export function configurationQrExtras(config: Record<string, unknown> | null | undefined): ExtraQrParameters {
+  const split = splitQrParameters(config?.qrParameters);
+  const others = parseExtraQrParameters(split.rest);
   const entries: Record<string, unknown> = {};
-  const ignored: string[] = [];
-  for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
-    if (PROTECTED_QR_KEYS.has(key)) ignored.push(key);
-    else entries[key] = value;
+  if (config?.mobileEnrollment === true) entries[`${QR_EXTRA_PREFIX}PROVISIONING_USE_MOBILE_DATA`] = true;
+  Object.assign(entries, others.entries);
+  for (const [k, v] of Object.entries(split.settings)) {
+    if (v != null && v !== false && v !== '') entries[QR_EXTRA_PREFIX + k] = v;
   }
-  return { entries, ignored, error: null };
+  return { entries, ignored: others.ignored, error: others.error };
 }
 
 /**

@@ -79,17 +79,30 @@ to the server. Each setting's help text in the console explains the details.
 **Enroll** page can put this Wi-Fi network in the enrollment QR code, so a new device joins it during setup. The
 password is in the QR code in plain text.
 
-**Extra QR parameters** are more entries for the enrollment QR code, for example the device's language and time zone:
+Under **Setup screens**, a few settings Android applies while the device sets itself up go in the enrollment QR code:
+
+- **Hidden network**: the setup Wi-Fi doesn't broadcast its name.
+- **Skip intro screens**: hides Android's education screens (Android 8 and later). The setup wizard steps that come
+  after enrollment, such as Google's terms, are up to the device maker and still show.
+- **Language** and **Time zone**: set during setup. A value the list doesn't offer can be written in Extra QR
+  parameters.
+- **Enroll over mobile data**: lets setup download the agent on mobile data (Android 10 and later).
+
+Hidden network, Skip intro screens, Language and Time zone are stored at the top of **Extra QR parameters**, one per
+line, so a configuration still has one place for everything its QR code adds; the editor's Extra QR parameters field
+shows only the other entries. It takes any other Android provisioning entry, for example:
 
 ```
-"android.app.extra.PROVISIONING_LOCALE": "fr_FR",
-"android.app.extra.PROVISIONING_TIME_ZONE": "Europe/Paris"
+"android.app.extra.PROVISIONING_SENSORS_PERMISSION_GRANT_OPT_OUT": true
 ```
 
-Write them as JSON members, one or more per line (a trailing comma is fine), or as one JSON object. The **Enroll** page
-adds them to the code it shows for the configuration and says how many it added, or why it added none. Entries that
-name the agent, its download, its checksums or its enrollment extras are never replaced, and the Wi-Fi chosen on the
-Enroll page wins over Wi-Fi entries here. Like the Wi-Fi password, they are in the QR code in plain text.
+Write them as JSON members, one or more per line (a trailing comma is fine), or as one JSON object. While they aren't
+valid JSON, the field says so: they are saved as typed, and the Enroll page leaves them out (the settings above still
+apply) until they are fixed. An entry typed here that has a setting of its own is pointed out; once that setting is
+set, it wins. The **Enroll** page adds the entries to the code it shows for the configuration and sums them up under
+**Setup**. Entries that name the agent, its download, its checksums or its enrollment extras are never replaced, and
+the Wi-Fi chosen on the Enroll page wins over Wi-Fi entries here. Like the Wi-Fi password, they are in the QR code in
+plain text.
 
 ### Legacy launcher settings
 

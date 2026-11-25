@@ -50,6 +50,11 @@ export interface FieldDef {
   kioskOnly?: boolean;
   /** Not sent to devices, but read by the console's enrollment QR (provisioning Wi-Fi). */
   enrollQr?: boolean;
+  /**
+   * Not a column of its own: the setting is the Extra QR parameters entry of this name (without its
+   * `android.app.extra.` prefix), read from and written to `qrParameters`.
+   */
+  qrKey?: string;
   /** Configuration metadata (name, description): always shown, never sent to devices, not "Enforced". */
   metadata?: boolean;
   options?: FieldOption[];
@@ -91,8 +96,29 @@ export const GROUP_NOTES: Partial<Record<FieldGroup, string>> = {
   Network: 'Not managed leaves a setting as it is, except Wi-Fi radio and Location services: Not managed lifts their lock.',
   Restrictions:
     'Not managed leaves a setting as it is, except Camera (agent 0.5.0+: it restores access after an MDMesh block) and Safe Mode (see its setting).',
-  Enrollment: 'Not sent to devices: the Enroll page can put this Wi-Fi in the enrollment QR.',
+  Enrollment: 'Not sent to devices: the Enroll page puts these in the enrollment QR.',
 };
+
+/** Languages offered for the enrollment QR's PROVISIONING_LOCALE (Android's language_COUNTRY form). */
+const QR_LOCALES: FieldOption[] = [
+  ['de_DE', 'Deutsch (Deutschland)'], ['en_GB', 'English (UK)'], ['en_US', 'English (US)'], ['es_ES', 'Español (España)'],
+  ['fr_BE', 'Français (Belgique)'], ['fr_CA', 'Français (Canada)'], ['fr_CH', 'Français (Suisse)'], ['fr_FR', 'Français (France)'],
+  ['it_IT', 'Italiano (Italia)'], ['nl_NL', 'Nederlands (Nederland)'], ['pl_PL', 'Polski (Polska)'], ['pt_BR', 'Português (Brasil)'],
+  ['pt_PT', 'Português (Portugal)'],
+].map(([value, label]) => ({ value, label: `${label} · ${value}` }));
+
+/** Time zones offered for the enrollment QR's PROVISIONING_TIME_ZONE: the browser's IANA list, else a short one. */
+const QR_TIME_ZONES: FieldOption[] = (() => {
+  const intl = Intl as unknown as { supportedValuesOf?: (key: string) => string[] };
+  let zones: string[] = [];
+  try {
+    zones = intl.supportedValuesOf?.('timeZone') ?? [];
+  } catch {
+    zones = [];
+  }
+  if (zones.length === 0) zones = ['UTC', 'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'America/New_York', 'America/Los_Angeles'];
+  return zones.map((z) => ({ value: z, label: z }));
+})();
 
 export const CONFIG_FIELDS: FieldDef[] = [
   // ── Identity ──────────────────────────────────────────────────────────────
@@ -139,7 +165,6 @@ export const CONFIG_FIELDS: FieldDef[] = [
   ] },
   { key: 'mobileData', label: 'Mobile data', type: 'tri', group: 'Network', help: 'Headwind launcher switched mobile data (needed system-app rights).' },
   { key: 'gps', label: 'GPS / location', type: 'tri', group: 'Network', help: 'Headwind launcher switched the location setting.' },
-  { key: 'mobileEnrollment', label: 'Enroll over mobile data', type: 'switch', group: 'Network', help: "Read only by Headwind's server QR. The MDMesh enrollment QR ignores it." },
 
   // ── Restrictions ──────────────────────────────────────────────────────────
   { key: 'disableSafeBoot', label: 'Safe Mode', type: 'tri', group: 'Restrictions', enforced: true, segments: ALLOW_BLOCK_INVERTED, help: 'Block prevents rebooting into Safe Mode, which would bypass the kiosk.', more: 'Not managed blocks it on a configuration with kiosk on, and on any device in kiosk (agent 0.3.7 or later); otherwise it is allowed, and agent 0.3.7 lifts a block nothing asks for. Older agents keep a block until this is set to Allow. Allow permits it, even in kiosk.' },
@@ -158,6 +183,12 @@ export const CONFIG_FIELDS: FieldDef[] = [
   { key: 'wifiSecurityType', label: 'Setup Wi-Fi security', type: 'enum', group: 'Enrollment', enrollQr: true, help: 'Security type of the setup Wi-Fi network.', options: [
     { value: 'NONE', label: 'Open' }, { value: 'WPA', label: 'WPA/WPA2' }, { value: 'WEP', label: 'WEP' }, { value: 'EAP', label: 'Enterprise (EAP)' },
   ] },
+  { key: 'qrWifiHidden', qrKey: 'PROVISIONING_WIFI_HIDDEN', label: 'Hidden network', type: 'switch', group: 'Enrollment', enrollQr: true, help: "The setup Wi-Fi doesn't broadcast its name." },
+  // Setup screens: entries of the Extra QR parameters, shown as settings of their own.
+  { key: 'qrSkipEducation', qrKey: 'PROVISIONING_SKIP_EDUCATION_SCREENS', label: 'Skip intro screens', type: 'switch', group: 'Enrollment', enrollQr: true, help: "Hides Android's education screens during setup. Google's terms still show.", more: 'Android 8 and later. The setup wizard steps that come after enrollment (Google terms, accounts) are up to the device maker and still show.' },
+  { key: 'qrLocale', qrKey: 'PROVISIONING_LOCALE', label: 'Language', type: 'enum', group: 'Enrollment', enrollQr: true, help: 'Language and region set during setup.', options: QR_LOCALES },
+  { key: 'qrTimeZone', qrKey: 'PROVISIONING_TIME_ZONE', label: 'Time zone', type: 'enum', group: 'Enrollment', enrollQr: true, help: 'Time zone set during setup.', options: QR_TIME_ZONES },
+  { key: 'mobileEnrollment', label: 'Enroll over mobile data', type: 'switch', group: 'Enrollment', enrollQr: true, help: 'Lets setup download the agent on mobile data. Android 10 and later.', more: 'Adds PROVISIONING_USE_MOBILE_DATA to the enrollment QR. Without it, Android waits for Wi-Fi before downloading the agent.' },
 
   // ── Security ──────────────────────────────────────────────────────────────
   { key: 'appPermissions', label: 'App permissions', type: 'enum', group: 'Security', help: 'How the Headwind launcher handled runtime permissions for managed apps.', options: [
@@ -206,7 +237,7 @@ export const CONFIG_FIELDS: FieldDef[] = [
   { key: 'timeZone', label: 'Time zone', type: 'text', group: 'Advanced', help: "Olson time zone (e.g. America/New_York) or 'auto', set by the Headwind launcher." },
   { key: 'newServerUrl', label: 'Migrate to server URL', type: 'text', group: 'Advanced', help: 'Headwind launcher moved itself to this server.' },
   { key: 'eventReceivingComponent', label: 'Event receiver', type: 'text', group: 'Advanced', help: 'package/class that received Headwind launcher broadcasts.' },
-  { key: 'qrParameters', label: 'Extra QR parameters', type: 'textarea', group: 'Enrollment', enrollQr: true, help: 'Extra entries for the enrollment QR, e.g. "android.app.extra.PROVISIONING_LOCALE": "fr_FR". JSON members or one JSON object.', more: 'The Enroll page adds them to the code it shows for this configuration. Entries naming the agent, its download, its checksum or its enrollment extras are never replaced. Wi-Fi chosen on the Enroll page wins over Wi-Fi entries here.' },
+  { key: 'qrParameters', label: 'Extra QR parameters', type: 'textarea', group: 'Enrollment', enrollQr: true, help: 'Other Android setup entries, as JSON members.', more: 'For example "android.app.extra.PROVISIONING_SENSORS_PERMISSION_GRANT_OPT_OUT": true. JSON members, as Headwind took them, or one JSON object. The Enroll page adds them to the code it shows for this configuration. Entries naming the agent, its download, its checksum or its enrollment extras are never replaced. Wi-Fi chosen on the Enroll page wins over Wi-Fi entries here.' },
   { key: 'adminExtras', label: 'QR admin extras', type: 'textarea', group: 'Advanced', help: 'Extra admin-extras entries for Headwind\'s server QR. MDMesh\'s QR ignores them.' },
 ];
 

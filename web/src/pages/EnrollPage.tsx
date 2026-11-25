@@ -5,12 +5,14 @@ import { mintEnrollToken, revokeAllEnrollTokens } from '../api/enroll';
 import { getUpdateStatus, type UpdateStatus } from '../api/updates';
 import { agentUnavailable } from '../data/updateStatus';
 import { Link } from 'react-router';
+import { defineMessage, defineMessages, useIntl } from 'react-intl';
 import { ARRIVAL_LABEL, arrivalNews, useArrivals, type Arrival } from '../enroll/arrivals';
 import { addressProblem, wifiProblem } from '../enroll/checks';
 import {
   agentApkUrl,
   buildProvisioningPayload,
-  parseExtraQrParameters,
+  configurationQrExtras,
+  summarizeQrExtras,
   serverBaseUrl,
   type WifiSecurity,
 } from '../enroll/provisioning';
@@ -229,7 +231,28 @@ function useArrivalNews(arrivals: Arrival[], active: boolean, watching: boolean)
 }
 
 /** Enroll. Classic: pages/EnrollPage.tsx. */
+const setupMessages = defineMessages({
+  label: { id: 'enroll.setup.label', defaultMessage: 'Setup' },
+  skipIntro: { id: 'enroll.setup.skipIntro', defaultMessage: 'intro screens skipped' },
+  mobileData: { id: 'enroll.setup.mobileData', defaultMessage: 'mobile data' },
+  hiddenWifi: { id: 'enroll.setup.hiddenWifi', defaultMessage: 'hidden Wi-Fi' },
+  nothing: { id: 'enroll.setup.nothing', defaultMessage: 'Nothing added' },
+});
+const setupOthers = defineMessage<{ count: number }>({
+  id: 'enroll.setup.others',
+  defaultMessage: '{count, plural, one {# other entry} other {# other entries}}',
+});
+const setupProtectedLeftOut = defineMessage<{ summary: string; count: number }>({
+  id: 'enroll.setup.protectedLeftOut',
+  defaultMessage: '{summary} ({count} protected left out)',
+});
+const setupUnreadable = defineMessage<{ error: string }>({
+  id: 'enroll.setup.unreadable',
+  defaultMessage: 'Extra QR parameters left out: {error}',
+});
+
 export function EnrollPage() {
+  const intl = useIntl();
   const toast = useToast();
   const mobile = useMediaQuery(MOBILE_QUERY);
 
@@ -453,9 +476,20 @@ export function EnrollPage() {
   );
   const address = useMemo(() => addressProblem(serverBaseUrl(), serverSetting), [serverSetting]);
   const expired = !!token?.expiresAt && token.expiresAt <= now;
-  // The chosen configuration's Extra QR parameters (Advanced section): added to the code, protected entries aside.
-  const qrExtras = useMemo(() => parseExtraQrParameters(selected?.qrParameters), [selected]);
-  const extraCount = Object.keys(qrExtras.entries).length;
+  // The chosen configuration's setup entries (Enrollment section): added to the code, protected entries aside.
+  const qrExtras = useMemo(() => configurationQrExtras(selected), [selected]);
+  const extrasText = useMemo(() => {
+    const sum = summarizeQrExtras(qrExtras.entries);
+    const parts = [
+      sum.locale,
+      sum.timeZone,
+      sum.skipIntro ? intl.formatMessage(setupMessages.skipIntro) : null,
+      sum.mobileData ? intl.formatMessage(setupMessages.mobileData) : null,
+      sum.hiddenWifi ? intl.formatMessage(setupMessages.hiddenWifi) : null,
+      sum.others > 0 ? intl.formatMessage(setupOthers, { count: sum.others }) : null,
+    ].filter((x): x is string => !!x);
+    return parts.join(' · ');
+  }, [qrExtras, intl]);
   const payload = useMemo(
     () =>
       token
@@ -489,13 +523,18 @@ export function EnrollPage() {
     ...(withWifi && wifiOn
       ? [{ key: 'wifi', label: 'Joins Wi-Fi', value: wifiIssue ? 'Not in the code (see Wi-Fi above)' : ssid || 'No network name yet' }]
       : []),
-    ...(qrExtras.error || extraCount > 0 || qrExtras.ignored.length > 0
+    ...(qrExtras.error || extrasText || qrExtras.ignored.length > 0
       ? [{
           key: 'qrExtras',
-          label: 'Extra QR entries',
+          label: intl.formatMessage(setupMessages.label),
           value: qrExtras.error
-            ? `None added: ${qrExtras.error}`
-            : `${extraCount} from the configuration${qrExtras.ignored.length ? ` (${qrExtras.ignored.length} protected left out)` : ''}`,
+            ? intl.formatMessage(setupUnreadable, { error: qrExtras.error })
+            : qrExtras.ignored.length
+              ? intl.formatMessage(setupProtectedLeftOut, {
+                  summary: extrasText || intl.formatMessage(setupMessages.nothing),
+                  count: qrExtras.ignored.length,
+                })
+              : extrasText || intl.formatMessage(setupMessages.nothing),
         }]
       : []),
     { key: 'use', label: 'Use', value: usesText(token?.maxUses ?? uses) },

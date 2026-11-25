@@ -9,6 +9,7 @@ import type { Configuration } from '../../api/configurations';
 import { AppRoutes } from '../../App';
 import { ConfigEditorPage } from '../../pages/ConfigEditorPage';
 import { ROLES, registryOf, renderInConsole } from '../../test/console';
+import { chooseOption } from '../../test/select';
 import demo from '../__fixtures__/demo';
 import { CORE_EXTENSION } from '../core';
 import { ORDER } from '../core/order';
@@ -835,5 +836,46 @@ describe('configuration editor: the exit PIN', () => {
     // The save goes back to the list: let its load finish inside the test.
     await waitFor(() => expect(fetch.mock.calls.some(([u]) => String(u).includes('/configurations/search'))).toBe(true));
     await screen.findByRole('link', { name: /Warehouse/ });
+  });
+});
+
+describe('enrollment setup settings', () => {
+  it('keeps them in the Extra QR parameters, other entries untouched, and saves no column of their own', async () => {
+    const { puts } = open({ config: { qrParameters: '"x.y": 1', mobileEnrollment: false } });
+    const skip = await screen.findByRole('switch', { name: 'Skip intro screens' });
+    fireEvent.click(skip);
+    chooseOption(screen.getByRole('combobox', { name: 'Language' }), { value: 'fr_FR' });
+    fireEvent.click(screen.getByRole('switch', { name: 'Enroll over mobile data' }));
+    await save();
+    await waitFor(() => expect(puts).toHaveLength(1));
+    expect(puts[0].qrParameters).toBe(
+      '"android.app.extra.PROVISIONING_SKIP_EDUCATION_SCREENS": true,\n"android.app.extra.PROVISIONING_LOCALE": "fr_FR",\n"x.y": 1',
+    );
+    expect((screen.getByRole('textbox', { name: 'Extra QR parameters' }) as HTMLTextAreaElement).value).toBe('"x.y": 1');
+    expect(puts[0].mobileEnrollment).toBe(true);
+    expect(puts[0]).not.toHaveProperty('qrSkipEducation');
+    expect(puts[0]).not.toHaveProperty('qrLocale');
+  });
+
+  it('counts one change per setting, not the parameters they are kept in as well', async () => {
+    open({ config: { qrParameters: '"x.y": 1' } });
+    fireEvent.click(await screen.findByRole('switch', { name: 'Skip intro screens' }));
+    expect(await screen.findByText('1 unsaved change')).toBeTruthy();
+  });
+
+  it('keeps the settings usable while the other entries are not valid JSON, and says why they are left out', async () => {
+    const { puts } = open({ config: { qrParameters: '"x.y": tru' } });
+    const skip = await screen.findByRole('switch', { name: 'Skip intro screens' });
+    expect((skip as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.getByText(/Not valid JSON yet/)).toBeTruthy();
+    fireEvent.click(skip);
+    await save();
+    await waitFor(() => expect(puts).toHaveLength(1));
+    expect(puts[0].qrParameters).toBe('"android.app.extra.PROVISIONING_SKIP_EDUCATION_SCREENS": true,\n"x.y": tru');
+  });
+
+  it('points out an entry typed by hand that has a setting of its own', async () => {
+    open({ config: { qrParameters: '"x.y": 1,\n"android.app.extra.PROVISIONING_TIME_ZONE": "UTC"' } });
+    expect(await screen.findByText(/PROVISIONING_TIME_ZONE: use the setting above instead/)).toBeTruthy();
   });
 });

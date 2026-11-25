@@ -43,14 +43,15 @@ jobs:
             # CHANGELOG.md and proto/VERSIONING.md are read by AgentProtocolVersionTest: the advertised protocol version is
             # VERSIONING.md's highest row, and a held bump must still be under Unreleased (so a release PR runs it).
             # docker/Caddyfile is read by PublicRouteInventoryTest (the edge's @backend against the server's routes).
-            server: pom.xml, common/**, jwt/**, notification/**, plugins/**, server/**, CHANGELOG.md, proto/VERSIONING.md, docker/Caddyfile
+            # LICENSE to inventory.py (server, web and agent): the licence policy each entry's inventory.py checks.
+            server: pom.xml, common/**, jwt/**, notification/**, plugins/**, server/**, CHANGELOG.md, proto/VERSIONING.md, docker/Caddyfile, LICENSE, NOTICE, docs/licenses/**, scripts/licenses/inventory.py
             # CHANGELOG.md is built into the console (What's new) and its tests read every release's section, checked
             # against release/changelog-section.sh, and its Security labels against release/security-releases.py.
-            web: web/**, CHANGELOG.md, release/changelog-section.sh, release/security-releases.py
+            web: web/**, CHANGELOG.md, release/changelog-section.sh, release/security-releases.py, LICENSE, NOTICE, docs/licenses/**, scripts/licenses/inventory.py
             # The console's browser accessibility sweep (scripts/shots/a11y.mjs) reads the built console and the
             # shots fixtures; CHANGELOG.md is built into the console.
             a11y: web/**, scripts/shots/**, CHANGELOG.md
-            agent: agent-android/**, proto/**
+            agent: agent-android/**, proto/**, LICENSE, NOTICE, docs/licenses/**, scripts/licenses/inventory.py
             supervisor: supervisor/**, docker/supervisor.Dockerfile, release/minisign.pub, scripts/supervisor-smoke.sh, .dockerignore
             # Listed explicitly: the kit's fail-closed **/Dockerfile* does not match docker/web.Dockerfile. web/**,
             # web-entrypoint.sh, edge-peers.sh, CHANGELOG.md and .dockerignore are the web image build's inputs.

@@ -114,7 +114,7 @@ Dependabot opens grouped PRs every Monday ([`.github/dependabot.yml`](.github/de
 - **Licences.** Every build checks its third-party components against
   [docs/licenses/allowed.txt](docs/licenses/allowed.txt) and fails in CI on any other licence (Liquibase 5 and later is
   FSL, for one). [docs/licenses/policy.md](docs/licenses/policy.md) says what to do then, and how to update the
-  inventory when the `licences` workflow warns that the components changed.
+  inventory when `t0-fast` warns that the components changed.
 - **One JDK, one Node line.** The server is **JDK 17** everywhere. Node is the current LTS (today **24**); every place
   that names it (`web/package.json` `engines`, `@types/node`, both Node images, the native installer's `NODE_VER`)
   moves in one PR, a few months after the next even line becomes LTS.

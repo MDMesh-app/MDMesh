@@ -83,6 +83,9 @@ dependencies {
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.kotlinx.coroutines.test)
+    // Real redirects between HTTPS and HTTP.
+    testImplementation(libs.okhttp.mockwebserver)
+    testImplementation(libs.okhttp.tls)
     // WorkManagerTestInitHelper: the scheduled wipe-hold check on real WorkManager.
     testImplementation(libs.work.testing)
 }

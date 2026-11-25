@@ -130,6 +130,10 @@ Fixes
   authenticator code is asked for) and get API tokens again, which v0.3.3 had stopped. Two-factor sign-in for each
   user is planned for a later release. The settings and user answers no longer include `twoFactor`; a request that
   still sends it is accepted, and the field ignored.
+- Agent: a command Android interrupts (the check-in running it is stopped) shows as expired with the reason, not as
+  failed, and so do the commands after it that were not run. A lock or a wipe among them still runs. Check-ins wait
+  30 seconds for a busy server instead of 10, and an app download from an HTTPS address no longer follows a redirect
+  to HTTP.
 
 Under the hood
 - CI builds the agent's instrumented tests (they still run only by hand, on an emulator).

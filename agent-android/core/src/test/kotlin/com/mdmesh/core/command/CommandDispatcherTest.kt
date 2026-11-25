@@ -4,7 +4,12 @@ import com.mdmesh.policy.factoryreset.FactoryResetWipeHold
 import com.mdmesh.proto.CommandEnvelope
 import com.mdmesh.proto.CommandResult
 import com.mdmesh.proto.CommandStatus
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -121,6 +126,69 @@ class CommandDispatcherTest {
         assertEquals(CommandStatus.EXPIRED, within.status)
         assertEquals(CommandStatus.DONE, after.status)
         assertEquals(1, expired)
+    }
+
+    private class FuncHandler(override val type: String, val run: suspend (CommandEnvelope) -> CommandResult) :
+        CommandHandler {
+        override suspend fun handle(command: CommandEnvelope) = run(command)
+    }
+
+    /** Dispatches [types] one after the other in a job that is stopped while the first is running. */
+    private fun TestScope.dispatchStopped(dispatcher: CommandDispatcher, vararg types: String): List<CommandResult> {
+        val results = mutableListOf<CommandResult>()
+        val job = launch { types.forEach { results += dispatcher.dispatch(envelope(it).copy(commandId = it)) } }
+        testScheduler.runCurrent()
+        job.cancel()
+        testScheduler.advanceUntilIdle()
+        return results
+    }
+
+    @Test
+    fun `a stop interrupts the running command and runs none after it, except the lock and the wipe`() = runTest {
+        val ran = mutableListOf<String>()
+        fun echo(type: String) = FuncHandler(type) { ran += type; CommandResults.done(it) }
+        val dispatcher = CommandDispatcher(
+            listOf(
+                FuncHandler("app.install") { awaitCancellation() },
+                echo("kiosk.exit"), echo("device.lock"), echo("device.wipe"), echo("device.reboot"),
+            ),
+        )
+
+        val results = dispatchStopped(
+            dispatcher, "app.install", "kiosk.exit", "device.lock", "device.wipe", "device.reboot",
+        )
+
+        assertEquals(
+            listOf(
+                CommandStatus.EXPIRED to CommandDispatcher.INTERRUPTED,
+                CommandStatus.EXPIRED to CommandDispatcher.NOT_RUN_STOPPED,
+                CommandStatus.DONE to null,
+                CommandStatus.DONE to null,
+                CommandStatus.EXPIRED to CommandDispatcher.NOT_RUN_STOPPED,
+            ),
+            results.map { it.status to it.detail },
+        )
+        assertEquals(listOf("device.lock", "device.wipe"), ran)
+    }
+
+    @Test
+    fun `a command that ended despite the stop keeps its own result`() = runTest {
+        for (failing in listOf(false, true)) {
+            val gate = CompletableDeferred<Unit>()
+            val handler = FuncHandler("kiosk.enter") {
+                runCatching { gate.await() } // stopped here, then it ends on its own
+                check(!failing) { "refused" }
+                CommandResults.done(it)
+            }
+            val result = dispatchStopped(CommandDispatcher(listOf(handler)), "kiosk.enter").single()
+            assertEquals(if (failing) CommandStatus.FAILED else CommandStatus.DONE, result.status)
+        }
+    }
+
+    @Test
+    fun `a handler's own time limit is its failure, not a stop`() = runTest {
+        val handler = FuncHandler("app.install") { withTimeout(1_000) { awaitCancellation() } }
+        assertEquals(CommandStatus.FAILED, CommandDispatcher(listOf(handler)).dispatch(envelope("app.install")).status)
     }
 
     @Test

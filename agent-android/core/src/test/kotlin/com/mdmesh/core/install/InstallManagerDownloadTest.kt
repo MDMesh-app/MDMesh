@@ -1,7 +1,10 @@
 package com.mdmesh.core.install
 
 import android.content.Context
+import android.content.pm.PackageInfo
 import androidx.test.core.app.ApplicationProvider
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -13,15 +16,21 @@ import okhttp3.Protocol
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.asResponseBody
 import okhttp3.ResponseBody.Companion.toResponseBody
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
+import okhttp3.tls.HandshakeCertificates
+import okhttp3.tls.HeldCertificate
 import okio.Buffer
 import okio.Source
 import okio.Timeout
 import okio.buffer
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.io.IOException
 import java.security.MessageDigest
@@ -67,12 +76,16 @@ class InstallManagerDownloadTest {
             proceed.await(10, TimeUnit.SECONDS)
             respond(chain, 200, apk)
         }
-        val job = launch(Dispatchers.Default) { manager.install(request()) }
+        val ended = CompletableDeferred<Throwable?>()
+        val job = launch(Dispatchers.Default) {
+            ended.complete(runCatching { manager.install(request()) }.exceptionOrNull())
+        }
         assertTrue(entered.await(10, TimeUnit.SECONDS))
         job.cancel()
         proceed.countDown() // the blocking download finishes and writes its file; then the cancellation lands
         job.join()
         assertEquals(emptyList<java.io.File>(), leftovers())
+        assertTrue("not an install failure", ended.await() is CancellationException)
     }
 
     @Test
@@ -100,11 +113,50 @@ class InstallManagerDownloadTest {
         assertEquals(emptyList<java.io.File>(), leftovers())
     }
 
+    /** Installs from an [https] (else HTTP) address that redirects to the other kind: was that one asked? */
+    private fun followsRedirect(https: Boolean): Boolean = runBlocking {
+        val cert = HeldCertificate.Builder().addSubjectAlternativeName("localhost").build()
+        val tls = HandshakeCertificates.Builder().heldCertificate(cert).addTrustedCertificate(cert.certificate).build()
+        MockWebServer().use { secure ->
+            MockWebServer().use { plain ->
+                secure.useHttps(tls.sslSocketFactory(), false)
+                val (from, to) = if (https) secure to plain else plain to secure
+                to.enqueue(MockResponse().setBody("not the APK"))
+                from.enqueue(MockResponse().setResponseCode(302).setHeader("Location", to.url("/app.apk")))
+                val client = OkHttpClient.Builder().sslSocketFactory(tls.sslSocketFactory(), tls.trustManager).build()
+                val outcome = InstallManager(context, InstallResultBus(), client, InstallIntegrityPolicy())
+                    .install(request().copy(url = from.url("/app.apk").toString()))
+                assertTrue(outcome is InstallOutcome.Failure)
+                to.requestCount > 0
+            }
+        }
+    }
+
+    @Test
+    fun `an APK named over HTTPS is not fetched over HTTP after a redirect, one named over HTTP may move to HTTPS`() {
+        assertFalse(followsRedirect(https = true))
+        assertTrue(followsRedirect(https = false))
+    }
+
     @Test
     fun `an install cancelled while it waits for the platform releases its file`() = runBlocking {
-        // No result broadcast comes here, so the install waits on the platform until the timeout cancels it (or
-        // fails at the session, which also ends it).
-        withTimeoutOrNull(3_000L) { manager { chain -> respond(chain, 200, apk) }.install(request()) }
+        // No result broadcast comes here, so the install waits on the platform until the timeout cancels it.
+        var ended: Throwable? = null
+        withTimeoutOrNull(3_000L) {
+            ended = runCatching { manager { chain -> respond(chain, 200, apk) }.install(request()) }.exceptionOrNull()
+        }
         assertEquals(emptyList<java.io.File>(), leftovers())
+        assertTrue("not an install failure", ended is CancellationException)
+    }
+
+    @Test
+    fun `an uninstall cancelled while it waits for the platform is not an uninstall failure`() = runBlocking {
+        shadowOf(context.packageManager).installPackage(PackageInfo().apply { packageName = "com.example.present" })
+        var ended: Throwable? = null
+        withTimeoutOrNull(3_000L) {
+            ended = runCatching { manager { chain -> respond(chain, 200, apk) }.uninstall("com.example.present") }
+                .exceptionOrNull()
+        }
+        assertTrue("$ended", ended is CancellationException)
     }
 }

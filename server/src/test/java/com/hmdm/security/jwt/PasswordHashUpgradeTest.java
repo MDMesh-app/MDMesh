@@ -80,11 +80,11 @@ public class PasswordHashUpgradeTest {
             }
         };
         // One address, and far fewer failures than LoginThrottle refuses
-        LoginThrottle throttle = new LoginThrottle("", false, JWTTwoFactorTest.SECRET, "http://localhost");
+        LoginThrottle throttle = new LoginThrottle("", false, JWTSignInTest.SECRET, "http://localhost");
         console = new AuthResource(dao, null, dao, tasks,
                 new EmailService("", 25, false, false, "", "", "", "", "mdm@localhost", "", "", "", ""),
                 null, false, new LocalAuth(dao), throttle);
-        api = new JWTAuthResource(new TokenProvider(JWTTwoFactorTest.SECRET + JWTTwoFactorTest.SECRET, "3600", "3600"),
+        api = new JWTAuthResource(new TokenProvider(JWTSignInTest.SECRET + JWTSignInTest.SECRET, "3600", "3600"),
                 dao, null, tasks, throttle);
     }
 

@@ -17,4 +17,4 @@ REPO=$(cd -P -- "$(dirname -- "$0")/../.." && pwd)
 IMAGE=${1:?usage: tests/apt-lock/run.sh IMAGE [show]}
 case "${2:-}" in '') SHOW=0 ;; show) SHOW=1 ;; *) echo "unknown option: $2" >&2; exit 2 ;; esac
 NAME="mdmesh-apt-lock-tests-$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n')"
-docker run --rm --name "$NAME" -v "$REPO:/src:ro" -e MDMESH_APT_LOCK_TESTS=1 -e MDMESH_APT_LOCK_SHOW="$SHOW" "$IMAGE" bash /src/tests/apt-lock/cases.sh
+docker run --rm --name "$NAME" -v "$REPO:/src:ro" -e MDMESH_APT_LOCK_TESTS=1 -e MDMESH_APT_LOCK_SHOW="$SHOW" -e MDMESH_TEST_UBUNTU_MIRROR "$IMAGE" bash /src/tests/apt-lock/cases.sh

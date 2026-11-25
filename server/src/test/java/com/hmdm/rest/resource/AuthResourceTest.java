@@ -332,24 +332,6 @@ public class AuthResourceTest {
     }
 
     @Test
-    public void aSignInThatStillNeedsASecondFactorMakesNeitherTheBrowserNorTheAddressKnown() throws Exception {
-        settings.answer("getSettings", a -> {
-            com.hmdm.persistence.domain.Settings s = new com.hmdm.persistence.domain.Settings();
-            s.setTwoFactor(true);
-            return s;
-        });
-        Response response = login(credentials("right"), request("198.51.100.1"));
-        assertEquals(Response.ResponseStatus.OK, response.getStatus());
-        assertEquals(Boolean.TRUE, ((UserView) response.getData()).getTwoFactor());
-        assertTrue("no known-browser cookie", setCookies.isEmpty());
-        for (int i = 0; i < 40; i++) {
-            login(credentials("wrong"), request("203.0.113." + i));
-        }
-        assertEquals("nor a known address", AuthResource.TOO_MANY_ATTEMPTS,
-                login(credentials("right"), request("198.51.100.1")).getMessage());
-    }
-
-    @Test
     public void aRefusalIsTheSameWhicheverLimitRefused() throws Exception {
         for (int i = 0; i < 10; i++) {
             login(credentials("wrong"), request("203.0.113.7"));   // the address's limit
@@ -394,21 +376,22 @@ public class AuthResourceTest {
     }
 
     @Test
-    public void aPendingSecondFactorIsInTheNewSession() throws Exception {
-        settings.answer("getSettings", a -> {
-            com.hmdm.persistence.domain.Settings s = new com.hmdm.persistence.domain.Settings();
-            s.setTwoFactor(true);
-            return s;
-        });
+    public void settingsCarriedOverWithTwoFactorChangeNothingAtSignIn() throws Exception {
+        // A database carried over from Headwind can say twoFactor; MDMesh has no second step, so the password signs in
+        com.hmdm.persistence.domain.Settings carried = new com.fasterxml.jackson.databind.ObjectMapper()
+                .readValue("{\"twoFactor\": true, \"idleLogout\": 600}", com.hmdm.persistence.domain.Settings.class);
+        settings.answer("getSettings", a -> carried);
         FakeSessions sessions = new FakeSessions();
-        sessions.existing("given-before-sign-in");
 
-        login(credentials("right"), request(sessions, "198.51.100.1"));
+        Response response = login(credentials("right"), request(sessions, "198.51.100.1"));
 
-        FakeSessions.Session after = sessions.current();
-        assertNotEquals("given-before-sign-in", after.id);
-        assertEquals("true", after.attributes.get(AuthFilter.twoFactorNeeded));
-        assertSame(stored, after.attributes.get(AuthFilter.sessionCredentials));
+        assertEquals(Response.ResponseStatus.OK, response.getStatus());
+        assertEquals(Integer.valueOf(600), ((UserView) response.getData()).getIdleLogout());
+        assertEquals("the browser is known", 1, setCookies.size());
+        assertEquals("no two-factor mark on the session", java.util.Collections.emptySet(),
+                sessions.current().attributes.keySet().stream()
+                        .filter(k -> k.toLowerCase().contains("twofactor")).collect(java.util.stream.Collectors.toSet()));
+        assertSame(stored, sessions.current().attributes.get(AuthFilter.sessionCredentials));
     }
 
     @Test

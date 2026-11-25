@@ -445,9 +445,8 @@ public class LoginThrottle {
     }
 
     /**
-     * A full sign-in completed for {@code user} on this attempt: the right password, and nothing further pending.
-     * (MDMesh has no second-factor step today: a sign-in whose customer requires one never completes, so it must not
-     * call this.) The attempt's address becomes known to the account, and the answer is the {@code Set-Cookie} value
+     * A full sign-in completed for {@code user} on this attempt: the right password. The attempt's address becomes
+     * known to the account, and the answer is the {@code Set-Cookie} value
      * that makes this browser or API client known to it: HttpOnly, SameSite=Strict, sent only to
      * {@value #COOKIE_PATH}, {@value #KNOWN_DAYS} days, and Secure when {@code base.url} is https.
      */

@@ -57,7 +57,8 @@ printf 'echo bye\n' >> src/run.sh
 printf '{"a": 2}\n' > src/en.json
 expect_check 1 'src/A.java: differs from upstream' 'changed headered file'
 expect_check 1 'src/c.js: differs from upstream' 'changed headerless file'
-if "$H" check 2>&1 | grep -q 'src/en.json'; then fail 'an exempt file was reported'; fi
+out=$("$H" check 2>&1 || true)
+if grep -q 'src/en.json' <<< "$out"; then fail 'an exempt file was reported'; fi
 
 "$H" mark src/A.java src/c.js src/context.xml src/run.sh > "$WORK/mark.out"
 grep -qx ' \* Modified by the MDMesh contributors\.' src/A.java || fail "mark: no notice in A.java: $(cat src/A.java)"

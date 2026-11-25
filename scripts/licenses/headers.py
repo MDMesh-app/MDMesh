@@ -38,7 +38,7 @@ DERIVED_FROM = "derived from "
 APACHE = "Licensed under the Apache License"
 # The comment syntax of a file that never had the header, by extension.
 COMMENTS = {".java": "// {}", ".js": "// {}", ".sql": "-- {}", ".example": "# {}", ".xml": "<!-- {} -->",
-            ".sh": "# {}", ".bat": "REM {}"}
+            ".html": "<!-- {} -->", ".sh": "# {}", ".bat": "REM {}"}
 # A first line that must stay first: an XML declaration, a shebang, a batch file's @echo off.
 FIRST = ("<?xml", "#!", "@echo off")
 

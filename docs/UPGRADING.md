@@ -285,9 +285,16 @@ exited or credentials cleared while the older agent ran.
   Updates**. That update pins `SUPERVISOR_VERSION` to the release's supervisor by digest again. With automatic
   updates on (`AUTO_UPDATE=1`), do this as soon as you can: until then the old supervisor may apply the release
   itself, with its 180-second limit.
-- **Going back to 0.5.1 without a restore** (`--allow-downgrade`) works: 0.5.1 starts on the new database unchanged.
-  It keeps the links, so in 0.5.1 too, deleting a device deletes its history and renaming one carries it. A check-in
-  or command that races a delete gets a server error in 0.5.1 (this release answers it as for an unknown device).
+- **The unused two-factor setting is removed.** MDMesh has no second sign-in step, so an organization whose settings
+  had two-factor sign-in on (a database carried over from Headwind MDM, or edited by hand) couldn't sign in at all.
+  On its first start the server drops the setting. Those accounts then sign in with their password alone (no
+  authenticator code is asked for), and get API tokens again. Two-factor sign-in for each user is planned for a later
+  release. **Roll back**
+  restores the old database, setting included, so such an organization can't sign in again until it updates again.
+- **Going back to 0.5.1 without a restore** (`--allow-downgrade`, or a native install's WAR swapped back) works: 0.5.1
+  starts on the new database unchanged. It keeps the links, so in 0.5.1 too, deleting a device deletes its history and
+  renaming one carries it. A check-in or command that races a delete gets a server error in 0.5.1 (this release
+  answers it as for an unknown device). The two-factor setting stays off: 0.5.1 reads it as off once it is gone.
 - **The server first, then its agent.** New devices and rollouts get the agent of the release the server runs, never
   a newer one. Update the server, then roll out its agent from **Settings → Agent rollout**. After a rollback, a
   rollout of the newer agent stops: cancel it, or update the server again. A server whose release isn't published
@@ -327,6 +334,10 @@ tags or publishes anything, but either may leave untagged images in your GHCR pa
   needs a paid Arm runner under that label, or drops Arm64: remove `arm64` from the `images` job's `matrix.arch` and
   `linux/arm64` from the release job's `PLATFORMS`, in the same commit. Its releases then serve x86_64 only, and its
   quick start and updater say so on Arm64.
+
+For forks with their own server code: `Settings.twoFactor`, `User.twoFactor`, `UnsecureDAO.isTwoFactorRequired` and
+`AuthFilter.twoFactorNeeded` are gone, so code that used them no longer compiles. There is no replacement until
+two-factor sign-in is built.
 
 ### v0.5.1
 

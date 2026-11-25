@@ -20,6 +20,9 @@ Upgrading
   count for this update, get this release's supervisor first ([UPGRADING.md](docs/UPGRADING.md#unreleased)).
 - Existing installs keep their mode and settings. To move one behind your own proxy, see
   [UPGRADING, Changing the hosting mode](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#changing-the-hosting-mode).
+- On its first start the server removes the unused two-factor setting from the database. A rollback puts it back
+  with the old database ([UPGRADING.md](docs/UPGRADING.md#unreleased)). Forks: code that used it no longer compiles
+  ([UPGRADING.md](docs/UPGRADING.md#v060-for-forks)).
 
 Heads-up
 - The edge sends HSTS for a request that came in over HTTP only when a trusted peer says `X-Forwarded-Proto: https`
@@ -109,6 +112,12 @@ Fixes
   on (it read "0.5.1 → 0.5.1" on a host still running 0.5.0). Answering "no" to the installer's question no longer
   wipes the previous run's log, and when the clone is ahead of the install it says the install is unchanged and how to
   finish the update.
+- An organization whose settings had two-factor sign-in turned on (possible only in a database carried over from
+  Headwind MDM, or edited by hand) couldn't sign in at all, in the console or through the API. MDMesh has no second
+  sign-in step yet, so the unused setting is removed. Those accounts now sign in with their password alone (no
+  authenticator code is asked for) and get API tokens again, which v0.3.3 had stopped. Two-factor sign-in for each
+  user is planned for a later release. The settings and user answers no longer include `twoFactor`; a request that
+  still sends it is accepted, and the field ignored.
 
 Under the hood
 - CI builds the agent's instrumented tests (they still run only by hand, on an emulator).

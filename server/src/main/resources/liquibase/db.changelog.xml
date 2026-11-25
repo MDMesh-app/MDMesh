@@ -3296,4 +3296,14 @@
         <rollback/>
     </changeSet>
 
+    <changeSet id="26.11.23-settings-twoFactor-drop" author="lunacy" context="common">
+        <comment>Column,drop: settings#twoFactor. MDMesh never had a second sign-in step, so a customer whose row said
+            true (a database carried over from Headwind, a hand edit) could not sign in at all, in the console or
+            through the API. Nothing reads or writes it from this release on. Going back to an older release without a
+            restore is safe: those releases read settings with SELECT * and never select it by name, so they see false.
+            users#twoFactorSecret and users#twoFactorAccepted stay until two-factor sign-in is built.</comment>
+        <sql>ALTER TABLE settings DROP COLUMN IF EXISTS twoFactor;</sql>
+        <rollback>ALTER TABLE settings ADD COLUMN IF NOT EXISTS twoFactor BOOLEAN NOT NULL DEFAULT false;</rollback>
+    </changeSet>
+
 </databaseChangeLog>

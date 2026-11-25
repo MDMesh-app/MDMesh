@@ -45,7 +45,7 @@ public class SignInRoutesShareOneLimitTest {
                 return l.equals("admin") || l.equals("admin@example.com") ? admin() : null;
             }
         };
-        LoginThrottle shared = new LoginThrottle("", true, JWTTwoFactorTest.SECRET, "http://localhost");
+        LoginThrottle shared = new LoginThrottle("", true, JWTSignInTest.SECRET, "http://localhost");
         BackgroundTaskRunnerService tasks = new BackgroundTaskRunnerService() {
             @Override
             public void submitTask(Runnable task) {

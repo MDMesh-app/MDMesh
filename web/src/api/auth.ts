@@ -24,12 +24,6 @@ export interface AuthUser {
   /** The account must set a new password first: AuthFilter refuses its session everything else until then. */
   passwordReset?: boolean;
   passwordResetToken?: string;
-  /**
-   * Set on the sign-in answer when the customer's settings require a second sign-in step (AuthResource.login). Until
-   * that step passes, AuthFilter drops the session on any call outside /rest/private/twofactor. It describes that
-   * sign-in, not the account.
-   */
-  twoFactor?: boolean;
   superAdmin?: boolean;
   /** False for a user an admin limited to some device groups (User.allDevicesAvailable; absent counts as true). */
   allDevicesAvailable?: boolean;

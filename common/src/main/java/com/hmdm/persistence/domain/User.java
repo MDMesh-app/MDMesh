@@ -33,6 +33,7 @@ import java.io.Serializable;
 import java.util.List;
 
 @ApiModel(description = "A user account within MDM web application")
+// Fields since removed (twoFactor, 0.6.0) still come from older clients: ignored, not refused
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class User implements CustomerData, Serializable {
@@ -83,8 +84,6 @@ public class User implements CustomerData, Serializable {
     private String twoFactorSecret;
     @ApiModelProperty("Is two factor authentication accepted by the user")
     private boolean twoFactorAccepted;
-    @ApiModelProperty("Is two factor authentication needed (a transient parameter, no db entry)")
-    private boolean twoFactor = false;
     @ApiModelProperty("Timeout in seconds for logging out while idle (0 - no logout)")
     private Integer idleLogout;
     @ApiModelProperty("Last time for failed login (to avoid bruteforce attacks)")
@@ -289,14 +288,6 @@ public class User implements CustomerData, Serializable {
 
     public void setTwoFactorAccepted(boolean twoFactorAccepted) {
         this.twoFactorAccepted = twoFactorAccepted;
-    }
-
-    public boolean isTwoFactor() {
-        return twoFactor;
-    }
-
-    public void setTwoFactor(boolean twoFactor) {
-        this.twoFactor = twoFactor;
     }
 
     public Integer getIdleLogout() {

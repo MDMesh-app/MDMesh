@@ -97,6 +97,37 @@ jobs:
           API=$(docker compose --env-file docker/dev.env port server 8080)
           scripts/agent-v1-e2e.sh "http://$API"
 
+      # A database whose settings still say twoFactor (carried over from Headwind): the column is put back as true, its
+      # drop forgotten, and the server restarted. The drop runs again; the console and the API sign in. Before the drop,
+      # the console's first request after sign-in and every API sign-in were refused.
+      - name: Sign-in with a carried-over two-factor setting
+        run: |
+          DC=(docker compose --env-file docker/dev.env)
+          PSQL=("${DC[@]}" exec -T postgres psql -U mdmesh -d mdmesh -v ON_ERROR_STOP=1 -tA)
+          "${PSQL[@]}" -c "ALTER TABLE settings ADD COLUMN twoFactor BOOLEAN NOT NULL DEFAULT false" \
+            -c "DELETE FROM databasechangelog WHERE id = '26.11.23-settings-twoFactor-drop'"
+          set_rows=$("${PSQL[@]}" -c "WITH s AS (UPDATE settings SET twoFactor = true RETURNING 1) SELECT count(*) FROM s")
+          [ "$set_rows" -gt 0 ] || { echo "::error::no settings row to set twoFactor on"; exit 1; }
+          "${DC[@]}" restart server
+          API="http://$("${DC[@]}" port server 8080)"
+          up=
+          for _ in $(seq 1 36); do
+            curl -fs -o "$RUNNER_TEMP/options" -m 5 "$API/rest/public/auth/options" && { up=1; break; }
+            sleep 5
+          done
+          [ -n "$up" ] || { echo "::error::the server didn't come back within 3 minutes of its restart"; exit 1; }
+          test "$("${PSQL[@]}" -c "SELECT count(*) FROM information_schema.columns
+            WHERE table_name = 'settings' AND column_name = 'twofactor'")" = 0
+          MD5=$(printf '%s' "$ADMIN_PW" | md5sum | awk '{print toupper($1)}')
+          BODY="{\"login\":\"admin\",\"password\":\"$MD5\"}"
+          curl -fsS -c "$RUNNER_TEMP/cj" -H 'Content-Type: application/json' -d "$BODY" -o "$RUNNER_TEMP/login" \
+            "$API/rest/public/auth/login"
+          grep -q '"status":"OK"' "$RUNNER_TEMP/login"
+          curl -fsS -b "$RUNNER_TEMP/cj" -o "$RUNNER_TEMP/console" "$API/rest/private/users/current"
+          TOKEN=$(curl -fsS -H 'Content-Type: application/json' -d "$BODY" "$API/rest/public/jwt/login" \
+            | python3 -c 'import sys,json; print(json.load(sys.stdin)["id_token"])')
+          curl -fsS -H "Authorization: Bearer $TOKEN" -o "$RUNNER_TEMP/api" "$API/rest/private/users/current"
+
       - name: Collect logs
         if: failure() || cancelled()   # cancelled covers the job timeout
         run: |

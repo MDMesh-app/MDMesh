@@ -91,7 +91,11 @@ itself up go in the enrollment QR code:
 
 Hidden network, Skip intro screens, Language and Time zone are stored at the top of **Extra QR parameters**, one per
 line and followed by a blank line (a leading blank line when none is set), so a configuration still has one place for everything its QR code adds; the editor's Extra QR parameters field
-shows only the other entries. It takes any other Android provisioning entry, for example:
+shows only the other entries. MDMesh passes on only these other setup entries, each with a value of its type:
+`PROVISIONING_USE_MOBILE_DATA` and `PROVISIONING_SENSORS_PERMISSION_GRANT_OPT_OUT` (true/false), `PROVISIONING_LOCAL_TIME` (milliseconds since 1970),
+`PROVISIONING_ORGANIZATION_NAME` (text, up to 100 characters) and `PROVISIONING_SUPPORT_URL` (an https address, up to
+200 characters). Any other entry, or a value of the wrong type, is left out, and the editor and the Enroll page say so.
+For example:
 
 ```
 "android.app.extra.PROVISIONING_SENSORS_PERMISSION_GRANT_OPT_OUT": true

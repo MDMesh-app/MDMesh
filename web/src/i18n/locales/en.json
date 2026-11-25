@@ -18,14 +18,38 @@
   "configEditor.enrollment.qrInvalid": {
     "defaultMessage": "Not valid JSON yet. It is saved as typed; the Enroll page leaves it out until it is fixed."
   },
-  "configEditor.enrollment.qrUnused": {
-    "defaultMessage": "{keys}: not used. Wi-Fi comes from the setup Wi-Fi above and the Enroll page, and MDMesh sets the others itself."
+  "configEditor.enrollment.qrLong": {
+    "defaultMessage": "These entries are long ({bytes} bytes): the enrollment QR code gets dense, and may not fit at all."
+  },
+  "configEditor.enrollment.qrSettingInvalid": {
+    "defaultMessage": "“{value}” isn't a value Android takes here, so it is left out of the code. Choose one from the list."
+  },
+  "configEditor.enrollment.qrUnusedInvalid": {
+    "defaultMessage": "{keys}: not used. The value isn't of the type this entry takes."
+  },
+  "configEditor.enrollment.qrUnusedProtected": {
+    "defaultMessage": "{keys}: not used. MDMesh sets these itself."
+  },
+  "configEditor.enrollment.qrUnusedUnsupported": {
+    "defaultMessage": "{keys}: not used. MDMesh passes on only these setup entries: {known}."
+  },
+  "configEditor.enrollment.qrUnusedWifi": {
+    "defaultMessage": "{keys}: not used. Wi-Fi comes from the setup Wi-Fi above and the Enroll page."
   },
   "configEditor.enrollment.setupScreens": {
     "defaultMessage": "Setup screens"
   },
   "configEditor.enrollment.setupScreensHelp": {
     "defaultMessage": "Android applies these while the device sets itself up."
+  },
+  "enroll.qrSize.dense": {
+    "defaultMessage": "This code holds {bytes} bytes, so it is dense: some devices' setup cameras may struggle to scan it. A shorter server address or Wi-Fi, or fewer Extra QR parameters, make it lighter."
+  },
+  "enroll.qrSize.tooLarge": {
+    "defaultMessage": "This code would hold {bytes} bytes, more than a QR code can ({max}). The server address (it is in the code twice) or the Wi-Fi is too long: shorten them."
+  },
+  "enroll.qrSize.tooLargeFrame": {
+    "defaultMessage": "No QR code: it would be too large to scan."
   },
   "enroll.setup.hiddenWifi": {
     "defaultMessage": "hidden Wi-Fi"
@@ -56,6 +80,9 @@
   },
   "enroll.setup.unreadable": {
     "defaultMessage": "{summary} (other Extra QR parameters left out: {error})"
+  },
+  "enroll.setup.unsupported": {
+    "defaultMessage": "{count, plural, one {# entry left out} other {# entries left out}}: not a setup entry MDMesh passes on, or a value of the wrong type"
   },
   "enroll.setup.wifiLeftOut": {
     "defaultMessage": "{count, plural, one {# Wi-Fi entry left out} other {# Wi-Fi entries left out}}: Wi-Fi comes from this page (and the configuration's setup Wi-Fi)"

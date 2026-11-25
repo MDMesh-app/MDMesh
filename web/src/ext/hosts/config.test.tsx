@@ -903,6 +903,16 @@ describe('enrollment setup settings', () => {
     expect(await screen.findByText(/PROVISIONING_WIFI_SSID: not used\. Wi-Fi comes from the setup Wi-Fi above/)).toBeTruthy();
   });
 
+  it('says on its row when a setting value is not one Android takes (a Headwind fr-FR)', async () => {
+    open({ config: { qrParameters: '"android.app.extra.PROVISIONING_LOCALE": "fr-FR"' } });
+    expect(await screen.findByText(/“fr-FR” isn't a value Android takes here/)).toBeTruthy();
+  });
+
+  it('opens a configuration whose field holds keys named like object members, and points them out', async () => {
+    open({ config: { qrParameters: '"x": 1,\n"android.app.extra.__proto__": "x",\n"android.app.extra.constructor": 1' } });
+    expect(await screen.findByText(/__proto__, constructor: not used\. MDMesh passes on only these setup entries/)).toBeTruthy();
+  });
+
   it('points out an entry typed by hand that has a setting of its own', async () => {
     open({ config: { qrParameters: '"x.y": 1,\n"android.app.extra.PROVISIONING_TIME_ZONE": "UTC"' } });
     expect(await screen.findByText(/PROVISIONING_TIME_ZONE: use the setting above instead/)).toBeTruthy();

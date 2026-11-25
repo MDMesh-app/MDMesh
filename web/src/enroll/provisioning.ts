@@ -73,7 +73,7 @@ export interface ExtraQrParameters {
 export function parseExtraQrParameters(text: unknown): ExtraQrParameters {
   const read = readQrParameters(text);
   if ('error' in read) return { entries: {}, ignored: [], error: read.error };
-  const entries: Record<string, unknown> = {};
+  const entries: Record<string, unknown> = Object.create(null);
   const ignored: string[] = [];
   for (const [key, value] of Object.entries(read.entries)) {
     if (PROTECTED_QR_KEYS.has(key)) ignored.push(key);
@@ -215,16 +215,25 @@ export function joinQrParameters(settings: Record<string, unknown>, rest: string
 }
 
 /**
- * Entries of the rest that never go in the code, without their prefix: Wi-Fi (set above and on the Enroll page) and
- * the entries MDMesh sets itself (PROTECTED_QR_KEYS). The editor points them out.
+ * Entries typed in the rest that never go in the code, without their prefix, by reason (see leftOutReason): Wi-Fi
+ * (set above and on the Enroll page), entries MDMesh sets itself, keys it doesn't pass on, and values of the wrong
+ * type. Settings typed here aren't listed: settingsInRest points them out. The editor shows both.
  */
-export function unusedInRest(rest: string): string[] {
+export function unusedInRest(rest: string): Record<LeftOutReason, string[]> {
+  const out: Record<LeftOutReason, string[]> = { protected: [], wifi: [], unsupported: [], invalid: [] };
   const read = readQrParameters(rest);
-  if ('error' in read) return [];
-  return Object.keys(read.entries)
-    .filter((k) => PROTECTED_QR_KEYS.has(k) || (k.startsWith(WIFI_PREFIX) && !EXTRA_WIFI_KEYS.has(k)))
-    .map((k) => (k.startsWith(QR_EXTRA_PREFIX) ? k.slice(QR_EXTRA_PREFIX.length) : k));
+  if ('error' in read) return out;
+  for (const [key, value] of Object.entries(read.entries)) {
+    const prefixed = key.startsWith(QR_EXTRA_PREFIX);
+    // Shown without the prefix when it has one, and in full when it doesn't (the prefix is what's missing).
+    const shown = prefixed ? key.slice(QR_EXTRA_PREFIX.length) : key;
+    // Hidden network typed here is a setting of its own (settingsInRest), with or without the page's Wi-Fi.
+    const why = leftOutReason(key, value, key === `${WIFI_PREFIX}HIDDEN`);
+    if (why && !(prefixed && QR_SETTING_KEYS.includes(shown) && why !== 'invalid')) out[why].push(shown);
+  }
+  return out;
 }
+
 
 /** Entries of the rest that have a setting of their own: that setting wins over them once it is set. */
 export function settingsInRest(rest: string): string[] {
@@ -247,7 +256,7 @@ function membersText(entries: Record<string, unknown>): string {
 export function configurationQrExtras(config: Record<string, unknown> | null | undefined): ExtraQrParameters {
   const split = splitQrParameters(config?.qrParameters);
   const others = parseExtraQrParameters(split.rest);
-  const entries: Record<string, unknown> = {};
+  const entries: Record<string, unknown> = Object.create(null);
   if (config?.mobileEnrollment === true) entries[`${QR_EXTRA_PREFIX}PROVISIONING_USE_MOBILE_DATA`] = true;
   Object.assign(entries, others.entries);
   for (const [k, v] of Object.entries(split.settings)) {
@@ -264,24 +273,77 @@ const WIFI_PREFIX = 'android.app.extra.PROVISIONING_WIFI_';
  */
 const EXTRA_WIFI_KEYS: ReadonlySet<string> = new Set([`${WIFI_PREFIX}HIDDEN`]);
 
+const isBool = (v: unknown) => typeof v === 'boolean';
+const shortText = (max: number, pattern?: RegExp) => (v: unknown) =>
+  typeof v === 'string' && v.length > 0 && v.length <= max && (!pattern || pattern.test(v));
+
 /**
- * The configuration's entries that go in the code: protected ones never do, and Wi-Fi is the Enroll page's choice,
- * so Wi-Fi entries (a hidden network, a proxy) go only with the page's own network (`joinsWifi`) and never name
- * another network or carry another password.
+ * The provisioning entries a configuration may add, with the value each takes. Anything else (an unknown key, a value
+ * of the wrong type or size) is left out, and the editor and the Enroll page say so: a configuration can only make
+ * the setup choices listed here, never change how Android provisions the device in other ways.
+ */
+// A Map, not an object: a typed key such as "constructor" or "__proto__" must not find an inherited member.
+export const QR_EXTRA_TYPES: ReadonlyMap<string, (v: unknown) => boolean> = new Map<string, (v: unknown) => boolean>([
+  ['PROVISIONING_LOCALE', shortText(16, /^[a-z]{2,3}(_[A-Z]{2})?$/)],
+  ['PROVISIONING_TIME_ZONE', shortText(64, /^[A-Za-z0-9_+\-/]+$/)],
+  ['PROVISIONING_SKIP_EDUCATION_SCREENS', isBool],
+  ['PROVISIONING_USE_MOBILE_DATA', isBool],
+  ['PROVISIONING_WIFI_HIDDEN', isBool],
+  ['PROVISIONING_SENSORS_PERMISSION_GRANT_OPT_OUT', isBool],
+  ['PROVISIONING_LOCAL_TIME', (v) => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0],
+  ['PROVISIONING_ORGANIZATION_NAME', shortText(100)],
+  ['PROVISIONING_SUPPORT_URL', shortText(200, /^https:\/\/\S+$/)],
+]);
+
+/** Whether a setting's value is one Android takes (QR_EXTRA_TYPES); an unset value counts as fine. */
+export function qrSettingValueOk(qrKey: string, value: unknown): boolean {
+  if (value == null || value === false || value === '') return true;
+  return QR_EXTRA_TYPES.get(qrKey)?.(value) ?? false;
+}
+
+/** Why an entry stays out of the code (see extrasInCode). */
+export type LeftOutReason = 'protected' | 'wifi' | 'unsupported' | 'invalid';
+
+/** Why this entry stays out of the code, or null when it goes in. */
+export function leftOutReason(key: string, value: unknown, joinsWifi: boolean): LeftOutReason | null {
+  if (PROTECTED_QR_KEYS.has(key)) return 'protected';
+  if (key.startsWith(WIFI_PREFIX) && (!joinsWifi || !EXTRA_WIFI_KEYS.has(key))) return 'wifi';
+  const check = key.startsWith(QR_EXTRA_PREFIX) ? QR_EXTRA_TYPES.get(key.slice(QR_EXTRA_PREFIX.length)) : undefined;
+  if (!check) return 'unsupported';
+  return check(value) ? null : 'invalid';
+}
+
+/**
+ * The configuration's entries that go in the code: only the ones QR_EXTRA_TYPES lists, with a value of their type.
+ * Protected entries never do, and Wi-Fi is set in the configuration's Enrollment section and on the Enroll page, so
+ * the one Wi-Fi entry that goes in, a hidden network, goes only with the page's own network (`joinsWifi`).
  */
 export function extrasInCode(extras: Record<string, unknown>, joinsWifi: boolean): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
+  const out: Record<string, unknown> = Object.create(null);
+  for (const [key, value] of Object.entries(extras)) if (!leftOutReason(key, value, joinsWifi)) out[key] = value;
+  return out;
+}
+
+/** The configuration's entries extrasInCode leaves out (protected ones aside), by reason, for the Enroll page. */
+export function extrasLeftOut(extras: Record<string, unknown>, joinsWifi: boolean): Record<'wifi' | 'unsupported' | 'invalid', string[]> {
+  const out = { wifi: [] as string[], unsupported: [] as string[], invalid: [] as string[] };
   for (const [key, value] of Object.entries(extras)) {
-    if (PROTECTED_QR_KEYS.has(key)) continue;
-    if (key.startsWith(WIFI_PREFIX) && (!joinsWifi || !EXTRA_WIFI_KEYS.has(key))) continue;
-    out[key] = value;
+    const why = leftOutReason(key, value, joinsWifi);
+    if (why && why !== 'protected') out[why].push(key);
   }
   return out;
 }
 
-/** The configuration's Wi-Fi entries extrasInCode leaves out, so the Enroll page can say so. */
-export function wifiExtrasLeftOut(extras: Record<string, unknown>, joinsWifi: boolean): string[] {
-  return Object.keys(extras).filter((k) => k.startsWith(WIFI_PREFIX) && (!joinsWifi || !EXTRA_WIFI_KEYS.has(k)));
+/**
+ * QR sizes, in bytes of the provisioning JSON: the most a QR code holds at the error correction the console draws with
+ * (level M, version 40), and the size above which the code gets dense enough for some setup cameras to struggle.
+ */
+export const QR_MAX_BYTES = 2331;
+export const QR_DENSE_BYTES = 1500;
+
+/** The size of a provisioning JSON in a QR code (UTF-8 bytes). */
+export function qrPayloadBytes(payload: string): number {
+  return new TextEncoder().encode(payload).length;
 }
 
 /**

@@ -50,10 +50,13 @@ describe('Enroll: the Setup fact', () => {
   });
 
   it('says how many Wi-Fi entries stay out of the code', async () => {
-    serve({ ...CLUB, qrParameters: CLUB.qrParameters.replace('"x.y": tru', '"x.y": 1') });
+    serve({
+      ...CLUB,
+      qrParameters: CLUB.qrParameters.replace('"x.y": tru', '"android.app.extra.PROVISIONING_SENSORS_PERMISSION_GRANT_OPT_OUT": true,\n"x.y": 1'),
+    });
     renderInConsole(<AppRoutes />, { path: '/enroll' });
     const text = await setupFact();
-    expect(text).toMatch(/1 other entry · 1 Wi-Fi entry left out/);
+    expect(text).toMatch(/1 other entry · 1 Wi-Fi entry left out: .* · 1 entry left out: not a setup entry MDMesh passes on/);
     await settled();
   });
 });

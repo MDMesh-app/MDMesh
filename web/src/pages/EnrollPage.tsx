@@ -13,7 +13,10 @@ import {
   buildProvisioningPayload,
   configurationQrExtras,
   extrasInCode,
-  wifiExtrasLeftOut,
+  extrasLeftOut,
+  qrPayloadBytes,
+  QR_DENSE_BYTES,
+  QR_MAX_BYTES,
   summarizeQrExtras,
   serverBaseUrl,
   type WifiSecurity,
@@ -256,6 +259,24 @@ const setupNotKnown = defineMessages({
     id: 'enroll.setup.notLoaded',
     defaultMessage: "Not added: the configuration didn't load, so the code has none of its setup entries",
   },
+});
+const setupUnsupported = defineMessage<{ count: number }>({
+  id: 'enroll.setup.unsupported',
+  defaultMessage:
+    '{count, plural, one {# entry left out} other {# entries left out}}: not a setup entry MDMesh passes on, or a value of the wrong type',
+});
+const qrSizeMessages = defineMessages({
+  tooLargeFrame: { id: 'enroll.qrSize.tooLargeFrame', defaultMessage: 'No QR code: it would be too large to scan.' },
+});
+const qrTooLarge = defineMessage<{ bytes: number; max: number }>({
+  id: 'enroll.qrSize.tooLarge',
+  defaultMessage:
+    "This code would hold {bytes} bytes, more than a QR code can ({max}). The server address (it is in the code twice) or the Wi-Fi is too long: shorten them.",
+});
+const qrDense = defineMessage<{ bytes: number }>({
+  id: 'enroll.qrSize.dense',
+  defaultMessage:
+    "This code holds {bytes} bytes, so it is dense: some devices' setup cameras may struggle to scan it. A shorter server address or Wi-Fi, or fewer Extra QR parameters, make it lighter.",
 });
 const setupOthers = defineMessage<{ count: number }>({
   id: 'enroll.setup.others',
@@ -500,7 +521,9 @@ export function EnrollPage() {
   const extrasText = useMemo(() => {
     // What goes in the code (Wi-Fi entries only with the page's own network), as buildProvisioningPayload adds it.
     const sum = summarizeQrExtras(extrasInCode(qrExtras.entries, wifiInCode));
-    const wifiLeftOut = wifiExtrasLeftOut(qrExtras.entries, wifiInCode).length;
+    const leftOut = extrasLeftOut(qrExtras.entries, wifiInCode);
+    const wifiLeftOut = leftOut.wifi.length;
+    const unsupported = leftOut.unsupported.length + leftOut.invalid.length;
     const parts = [
       sum.locale,
       sum.timeZone,
@@ -509,6 +532,7 @@ export function EnrollPage() {
       sum.hiddenWifi ? intl.formatMessage(setupMessages.hiddenWifi) : null,
       sum.others > 0 ? intl.formatMessage(setupOthers, { count: sum.others }) : null,
       wifiLeftOut > 0 ? intl.formatMessage(setupWifiLeftOut, { count: wifiLeftOut }) : null,
+      unsupported > 0 ? intl.formatMessage(setupUnsupported, { count: unsupported }) : null,
     ].filter((x): x is string => !!x);
     return parts.join(' · ');
   }, [qrExtras, intl, wifiInCode]);
@@ -710,10 +734,19 @@ export function EnrollPage() {
     </Card>
   );
 
+  // A QR code holds at most QR_MAX_BYTES: a larger code can't be drawn, and reloading wouldn't help, so say why.
+  const payloadBytes = payload ? qrPayloadBytes(payload) : 0;
+  const tooLarge = payloadBytes > QR_MAX_BYTES;
   const qrPanel = noAgent ? (
     <div className="v2-qr">
       <div className="v2-qr__frame v2-enroll__qrwait" role="status">
         No QR code: there is no agent to install yet.
+      </div>
+    </div>
+  ) : tooLarge ? (
+    <div className="v2-qr">
+      <div className="v2-qr__frame v2-enroll__qrwait" role="status">
+        {intl.formatMessage(qrSizeMessages.tooLargeFrame)}
       </div>
     </div>
   ) : payload && !expired ? (
@@ -776,6 +809,15 @@ export function EnrollPage() {
           minutes), the release this server runs has a signed manifest that doesn&rsquo;t check out, or no release with
           an agent was found (is <span className="v2-mono">GITHUB_REPO</span> set?). See Settings &rarr; Updates and the
           updater&rsquo;s log. Devices that already run the agent can still use a token.
+        </Callout>
+      ) : null}
+      {tooLarge ? (
+        <Callout tone="alert" icon={<IconAlert />} role="status">
+          {intl.formatMessage(qrTooLarge, { bytes: payloadBytes, max: QR_MAX_BYTES })}
+        </Callout>
+      ) : payloadBytes > QR_DENSE_BYTES ? (
+        <Callout tone="warn" icon={<IconWarning size={16} />} role="status">
+          {intl.formatMessage(qrDense, { bytes: payloadBytes })}
         </Callout>
       ) : null}
       {/* Pre-flight problems, not failures: amber (nothing has gone wrong yet; the admin can still fix it here). */}

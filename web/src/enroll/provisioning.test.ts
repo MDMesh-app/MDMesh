@@ -8,8 +8,11 @@ import {
   settingsInRest,
   splitQrParameters,
   extrasInCode,
-  wifiExtrasLeftOut,
+  extrasLeftOut,
+  qrPayloadBytes,
+  QR_MAX_BYTES,
   unusedInRest,
+  qrSettingValueOk,
   summarizeQrExtras,
 } from './provisioning';
 
@@ -246,8 +249,8 @@ describe('review: Wi-Fi entries and the summary', () => {
   it('keeps only a hidden network, with the page network, and lists what it leaves out (a proxy too)', () => {
     const extras = { [`${W}HIDDEN`]: true, [`${W}PROXY_HOST`]: 'p', [`${W}PAC_URL`]: 'u', [`${W}EAP_METHOD`]: 'PEAP' };
     expect(Object.keys(extrasInCode(extras, true))).toEqual([`${W}HIDDEN`]);
-    expect(wifiExtrasLeftOut(extras, true).sort()).toEqual([`${W}EAP_METHOD`, `${W}PAC_URL`, `${W}PROXY_HOST`]);
-    expect(wifiExtrasLeftOut(extras, false)).toHaveLength(4);
+    expect(extrasLeftOut(extras, true).wifi.sort()).toEqual([`${W}EAP_METHOD`, `${W}PAC_URL`, `${W}PROXY_HOST`]);
+    expect(extrasLeftOut(extras, false).wifi).toHaveLength(4);
   });
 
   it('names typed entries that never go in the code: Wi-Fi and the entries MDMesh sets', () => {
@@ -258,12 +261,13 @@ describe('review: Wi-Fi entries and the summary', () => {
       '"android.app.extra.PROVISIONING_LEAVE_ALL_SYSTEM_APPS_ENABLED": false',
       '"x.y": 1',
     ].join(',\n');
-    expect(unusedInRest(rest)).toEqual([
-      'PROVISIONING_WIFI_SSID',
-      'PROVISIONING_WIFI_PROXY_HOST',
-      'PROVISIONING_LEAVE_ALL_SYSTEM_APPS_ENABLED',
-    ]);
-    expect(unusedInRest('"x": tru')).toEqual([]);
+    expect(unusedInRest(rest)).toEqual({
+      wifi: ['PROVISIONING_WIFI_SSID', 'PROVISIONING_WIFI_PROXY_HOST'],
+      protected: ['PROVISIONING_LEAVE_ALL_SYSTEM_APPS_ENABLED'],
+      unsupported: ['x.y'],
+      invalid: [],
+    });
+    expect(unusedInRest('"x": tru')).toEqual({ wifi: [], protected: [], unsupported: [], invalid: [] });
   });
 
   it('counts every entry the summary cannot word, a default value included, since it goes in the code', () => {
@@ -275,5 +279,89 @@ describe('review: Wi-Fi entries and the summary', () => {
     expect(s.mobileData).toBe(false);
     expect(s.others).toBe(2);
     expect(summarizeQrExtras({ 'android.app.extra.PROVISIONING_LOCALE': true }).others).toBe(1);
+  });
+});
+
+describe('review: only known setup entries, with values of their type', () => {
+  const P = 'android.app.extra.';
+  it('passes on the listed entries with a valid value, and leaves out the rest by reason', () => {
+    const extras = {
+      [`${P}PROVISIONING_SENSORS_PERMISSION_GRANT_OPT_OUT`]: true,
+      [`${P}PROVISIONING_LOCAL_TIME`]: 1767225600000,
+      [`${P}PROVISIONING_ORGANIZATION_NAME`]: 'Club',
+      [`${P}PROVISIONING_SUPPORT_URL`]: 'https://example.org/help',
+      [`${P}PROVISIONING_DISCLAIMERS`]: [],
+      [`${P}PROVISIONING_DEVICE_ADMIN_MINIMUM_VERSION_CODE`]: 1,
+      'x.y': 1,
+      [`${P}PROVISIONING_SKIP_EDUCATION_SCREENS`]: 'true',
+      [`${P}PROVISIONING_LOCALE`]: 'fr_FR; drop',
+      [`${P}PROVISIONING_SUPPORT_URL_BAD`]: 'x',
+    };
+    expect(Object.keys(extrasInCode(extras, false)).sort()).toEqual([
+      `${P}PROVISIONING_LOCAL_TIME`,
+      `${P}PROVISIONING_ORGANIZATION_NAME`,
+      `${P}PROVISIONING_SENSORS_PERMISSION_GRANT_OPT_OUT`,
+      `${P}PROVISIONING_SUPPORT_URL`,
+    ]);
+    const out = extrasLeftOut(extras, false);
+    expect(out.invalid.sort()).toEqual([`${P}PROVISIONING_LOCALE`, `${P}PROVISIONING_SKIP_EDUCATION_SCREENS`]);
+    expect(out.unsupported).toHaveLength(4);
+    const p = JSON.parse(buildProvisioningPayload('t', undefined, extras));
+    expect(p['x.y']).toBeUndefined();
+    expect(p[`${P}PROVISIONING_DISCLAIMERS`]).toBeUndefined();
+    expect(p[`${P}PROVISIONING_SKIP_EDUCATION_SCREENS`]).toBeUndefined();
+  });
+
+  it('rejects a support URL that is not https, and a negative local time', () => {
+    expect(extrasInCode({ [`${P}PROVISIONING_SUPPORT_URL`]: 'http://x', [`${P}PROVISIONING_LOCAL_TIME`]: -1 }, false)).toEqual({});
+  });
+});
+
+describe('review: QR size', () => {
+  it('measures the payload in UTF-8 bytes', () => {
+    expect(qrPayloadBytes('é')).toBe(2);
+  });
+
+  it('a base payload stays well under the limit; huge extras would not fit', () => {
+    const base = buildProvisioningPayload('t'.repeat(40), { ssid: 'club', password: 'longenough', security: 'WPA' });
+    expect(qrPayloadBytes(base)).toBeLessThan(QR_MAX_BYTES / 2);
+    const big = buildProvisioningPayload('t', undefined, {
+      'android.app.extra.PROVISIONING_ORGANIZATION_NAME': 'n'.repeat(100),
+    });
+    expect(qrPayloadBytes(big)).toBeLessThan(QR_MAX_BYTES);
+  });
+});
+
+describe('review: typed keys named like JavaScript object members', () => {
+  const P = 'android.app.extra.';
+  const names = ['constructor', '__proto__', 'toString', 'hasOwnProperty', 'valueOf', 'isPrototypeOf', 'toLocaleString'];
+
+  it('never reach the code, never throw, and are pointed out', () => {
+    for (const name of names) {
+      const qrParameters = `"x.y": 1,\n"${P}${name}": {"a": "yyy"},\n"${name}": "x"`;
+      const entries = configurationQrExtras({ qrParameters }).entries;
+      const payload = JSON.parse(buildProvisioningPayload('t', undefined, entries));
+      expect(Object.keys(payload).some((k) => k.endsWith(name))).toBe(false);
+      expect(unusedInRest(qrParameters).unsupported).toEqual(expect.arrayContaining([name]));
+      expect(() => extrasLeftOut(entries, true)).not.toThrow();
+    }
+  });
+});
+
+describe('review: keys typed without their prefix', () => {
+  it('are pointed out in full, settings included, never hidden', () => {
+    expect(unusedInRest('"PROVISIONING_LOCALE": "fr_FR",\n"PROVISIONING_SENSORS_PERMISSION_GRANT_OPT_OUT": true').unsupported).toEqual([
+      'PROVISIONING_LOCALE',
+      'PROVISIONING_SENSORS_PERMISSION_GRANT_OPT_OUT',
+    ]);
+  });
+});
+
+describe('review: setting values Android does not take', () => {
+  it('flags a Headwind locale such as fr-FR, and accepts an unset one', () => {
+    expect(qrSettingValueOk('PROVISIONING_LOCALE', 'fr-FR')).toBe(false);
+    expect(qrSettingValueOk('PROVISIONING_LOCALE', 'fr_FR')).toBe(true);
+    expect(qrSettingValueOk('PROVISIONING_TIME_ZONE', null)).toBe(true);
+    expect(qrSettingValueOk('constructor', 'x')).toBe(false);
   });
 });

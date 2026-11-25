@@ -744,6 +744,119 @@ for c in 'cloudflare|:80|--profile cloudflare' '|mdm.example.com, www.example.co
   ok
 done
 
+# Your own domain: a re-run stops, before any container is touched, when the edge binds host port 80 or 443 and the
+# compose files it would start publish it no more (install/lib/ports.sh). docker is a stub: STUB_IDS are the edge's
+# containers (inspect answers $STUB_BIND), STUB_CONFIG the file `config` prints (as compose 5.3.1 prints it);
+# "fail" for any of the three makes it fail. Only `up` ends the run (the stub fails it).
+mkdir -p "$WORK/stubs-ports"
+# shellcheck disable=SC2016  # the stub's own variables
+printf '%s\n' '#!/bin/sh' 'echo "docker $*" >> "$STUB_LOG"' \
+  'no() { [ "$1" != fail ] || { echo "the $2 error" >&2; exit 1; }; }' 'case "$*" in' \
+  '  "compose ps -a -q caddy") no "$STUB_IDS" ps; printf "%s\n" $STUB_IDS ;;' \
+  '  "inspect --format {{json .HostConfig.PortBindings}}"*) no "$STUB_BIND" inspect; shift 3' \
+  '    [ "$#" != 0 ] || no fail inspect; for i; do case "$i" in idle) echo "{}" ;; *) printf "%s\n" "$STUB_BIND" ;; esac; done ;;' \
+  '  compose*" config") [ "$STUB_CONFIG" != fail ] || echo "      POSTGRES_PASSWORD: s3cr3t-pw"; no "$STUB_CONFIG" config; cat "$STUB_CONFIG" ;;' \
+  '  compose*" up "*) echo "up env COMPOSE_FILE=${COMPOSE_FILE-unset}" >> "$STUB_LOG"; exit 99 ;;' \
+  'esac' 'exit 0' > "$WORK/stubs-ports/docker"
+chmod +x "$WORK/stubs-ports/docker"
+# conf NAME PORT...: `config` output whose caddy service publishes each PORT.
+conf() {
+  local f="$WORK/conf.$1" c; shift
+  { printf '%s\n' 'name: mdmesh' 'services:' '  caddy:' '    labels:' '      note: "published: 443"' '    environment:' '      SITE_ADDRESS: :80'
+    [ "$#" = 0 ] || echo '    ports:'
+    for c in "$@"; do printf '%s\n' '      - mode: ingress' "        target: ${c//\"/}" "        published: $c" '        protocol: tcp'; done
+    printf '%s\n' '  postgres:' '    environment:' '      POSTGRES_PASSWORD: s3cr3t-pw'; } > "$f"
+}
+conf none; conf both '"80"' '"443"'; conf numbers 80 443; conf only443 '"443"'; conf other '"8080"' '"4430"'
+EDGE_BOTH='{"443/tcp":[{"HostIp":"","HostPort":"443"}],"80/tcp":[{"HostIp":"","HostPort":"80"}]}'
+EDGE_443='{"443/tcp":[{"HostIp":"0.0.0.0","HostPort":"443"}]}'
+EDGE_8080='{"8080/tcp":[{"HostIp":"127.0.0.1","HostPort":"8080"}]}'
+# ports_run CONFIG BINDINGS LIST [ENV LINE...]: a re-run of ./setup.sh whose .env's COMPOSE_FILE is LIST ("-": no such
+# line). Sets RC, UP (how often `up` ran) and CONF (`config`); ENV_SAME=1 when .env is as it was, but for its mode bits.
+ports_run() {
+  local c=$1 bind=$2 list=$3; shift 3
+  [ "$c" = fail ] || c="$WORK/conf.$c"
+  rm -rf -- "$WORK/src12"; mkdir -p "$WORK/src12/install"; cp_setup "$WORK/src12"; cp -R -- "$REPO/install/lib" "$WORK/src12/install/"
+  { printf '%s\n' DB_PASSWORD=s3cr3t-pw HASH_SECRET=y BASE_URL=https://mdm.example.com SITE_ADDRESS=mdm.example.com IMAGE_OWNER=local
+    [ "$list" = - ] || echo "COMPOSE_FILE=\"$list\""; [ "$#" = 0 ] || printf '%s\n' "$@"; } > "$WORK/src12/.env"
+  ports_again "$c" "$bind"
+}
+ports_again() {
+  cp "$WORK/src12/.env" "$WORK/env12.before"; : > "$WORK/ports.log"; RC=0
+  (cd "$WORK/src12" && env -i PATH="$WORK/stubs-ports:$WORK/stubs:$PATH" HOME="$WORK" STUB_LOG="$WORK/ports.log" STUB_IDS="${STUB_IDS-edge1}" \
+    STUB_CONFIG="$1" STUB_BIND="$2" bash ./setup.sh < /dev/null > "$WORK/out/o" 2> "$WORK/out/e") || RC=$?
+  UP=$(grep -c '^docker compose .*up -d --build$' "$WORK/ports.log" || true); CONF=$(grep -c ' config$' "$WORK/ports.log" || true)
+  ENV_SAME=0; ! cmp -s "$WORK/env12.before" "$WORK/src12/.env" || ENV_SAME=1
+}
+# stopped WHAT TEXT...: the run stopped, exit 1, with each TEXT; no container touched, .env as it was, no secret shown.
+stopped() {
+  local what=$1 t good=1; shift
+  for t in "$@"; do grep -qF -- "$t" "$WORK/out/e" || { good=0; echo "missing: $t" >&2; }; done
+  { [ "$good" = 1 ] && [ "$RC" = 1 ] && [ "$UP" = 0 ] && [ "$ENV_SAME" = 1 ] && ! grep -qE ' (up|build|rm|stop|down|start|restart) ?' "$WORK/ports.log" \
+    && grep -qF 'Nothing was started or stopped' "$WORK/out/e" && ! grep -q 's3cr3t-pw' "$WORK/out/o" "$WORK/out/e"; } \
+    || { fail "$what: not stopped as it should be (rc $RC, up $UP, .env same $ENV_SAME)"; show; cat "$WORK/ports.log" >&2; }
+  ok
+}
+# goes_on WHAT CONFIGS: the run went on to `up`, having asked `config` CONFIGS times.
+goes_on() {
+  { [ "$UP" = 1 ] && [ "$CONF" = "$2" ] && ! grep -qF 'Nothing was started or stopped' "$WORK/out/e"; } \
+    || { fail "$1: did not go on to up, or asked config $CONF times, want $2"; show; cat "$WORK/ports.log" >&2; }
+  ok
+}
+D=docker-compose.domain.yml
+# Lists that publish neither: stopped, with the line that adds the domain file to the list as saved (no file of it lost).
+for c in docker-compose.yml ./docker-compose.yml /srv/m/docker-compose.yml docker-compose.yml:docker-compose.override.yml \
+         "docker-compose.yml:my-$D" "docker-compose.yml:$D.bak" 'docker-compose.yml:/srv/MDMesh rules/override.yml'; do
+  ports_run none "$EDGE_BOTH" "$c"
+  stopped "COMPOSE_FILE=$c with the edge on 80/443" "port 80 and 443 would close" "COMPOSE_FILE='$c:$D'" \
+    'before any update or rollback in the console' 'docker compose rm -sf caddy'
+done
+# `config` is asked of the list `up` gets.
+grep -qxF "docker compose -f docker-compose.yml -f /srv/MDMesh rules/override.yml config" "$WORK/ports.log" \
+  || { fail "config is not asked of the run's own list"; cat "$WORK/ports.log" >&2; }
+ok
+# One port of two, or another host port, is no substitute.
+ports_run only443 "$EDGE_BOTH" docker-compose.yml:mine.yml; stopped "a list that drops 80 alone" 'port 80 would close' 'publish it in your own compose file'
+ports_run other "$EDGE_443" docker-compose.yml:mine.yml; stopped "a list that publishes 8080 and 4430 instead of 443" 'port 443 would close' "'docker-compose.yml:mine.yml:$D'"
+# Any of the edge's containers counts, the first or not (a stopped one too: HostConfig, in ps -a).
+for STUB_IDS in 'idle edge1' 'edge1 idle'; do ports_run none "$EDGE_BOTH" docker-compose.yml; stopped "one of the containers $STUB_IDS on 80/443"; done; unset STUB_IDS
+# What can't be answered stops too, in its own words, and shows no line of config's output.
+for c in ps inspect config; do
+  bind=$EDGE_BOTH; conf=none; STUB_IDS=edge1
+  case "$c" in ps) STUB_IDS=fail ;; inspect) bind=fail ;; config) conf=fail ;; esac
+  ports_run "$conf" "$bind" 'docker-compose.yml '; stopped "docker's $c failing" "the $c error"
+done
+unset STUB_IDS
+# Published by the list (an override of the operator's, another service of the stack; quoted or not): goes on.
+for c in both numbers; do ports_run $c "$EDGE_BOTH" docker-compose.yml:mine.yml; goes_on "a list that publishes 80/443 itself ($c)" 1; done
+ports_run both "$EDGE_443" docker-compose.yml:mine.yml; goes_on "a list that publishes one port more" 1
+# The edge binds neither (none, others, no edge at all): nothing to lose, and config isn't asked.
+for c in '{}' null "$EDGE_8080" '{"443/tcp":[{"HostIp":"","HostPort":"8443"}]}'; do ports_run fail "$c" docker-compose.yml; goes_on "the edge binds $c" 0; done
+STUB_IDS=''; ports_run fail "$EDGE_BOTH" docker-compose.yml; goes_on "no edge container" 0; unset STUB_IDS
+# The domain overlay in the list (as the installers write it, or any path to it; without COMPOSE_FILE the run adds it):
+# nothing is asked, so nothing docker or compose says can stop it.
+for c in "docker-compose.yml:$D" "/srv/m/docker-compose.yml:/srv/m/$D" - ''; do
+  STUB_IDS=fail; ports_run fail fail "$c"; goes_on "COMPOSE_FILE=$c" 0
+  ! grep -q 'compose ps\|inspect' "$WORK/ports.log" || fail "COMPOSE_FILE=$c: the edge was asked"
+done
+unset STUB_IDS
+# Moves between modes through ./setup.sh: proxy -> domain, domain -> proxy, domain -> tunnel.
+ports_run fail "$EDGE_8080" "docker-compose.yml:$D"; goes_on "proxy to domain" 0
+ports_run none "$EDGE_BOTH" docker-compose.yml:docker-compose.proxy.yml MDMESH_BIND=127.0.0.1:8080 'TRUSTED_PROXIES="host"'; goes_on "domain to proxy" 0
+for c in cloudflare cloudflare,backup; do ports_run none "$EDGE_BOTH" docker-compose.yml "COMPOSE_PROFILES=$c"; goes_on "domain to tunnel ($c)" 0; done
+# Stopped, then the shown line set in .env: the same run goes on with the operator's list and the domain file, and hands
+# the supervisor that list.
+for c in docker-compose.yml:docker-compose.override.yml 'docker-compose.yml:/srv/MDMesh rules/override.yml'; do
+  ports_run none "$EDGE_BOTH" "$c"
+  line=$(grep -o "COMPOSE_FILE='.*'" "$WORK/out/e" || true)
+  grep -v '^COMPOSE_FILE=' "$WORK/src12/.env" > "$WORK/env12"; printf '%s\n' "$line" >> "$WORK/env12"; cp "$WORK/env12" "$WORK/src12/.env"
+  ports_again "$WORK/conf.both" "$EDGE_BOTH"; goes_on "$c, then the line it showed" 0
+  want="$c:$D"
+  { grep -qxF "docker compose -f ${want//:/ -f } up -d --build" "$WORK/ports.log" && grep -qxF "up env COMPOSE_FILE=$want" "$WORK/ports.log"; } \
+    || { fail "$c, then the line it showed: up or the supervisor has another list"; cat "$WORK/ports.log" >&2; }
+  ok
+done
+
 # A site.d that already exists and others may write is not connected to the edge (never made private and then trusted),
 # and left out of .env so a later run tries again; once it is private, it is.
 rm -rf -- "$WORK/src7"; mkdir -p "$WORK/src7/install" "$WORK/src7/site.d"; chmod 775 "$WORK/src7/site.d"
@@ -783,6 +896,8 @@ printf '%s\n' '#!/bin/sh' 'echo "docker $*" >> "$STUB_LOG"' 'case "$*" in' \
   '  *psql*"createnewdevices AND"*) echo 1 ;;' \
   '  *psql*) cat > "$STUB_LOG.stdin" ;;' \
   '  "compose ps -a -q caddy") echo edge1 ;;' \
+  '  "inspect --format {{json .HostConfig.PortBindings}} "*) grep -q " up -d" "$STUB_LOG" || { echo "{}"; exit 0; }   # before up: none' \
+  '    [ "$STUB_BIND" != fail ] || exit 1; echo "$STUB_BIND" ;;' \
   '  "inspect "*) echo "$STUB_EDGE t0" ;;' \
   '  "compose logs"*) echo "the edge log line" ;;' \
   'esac' 'exit 0' > "$WORK/stubs-full/docker"
@@ -792,7 +907,7 @@ for e in restarting running; do
   printf '%s\n' DB_PASSWORD=x HASH_SECRET=y BASE_URL=https://mdm.example.com SITE_ADDRESS=mdm.example.com \
     COMPOSE_FILE=docker-compose.yml:docker-compose.domain.yml COMPOSE_PROFILES= IMAGE_OWNER=local > "$WORK/src10/.env"
   : > "$WORK/full.log"; RC=0
-  (cd "$WORK/src10" && env -i PATH="$WORK/stubs-full:$PATH" HOME="$WORK" STUB_LOG="$WORK/full.log" STUB_EDGE=$e MDM_EDGE_SETTLE=0 \
+  (cd "$WORK/src10" && env -i PATH="$WORK/stubs-full:$PATH" HOME="$WORK" STUB_LOG="$WORK/full.log" STUB_EDGE=$e STUB_BIND="$EDGE_BOTH" MDM_EDGE_SETTLE=0 \
     bash ./setup.sh < /dev/null > "$WORK/out/o" 2> "$WORK/out/e") || RC=$?
   repairs=$(grep -n 'createnewdevices AND' "$WORK/full.log" | head -1 | cut -d: -f1 || true)
   edge=$(grep -n '^docker inspect ' "$WORK/full.log" | head -1 | cut -d: -f1 || true)
@@ -803,6 +918,32 @@ for e in restarting running; do
       && grep -qF 'its edge is not up' "$WORK/out/e" && grep -qF 'Console:' "$WORK/out/o"; } \
       || { fail "setup.sh with its edge down: repairs not run first, or no summary, or not a failure (rc $RC)"; show; }
   fi
+  ok
+done
+
+# The same run to the end in domain mode, with a list that leaves the domain file out: when neither port is found
+# published (or Docker can't say), it says so, with the .env line, and claims no open port. Other summaries are as always.
+for c in "docker-compose.yml:$D||fail|claim" "docker-compose.yml:mine.yml||$EDGE_443|claim" 'docker-compose.yml:mine.yml||{}|line' \
+         'docker-compose.yml:mine.yml||fail|line' 'docker-compose.yml|cloudflare|{}|entry point (Cloudflare Tunnel)' \
+         'docker-compose.yml:docker-compose.proxy.yml||{}|behind your proxy'; do
+  IFS='|' read -r list prof bind what <<< "$c"
+  rm -rf -- "$WORK/src10"; mkdir -p "$WORK/src10/install"; cp_setup "$WORK/src10"; cp -R -- "$REPO/install/lib" "$REPO/install/sql" "$WORK/src10/install/"
+  printf '%s\n' DB_PASSWORD=x HASH_SECRET=y BASE_URL=https://mdm.example.com SITE_ADDRESS=mdm.example.com \
+    "COMPOSE_FILE=$list" "COMPOSE_PROFILES=$prof" IMAGE_OWNER=local > "$WORK/src10/.env"
+  : > "$WORK/full.log"; RC=0
+  (cd "$WORK/src10" && env -i PATH="$WORK/stubs-full:$PATH" HOME="$WORK" STUB_LOG="$WORK/full.log" STUB_EDGE=running STUB_BIND="$bind" \
+    MDM_EDGE_SETTLE=0 bash ./setup.sh < /dev/null > "$WORK/out/o" 2> "$WORK/out/e") || RC=$?
+  up=0; ! grep -qF '== MDMesh is up ==' "$WORK/out/o" || up=1
+  claims=0; ! grep -qE 'entry point \(ports? |ports? [0-9/]+ (is|are) open' "$WORK/out/o" || claims=1
+  line=0; ! grep -qF "COMPOSE_FILE='docker-compose.yml:mine.yml:$D'" "$WORK/out/o" || line=1
+  want="rc=0 up=1 claims=0 line=0"; t=$what
+  case "$what" in
+    claim) want="rc=0 up=1 claims=1 line=0"; t='entry point (ports 80/443)' ;;
+    line) want="rc=0 up=1 claims=0 line=1"; t='(no port 80 or 443 found published)' ;;
+  esac
+  got="rc=$RC up=$up claims=$claims line=$line"
+  { [ "$got" = "$want" ] && grep -qF -- "$t" "$WORK/out/o"; } \
+    || { fail "setup.sh's summary, COMPOSE_FILE=$list, the edge on $bind: $got, want $want and \"$t\""; show; }
   ok
 done
 
@@ -1247,5 +1388,5 @@ if [ -e "$WORK/stubs.called" ]; then fail "a dry run ran a command that changes 
 TREE=$(git -c safe.directory='*' -C "$REPO" describe --always --dirty 2>&1) || TREE='?'
 TREE="$REPO at $TREE"
 if [ "$FAILS" != 0 ]; then echo "installer answers: $FAILS failure(s) ($TREE)" >&2; exit 1; fi
-if [ "$CHECKS" -lt 651 ]; then echo "installer answers: only $CHECKS checks ran, expected at least 651 ($TREE)" >&2; exit 1; fi
+if [ "$CHECKS" -lt 692 ]; then echo "installer answers: only $CHECKS checks ran, expected at least 692 ($TREE)" >&2; exit 1; fi
 echo "installer answers: all $CHECKS checks passed ($TREE)"

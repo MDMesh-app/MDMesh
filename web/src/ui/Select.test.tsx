@@ -1,8 +1,9 @@
 import { createRef, useState } from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { Select, type SelectHandle } from './Input';
 import { chooseOption, selectValue } from '../test/select';
+import { render } from '../test/render';
 
 describe('Select (Radix) with a native select’s props', () => {
   it('hands onChange a change-shaped event: target.value and name, preventDefault and stopPropagation', () => {

@@ -440,10 +440,38 @@ upd domain059 old -- --allow-downgrade
 { head_is domain059 "$c900" && grep -q 'Checked out v0.5.9' "$WORK/out"; } || { fail "--update --allow-downgrade to v0.5.9 in domain mode is refused"; show; }
 ok
 
+# On your own domain, with a COMPOSE_FILE that leaves the domain overlay out: the release's setup.sh stops before any
+# container is touched (the clone has moved; install/lib/ports.sh). With the line it shows in .env, --update at the same
+# tag runs through to `up`, which gives the supervisor the new list. docker: a stub whose edge binds 443.
+mkdir -p "$WORK/stubs-ports"
+cat > "$WORK/stubs-ports/docker" <<'EOF'
+#!/bin/sh
+case "$*" in
+  "compose ps -a -q caddy") echo edge1 ;;
+  inspect*PortBindings*) echo '{"443/tcp":[{"HostIp":"","HostPort":"443"}]}' ;;
+  compose*" up "*) echo "up $* COMPOSE_FILE=$COMPOSE_FILE" >> "$WORK_ENV_LOG"; exit 99 ;;
+esac
+exit 0
+EOF
+chmod +x "$WORK/stubs-ports/docker"
+clone ports v9.0.0
+printf '%s\n' DB_PASSWORD=x HASH_SECRET=y BASE_URL=https://mdm.example.com IMAGE_OWNER=local \
+  COMPOSE_FILE=docker-compose.yml:mine.yml > "$WORK/ports/.env"
+upd ports ok PATH="$WORK/stubs-ports:$WORK/stubs:$PATH" --
+{ [ "$RC" = 1 ] && head_is ports "$c910" && grep -qF 'port 443 would close' "$WORK/out" && ! grep -q '^up ' "$WORK/env.log" \
+  && grep -qF "COMPOSE_FILE='docker-compose.yml:mine.yml:docker-compose.domain.yml'" "$WORK/out"; } \
+  || { fail "--update with a list that closes the edge's 443 does not stop, showing the line"; show; }
+ok
+grep -o "COMPOSE_FILE='.*'" "$WORK/out" >> "$WORK/ports/.env" || true
+upd ports ok PATH="$WORK/stubs-ports:$WORK/stubs:$PATH" --
+{ head_is ports "$c910" && grep -q '^up .* up -d --build COMPOSE_FILE=docker-compose.yml:mine.yml:docker-compose.domain.yml$' "$WORK/env.log"; } \
+  || { fail "--update at the same tag, with the line it showed in .env, does not go on with it"; show; }
+ok
+
 # Which tree ran, and a floor on how many checks did (a few depend on the host), so a section that silently ran
 # nothing can't pass.
 TREE=$(git -c safe.directory='*' -C "$REPO" describe --always --dirty 2>&1) || TREE='?'
 TREE="$REPO at $TREE"
 if [ "$FAILS" != 0 ]; then echo "setup --update: $FAILS failure(s) ($TREE)" >&2; exit 1; fi
-if [ "$CHECKS" -lt 78 ]; then echo "setup --update: only $CHECKS checks ran, expected at least 78 ($TREE)" >&2; exit 1; fi
+if [ "$CHECKS" -lt 80 ]; then echo "setup --update: only $CHECKS checks ran, expected at least 80 ($TREE)" >&2; exit 1; fi
 echo "setup --update: all $CHECKS checks passed ($TREE)"

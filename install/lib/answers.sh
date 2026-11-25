@@ -28,14 +28,14 @@
 
 # >>> answers.sh functions (quickstart.sh keeps a verbatim copy) >>>
 # The keys an answers file may set: every answer and setting in install/options.json (CI checks the two match).
-_MDM_ANSWER_KEYS=" MDMESH_MODE MDMESH_REPO MDMESH_IMAGE_OWNER MDMESH_HOST MDMESH_TUNNEL_TOKEN MDMESH_ACME_EMAIL MDMESH_BASE_URL MDMESH_HTTP_PORT MDMESH_REPLACE_DATA MDMESH_ASSUME_YES MDMESH_DIR MDMESH_VERSION MDMESH_RELEASE_PUBKEY MDMESH_NONINTERACTIVE MDMESH_DRY_RUN "
+_MDM_ANSWER_KEYS=" MDMESH_MODE MDMESH_REPO MDMESH_IMAGE_OWNER MDMESH_HOST MDMESH_TUNNEL_TOKEN MDMESH_ACME_EMAIL MDMESH_BIND MDMESH_TRUSTED_PROXIES MDMESH_BASE_URL MDMESH_HTTP_PORT MDMESH_REPLACE_DATA MDMESH_ASSUME_YES MDMESH_DIR MDMESH_VERSION MDMESH_RELEASE_PUBKEY MDMESH_ORIGIN_TLS MDMESH_NONINTERACTIVE MDMESH_DRY_RUN "
 _MDM_SECRET_KEYS=" MDMESH_TUNNEL_TOKEN "
 _MDM_ANS_GIVEN=" "       # ids of the questions answered in advance
 _MDM_ANS_FROM_FILE=" "   # keys set from the answers file
 _mdm_answer_fail() { printf 'MDMesh installer: %s\n' "$*" >&2; exit 1; }
 
 # mdm_answers_load: reads the answers file MDMESH_ANSWERS names, if any (keys already in the environment are left
-# alone), then checks MDMESH_NONINTERACTIVE and MDMESH_DRY_RUN. Stops the installer on any error. xtrace stays off
+# alone), then checks the 0/1 settings (MDMESH_NONINTERACTIVE, MDMESH_DRY_RUN, MDMESH_ORIGIN_TLS). Stops the installer on any error. xtrace stays off
 # while it runs (the file may hold a secret).
 mdm_answers_load() { local _mdm_x=$-; set +x; _mdm_answers_load; case "$_mdm_x" in *x*) set -x ;; esac; }
 # _mdm_private_file FILE: FILE belongs to this user (or root) and nobody else may read, write or run it. Fails closed:
@@ -78,7 +78,7 @@ _mdm_answers_load() {
       if [ -z "${!key+x}" ]; then printf -v "$key" '%s' "$val"; _MDM_ANS_FROM_FILE="$_MDM_ANS_FROM_FILE$key "; fi
     done < "$f"
   fi
-  for key in MDMESH_NONINTERACTIVE MDMESH_DRY_RUN; do
+  for key in MDMESH_NONINTERACTIVE MDMESH_DRY_RUN MDMESH_ORIGIN_TLS; do
     v=${!key-}
     case "$v" in ''|0|1) ;; *) _mdm_answer_fail "$key must be 1 or 0." ;; esac
   done
@@ -90,9 +90,9 @@ _mdm_answer_check() {
   local v=$_MDM_V u l d
   _MDM_WHY=''; _MDM_SHOW=$v
   case "$1" in
-    mode)
+    mode)   # the hosting modes of install/lib/modes.sh
       case "$v" in tunnel|1) _MDM_V=1; _MDM_SHOW=tunnel ;; domain|2) _MDM_V=2; _MDM_SHOW=domain ;;
-        *) _MDM_WHY='must be tunnel or domain' ;; esac ;;
+        proxy|3) _MDM_V=3; _MDM_SHOW=proxy ;; *) _MDM_WHY='must be tunnel, domain or proxy' ;; esac ;;
     hostname)
       u="https://$v"
       { mdm_check_host _MDM_V && mdm_check_base_url u; } || _MDM_WHY=' ' ;;
@@ -137,6 +137,10 @@ _mdm_answer_check() {
         *[!${_MDM_DIGITS}]*) _MDM_WHY='must be a number' ;;
         *) { [ "${#u}" -le 5 ] && [ "$u" -ge 1 ] && [ "$u" -le 65535 ]; } || _MDM_WHY='must be 1-65535' ;;
       esac ;;
+    bind)
+      [ -z "$v" ] || _mdm_bind_ok "$v" || _MDM_WHY='must be an IP address and a port, e.g. 127.0.0.1:8080 or [::1]:8080' ;;
+    proxies)
+      _mdm_proxies_check "$v"; _MDM_SHOW=$_MDM_V ;;
     yes-no)
       case "$v" in yes|no) ;; *) _MDM_WHY='must be yes or no' ;; esac ;;
     flag)
@@ -145,8 +149,68 @@ _mdm_answer_check() {
   esac
 }
 
+# _mdm_ipv4 ADDR: ADDR is a dotted IPv4 address (four numbers 0-255, no leading zeros).
+_mdm_ipv4() {
+  local a=$1. o n=0
+  case "$1" in ''|*[!${_MDM_DIGITS}.]*|.*|*.|*..*) return 1 ;; esac
+  while [ -n "$a" ]; do
+    o=${a%%.*}; a=${a#*.}; n=$((n + 1))
+    case "$o" in 0?*) return 1 ;; esac
+    { [ "${#o}" -le 3 ] && [ "$o" -le 255 ]; } || return 1
+  done
+  [ "$n" = 4 ]
+}
+# _mdm_ipv6 ADDR: ADDR (no brackets) is an IPv6 address: 8 groups of 1-4 hex digits, or fewer with one "::". IPv4-mapped
+# ones (::ffff:…, or a dotted part) are refused: they don't match the IPv4 peers they mean.
+_mdm_ipv6() {
+  local r=$1 p g=0 d=0
+  case "$1" in ''|*[!${_MDM_HEX}:]*|*:::*|*::*::*|:[!:]*|*[!:]:|::[Ff][Ff][Ff][Ff]:*|0:0:0:0:0:[Ff][Ff][Ff][Ff]:*) return 1 ;; *::*) d=1 ;; esac
+  while [ -n "$r" ]; do
+    p=${r%%:*}; if [ "$p" = "$r" ]; then r=''; else r=${r#*:}; fi
+    [ -n "$p" ] || continue
+    [ "${#p}" -le 4 ] || return 1
+    g=$((g + 1))
+  done
+  if [ "$d" = 1 ]; then [ "$g" -le 7 ]; else [ "$g" -eq 8 ]; fi
+}
+# _mdm_bind_ok IP:PORT: an address to listen on: an IPv4 address or an [IPv6] one, then :port (1-65535).
+_mdm_bind_ok() {
+  local a p
+  case "$1" in
+    \[*\]:*) a=${1%%\]:*}; p=${1#*\]:}; _mdm_ipv6 "${a#\[}" || return 1 ;;
+    *:*) p=${1##*:}; _mdm_ipv4 "${1%:*}" || return 1 ;;
+    *) return 1 ;;
+  esac
+  case "$p" in ''|*[!0-9]*) return 1 ;; esac
+  [ -z "$(_mdm_hostport_problem "[::1]:$p")" ]
+}
+# _mdm_proxies_check LIST: the proxy addresses in LIST (separated by spaces or commas). Each is "host" (a proxy on this
+# machine: MDMesh's edge sees it at its Docker network's gateway), an IP address, or a range (CIDR) no wider than an IPv4
+# /8 or an IPv6 /16, which would trust far more than a proxy. Names and Caddy's private_ranges are refused. On success
+# _MDM_V is the list with one space between entries; else _MDM_WHY says why. Empty: the default, host.
+_mdm_proxies_check() {
+  local t a l min max out='' list
+  case "$1" in *$'\n'*|*$'\r'*) _MDM_WHY='has a line break'; return ;; esac
+  IFS=', ' read -r -a list <<< "$1"
+  for t in ${list[@]+"${list[@]}"}; do
+    case "$t" in '') continue ;; host) out="$out $t"; continue ;; esac
+    a=${t%/*}
+    if _mdm_ipv4 "$a"; then min=8; max=32
+    elif _mdm_ipv6 "$a"; then min=16; max=128
+    else _MDM_WHY="has \"$t\", which is not an IP address, a range (CIDR) or host"; return; fi
+    case "$t" in
+      */*) l=${t#*/}
+           case "$l" in ''|*[!${_MDM_DIGITS}]*|0?*) _MDM_WHY="has \"$t\", whose range is not a prefix length"; return ;; esac
+           { [ "${#l}" -le 3 ] && [ "$l" -ge "$min" ] && [ "$l" -le "$max" ]; } \
+             || { _MDM_WHY="has \"$t\": a range must be /$min to /$max (a wider one trusts far more than your proxy)"; return; } ;;
+    esac
+    out="$out $t"
+  done
+  _MDM_V=${out# }
+}
+
 # _mdm_answer_rule_has_default RULE: an empty or missing answer means the question's default (Enter at the prompt).
-_mdm_answer_rule_has_default() { case "$1" in github-repo|image-owner|port|email|yes-no) return 0 ;; esac; return 1; }
+_mdm_answer_rule_has_default() { case "$1" in github-repo|image-owner|port|email|yes-no|bind|proxies) return 0 ;; esac; return 1; }
 
 # mdm_answer ID VAR RULE ENV [ALIAS]: if ENV (or ALIAS, the installer's older name for it) is set, in the environment or
 # the answers file, checks its value by RULE and stores it in VAR: question ID is then answered. Stops the installer when
@@ -189,12 +253,14 @@ _mdm_answer() {
 }
 
 # mdm_prompt_ok ID VAR: checks the answer just typed at question ID (in VAR) with the rule a pre-set answer gets. Fails,
-# saying why (never the value of a secret), so the caller asks again. xtrace is off while it holds the value.
+# saying why (never the value of a secret), so the caller asks again; otherwise VAR holds the answer as the rule writes it
+# (a list of proxies with one space between entries, say). xtrace is off while it holds the value.
 mdm_prompt_ok() { local _mdm_x=$- _mdm_rc=0; set +x; _mdm_prompt_ok "$@" || _mdm_rc=1; case "$_mdm_x" in *x*) set -x ;; esac; return "$_mdm_rc"; }
 _mdm_prompt_ok() {
   local r="_MDM_ANS_RULE_${1//-/_}"
   _MDM_V=${!2-}
   _mdm_answer_check "${!r}"
+  [ -n "$_MDM_WHY" ] || printf -v "$2" '%s' "$_MDM_V"
   _MDM_V=''
   [ -n "$_MDM_WHY" ] || return 0
   case "$_MDM_WHY" in ' ') printf 'Enter it again.\n' >&2 ;; *) printf 'That answer %s. Enter it again.\n' "$_MDM_WHY" >&2 ;; esac

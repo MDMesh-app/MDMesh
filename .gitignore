@@ -59,6 +59,8 @@ reference/hmdm-android/
 .env.local
 .env.*.local
 .env.new.*
+# The operator's own edge rules (setup.sh makes it; DEPLOY.md, Your own edge rules)
+/site.d/
 
 # OS / editor / build cruft
 # Python bytecode (e.g. from running the vendored ci-kit's changed-paths tests; scripts/vendor.sh copies it)
@@ -77,3 +79,4 @@ Thumbs.db
 
 # tests/rollback-e2e: dind + registry storage of a run
 tests/rollback-e2e/.e2e-data/
+tests/proxy-e2e/.e2e-data/

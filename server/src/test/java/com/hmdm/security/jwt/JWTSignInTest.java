@@ -1,5 +1,6 @@
 package com.hmdm.security.jwt;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.Settings;
 import com.hmdm.persistence.domain.User;
@@ -30,14 +31,15 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
-/** Token sign-in and token use for accounts whose customer requires two-factor authentication. */
-public class JWTTwoFactorTest {
+/** Token sign-in (POST /public/jwt/login) and token use (JWTFilter). */
+public class JWTSignInTest {
 
     private static final String PASSWORD_MD5 = "5F4DCC3B5AA765D61D8327DEB882CF99";
     /** Hashed once: bcrypt is slow on purpose, and every lookup builds the account anew. */
     private static final String PASSWORD_HASH = PasswordUtil.getHashFromMd5(PASSWORD_MD5);
     private static final int PLAIN_CUSTOMER = 1;
-    private static final int TWO_FACTOR_CUSTOMER = 2;
+    /** Its settings were carried over from a Headwind database and still say twoFactor. */
+    private static final int CARRIED_OVER_CUSTOMER = 2;
     private static final int OTHER_CUSTOMER = 5;
 
     private final Map<String, User> users = new HashMap<>();
@@ -61,9 +63,12 @@ public class JWTTwoFactorTest {
 
             @Override
             public Settings getSettings(int customerId) {
-                Settings settings = new Settings();
-                settings.setTwoFactor(customerId == TWO_FACTOR_CUSTOMER);
-                return settings;
+                try {
+                    return new ObjectMapper().readValue(customerId == CARRIED_OVER_CUSTOMER
+                            ? "{\"twoFactor\": true}" : "{}", Settings.class);
+                } catch (java.io.IOException e) {
+                    throw new IllegalStateException(e);
+                }
             }
 
             @Override
@@ -75,7 +80,7 @@ public class JWTTwoFactorTest {
             }
         };
         users.put("plain", user(1, "plain", PLAIN_CUSTOMER));
-        users.put("guarded", user(2, "guarded", TWO_FACTOR_CUSTOMER));
+        users.put("carried", user(2, "carried", CARRIED_OVER_CUSTOMER));
         users.put("tenant", user(3, "tenant", OTHER_CUSTOMER));
     }
 
@@ -87,17 +92,17 @@ public class JWTTwoFactorTest {
     // ---- POST /public/jwt/login --------------------------------------------------------------------------------------
 
     @Test
-    public void passwordAloneDoesNotGetTokenWhenTwoFactorIsOn() {
-        Response response = login("guarded", PASSWORD_MD5);
+    public void passwordGetsTokenWhateverCarriedOverSettingsSay() {
+        // MDMesh has no second sign-in step: a twoFactor its settings still carry is no reason to refuse one
+        Response response = login("carried", PASSWORD_MD5);
 
-        assertEquals(Response.Status.FORBIDDEN.getStatusCode(), response.getStatus());
-        assertNull(response.getEntity());
-        assertNull(response.getHeaderString("Authorization"));
-        assertNull("the password alone doesn't make a client known", response.getHeaderString("Set-Cookie"));
+        assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
+        assertTrue(response.getHeaderString("Authorization").startsWith("Bearer "));
+        assertNotNull("the client is known", response.getHeaderString("Set-Cookie"));
     }
 
     @Test
-    public void passwordGetsTokenWhenTwoFactorIsOff() {
+    public void passwordGetsToken() {
         Response response = login("plain", PASSWORD_MD5);
 
         assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
@@ -106,7 +111,7 @@ public class JWTTwoFactorTest {
 
     @Test
     public void wrongPasswordStillUnauthorized() {
-        Response response = login("guarded", "0123456789ABCDEF0123456789ABCDEF");
+        Response response = login("carried", "0123456789ABCDEF0123456789ABCDEF");
 
         assertEquals(Response.Status.UNAUTHORIZED.getStatusCode(), response.getStatus());
     }
@@ -176,7 +181,6 @@ public class JWTTwoFactorTest {
     public void aRefusedTokenSignInLeavesNoUserOnTheRequest() {
         Map<String, Object> attributes = new HashMap<>();
         assertEquals(401, loginRecording("tenant", "0123456789ABCDEF0123456789ABCDEF", attributes).getStatus());
-        assertEquals(403, loginRecording("guarded", PASSWORD_MD5, attributes).getStatus());
 
         assertNull(attributes.get(JWTFilter.REQUEST_USER));
     }
@@ -184,14 +188,14 @@ public class JWTTwoFactorTest {
     // ---- JWTFilter on /rest/private/* --------------------------------------------------------------------------------
 
     @Test
-    public void filterRejectsTokenOfTwoFactorAccount() throws Exception {
-        // e.g. a token issued before two-factor authentication was turned on for the customer
-        String token = tokenProvider.createToken(users.get("guarded"), false);
+    public void filterAcceptsTokenOfACarriedOverAccount() throws Exception {
+        String token = tokenProvider.createToken(users.get("carried"), false);
 
         FilterResult result = filter(token);
 
-        assertEquals(Integer.valueOf(403), result.error);
-        assertTrue(result.chainUsers.isEmpty());
+        assertNull(result.error);
+        assertEquals(1, result.chainUsers.size());
+        assertEquals("carried", result.chainUsers.get(0).getLogin());
     }
 
     @Test

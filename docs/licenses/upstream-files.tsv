@@ -4,7 +4,7 @@
 # it carries no in-file notice if it doesn't. A listed file that differs from that blob says MDMesh
 # changed it. A file derived from an upstream one under another path has 'derived from <path>' in the
 # blob column (a row added by hand) and says MDMesh changed it.
-# Written by scripts/licenses/headers.py manifest; checked by scripts/licenses/headers.py check.
+# Checked by scripts/licenses/headers.py check.
 .gitignore	d6086ca50d728321227656ec854072791bf67399	no	
 LICENSE	989e2c59e973a05cfbfe9de678b7f2af777b0713	no	
 common/pom.xml	090f901bc2736cad87edc3083798344c9072b774	yes	

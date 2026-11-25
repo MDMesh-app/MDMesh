@@ -12,9 +12,6 @@ that differs from upstream must say MDMesh changed it, and one that had the head
   scripts/licenses/headers.py mark PATH...
       add the notice to PATH: a line under the upstream copyright line, or a comment at the top of a file that never
       had the header
-  scripts/licenses/headers.py manifest UPSTREAM_GIT_DIR
-      rewrite docs/licenses/upstream-files.tsv from an hmdm-server clone (full history, treeless is enough) that has
-      the commit below; only needed if the list itself is in question
 
 Messages are GitHub Actions annotations (::error file=...::), which read as plain lines elsewhere.
 """
@@ -26,7 +23,6 @@ import sys
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 MANIFEST = "docs/licenses/upstream-files.tsv"
 MARK = "scripts/licenses/headers.py mark"
-UPSTREAM = "daed2099c9d50e68248ced38135180ffea6902ce"
 ANCHOR = "Copyright (C) 2019 Headwind Solutions LLC"
 # The notice in a file that has the upstream header, under its copyright line.
 MODIFIED = "Modified by the MDMesh contributors."
@@ -35,15 +31,8 @@ DERIVED = "Derived from Headwind MDM (Apache-2.0); modified by the MDMesh contri
 # What counts as the notice: either of ours, or the ported agent files' "Modifications Copyright (C) 2026 the MDMesh
 # contributors".
 NOTICE = re.compile(r"[Mm]odified by the MDMesh contributors|Modifications Copyright \(C\) \d+ the MDMesh contributors")
-# Kept files that carry no in-file notice, and why.
-EXEMPT = {
-    "plugins/audit/src/main/webapp/i18n/en_US.json": "JSON has no comments; this list is its notice",
-    "plugins/push/src/main/webapp/i18n/vi_VN.json": "JSON has no comments; this list is its notice",
-}
-# The agent files ported from hmdm-android (NOTICE): not copies of an upstream file, so no blob to compare.
-PORTED = "ported from hmdm-android"
 # A file derived from an upstream one under another path (moved, copied, ported within the server): "derived from
-# <upstream path>" in the blob column. Like a ported file, it must say MDMesh changed it.
+# <upstream path>" in the blob column. Like an agent file "ported from hmdm-android", it must say MDMesh changed it.
 DERIVED_FROM = "derived from "
 # The Apache notice an upstream header carries with its copyright line (4(c) keeps both).
 APACHE = "Licensed under the Apache License"
@@ -131,7 +120,8 @@ def mark(paths):
         else:
             ext = os.path.splitext(path)[1]
             if ext not in COMMENTS:
-                sys.exit(f"{path}: no comment syntax known for {ext or 'this file'}: add it to EXEMPT, with the reason")
+                sys.exit(f"{path}: no comment syntax known for {ext or 'this file'}: put the reason in the note column "
+                         f"of {MANIFEST}")
             at = 1 if lines[0].startswith(FIRST) else 0
             lines.insert(at, COMMENTS[ext].format(DERIVED))
         with open(full, "w", encoding="utf-8", newline="") as f:
@@ -140,52 +130,11 @@ def mark(paths):
     return 0
 
 
-def manifest(upstream):
-    up = {}
-    for line in git("ls-tree", "-r", UPSTREAM, cwd=upstream).splitlines():
-        meta, path = line.split("\t", 1)
-        up[path] = meta.split()[2]
-    kept = [p for p in git("ls-files").splitlines() if p in up]
-    batch = "".join(f"{up[p]}\n" for p in kept)
-    raw = subprocess.run(["git", "cat-file", "--batch"], cwd=upstream, input=batch.encode(), capture_output=True,
-                         check=True).stdout
-    headered, i = set(), 0
-    for path in kept:
-        nl = raw.index(b"\n", i)
-        size = int(raw[i:nl].split()[2])
-        if ANCHOR.encode() in raw[nl + 1:nl + 1 + size]:
-            headered.add(path)
-        i = nl + 1 + size + 1
-    ported = sorted(p for p in git("grep", "-l", "-F", ANCHOR, "--", "agent-android").splitlines())
-    # Rows for files derived from upstream ones under another path are written by hand: keep them.
-    with open(os.path.join(ROOT, MANIFEST)) as f:
-        derived = [line for line in f if f"\t{DERIVED_FROM}" in line]
-    with open(os.path.join(ROOT, MANIFEST), "w") as f:
-        f.write(
-            "# The files MDMesh kept from Headwind MDM (https://github.com/h-mdm/hmdm-server at upstream commit\n"
-            f"# {UPSTREAM}), and the agent files ported from hmdm-android. Columns: path, the file's\n"
-            "# blob at that commit (or how it came), whether it carried the upstream copyright header there, and why\n"
-            "# it carries no in-file notice if it doesn't. A listed file that differs from that blob says MDMesh\n"
-            "# changed it. A file derived from an upstream one under another path has 'derived from <path>' in the\n"
-            "# blob column (a row added by hand) and says MDMesh changed it.\n"
-            "# Written by scripts/licenses/headers.py manifest; checked by scripts/licenses/headers.py check.\n"
-        )
-        for path in kept:
-            f.write(f"{path}\t{up[path]}\t{'yes' if path in headered else 'no'}\t{EXEMPT.get(path, '')}\n")
-        for path in ported:
-            f.write(f"{path}\t{PORTED}\tyes\t\n")
-        f.writelines(derived)
-    print(f"{MANIFEST}: {len(kept)} kept files, {len(headered)} with the upstream header, {len(ported)} ported")
-    return 0
-
-
 def main(argv):
     if argv[:1] == ["check"] and len(argv) == 1:
         return check()
     if argv[:1] == ["mark"] and len(argv) > 1:
         return mark(argv[1:])
-    if argv[:1] == ["manifest"] and len(argv) == 2:
-        return manifest(argv[1])
     sys.exit(__doc__)
 
 

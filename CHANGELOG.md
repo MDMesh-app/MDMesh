@@ -71,9 +71,9 @@ New
   `onSelect` moves focus itself, so the menu leaves focus there rather than returning it to its trigger.
 
 Fixes
-- Password-recovery and customer-status emails name the product MDMesh when no `rebranding.name` is set, as does the
-  API's own title; they named the upstream product. `/rest/public/logo` answers 404 when no `rebranding.logo` is set, instead
-  of redirecting to an upstream logo.
+- Password-recovery emails name the product MDMesh when no `rebranding.name` is set, and the API's own title says
+  MDMesh; both named the upstream product. `/rest/public/logo` answers 404 when no `rebranding.logo` is set, instead of
+  redirecting to an upstream logo.
 - Devices search finds IMEIs reported by current agents, in either SIM slot and by part of the number, also for devices
   that haven't checked in since the update. When a search matches more devices than one request returns (1,000 in the
   console), the best matches are now kept rather than the weakest; a reported IMEI counts like one set by an administrator.

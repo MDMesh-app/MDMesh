@@ -114,7 +114,8 @@ describe('a test that ends before its page has loaded', () => {
 
   // Passes only because the guard fails it: take the guard out, and this reads "Expect test to fail".
   it.fails('fails', () => {
-    stubApi();
+    // Never answered: an answer could arrive after the file's last test, when the DOM is gone.
+    stubApi().mockImplementation(() => new Promise(() => {}));
     render(<Loads />);
   });
 

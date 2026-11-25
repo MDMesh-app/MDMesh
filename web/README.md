@@ -83,6 +83,7 @@ with the wording. Plurals and variables use ICU
   tests with `renderInConsole`, so a component whose text is a message finds its provider.
 - `npm run i18n:pseudo`, then `localStorage.setItem('mdmesh-locale', 'en-XA')` in the dev console's browser, shows
   every message accented and padded; text that stays plain English isn't a message yet. Remove the key to go back.
+  Reload the page after setting or removing it: the console reads it once, as it loads.
 
 Two things to know:
 - The console's locale is a language (`en`), not a region: an en-GB browser gets `en`, so dates and numbers formatted

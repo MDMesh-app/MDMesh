@@ -345,7 +345,7 @@ New text in core console files should be a react-intl message; `npm test` fails 
 (`web/src/i18n/literals.test.ts` names the file and lists its strings). That includes text you added before merging
 this release: make it a message ([web/README.md](../web/README.md#translatable-text)), or raise that file's count in
 `web/src/i18n/literals-baseline.json`. If you removed core text, it fails with "fewer literals": run
-`npm run i18n:baseline`. Extensions in `web/src/extensions/` are not checked.
+`npm run i18n:baseline` in `web/`. Extensions in `web/src/extensions/` are not checked.
 
 ### v0.5.1
 

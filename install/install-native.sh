@@ -432,7 +432,7 @@ port_holder() {
 }
 # Classifies whatever listens on $HTTP_PORT: "free", "unit" (our own systemd unit), "legacy" (a Tomcat started
 # from $CATALINA by an older version of this script, before the unit existed) or "foreign" (anything else —
-# typically a leftover Headwind/hmdm Tomcat or another web server). Only the first three may be stopped by us.
+# typically a leftover hmdm Tomcat or another web server). Only the first three may be stopped by us.
 port_owner() {
   local holder hpid
   holder=$(port_holder); [ -n "$holder" ] || { echo free; return; }
@@ -1081,7 +1081,7 @@ done < <(find "$REPO/install/emails" -type f -print0)
 # Host the release agent APK the QR points at (/files/agent.apk), if we fetched one above.
 [ -n "$AGENT_APK" ] && { base_write files/agent.apk cat "$AGENT_APK"; ok "agent APK hosted at /files/agent.apk"; }
 agent_fetch_cleanup   # the fetched release files are no longer needed (the EXIT trap covers every other path)
-# Headwind launcher device routes: off unless 1, kept across re-runs like the settings below.
+# Legacy launcher device routes: off unless 1, kept across re-runs like the settings below.
 X_LEGACY_DEVICE_API=$(root_param LEGACY_DEVICE_API legacy.device.api 0)
 # SMTP (password-recovery email): the Docker .env's variables. Read here, after the deferred ROOT.xml read above.
 X_SMTP_HOST=$(root_param SMTP_HOST smtp.host "")
@@ -1389,7 +1389,7 @@ fi
 # Shared post-seed repairs (install/sql/post_seed.sql, same file setup.sh pipes in Docker) — run on
 # EVERY install/upgrade, deliberately OUTSIDE the seed gate so upgrades of older installs get them
 # too: the enrollment-settings fix (createnewdevices + a default configuration, without which every
-# /agent/v1/enroll fails) and the aux-Headwind-app scrub. Idempotent; no-op on an empty database.
+# /agent/v1/enroll fails) and the legacy seed-app scrub. Idempotent; no-op on an empty database.
 if mdm_post_seed install/sql/post_seed.sql 2>>"$LOGFILE"; then
   ok "post-seed repairs applied (enrollment settings + aux-app scrub)"
 else

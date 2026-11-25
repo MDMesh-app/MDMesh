@@ -3,7 +3,7 @@
 **Status**: Implemented in v0.5.0 (protocol 1.7)
 **Created**: 2026-11-09
 **Scope**: A modern replacement for the inherited `appPermissions` configuration field. It does not revive the
-Headwind `/sync` behavior.
+legacy launcher's `/sync` behavior.
 
 ---
 

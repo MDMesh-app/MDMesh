@@ -59,7 +59,7 @@
 }
 
 # Every reverse_proxy to the server imports this. The server reads the client's address from X-Forwarded-For (and
-# X-Real-IP, in code inherited from Headwind), so send exactly one value, Caddy's {client_ip}, and drop a client-sent
+# X-Real-IP, in inherited code), so send exactly one value, Caddy's {client_ip}, and drop a client-sent
 # CF-Connecting-IP. header_up runs after reverse_proxy's own X-Forwarded-For handling, so it wins.
 (client_address) {
 	header_up X-Forwarded-For {client_ip}

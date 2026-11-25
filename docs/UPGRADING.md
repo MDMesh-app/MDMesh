@@ -286,7 +286,7 @@ exited or credentials cleared while the older agent ran.
   updates on (`AUTO_UPDATE=1`), do this as soon as you can: until then the old supervisor may apply the release
   itself, with its 180-second limit.
 - **The unused two-factor setting is removed.** MDMesh has no second sign-in step, so an organization whose settings
-  had two-factor sign-in on (a database carried over from Headwind MDM, or edited by hand) couldn't sign in at all.
+  had two-factor sign-in on (a database carried over from the upstream project, or edited by hand) couldn't sign in at all.
   On its first start the server drops the setting. Those accounts then sign in with their password alone (no
   authenticator code is asked for), and get API tokens again. Two-factor sign-in for each user is planned for a later
   release. **Roll back**
@@ -421,13 +421,13 @@ with `findBy…` or `settled()` (in `web/src/test/console.tsx`), not `act(async 
   rollback, and prune the old logs. The access logs of Tomcat and of a reverse proxy also record the enrollment QR's
   key, which is part of its URL (`/rest/public/qr/<key>`) and fetches the QR with the Wi-Fi password in it: prune
   those too.
-- **With `LEGACY_DEVICE_API=1`, keep Headwind launcher devices and MDMesh agent devices in separate
+- **With `LEGACY_DEVICE_API=1`, keep legacy launcher devices and MDMesh agent devices in separate
   configurations.** The launcher's routes no longer serve a configuration that an agent device uses, or that an
   agent enrollment code can still enroll devices into, nor create launcher devices in it: the launcher gets the error
   `error.configuration.agent.managed`, and the server log says which configuration. A code enrolls into the
   configuration it names or, if it names none, into the default configuration for new devices (**Settings**), which
   then counts too. A configuration named by its QR code key counts the same way, and the server no longer makes its
-  Headwind QR code. The routes answer requests for an agent device with the launcher's device-not-found error. To fix
+  legacy launcher QR code. The routes answer requests for an agent device with the launcher's device-not-found error. To fix
   a launcher device that gets the error, move it to a configuration no agent device or enrollment code uses. With
   `LEGACY_DEVICE_API` off (the default), nothing changes.
 - With `LEGACY_DEVICE_API=1`, the launcher's sync now works for a configuration without a kiosk exit PIN. Before, it
@@ -878,7 +878,7 @@ rollout**, to one device first.
 - **A kiosk app that keeps stopping** leaves the device in kiosk on an "App closed" screen with an **Open again**
   button. Before, kiosk ended.
 - **Apps page:** saving app assignments no longer changes other configurations' settings. With `LEGACY_DEVICE_API=1`,
-  removing a Headwind content app no longer turns kiosk off.
+  removing a legacy launcher content app no longer turns kiosk off.
 
 ### v0.3.4
 
@@ -900,20 +900,20 @@ kiosk PINs.
 - **Lock volume buttons (kiosk)** (new, off by default; needs agent 0.3.4, and older agents ignore it) blocks volume
   changes in kiosk. Android mutes a locked device, so **Ring** is silent on it.
 - **Lock hardware buttons** blocks only the power menu.
-- **Headwind QR routes:** `/rest/public/qr/*` returns 404 unless `LEGACY_DEVICE_API=1`; the console doesn't use
+- **Legacy launcher QR routes:** `/rest/public/qr/*` returns 404 unless `LEGACY_DEVICE_API=1`; the console doesn't use
   them. The three installer-created configurations get a new QR key on first start. With `LEGACY_DEVICE_API=1`, the
-  Headwind QR codes printed for them before stop working.
+  legacy launcher QR codes printed for them before stop working.
 - **Kiosk PINs:** new installs give each installer-created configuration a random 8-digit exit PIN, shown in the
   configuration editor. Existing PINs are kept. The console flags any still set to the old default `12345678`;
   change it, since anyone who knows the default can leave kiosk.
 - **Observer role:** loses the push and messaging send permissions and device-description editing.
-- **`SECURE_ENROLLMENT=1`** still makes `/files/*` require the Headwind launcher's signature, which also blocks the
+- **`SECURE_ENROLLMENT=1`** still makes `/files/*` require the legacy launcher's signature, which also blocks the
   agent's APK and app downloads. With `LEGACY_DEVICE_API` off, the server now warns about it at startup. Set it to
   `0` unless you need launcher-signed downloads.
 
 ### v0.3.3
 
-- The Headwind launcher's device routes (`/rest/public/sync/*`, notifications, plugin device uploads, usage stats)
+- The legacy launcher's device routes (`/rest/public/sync/*`, notifications, plugin device uploads, usage stats)
   return 404 unless `LEGACY_DEVICE_API=1`.
 - App installs now carry the APK's SHA-256, and current agents refuse an install without one. Hosted APKs are hashed
   automatically. For a Library app with an external URL, add the hash with **Add checksum**, or **SHA-256 checksum**

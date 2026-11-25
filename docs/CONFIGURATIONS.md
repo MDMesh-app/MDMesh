@@ -81,7 +81,7 @@ password is in the QR code in plain text.
 
 ### Legacy launcher settings
 
-Older settings that only the Headwind launcher read (collapsed: select **Show settings**). The MDMesh agent doesn't
+Older settings that only the legacy launcher read (collapsed: select **Show settings**). The MDMesh agent doesn't
 apply them; they stay stored with the configuration.
 
 ## Put devices on a configuration

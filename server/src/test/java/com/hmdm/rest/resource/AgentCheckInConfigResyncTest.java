@@ -243,6 +243,8 @@ public class AgentCheckInConfigResyncTest {
     private ConfigReconciler reconciler;
     private AgentResource resource;
     private String revision;
+    /** The capabilities the "agent" sends. */
+    private String checkInCaps = CAPS;
     /** Results the "agent" sends on its next check-in. */
     private final List<AgentCommandResult> outbox = new ArrayList<>();
 
@@ -275,7 +277,7 @@ public class AgentCheckInConfigResyncTest {
     private List<com.hmdm.rest.json.agent.AgentCommand> checkIn(String agentVersion, String appliedRevision) throws Exception {
         AgentCheckInRequest req = new AgentCheckInRequest();
         req.setDeviceId(NUMBER);
-        req.setCapabilities(new AgentCapabilities(new ObjectMapper().readTree(CAPS)));
+        req.setCapabilities(new AgentCapabilities(new ObjectMapper().readTree(checkInCaps)));
         AgentDeviceState s = new AgentDeviceState();
         s.setAgentVersion(agentVersion);
         s.setAppliedConfigRevision(appliedRevision);
@@ -465,6 +467,45 @@ public class AgentCheckInConfigResyncTest {
         checkIn("0.5.0", revision);
         assertEquals(ConfigReconciler.Retry.IN_SYNC, retry());
         assertEquals(1, configApplies());
+    }
+
+    /**
+     * An agent releases a section it stops getting, so neither the version it reports nor the sections it lists
+     * ({@code configSections}) leaves one out of what a check-in or a retry sends.
+     */
+    @Test
+    public void a_check_in_and_a_retry_send_every_section_whatever_the_agent_reports() throws Exception {
+        for (String listed : java.util.Arrays.asList("", ",\"configSections\":[]", ",\"configSections\":[\"policies\"]")) {
+            for (String version : java.util.Arrays.asList(null, "", "unknown", "fork-0.3.0", "0.0.0-dev", "0.1.15", "0.2.9",
+                    "0.3.0", "0.3.8", "0.3.8-rc1", "v0.4.0", "0.5.1+fork", "0.6.0", "99999999999.0.0")) {
+                setUp();
+                outbox.clear();
+                checkInCaps = CAPS.replaceFirst("}$", listed + "}");
+                unsecureDAO.configuration.setKioskMode(true);
+                unsecureDAO.configuration.setConnectivityMode(DesiredConfigBuilder.CONNECTIVITY_ALWAYS_ON);
+                String full = DesiredConfigBuilder.build(unsecureDAO.configuration, Collections.<Application>emptyList(),
+                        NO_CONTRIBUTORS).getRevision();
+                String profile = version + listed;
+
+                assertEquals(profile, full, sentRevision(checkIn(version, null)));
+                outbox.get(0).setStatus("failed");
+                checkIn(version, null); // carries the failure
+                assertEquals(profile, ConfigReconciler.Retry.QUEUED, retry());
+                assertEquals(profile, full, sentRevision(checkIn(version, null)));
+                checkIn(version, full); // acked done
+                assertEquals(profile, ConfigReconciler.Retry.IN_SYNC, retry());
+                assertEquals(profile, 2, configApplies());
+            }
+        }
+    }
+
+    /** The revision in the one config.apply of a check-in's response, which is the revision of what it carries. */
+    private static String sentRevision(List<com.hmdm.rest.json.agent.AgentCommand> got) throws Exception {
+        assertEquals(1, got.size());
+        com.hmdm.rest.json.agent.DesiredConfig sent = new ObjectMapper().convertValue(got.get(0).getPayload(),
+                com.hmdm.rest.json.agent.DesiredConfig.class);
+        assertEquals(DesiredConfigBuilder.revision(sent), sent.getRevision());
+        return sent.getRevision();
     }
 
     @Test

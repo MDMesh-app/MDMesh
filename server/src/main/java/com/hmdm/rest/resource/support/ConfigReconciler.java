@@ -7,10 +7,10 @@ import com.hmdm.persistence.domain.AgentCommand;
 import com.hmdm.persistence.domain.Application;
 import com.hmdm.persistence.domain.Configuration;
 import com.hmdm.persistence.domain.Device;
-import com.hmdm.rest.json.agent.DesiredAppPermissions;
 import com.hmdm.rest.json.agent.DesiredConfig;
 import com.hmdm.util.AgentCapabilityTokens;
 import com.hmdm.util.ConfigReconcileDecision;
+import com.hmdm.util.ConfigSections;
 import com.hmdm.util.DesiredConfigBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -84,41 +84,33 @@ public class ConfigReconciler {
     }
 
     /**
-     * The document as this device receives it. An agent without {@code app.runtimePermissions} gets it without the
-     * appPermissions section, under the revision of what it gets: it can't apply the rules, and must not be sent the
-     * same document again and again for reporting a revision it never had.
+     * The document as this device receives it: without the sections whose capability its agent doesn't advertise
+     * ({@link ConfigSections#withheld}), under the revision of what it gets. The agent can't apply those, and must not
+     * be sent the same document again and again for reporting a revision it never had.
      */
     DesiredConfig currentDocument(Device device, Set<String> deviceTokens) {
         DesiredConfig doc = currentDocument(device);
-        if (doc != null && doc.getAppPermissions() != null && !managesAppPermissions(deviceTokens)) {
-            doc.setAppPermissions(null);
-            doc.setRevision(DesiredConfigBuilder.revision(doc));
-        }
+        if (doc == null) return null;
+        List<ConfigSections.Section<?>> withheld = ConfigSections.withheld(doc, deviceTokens);
+        doc.setRevision(ConfigSections.revisionWithout(doc, withheld));
+        for (ConfigSections.Section<?> s : withheld) s.clear(doc);
         return doc;
     }
 
-    private static boolean managesAppPermissions(Set<String> deviceTokens) {
-        return AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.APP_PERMISSIONS_CAPABILITY, deviceTokens);
-    }
-
     /**
-     * The revision the console compares with the one the device applied, for its sync status. An agent that can apply
-     * app permission rules must have applied the whole document. One that can't is in sync with the document it gets
-     * when the configuration has no rules (nothing is missing), and never when it has some: its device doesn't enforce
-     * them, so it must not show as in sync.
+     * The revision the console compares with the one the device applied, for its sync status: the one the device is
+     * sent, unless a section withheld from it asks for something. Then it is the whole document's, which the device
+     * never reports: it doesn't apply that section, so it must not show as in sync.
      *
      * @param doc the configuration's document ({@link #statusDocument}), left as it was; null gives null
      */
     public static String statusRevision(DesiredConfig doc, Set<String> deviceTokens) {
         if (doc == null) return null;
-        List<DesiredAppPermissions> rules = doc.getAppPermissions();
-        if (rules == null || !rules.isEmpty() || managesAppPermissions(deviceTokens)) return doc.getRevision();
-        doc.setAppPermissions(null);
-        try {
-            return DesiredConfigBuilder.revision(doc);
-        } finally {
-            doc.setAppPermissions(rules);
+        List<ConfigSections.Section<?>> withheld = ConfigSections.withheld(doc, deviceTokens);
+        for (ConfigSections.Section<?> s : withheld) {
+            if (!s.isEmpty(doc)) return doc.getRevision();
         }
+        return ConfigSections.revisionWithout(doc, withheld);
     }
 
     /**

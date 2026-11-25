@@ -45,6 +45,9 @@ differs from the one it just computed. See `payloads/config-apply.schema.json` f
 | `capability` | optional: the capability an agent advertises when it applies the section. An agent before 0.6.0 applies a section with `capability` when it advertises it, and one without when it runs `since` or later |
 | `label` | the console's message id for the section's name |
 
+The server sends a section with a `capability` only to an agent that advertises it, and every other section to every
+agent. It never decides by the agent's version: an agent releases a section it stops getting.
+
 A new section adds one row, with the release it ships in, and its wire change in that release's `VERSIONING.md` row.
 Rows are never removed. A server plugin's policy keys (`policies.x.<pluginId>.<key>`) are part of `policies` and have
 no row of their own.

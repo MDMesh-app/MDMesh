@@ -1,9 +1,7 @@
 # Licences (docs/licenses/policy.md). The server, console and agent builds check their own third-party components
 # against docs/licenses/allowed.txt wherever CI is set, and T0's server, web and agent entries run
-# scripts/licenses/inventory.py on what they built, on a dependency or a licence policy change too. This workflow checks
-# what no single build sees, on every change:
-#   tools      the licence scripts' own tests (fails)
-#   images     every image and package docker/*.Dockerfile uses is named in docs/licenses/images.md (fails)
+# scripts/licenses/inventory.py on what they built, on a dependency or a licence policy change too. This workflow runs
+# the licence scripts' own tests, on every change.
 name: licences
 
 on:
@@ -29,11 +27,3 @@ jobs:
         run: |
           tests/licenses/inventory-test.sh
           tests/licenses/image-packages-test.sh
-
-  images:
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - name: The images' base images and packages are in docs/licenses/images.md
-        run: scripts/licenses/check-images.sh

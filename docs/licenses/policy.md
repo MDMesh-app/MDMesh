@@ -11,7 +11,7 @@ The code MDMesh links or bundles into what it ships:
 | Part | What the check reads | The list it ships |
 |---|---|---|
 | Server (`launcher.war`) | every third-party jar in `WEB-INF/lib` | `META-INF/THIRD-PARTY.txt` |
-| Web console | every npm package in the built bundle | `/licenses/THIRD-PARTY.json` |
+| Web console | every npm package in the built bundle, and the fonts its CSS loads | `/licenses/THIRD-PARTY.json` |
 | Android agent | every library on the release runtime classpath | `assets/licenses/third-party.json` in the APK |
 
 Each also ships `LICENSE` and `NOTICE` next to its list.
@@ -62,9 +62,8 @@ In CI, `scripts/licenses/inventory.py` then reads each built artifact and fails 
   choice for exactly that offer. A new version of an elected jar whose POM still offers several licences fails here
   until its line is updated.
 
-It also compares the lists with the inventory below, and only warns when they differ. The
-[licences workflow](../../.github/workflows/licences.yml) checks that every image and package the images use is in
-[images.md](images.md) (`scripts/licenses/check-images.sh`).
+An expression that combines licences (`MIT AND Zlib`) always fails `inventory.py`, whatever it combines: a maintainer
+has to read it. It also compares the lists with the inventory below, and only warns when they differ.
 
 ## When a build refuses a component
 
@@ -120,7 +119,7 @@ scripts/licenses/inventory.py --write --war server/target/launcher.war --web web
   --apk agent-android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-after building the three (`mvn -DskipTests package`, `npm run build` in `web/`, `./gradlew :app:assembleDebug` in
+(it writes nothing when a check fails) after building the three (`mvn -DskipTests package`, `npm run build` in `web/`, `./gradlew :app:assembleDebug` in
 `agent-android/`). A Dependabot pull request that brings in a new component shows the warning: review the component,
 and update the inventory in the pull request, or in the next one.
 

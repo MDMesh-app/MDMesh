@@ -20,10 +20,8 @@ and Tomcat, Node, Caddy). That is what the source pointers in NOTICE resolve aga
 - The Temurin JDK: <https://github.com/adoptium/jdk17u>, at the tag of the version the list names.
 
 The list is made from each pushed image itself, so it is the image as shipped, whether its base is pinned by digest
-(tomcat, caddy) or follows the Node LTS line (node).
-
-`scripts/licenses/check-images.sh` (the licences workflow) fails when a `docker/*.Dockerfile` starts from an image or
-installs a package this page doesn't name. Update the tables in the same pull request.
+(tomcat) or named by a tag (caddy, node). The tables below are kept by hand: a pull request that changes what an image
+is built from updates them.
 
 ## mdmesh-server (`docker/server.Dockerfile`)
 

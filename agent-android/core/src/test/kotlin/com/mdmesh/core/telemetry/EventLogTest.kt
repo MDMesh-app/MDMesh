@@ -183,7 +183,7 @@ class EventLogTest {
     }
 
     @Test fun `what an older agent left in flight goes out in batches too`() {
-        // Agents before 0.5.2 drained up to 500 at once; one that died mid-check-in left them all in flight.
+        // Agents before 0.6.0 drained up to 500 at once; one that died mid-check-in left them all in flight.
         val store = FakeStore().apply {
             values["events_in_flight"] = EventLog.encode(events(1..450))
             values["events"] = EventLog.encode(events(451..500))

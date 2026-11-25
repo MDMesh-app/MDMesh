@@ -1,0 +1,9 @@
+{
+  "sections": [
+    { "name": "policies", "since": "0.3.0", "label": "configSection.policies" },
+    { "name": "kiosk", "since": "0.3.0", "label": "configSection.kiosk" },
+    { "name": "location", "since": "0.3.0", "label": "configSection.location" },
+    { "name": "connectivity", "since": "0.4.0", "label": "configSection.connectivity" },
+    { "name": "appPermissions", "since": "0.5.0", "capability": "app.runtimePermissions", "label": "configSection.appPermissions" }
+  ]
+}

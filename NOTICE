@@ -39,7 +39,8 @@ This product and its modifications:
   "Derived from Headwind MDM" comment. docs/licenses/upstream-files.tsv in
   the source repository lists every file kept from the upstream; a listed
   file that can't carry a comment (JSON) is changed if it differs from the
-  upstream file named there.
+  upstream file named there; README.md and this file were rewritten for
+  MDMesh.
 
   The Kotlin device agent under agent-android/ is new, but parts of it are
   ported from the Headwind MDM Android agent under Apache-2.0: app install

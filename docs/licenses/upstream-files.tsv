@@ -5,7 +5,7 @@
 # changed it. A file derived from an upstream one under another path has 'derived from <path>' in the
 # blob column (a row added by hand) and says MDMesh changed it.
 # Written by scripts/licenses/headers.py manifest; checked by scripts/licenses/headers.py check.
-.gitignore	d6086ca50d728321227656ec854072791bf67399	no	rewritten for MDMesh
+.gitignore	d6086ca50d728321227656ec854072791bf67399	no	
 LICENSE	989e2c59e973a05cfbfe9de678b7f2af777b0713	no	
 NOTICE	2573c7815f253ee5c9494c4bb566abe9c1a58824	no	rewritten for MDMesh
 README.md	c26de06433ce18d28992265ed7e37c766a16fd5e	no	rewritten for MDMesh

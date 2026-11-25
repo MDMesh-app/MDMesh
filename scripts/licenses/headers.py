@@ -37,7 +37,6 @@ DERIVED = "Derived from Headwind MDM (Apache-2.0); modified by the MDMesh contri
 NOTICE = re.compile(r"[Mm]odified by the MDMesh contributors|Modifications Copyright \(C\) \d+ the MDMesh contributors")
 # Kept files that carry no in-file notice, and why.
 EXEMPT = {
-    ".gitignore": "rewritten for MDMesh",
     "NOTICE": "rewritten for MDMesh",
     "README.md": "rewritten for MDMesh",
     "plugins/audit/src/main/webapp/i18n/en_US.json": "JSON has no comments; this list is its notice",

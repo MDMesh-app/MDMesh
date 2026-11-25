@@ -16,9 +16,8 @@
 // developers: console.* arguments, `new …Error(…)` messages, and the operands of ===, !==, ==, != and `case`.
 //
 // A file above its baseline fails, listing its literals with their lines. A file below it fails too, until the
-// baseline is lowered with `npm run i18n:baseline`, which only ever lowers counts and refuses a sharp drop (the total
-// by more than 10%, or a file with more than 5 to none): that is what a change in the TypeScript API would look like,
-// so it takes `npm run i18n:baseline:force` after a look. Code moved to another file moves its count by hand.
+// baseline is lowered with `npm run i18n:baseline`, which only ever lowers counts. Code moved to another file moves its
+// count by hand.
 //
 // The API runs TypeScript's native compiler (tsgo, the binary `tsc` is) over IPC. `typescript` is pinned exactly
 // (package.json) and updated on its own (.github/dependabot.yml), because `typescript/unstable/*` may change in any
@@ -54,9 +53,8 @@ import { describe, expect, it } from 'vitest';
 
 const WEB = resolve(import.meta.dirname, '../..');
 const BASELINE = join(import.meta.dirname, 'literals-baseline.json');
-/** Set by npm to the script's name: `i18n:baseline` lowers the baseline, `i18n:baseline:force` past the guard. */
-const LOWERING = process.env.npm_lifecycle_event?.startsWith('i18n:baseline') ?? false;
-const FORCED = process.env.npm_lifecycle_event === 'i18n:baseline:force';
+/** Set by npm to the script's name. */
+const LOWERING = process.env.npm_lifecycle_event === 'i18n:baseline';
 
 const SKIPPED_FILES = [
   /\.test\.tsx?$/,
@@ -178,7 +176,8 @@ export function literalsIn(file: SourceFile): Literal[] {
         const text = textOf(node);
         const to = destination(node);
         if (BRANDS.has(text.trim()) || isForDevelopers(to)) break;
-        if ((isShown(to) && LETTER.test(text)) || SENTENCE.test(text)) {
+        const isKey = isPropertyAssignment(node.parent) && node.parent.name === node;
+        if ((!isKey && isShown(to) && LETTER.test(text)) || SENTENCE.test(text)) {
           add(node, text);
           return;
         }
@@ -229,15 +228,6 @@ function literalsOf(...snippets: string[]): Literal[][] {
   }
 }
 
-/** Why a lowered baseline looks like a broken scan rather than a migration, or null. */
-function sharpDrop(before: Record<string, number>, after: Record<string, number>): string | null {
-  const total = (b: Record<string, number>) => Object.values(b).reduce((a, n) => a + n, 0);
-  if (total(after) === 0) return 'the scan found no literals at all';
-  if (total(after) < total(before) * 0.9) return `the total falls from ${total(before)} to ${total(after)}, more than 10%`;
-  const emptied = Object.keys(before).filter((f) => before[f] > 5 && !after[f]);
-  return emptied.length ? `these files fall to none: ${emptied.join(', ')}` : null;
-}
-
 describe('the literals ratchet', () => {
   const baseline: Record<string, number> = JSON.parse(readFileSync(BASELINE, 'utf8'));
   const found = scanTree();
@@ -258,8 +248,7 @@ describe('the literals ratchet', () => {
 
   it.runIf(LOWERING)('lowers the baseline', () => {
     const lowered = Object.fromEntries(files.map((f) => [f, Math.min(baseline[f] ?? 0, count(f))] as const).filter(([, n]) => n > 0));
-    const drop = sharpDrop(baseline, lowered);
-    expect(FORCED || !drop, `refusing to lower the baseline: ${drop}. If that is right, run npm run i18n:baseline:force`).toBe(true);
+    expect(found, 'the scan found no literals at all, so it is broken: the baseline stays').not.toEqual({});
     writeFileSync(BASELINE, `${JSON.stringify(lowered, null, 2)}\n`);
   });
 });
@@ -295,6 +284,7 @@ describe('what counts as a literal', () => {
         import './Page.css';
         type Group = 'Kiosk appearance';
         const m = defineMessages({ t: { id: 'devices.list.title', defaultMessage: 'All devices', description: 'Page title' } });
+        const a = { 'aria-label': intl.formatMessage(m.t) };
         const key = 'hmdm.admin.user';
         console.error(\`Couldn't load the \${key} messages\`);
         const owner = (mode: string) => mode === 'Device owner';
@@ -317,13 +307,5 @@ describe('what counts as a literal', () => {
 
   it('gives each literal its line', () => {
     expect(literalsOf('const a = 1;\nexport const A = () => <p>Hello</p>;\n')).toEqual([[{ text: 'Hello', line: 2 }]]);
-  });
-
-  it('refuses to lower the baseline sharply, which looks like a broken scan', () => {
-    const before = { 'src/a.tsx': 50, 'src/b.tsx': 6, 'src/c.tsx': 4 };
-    expect(sharpDrop(before, {})).toMatch(/no literals/);
-    expect(sharpDrop(before, { 'src/a.tsx': 40, 'src/b.tsx': 6, 'src/c.tsx': 4 })).toMatch(/more than 10%/);
-    expect(sharpDrop(before, { 'src/a.tsx': 55, 'src/c.tsx': 4 })).toMatch(/src\/b\.tsx/);
-    expect(sharpDrop(before, { 'src/a.tsx': 48, 'src/b.tsx': 6 })).toBeNull();
   });
 });

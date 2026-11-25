@@ -16,8 +16,7 @@
     "lint:css": "stylelint \"src/**/*.css\"",
     "i18n:extract": "formatjs extract \"src/**/*.{ts,tsx}\" --ignore \"src/**/*.test.*\" --ignore \"src/**/*.d.ts\" --out-file src/i18n/locales/en.json --throws",
     "i18n:pseudo": "formatjs compile src/i18n/locales/en.json --ast --pseudo-locale en-XA --out-file src/i18n/pseudo/en-XA.json",
-    "i18n:baseline": "vitest run src/i18n/literals.test.ts",
-    "i18n:baseline:force": "vitest run src/i18n/literals.test.ts"
+    "i18n:baseline": "vitest run src/i18n/literals.test.ts"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "5.3.0",

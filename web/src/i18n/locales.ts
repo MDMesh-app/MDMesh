@@ -19,12 +19,6 @@ export const CATALOGS: Readonly<Record<string, () => Promise<Catalog>>> = import
     )
   : {};
 
-const RTL_LANGUAGES = new Set(['ar', 'fa', 'he', 'ur']);
-
-export function directionOf(locale: string): 'ltr' | 'rtl' {
-  return RTL_LANGUAGES.has(locale.split('-')[0].toLowerCase()) ? 'rtl' : 'ltr';
-}
-
 /**
  * The locale to show: the stored preference if it is available, else the first browser language available (exactly,
  * or by its language: en-GB → en), else English.

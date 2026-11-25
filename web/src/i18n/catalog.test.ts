@@ -6,7 +6,7 @@
 //   without one (FormatJS would hash its text) fails;
 // - a translation (locales/<code>.json, same shape as en.json) may not add ids English doesn't have or change a
 //   message's structure (its {placeholders}, plural and select arms, <tags>): `formatjs verify` fails the build.
-//   Missing translations never fail: the locale is only reported `partial`, and its missing messages show in English.
+//   Missing translations never fail: those messages show in English.
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -35,12 +35,6 @@ function verify(source: string, files: readonly string[]): string {
   return run.ok ? '' : run.output;
 }
 
-/** `complete` when the translation has every English message, else `partial` (never a failure). */
-function localeStatus(source: Messages, translation: Messages) {
-  const missing = Object.keys(source).filter((id) => !(id in translation));
-  return { status: missing.length ? ('partial' as const) : ('complete' as const), missing };
-}
-
 const read = (path: string): Messages => JSON.parse(readFileSync(path, 'utf8'));
 
 describe('the message catalog', () => {
@@ -65,10 +59,6 @@ describe('the message catalog', () => {
     const translations = readdirSync(LOCALES).filter((f) => f.endsWith('.json') && f !== 'en.json');
     if (translations.length === 0) return;
     expect(verify(join(LOCALES, 'en.json'), translations.map((f) => join(LOCALES, f)))).toBe('');
-    for (const f of translations) {
-      const { status, missing } = localeStatus(read(join(LOCALES, 'en.json')), read(join(LOCALES, f)));
-      console.info(`${f.slice(0, -'.json'.length)}: ${status}${missing.length ? ` (${missing.length} missing)` : ''}`);
-    }
   });
 });
 
@@ -91,12 +81,10 @@ describe('the translation checks', () => {
     expect(verify(en, [extra])).toContain('devices.list.gone');
   });
 
-  it('passes a translation with messages missing, as partial', () => {
+  it('passes a translation with messages missing', () => {
     const ru: Messages = {
       'devices.bulk.wipe': { defaultMessage: 'Стереть {count, plural, one {# устройство} few {# устройства} many {# устройств} other {# устройства}}?' },
     };
     expect(verify(en, [write('ru.json', ru)])).toBe('');
-    expect(localeStatus(source, ru)).toEqual({ status: 'partial', missing: ['devices.list.empty'] });
-    expect(localeStatus(source, { ...ru, 'devices.list.empty': { defaultMessage: 'Устройств пока нет' } }).status).toBe('complete');
   });
 });

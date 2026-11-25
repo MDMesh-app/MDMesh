@@ -13,7 +13,8 @@ Before you update, read the [version notes](#version-notes) for each release you
 ## How updates work
 
 The **supervisor** offers only GitHub releases whose signed manifest verifies. On quick-start installs it also
-applies them: it backs up the database, then rolls back if the new version fails its health check
+applies them: it backs up the database, then rolls back if the new version fails its health check (from 0.6.0's
+updater on, the edge must also stay up)
 ([settings](OPERATIONS.md#updater-supervisor)). If no update shows up, see the `[verify]` line in
 `docker compose logs supervisor` (native: `journalctl -u mdmesh-supervisor`).
 
@@ -114,6 +115,64 @@ and the enrollment secret alone, after a `pg_dump` to `/opt/mdmesh/backups/` ([r
   included. Pass one to change it; `GITHUB_TOKEN=` removes the token ([how](OPERATIONS.md#updater-supervisor)). On the
   first upgrade from v0.3.1 or older they are still kept, but that run's agent APK download can't read the old
   settings file in time: pass `GITHUB_TOKEN` and `GITHUB_REPO` once more if that download needs them.
+
+## Changing the hosting mode
+
+Updates, rollbacks and `setup.sh` re-runs keep the mode an install was set up with
+([the three modes](../DEPLOY.md#how-phones-reach-mdmesh)); `--proxy` or `MDMESH_MODE` on a re-run doesn't change it.
+To move an install, edit `.env` in the install directory, when no update or rollback is running. The database,
+devices and secrets stay as they are.
+
+**To behind your own proxy** (Docker, 0.6.0 or later: update to 0.6.0 first; the edge of an older release doesn't
+know the mode):
+
+1. Have `docker-compose.proxy.yml` in the install directory. A clone has it. A quick start set up with 0.6.0 or later
+   has it too. An older one fetches it from the release it runs (`CURRENT_VERSION` in `.env`), checked against that
+   release's signed manifest. The supervisor does the work, with the `minisign` and release key it already has, so the
+   host needs neither `minisign` nor OpenSSL 3; the file lands in the install directory only once it checks out. From
+   the install directory:
+
+   ```bash
+   docker compose exec -T supervisor sh -euc '
+     V=$(sed -n "s/^CURRENT_VERSION=//p" /project/.env); G=$(sed -n "s/^GITHUB_REPO=//p" /project/.env)
+     G=${G:-MDMesh-app/MDMesh}; R=https://github.com/$G/releases/download/v$V; T=$(mktemp -d); trap "rm -rf $T" EXIT; cd "$T"
+     curl -fsSL -o manifest.json "$R/manifest.json"; curl -fsSL -o manifest.json.minisig "$R/manifest.json.minisig"
+     minisign -Vq -m manifest.json -p /app/minisign.pub
+     grep -qF "\"version\": \"$V\"" manifest.json
+     curl -fsSL -o proxy.yml "https://raw.githubusercontent.com/$G/v$V/docker-compose.proxy.yml"
+     grep -qF "\"docker-compose.proxy.yml\": \"$(sha256sum proxy.yml | cut -d" " -f1)\"" manifest.json
+     cat proxy.yml' > docker-compose.proxy.yml.new &&
+     mv docker-compose.proxy.yml.new docker-compose.proxy.yml && echo "docker-compose.proxy.yml verified" ||
+     { rm -f docker-compose.proxy.yml.new; echo "not verified: nothing changed" >&2; }
+   ```
+
+2. In `.env`, set (and leave `TUNNEL_TOKEN` and `ACME_EMAIL` as they are; this mode doesn't read them):
+
+   ```bash
+   COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml
+   COMPOSE_PROFILES=
+   MDMESH_BIND=127.0.0.1:8080
+   TRUSTED_PROXIES="host"
+   MDMESH_ORIGIN_TLS=0
+   ```
+
+   `MDMESH_BIND` and `TRUSTED_PROXIES` as in [DEPLOY, Behind your own proxy](../DEPLOY.md#3-behind-your-own-proxy).
+3. Leaving the tunnel: `docker compose --profile cloudflare rm -sf cloudflared`.
+4. `docker compose up -d`. It recreates the edge (now on `MDMESH_BIND`, no longer on 80/443) and the supervisor
+   (whose updates and rollbacks then use the new `COMPOSE_FILE`). From source, run `./setup.sh` instead; it reads the
+   mode from `.env`.
+5. Point your proxy at `MDMESH_BIND` ([ready configurations](../DEPLOY.md#3-behind-your-own-proxy)).
+
+**From behind your own proxy** back to your own domain: `COMPOSE_FILE=docker-compose.yml:docker-compose.domain.yml`
+and `SITE_ADDRESS=<your hostname>`; to the tunnel: `COMPOSE_FILE=docker-compose.yml`,
+`COMPOSE_PROFILES=cloudflare`, `SITE_ADDRESS=:80` and `TUNNEL_TOKEN`. In both, set `TRUSTED_PROXIES=` (empty: devices
+reach the edge directly, so no peer is believed; `host` means nothing outside the proxy mode, and the edge ignores it,
+saying so in `docker compose logs caddy`). `MDMESH_BIND` and `MDMESH_ORIGIN_TLS` can stay; nothing else reads them.
+Then step 4.
+
+A release before 0.6.0 doesn't know the proxy mode, so while an install runs behind your own proxy the updater (and
+`./setup.sh --update`) refuses an update or a Roll back to one, saying so, and changes nothing. Move the install back
+to its old mode first. The updater refuses one too while `TRUSTED_PROXIES` still says `host`: set `TRUSTED_PROXIES=`.
 
 ## Recovery and rollback
 
@@ -226,13 +285,39 @@ exited or credentials cleared while the older agent ran.
   Updates**. That update pins `SUPERVISOR_VERSION` to the release's supervisor by digest again. With automatic
   updates on (`AUTO_UPDATE=1`), do this as soon as you can: until then the old supervisor may apply the release
   itself, with its 180-second limit.
-- **Going back to 0.5.1 without a restore** (`--allow-downgrade`) works: 0.5.1 starts on the new database unchanged.
-  It keeps the links, so in 0.5.1 too, deleting a device deletes its history and renaming one carries it. A check-in
-  or command that races a delete gets a server error in 0.5.1 (this release answers it as for an unknown device).
+- **The unused two-factor setting is removed.** MDMesh has no second sign-in step, so an organization whose settings
+  had two-factor sign-in on (a database carried over from Headwind MDM, or edited by hand) couldn't sign in at all.
+  On its first start the server drops the setting. Those accounts then sign in with their password alone (no
+  authenticator code is asked for), and get API tokens again. Two-factor sign-in for each user is planned for a later
+  release. **Roll back**
+  restores the old database, setting included, so such an organization can't sign in again until it updates again.
+- **Going back to 0.5.1 without a restore** (`--allow-downgrade`, or a native install's WAR swapped back) works: 0.5.1
+  starts on the new database unchanged. It keeps the links, so in 0.5.1 too, deleting a device deletes its history and
+  renaming one carries it. A check-in or command that races a delete gets a server error in 0.5.1 (this release
+  answers it as for an unknown device). The two-factor setting stays off: 0.5.1 reads it as off once it is gone.
 - **The server first, then its agent.** New devices and rollouts get the agent of the release the server runs, never
   a newer one. Update the server, then roll out its agent from **Settings → Agent rollout**. After a rollback, a
   rollout of the newer agent stops: cancel it, or update the server again. A server whose release isn't published
   (a development build), or has no agent in its manifest, gets the latest release's agent.
+- **Existing installs keep their hosting mode.** Cloudflare Tunnel and own-domain installs, quick start or from
+  source, keep their mode, `.env` and compose files through the update. Answers files and `MDMESH_MODE=1` or `2` mean
+  what they meant before; `3` (or `proxy`) is the new mode. Native is unchanged.
+- **New: behind your own proxy** (Docker). For a machine where nginx, Apache, Caddy or Traefik already does HTTPS
+  ([DEPLOY](../DEPLOY.md#3-behind-your-own-proxy)). To move an existing install to it, update to 0.6.0 first, then
+  [change the hosting mode](#changing-the-hosting-mode).
+- **New: your own edge rules** in `site.d/*.caddy` ([DEPLOY](../DEPLOY.md#your-own-edge-rules)). From source, the
+  first `./setup.sh` run after the update makes `site.d` and adds `MDMESH_SITE_DIR` to `.env`. A quick start keeps
+  the compose file it was set up with, so on one from before 0.6.0 add the directory by hand, from the install
+  directory: under `caddy:` → `volumes:` in `docker-compose.yml`, indented like the lines there, add
+  `- ${MDMESH_SITE_DIR:-caddy_site}:/etc/caddy/site.d:ro`, and under the top-level `volumes:` add `caddy_site:`; then
+
+  ```bash
+  mkdir -p site.d && chmod 755 site.d && echo "MDMESH_SITE_DIR=$PWD/site.d" >> .env && docker compose up -d
+  ```
+
+  (`up -d` recreates the edge with the directory mounted; updates read both files, so they keep it.)
+- **A rollback below 0.6.0** of an install you moved to the proxy mode is refused by the updater: move it back first
+  ([how](#changing-the-hosting-mode)).
 
 ### v0.6.0 for forks
 
@@ -249,6 +334,10 @@ tags or publishes anything, but either may leave untagged images in your GHCR pa
   needs a paid Arm runner under that label, or drops Arm64: remove `arm64` from the `images` job's `matrix.arch` and
   `linux/arm64` from the release job's `PLATFORMS`, in the same commit. Its releases then serve x86_64 only, and its
   quick start and updater say so on Arm64.
+
+For forks with their own server code: `Settings.twoFactor`, `User.twoFactor`, `UnsecureDAO.isTwoFactorRequired` and
+`AuthFilter.twoFactorNeeded` are gone, so code that used them no longer compiles. There is no replacement until
+two-factor sign-in is built.
 
 ### v0.5.1
 

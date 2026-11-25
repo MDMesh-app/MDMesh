@@ -7,8 +7,9 @@
 # (apt-get install). The cases, in order:
 #   timeout   the lists lock held past the wait (shortened to 12 s in a copy of install/lib/apt.sh): ./setup.sh
 #             --update --native stops, saying so, and nothing is installed;
-#   setup     the lists lock held 15 s and the archives lock 35 s, empty package lists: --update waits for both, then
-#             refreshes and installs what it needs (curl, ca-certificates, openssl), never "failed to refresh";
+#   setup     the lists lock held 15 s and the archives lock 35 s and until 10 s after the refresh, empty package
+#             lists: --update waits for both, then refreshes and installs what it needs (curl, ca-certificates, openssl),
+#             never "failed to refresh";
 #   quiet     the dpkg frontend lock held 10 s, apt's output hidden (setup.sh's Docker-mode minisign install): the
 #             waiting is still said, then minisign is installed;
 #   native    all three held 15 s: the native installer (a copy that stops after its apt steps, on a terminal) waits,
@@ -21,6 +22,7 @@ if [ "${MDMESH_APT_LOCK_TESTS:-}" != 1 ] || [ ! -f /.dockerenv ] || [ "$(id -u)"
   echo "cases.sh runs only in tests/apt-lock/run.sh's container." >&2; exit 2
 fi
 export DEBIAN_FRONTEND=noninteractive LC_ALL=C
+sh /src/tests/lib/ubuntu-mirror.sh   # CI: the runner's own Ubuntu mirror (empty: the image's)
 FAILS=0; CHECKS=0
 fail() { FAILS=$((FAILS + 1)); printf 'FAIL: %s\n' "$*" >&2; }
 # Each check: `t; CONDITION || bad WHAT`.
@@ -44,25 +46,43 @@ echo "== $(. /etc/os-release && echo "$PRETTY_NAME"), $(apt-get --version | head
 C=/work/clone
 mkdir -p "$C"
 cp -R /src/setup.sh /src/quickstart.sh /src/install /src/release "$C/"
+mkdir -p "$C/supervisor"; cp /src/supervisor/mode-guard.sh "$C/supervisor/"   # setup.sh sources it (--update's version rule)
 G=(git -c user.name=t -c user.email=t@example.com -c init.defaultBranch=main)
 git init -q --bare /work/origin.git
 ( cd "$C" && "${G[@]}" init -q && "${G[@]}" add -A && "${G[@]}" commit -qm r && git remote add origin /work/origin.git )
 
-# hold SECS FILE...: holds FILEs' locks for SECS seconds, in the background (its pid in HOLDER), as another apt run.
+# hold [--past-refresh S] SECS FILE...: holds FILEs' locks for SECS seconds, in the background (its pid in HOLDER), as
+# another apt run. --past-refresh S: and then until S seconds after an apt-get update has refreshed the package lists
+# (Packages files in /var/lib/apt/lists and nothing holding its lock), however long the mirrors take: kill it when
+# what it plays against has returned.
 hold() {
-  local secs=$1 ready; shift
+  local past=-1 secs ready
+  if [ "$1" = --past-refresh ]; then past=$2; shift 2; fi
+  secs=$1; shift
   ready=$(mktemp -u /tmp/holder.XXXXXX)
   perl -e '
-    use Fcntl qw(O_RDWR O_CREAT F_SETLK F_WRLCK SEEK_SET);
-    my ($secs, $ready, @files) = @ARGV; my @fh;
+    use Fcntl qw(O_RDWR O_CREAT F_SETLK F_GETLK F_WRLCK F_UNLCK SEEK_SET);
+    my ($secs, $past, $ready, @files) = @ARGV; my @fh;
+    my $flock = sub { pack("s s x4 q q i x4", $_[0], SEEK_SET, 0, 0, 0) };   # struct flock (64-bit Linux)
     for my $f (@files) {
       sysopen(my $h, $f, O_RDWR | O_CREAT, 0640) or die "open $f: $!\n";
-      my $fl = pack("s s x4 q q i x4", F_WRLCK, SEEK_SET, 0, 0, 0);   # struct flock (64-bit Linux)
-      fcntl($h, F_SETLK, $fl) or die "lock $f: $!\n";
+      fcntl($h, F_SETLK, $flock->(F_WRLCK)) or die "lock $f: $!\n";
       push @fh, $h;
     }
     open(my $r, ">", $ready) or die; close $r;
-    sleep $secs;' "$secs" "$ready" "$@" &
+    sleep $secs;
+    exit 0 if $past < 0;
+    # F_GETLK only asks (it takes no lock, so apt-get update never finds this holder in its way).
+    my $lists = "/var/lib/apt/lists/lock";
+    my $refreshed = sub {
+      my @lists = glob("/var/lib/apt/lists/*Packages*"); return 0 unless @lists;
+      sysopen(my $h, $lists, O_RDWR) or return 0;
+      my $fl = $flock->(F_WRLCK);
+      fcntl($h, F_GETLK, $fl) or return 0;
+      return unpack("s", $fl) == F_UNLCK;
+    };
+    select(undef, undef, undef, 0.5) until $refreshed->();
+    sleep $past;' "$secs" "$past" "$ready" "$@" &
   HOLDER=$!
   local _; for _ in $(seq 50); do [ -e "$ready" ] && return 0; sleep 0.1; done
   echo "the lock holder did not start" >&2; exit 1
@@ -99,11 +119,14 @@ t; { has "Nothing was changed." && ! command -v curl > /tmp/ignored; } || bad "t
 t; { ! has "failed to refresh"; } || bad "timeout: no 'failed to refresh' (a lock is not a broken source)"
 shown timeout
 
-# --- setup: lists lock 15 s, archives lock 35 s, held together; the package lists are empty.
+# --- setup: lists lock 15 s, archives lock 35 s, held together; the package lists are empty. The archives lock is also
+# held until 10 s after --update's refresh, so its install finds it held however long the mirrors take (a 34 MB Ubuntu
+# refresh at 1 MB/s outlasted a plain 35 s).
 t; { [ -z "$(find /var/lib/apt/lists -maxdepth 1 -name "*Packages*" -print -quit)" ]; } || bad "setup: the package lists are empty to begin with"
 hold 15 "$LISTS"; h1=$HOLDER
-hold 35 "$ARCHIVES"; h2=$HOLDER
+hold --past-refresh 10 35 "$ARCHIVES"; h2=$HOLDER
 upd
+kill "$h2" 2> /tmp/ignored || true   # still waiting for a refresh when --update failed before it
 wait "$h1" "$h2" || true
 t; { [ "$RC" = 1 ] && has "origin has no release tag"; } || bad "setup: --update gets past its tools to the release lookup"
 t; { has "Nothing else was changed (it installed curl ca-certificates openssl above)." && command -v curl > /tmp/ignored && command -v openssl > /tmp/ignored; } || bad "setup: it installed them"

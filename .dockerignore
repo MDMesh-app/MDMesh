@@ -27,6 +27,8 @@ brain
 .idea
 **/*.iml
 **/.env
+# The operator's own edge rules: mounted into the edge at run time, never built into an image.
+site.d
 **/.env.local
 **/.env.*.local
 **/*.log

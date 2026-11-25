@@ -66,6 +66,7 @@ minisign -G -W -p "$WORK/k.pub" -s "$WORK/k.key" >/dev/null
 minisign -G -W -p "$WORK/x.pub" -s "$WORK/x.key" >/dev/null
 O="$WORK/origin"
 mkdir -p "$O/release"
+mkdir -p "$O/supervisor"; cp -- "$REPO/supervisor/mode-guard.sh" "$O/supervisor/"
 cp -R -- "$REPO/setup.sh" "$REPO/quickstart.sh" "$REPO/install" "$REPO/docker-compose.release.yml" \
   "$REPO/docker-compose.domain.yml" "$O/"
 cp -- "$WORK/k.pub" "$O/release/minisign.pub"
@@ -406,5 +407,43 @@ for c in nosig:"has a published, signed manifest" otherkey:"is not signed by the
   expect_refused "bad-${c%%:*}" "${c%%:*}" "a release with ${c%%:*}" "${c#*:}"
 done
 
-if [ "$FAILS" != 0 ]; then echo "setup --update: $FAILS failure(s)" >&2; exit 1; fi
-echo "setup --update: all $CHECKS checks passed"
+# Behind your own proxy (0.6.0 on), never to a release before 0.6.0, --allow-downgrade or not, dry run or not: that
+# release's setup.sh and edge don't know the mode. An origin whose only release is v0.5.9; the same move without the
+# proxy overlay goes on (with --allow-downgrade), so the refusal is the mode's.
+"${G[@]}" clone -q "$O" "$WORK/origin4"
+for t in $("${G[@]}" -C "$WORK/origin4" tag -l 'v9*'); do "${G[@]}" -C "$WORK/origin4" tag -d "$t" > /dev/null; done
+"${G[@]}" -C "$WORK/origin4" tag -a -m old v0.5.9 "$c900"
+manifest "$R/old" v0.5.9 0.5.9 "$c900" "$WORK/k.key"
+for a in '' --allow-downgrade dry; do
+  clone "proxy$a" '' "$WORK/origin4"
+  "${G[@]}" -C "$WORK/proxy$a" tag -d v0.5.9 > "$WORK/tagd.out"   # so a fetch of the tag would show
+  printf '%s\n' 'COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml' 'CURRENT_VERSION=0.6.0' > "$WORK/proxy$a/.env"
+  case "$a" in
+    dry) upd "proxy$a" old MDMESH_DRY_RUN=1 -- ;;
+    *) upd "proxy$a" old -- $a ;;
+  esac
+  { [ "$RC" != 0 ] && grep -qF "runs behind your own proxy (docker-compose.proxy.yml), which came in 0.6.0, so it can't go to 0.5.9" "$WORK/out" \
+    && head_is "proxy$a" "$cmain" && [ -z "$("${G[@]}" -C "$WORK/proxy$a" tag -l v0.5.9)" ]; } \
+    || { fail "--update ${a:-} to v0.5.9 behind your own proxy is not refused before fetching the tag"; show; }
+  ok
+done
+# Moved out of the proxy mode with TRUSTED_PROXIES="host" left: the same rule as the updater's, --allow-downgrade too.
+clone host059 '' "$WORK/origin4"
+printf '%s\n' 'COMPOSE_FILE=docker-compose.yml:docker-compose.domain.yml' 'TRUSTED_PROXIES="host"' 'CURRENT_VERSION=0.6.0' > "$WORK/host059/.env"
+upd host059 old -- --allow-downgrade
+{ [ "$RC" != 0 ] && grep -qF 'TRUSTED_PROXIES in .env still says host' "$WORK/out" && head_is host059 "$cmain"; } \
+  || { fail "--update --allow-downgrade to v0.5.9 with TRUSTED_PROXIES=host is not refused"; show; }
+ok
+clone domain059 '' "$WORK/origin4"
+printf '%s\n' 'COMPOSE_FILE=docker-compose.yml:docker-compose.domain.yml' 'CURRENT_VERSION=0.6.0' > "$WORK/domain059/.env"
+upd domain059 old -- --allow-downgrade
+{ head_is domain059 "$c900" && grep -q 'Checked out v0.5.9' "$WORK/out"; } || { fail "--update --allow-downgrade to v0.5.9 in domain mode is refused"; show; }
+ok
+
+# Which tree ran, and a floor on how many checks did (a few depend on the host), so a section that silently ran
+# nothing can't pass.
+TREE=$(git -c safe.directory='*' -C "$REPO" describe --always --dirty 2>&1) || TREE='?'
+TREE="$REPO at $TREE"
+if [ "$FAILS" != 0 ]; then echo "setup --update: $FAILS failure(s) ($TREE)" >&2; exit 1; fi
+if [ "$CHECKS" -lt 78 ]; then echo "setup --update: only $CHECKS checks ran, expected at least 78 ($TREE)" >&2; exit 1; fi
+echo "setup --update: all $CHECKS checks passed ($TREE)"

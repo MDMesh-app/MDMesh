@@ -69,6 +69,8 @@ New
   leaves missing. It is no longer offered as an update that then fails, or retried automatically.
 - Console extensions: a menu item (`MenuItem`, as in a list's row actions) can set `movesFocus: true` when its
   `onSelect` moves focus itself, so the menu leaves focus there rather than returning it to its trigger.
+- Audit log: starting an agent rollout (with the agent and its canary devices), promoting it to the rest of the
+  fleet, and cancelling or finishing it are recorded, with who did it (#265).
 
 Fixes
 - Devices search finds IMEIs reported by current agents, in either SIM slot and by part of the number, also for devices

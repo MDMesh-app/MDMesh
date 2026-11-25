@@ -129,7 +129,8 @@ The server logs to stdout at INFO:
 - **Native:** `journalctl -u mdmesh-server -f`
 
 Audit events (sign-ins, password changes and resets, account and role changes, signing in as another account, edits,
-commands sent to devices) are logged by `AuditLogger`, for example `docker compose logs server | grep AuditLogger`.
+commands sent to devices, agent rollouts started, promoted or stopped) are logged by `AuditLogger`, for example
+`docker compose logs server | grep AuditLogger`.
 They are also stored in the `plugin_audit_log` table. A configuration or device change keeps only the fields that
 hold no secret; every other body has its passwords, tokens, PINs and signed-URL parameters masked. A body that can't be
 read as JSON, or is over 1 MB, is not stored. For an action in a session signed in as another account, the record also

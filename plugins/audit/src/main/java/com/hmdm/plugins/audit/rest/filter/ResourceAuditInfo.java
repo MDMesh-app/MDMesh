@@ -85,7 +85,12 @@ public enum ResourceAuditInfo {
     RETRY_DEVICE_CONFIG("POST", Pattern.compile("/rest/private/agent/v1/devices/[^/]+/retryConfig/?"), "plugin.audit.action.device.retry.config", true, false, true),
     // The request (configuration, devices, validity) is saved; the response, which holds the code, never is.
     MINT_ENROLL_TOKEN("POST", "/rest/private/agent/v1/token", true, "plugin.audit.action.enroll.token.mint", true, true),
-    REVOKE_ENROLL_TOKENS("POST", "/rest/private/agent/v1/token/revoke-all", true, "plugin.audit.action.enroll.token.revoke.all", false, true);
+    REVOKE_ENROLL_TOKENS("POST", "/rest/private/agent/v1/token/revoke-all", true, "plugin.audit.action.enroll.token.revoke.all", false, true),
+    // An agent rollout installs a new agent on devices. Starting one keeps the request: the agent (version, package,
+    // version code, SHA-256) and the canary devices. Promoting and stopping it keep the URI, which names the rollout.
+    START_AGENT_ROLLOUT("POST", "/rest/private/agent/v1/rollout", true, "plugin.audit.action.agent.rollout.start", true, true),
+    PROMOTE_AGENT_ROLLOUT("POST", Pattern.compile("/rest/private/agent/v1/rollout/[^/]+/promote/?"), "plugin.audit.action.agent.rollout.promote", true, false, true),
+    CANCEL_AGENT_ROLLOUT("POST", Pattern.compile("/rest/private/agent/v1/rollout/[^/]+/cancel/?"), "plugin.audit.action.agent.rollout.cancel", true, false, true);
 
     /**
      * <p>Method for the REST resource to track audit log for.</p>

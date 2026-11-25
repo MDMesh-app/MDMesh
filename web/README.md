@@ -73,15 +73,12 @@ with the wording. Plurals and variables use ICU
 
 - `npm run i18n:extract` writes `src/i18n/locales/en.json`, the source for translators. Commit it with the change;
   `npm test` fails while it is out of date, on a message without an id, and on a translation that adds ids or changes
-  a message's placeholders. A translation with messages missing passes: the locale is `partial` and shows those in
-  English.
+  a message's placeholders. A translation with messages missing passes and shows those in English.
 - `npm test` also counts the English written straight into the UI, per file (`src/i18n/literals.test.ts`): JSX text
   and children, UI props (`title`, `label`, `header`, `aria-label`…) and capitalised sentences, not console or Error
   messages. A file's count may not go up; the failure lists the file's strings with their lines. It is a count, so
   converting one string makes room for another in the same file: review catches that. When a change turns text into
-  messages, `npm run i18n:baseline` lowers the counts in `src/i18n/literals-baseline.json`; commit that too. It
-  refuses a drop of more than 10% (or a file with more than 5 to none), which usually means the scan broke; after a
-  look, `npm run i18n:baseline:force` writes it anyway.
+  messages, `npm run i18n:baseline` lowers the counts in `src/i18n/literals-baseline.json`; commit that too.
 - Component tests render with `render` from `src/test/render.tsx` (Testing Library's, inside `IntlRoot`), and page
   tests with `renderInConsole`, so a component whose text is a message finds its provider.
 - `npm run i18n:pseudo`, then `localStorage.setItem('mdmesh-locale', 'en-XA')` in the dev console's browser, shows

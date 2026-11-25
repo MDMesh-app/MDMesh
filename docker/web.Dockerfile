@@ -38,7 +38,13 @@ COPY --from=web /web/dist /srv
 COPY docker/Caddyfile /etc/caddy/Caddyfile
 COPY docker/web-entrypoint.sh /web-entrypoint.sh
 COPY docker/edge-peers.sh /edge-peers.sh
-RUN chmod +x /web-entrypoint.sh && chown -R caddy:caddy /srv /etc/caddy /data /config
-EXPOSE 80 443
+# Every caddy command in the container reads the settings edge-peers.sh computed at start (see the file).
+COPY docker/edge-caddy.sh /usr/local/bin/caddy
+# /etc/caddy/site.d: where compose mounts your own rules (the install directory's site.d/, read-only); empty in the image.
+# Only what caddy writes is its own (/data: certificates and the internal CA; /config: its autosaved config). The SPA,
+# the Caddyfile, the scripts and the site.d mount point stay root's, so the running edge can't change its own
+# configuration or what the next start runs.
+RUN mkdir -p /etc/caddy/site.d && chmod +x /web-entrypoint.sh /usr/local/bin/caddy && chown -R caddy:caddy /data /config
+EXPOSE 80 443 8080
 ENTRYPOINT ["/web-entrypoint.sh"]
 CMD ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]

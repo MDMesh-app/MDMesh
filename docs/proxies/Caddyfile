@@ -1,0 +1,20 @@
+# MDMesh behind a Caddy of your own (DEPLOY.md, "Behind your own proxy"). This Caddy gets the certificate and forwards
+# everything to MDMesh's edge. Replace mdm.example.com and, if you changed MDMESH_BIND, 127.0.0.1:8080; then
+# caddy reload. MDMesh's .env: TRUSTED_PROXIES="host" (this Caddy on the same machine).
+mdm.example.com {
+	# Caddy forwards the path unchanged, passes WebSocket upgrades and keeps them open while idle, sets X-Forwarded-For
+	# to the address it sees (replacing a client's own: no trusted_proxies here) and X-Forwarded-Proto, keeps the Host
+	# (to an HTTP upstream; an HTTPS one needs header_up Host, below), and has no request size limit.
+	reverse_proxy 127.0.0.1:8080
+
+	# MDMesh on another machine with MDMESH_ORIGIN_TLS=1: HTTPS to it, checked against MDMesh's own CA (docker compose cp
+	# caddy:/data/caddy/pki/authorities/local/root.crt ./mdmesh-origin-ca.crt). Instead of the line above
+	# (192.0.2.20:8080 is MDMESH_BIND there):
+	# reverse_proxy https://192.0.2.20:8080 {
+	# 	header_up Host {hostport}
+	# 	transport http {
+	# 		tls_trust_pool file /etc/caddy/mdmesh-origin-ca.crt
+	# 		tls_server_name mdm.example.com
+	# 	}
+	# }
+}

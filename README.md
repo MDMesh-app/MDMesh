@@ -86,9 +86,10 @@ APK.
 
 ## ■ Quick start
 
-On a Linux host (x86_64, or Arm64 from 0.6.0) with Docker, Docker Compose v2, `curl`, `openssl` 3.0+ (or an older `openssl` and
-`minisign`), and either a domain in Cloudflare (for a Cloudflare Tunnel) or a domain pointed at the host with ports 80
-and 443 open:
+On a Linux host (x86_64, or Arm64 from 0.6.0) with Docker, Docker Compose v2, `curl`, `openssl` 3.0+ (or an older
+`openssl` and `minisign`), and a domain. It asks how your phones will reach MDMesh: through a Cloudflare Tunnel (no
+ports to open), on your own domain (ports 80 and 443 reach the host), or behind the nginx, Apache, Caddy or Traefik you
+already run ([which one is for me?](DEPLOY.md#which-install-is-for-me)):
 
 ```bash
 bash <(curl -fsSL https://github.com/MDMesh-app/MDMesh/releases/latest/download/quickstart.sh)

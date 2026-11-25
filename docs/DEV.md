@@ -172,6 +172,7 @@ so "the newest tag" is not the last MDMesh release.
 | `T2_M2_SAVE=0` | With `T2_M2_REPO`: seeds, but never saves. CI sets it when the cache entry was an exact hit. |
 | `T2_OUT` | Logs and `results.tsv` (default `/tmp/mdmesh-t2`, or `$TMPDIR/mdmesh-t2`). Each run writes to `<T2_OUT>/<container>/`. |
 | `T2_STRICT=1` | Builds an upgrade's image without the old-release workarounds (see `tests/native/Dockerfile`). |
+| `MDMESH_TEST_UBUNTU_MIRROR` | An Ubuntu mirror (e.g. `http://azure.archive.ubuntu.com/ubuntu/`) for the Ubuntu guest's apt, in place of `archive.ubuntu.com` and `security.ubuntu.com`. CI sets Azure's on GitHub-hosted runners; `tests/apt-lock` and `tests/installer-answers/in-container.sh` use it too (`tests/lib/ubuntu-mirror.sh`). |
 
 The rest are in the header of `tests/native/run.sh`. On 4 cores, `fresh` and `upgrade` take 3–5 minutes each and
 `killed` about 20.
@@ -184,3 +185,17 @@ Everything a run creates is named `mdmesh-t2-…` and removed on exit; see the h
 CI runs the rig as tier T2 (see [CI](../CONTRIBUTING.md#ci)).
 The rig's Maven cache helpers have a quick test of their own, `tests/native/m2-cache-test.sh` (a docker stub, no root,
 no network), which T0 runs when `tests/native/` changes.
+
+## Behind your own proxy (Docker), end to end
+
+```bash
+for n in server web supervisor; do docker build -f docker/$n.Dockerfile -t ghcr.io/local/mdmesh-$n:px-e2e .; done
+tests/proxy-e2e/run.sh                     # phases: nginx tls proxies update (default: all)
+```
+
+It installs the proxy mode as the quick start writes it, in a throwaway docker:dind with a registry that answers as
+ghcr.io, puts each configuration in [`docs/proxies`](proxies/) in front, and checks from a client on another machine:
+the console, sign-in, the client address the server records (forged headers refused), the agent's wake socket, large
+uploads, the HTTPS origin, then an update and a Roll back. Run it after changing `docker/Caddyfile`,
+`docker/edge-peers.sh`, `docker-compose.proxy.yml` or `docs/proxies`. About 15 minutes; the rest is in the script's
+header. `scripts/edge-check.sh` (CI, T0) covers the edge's side of the mode without a stack.

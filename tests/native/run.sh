@@ -40,6 +40,8 @@
 #   T2_ORIGIN_URL the clone's origin (default the real repo: the installer reads releases and the agent APK from it)
 #   T2_MEMORY     the container's memory limit (default 6g); T2_MIN_FREE_GB free space required to start (default 8)
 #   T2_STEP_TIMEOUT  seconds one installer run may take (default 3600)
+#   MDMESH_TEST_UBUNTU_MIRROR  an Ubuntu archive mirror the ubuntu-24.04 guest's apt uses instead of archive.ubuntu.com
+#                 and security.ubuntu.com (default none; CI sets Azure's, http://azure.archive.ubuntu.com/ubuntu/)
 #
 # Needs: docker (cgroup v2 host), git, curl, python3, md5sum. Every container and image it creates is named
 # mdmesh-t2-<distro>-<scenario>-<random>[...] and removed on exit, whatever happens; nothing else is touched (but

@@ -2,7 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { FormattedMessage } from 'react-intl';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { IntlRoot } from './IntlRoot';
-import { directionOf, LOCALE_KEY, resolveLocale } from './locales';
+import { LOCALE_KEY, resolveLocale } from './locales';
 
 // Two catalogs that load when asked: `xx` (a test locale) and `ar`, which fails to load.
 let release: (messages: Record<string, string>) => void = () => {};
@@ -16,10 +16,9 @@ vi.mock('./locales', async (actual) => ({
 
 const Hello = () => <FormattedMessage id="test.hello" defaultMessage="Hello" />;
 
-// Neither set, so a test sees only what IntlRoot sets.
+// Not set, so a test sees only what IntlRoot sets.
 afterEach(() => {
   document.documentElement.lang = '';
-  document.documentElement.dir = '';
 });
 
 describe('resolveLocale', () => {
@@ -31,19 +30,13 @@ describe('resolveLocale', () => {
     expect(resolveLocale(available, null, ['ru-RU'])).toBe('ru');
     expect(resolveLocale(available, null, ['de', 'fr'])).toBe('en');
   });
-
-  it('gives right-to-left languages rtl', () => {
-    expect(directionOf('ar-EG')).toBe('rtl');
-    expect(directionOf('en-XA')).toBe('ltr');
-  });
 });
 
 describe('IntlRoot', () => {
-  it('renders English at once and sets <html lang dir>', () => {
+  it('renders English at once and sets <html lang>', () => {
     render(<IntlRoot><Hello /></IntlRoot>);
     expect(screen.getByText('Hello')).toBeTruthy();
     expect(document.documentElement.lang).toBe('en');
-    expect(document.documentElement.dir).toBe('ltr');
   });
 
   it('shows another locale only once its catalog has loaded, never English first', async () => {
@@ -62,7 +55,6 @@ describe('IntlRoot', () => {
     render(<IntlRoot><Hello /></IntlRoot>);
     expect(await screen.findByText('Hello')).toBeTruthy();
     await waitFor(() => expect(document.documentElement.lang).toBe('en'));
-    expect(document.documentElement.dir).toBe('ltr');
     expect(error).toHaveBeenCalled();
   });
 });

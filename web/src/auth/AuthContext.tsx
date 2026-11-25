@@ -57,10 +57,10 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-/** Persist the UI hint, without the tokens, and without `twoFactor`, which describes one sign-in (see the refresh). */
+/** Persist the UI hint, without the tokens. */
 function storeUser(u: AuthUser) {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { passwordResetToken, authToken, twoFactor, ...rest } = u as AuthUser & { authToken?: unknown };
+  const { passwordResetToken, authToken, ...rest } = u as AuthUser & { authToken?: unknown };
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(rest));
   } catch {
@@ -75,9 +75,9 @@ function loadStoredUser(): AuthUser | null {
     const parsed = JSON.parse(raw) as (AuthUser & { authToken?: unknown }) | null;
     if (!parsed || typeof parsed !== 'object') return null;
     // Scrub a copy an older console stored.
-    if ('passwordResetToken' in parsed || 'authToken' in parsed || 'twoFactor' in parsed) storeUser(parsed);
+    if ('passwordResetToken' in parsed || 'authToken' in parsed) storeUser(parsed);
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { authToken, twoFactor, ...u } = parsed;
+    const { authToken, ...u } = parsed;
     return u;
   } catch {
     return null;
@@ -131,13 +131,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(next);
   }, []);
 
-  // Two sessions the server refuses everything but their own next step, so a refresh would only sign them out: one
-  // whose account must set its password (passwordReset), and one that has not passed the customer's second sign-in
-  // step (twoFactor, set on the sign-in answer). twoFactor is kept in memory only, so it means "this sign-in still
-  // owes the second step": the console has no such step yet, and once it has one, passing it must clear the flag.
-  // A reload or another tab then lacks the flag and refreshes, which drops a session still owing the step (as its
-  // first page request would); that step should then keep such a sign-in out of storage until it passes.
-  const refreshId = user && !user.passwordReset && !user.twoFactor ? user.id : null;
+  // The server refuses a session whose account must set its password (passwordReset) everything but that, so a
+  // refresh would only sign it out.
+  const refreshId = user && !user.passwordReset ? user.id : null;
   useEffect(() => {
     if (refreshId === null) return;
     let live = true;

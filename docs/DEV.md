@@ -172,6 +172,7 @@ so "the newest tag" is not the last MDMesh release.
 | `T2_M2_SAVE=0` | With `T2_M2_REPO`: seeds, but never saves. CI sets it when the cache entry was an exact hit. |
 | `T2_OUT` | Logs and `results.tsv` (default `/tmp/mdmesh-t2`, or `$TMPDIR/mdmesh-t2`). Each run writes to `<T2_OUT>/<container>/`. |
 | `T2_STRICT=1` | Builds an upgrade's image without the old-release workarounds (see `tests/native/Dockerfile`). |
+| `MDMESH_TEST_UBUNTU_MIRROR` | An Ubuntu mirror (e.g. `http://azure.archive.ubuntu.com/ubuntu/`) for the Ubuntu guest's apt, in place of `archive.ubuntu.com` and `security.ubuntu.com`. CI sets Azure's on GitHub-hosted runners; `tests/apt-lock` and `tests/installer-answers/in-container.sh` use it too (`tests/lib/ubuntu-mirror.sh`). |
 
 The rest are in the header of `tests/native/run.sh`. On 4 cores, `fresh` and `upgrade` take 3–5 minutes each and
 `killed` about 20.

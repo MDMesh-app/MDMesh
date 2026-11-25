@@ -2,11 +2,11 @@
 import { defineMessages, type IntlShape } from 'react-intl';
 
 const sections = defineMessages({
-  policies: { id: 'configSync.section.policies', defaultMessage: 'Policies' },
-  kiosk: { id: 'configSync.section.kiosk', defaultMessage: 'Kiosk mode' },
-  location: { id: 'configSync.section.location', defaultMessage: 'Location reporting' },
-  connectivity: { id: 'configSync.section.connectivity', defaultMessage: 'Connectivity' },
-  appPermissions: { id: 'configSync.section.appPermissions', defaultMessage: 'App permissions' },
+  policies: { id: 'configSection.policies', defaultMessage: 'Policies' },
+  kiosk: { id: 'configSection.kiosk', defaultMessage: 'Kiosk mode' },
+  location: { id: 'configSection.location', defaultMessage: 'Location reporting' },
+  connectivity: { id: 'configSection.connectivity', defaultMessage: 'Connectivity' },
+  appPermissions: { id: 'configSection.appPermissions', defaultMessage: 'App permissions' },
 });
 
 /** "Connectivity and Kiosk mode". An unknown name is shown as is. */

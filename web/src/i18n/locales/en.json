@@ -12,27 +12,27 @@
   "app.notFound.title": {
     "defaultMessage": "Page not found"
   },
+  "configSection.appPermissions": {
+    "defaultMessage": "App permissions"
+  },
+  "configSection.connectivity": {
+    "defaultMessage": "Connectivity"
+  },
+  "configSection.kiosk": {
+    "defaultMessage": "Kiosk mode"
+  },
+  "configSection.location": {
+    "defaultMessage": "Location reporting"
+  },
+  "configSection.policies": {
+    "defaultMessage": "Policies"
+  },
   "configSync.agentUpdate.count": {
     "defaultMessage": "{count} agent update needed",
     "description": "How many devices need an agent update, in a line of counts such as \"3 in sync · 1 agent update needed\""
   },
   "configSync.agentUpdate.label": {
     "defaultMessage": "Agent update needed for: {sections}"
-  },
-  "configSync.section.appPermissions": {
-    "defaultMessage": "App permissions"
-  },
-  "configSync.section.connectivity": {
-    "defaultMessage": "Connectivity"
-  },
-  "configSync.section.kiosk": {
-    "defaultMessage": "Kiosk mode"
-  },
-  "configSync.section.location": {
-    "defaultMessage": "Location reporting"
-  },
-  "configSync.section.policies": {
-    "defaultMessage": "Policies"
   },
   "device.config.agentUpdateOwner": {
     "defaultMessage": "App permissions also need the agent to be device owner."

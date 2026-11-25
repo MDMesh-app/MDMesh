@@ -495,7 +495,7 @@ class CheckInCoordinatorTest {
         testScheduler.advanceUntilIdle()
 
         assertEquals(
-            listOf("c1" to CommandDispatcher.INTERRUPTED, "c2" to CommandDispatcher.NOT_RUN_STOPPED),
+            listOf("c1" to CommandDispatcher.INTERRUPTED, "c2" to null), // c2 doesn't wait: it ran
             PendingResults(backup).drain().map { it.commandId to it.detail },
         )
         assertTrue(running.isCancelled)

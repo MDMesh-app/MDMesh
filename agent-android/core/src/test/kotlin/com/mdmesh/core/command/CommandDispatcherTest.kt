@@ -143,32 +143,24 @@ class CommandDispatcherTest {
         return results
     }
 
+    /** Nothing sends them again: what a stopped check-in can still run must not be dropped for what it can't. */
     @Test
-    fun `a stop interrupts the running command and runs none after it, except the lock and the wipe`() = runTest {
+    fun `a stop ends the commands that wait, and the others in the batch still run`() = runTest {
         val ran = mutableListOf<String>()
         fun echo(type: String) = FuncHandler(type) { ran += type; CommandResults.done(it) }
-        val dispatcher = CommandDispatcher(
-            listOf(
-                FuncHandler("app.install") { awaitCancellation() },
-                echo("kiosk.exit"), echo("device.lock"), echo("device.wipe"), echo("device.reboot"),
-            ),
-        )
+        val others = listOf("device.passcodeReset", "device.lock", "device.wipe")
+        val waiting = listOf("app.install", "app.uninstall").map { FuncHandler(it) { awaitCancellation() } }
 
         val results = dispatchStopped(
-            dispatcher, "app.install", "kiosk.exit", "device.lock", "device.wipe", "device.reboot",
+            CommandDispatcher(waiting + others.map(::echo)), "app.install", "app.uninstall", *others.toTypedArray(),
         )
 
+        assertEquals(others, ran)
+        val interrupted = CommandStatus.EXPIRED to CommandDispatcher.INTERRUPTED
         assertEquals(
-            listOf(
-                CommandStatus.EXPIRED to CommandDispatcher.INTERRUPTED,
-                CommandStatus.EXPIRED to CommandDispatcher.NOT_RUN_STOPPED,
-                CommandStatus.DONE to null,
-                CommandStatus.DONE to null,
-                CommandStatus.EXPIRED to CommandDispatcher.NOT_RUN_STOPPED,
-            ),
+            listOf(interrupted, interrupted) + others.map { CommandStatus.DONE to null },
             results.map { it.status to it.detail },
         )
-        assertEquals(listOf("device.lock", "device.wipe"), ran)
     }
 
     @Test

@@ -41,7 +41,6 @@ import javax.ws.rs.core.StreamingOutput;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
-import java.net.URI;
 
 /**
  * <p>A publicly available API which does not require authentication/authorization.</p>
@@ -107,7 +106,7 @@ public class PublicResource {
     // =================================================================================================================
     @ApiOperation(
             value = "Get logo",
-            notes = "Returns the rebranded logo."
+            notes = "Returns the rebranded logo (rebranding.logo), or 404 when none is set."
     )
     @GET
     @Path("/logo")
@@ -129,7 +128,8 @@ public class PublicResource {
                     return javax.ws.rs.core.Response.status(javax.ws.rs.core.Response.Status.NOT_FOUND).build();
                 }
             } else {
-                return javax.ws.rs.core.Response.temporaryRedirect(new URI("../images/logo.png")).build();
+                // No rebranding logo: MDMesh serves none of its own here (the console carries its mark).
+                return javax.ws.rs.core.Response.status(javax.ws.rs.core.Response.Status.NOT_FOUND).build();
             }
         } catch (Exception e) {
             e.printStackTrace();

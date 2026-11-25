@@ -78,13 +78,13 @@ public class DeviceInfo implements Serializable {
     @ApiModelProperty(value = "The details on device location")
     private DeviceLocation location;
 
-    @ApiModelProperty(value = "Headwind MDM launcher build variant")
+    @ApiModelProperty(value = "Legacy launcher build variant")
     private String launcherType;
 
     @ApiModelProperty(value = "Package of default launcher on the device")
     private String launcherPackage;
 
-    @ApiModelProperty(value = "Is Headwind MDM a default launcher")
+    @ApiModelProperty(value = "Is the legacy launcher the default launcher")
     private Boolean defaultLauncher;
 
     @ApiModelProperty("ICC ID")

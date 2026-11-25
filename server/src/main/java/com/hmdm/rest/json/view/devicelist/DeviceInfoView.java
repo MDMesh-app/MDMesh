@@ -125,7 +125,7 @@ public class DeviceInfoView implements Serializable {
         return deviceInfo.getSerial();
     }
 
-    @ApiModelProperty("A flag showing if Headwind MDM is set as default launcher on a device")
+    @ApiModelProperty("A flag showing if the legacy launcher is set as default launcher on a device")
     public Boolean getDefaultLauncher() {
         return deviceInfo.getDefaultLauncher();
     }

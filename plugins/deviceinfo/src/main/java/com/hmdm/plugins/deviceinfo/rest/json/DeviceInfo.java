@@ -108,13 +108,13 @@ public class DeviceInfo implements Serializable {
     @ApiModelProperty(value = "A flag indicating if kiosk mode is ON or not")
     private Boolean kioskMode;
 
-    @ApiModelProperty(value = "Headwind MDM launcher build variant")
+    @ApiModelProperty(value = "Legacy launcher build variant")
     private String launcherType;
 
     @ApiModelProperty(value = "Package of default launcher on the device")
     private String launcherPackage;
 
-    @ApiModelProperty(value = "Is Headwind MDM a default launcher")
+    @ApiModelProperty(value = "Is the legacy launcher the default launcher")
     private Boolean defaultLauncher;
 
     @ApiModelProperty("ICC ID")

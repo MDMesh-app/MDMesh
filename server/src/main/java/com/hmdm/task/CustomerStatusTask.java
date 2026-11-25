@@ -137,7 +137,7 @@ public class CustomerStatusTask implements Runnable {
         }
 
         // Notify the admin
-        String adminSubj = "Headwind MDM customer status changed";
+        String adminSubj = "MDMesh customer status changed";
         String adminBody = "Hi,<br>\nThe following customers changed their status and notified:<br><br>\n\n";
         for (Customer c : updatedCustomers) {
             adminBody += c.getName() + "/" + c.getEmail() + ", status " + c.getCustomerStatus() + ", states I" +

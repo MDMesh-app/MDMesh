@@ -32,9 +32,15 @@ Upstream attribution (retained per Apache-2.0 section 4d):
 This product and its modifications:
 
   New components (the protocol under proto/ and the web admin under web/)
-  are original works. The agent v1 server endpoints were written for MDMesh,
-  though some carry the upstream header. Files derived from the upstream
-  retain their original Apache-2.0 headers.
+  are original works, as are the agent v1 server endpoints. Files kept
+  from the upstream retain their original Apache-2.0 headers, and those
+  MDMesh changed say so: "Modified by the MDMesh contributors" under the
+  upstream copyright line, or, where the upstream file had no header, a
+  "Derived from Headwind MDM" comment. docs/licenses/upstream-files.tsv in
+  the source repository lists every file kept from the upstream; a listed
+  file that can't carry a comment (JSON) is changed if it differs from the
+  upstream file named there; README.md and this file were rewritten for
+  MDMesh.
 
   The Kotlin device agent under agent-android/ is new, but parts of it are
   ported from the Headwind MDM Android agent under Apache-2.0: app install

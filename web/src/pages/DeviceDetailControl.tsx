@@ -224,6 +224,8 @@ export function ConfigPanel({
     );
   }
 
+  // A re-send or an agent update doesn't bring these.
+  const needsOwner = verdict.label === 'Out of sync' && (status.needsDeviceOwner?.length ?? 0) > 0;
   let tone: PanelTone = 'warn';
   let title = 'Configuration out of sync';
   let text: ReactNode = (
@@ -299,18 +301,17 @@ export function ConfigPanel({
         {strongName}: {outcomeSummary(outcomes)}
       </>
     );
-  } else if (verdict.label === 'Out of sync' && isDeviceOwner === false) {
-    // Not device owner: a current agent can't take settings that need it (app permissions), so the device may stay out
-    // of sync however often the configuration is sent.
+  } else if (needsOwner) {
+    title = 'Device owner needed';
     text = (
       <>
-        The device doesn’t run the current revision of {strongName}. Its agent isn’t device owner, so settings that need
-        it, such as app permissions, can’t apply.
+        {strongName} sets {sectionLabels(status.needsDeviceOwner ?? [])}, which an agent applies only as device owner.
+        An agent update doesn’t change that.
       </>
     );
   }
 
-  const retryable = status.supported && !status.inSync && (verdict.label === 'Apply failed' || verdict.label === 'Out of sync');
+  const retryable = status.supported && !status.inSync && (verdict.label === 'Apply failed' || (verdict.label === 'Out of sync' && !needsOwner));
   const icon = tone === 'idle' ? <IconDashSmall size={14} /> : <IconWarning size={17} />;
 
   return (

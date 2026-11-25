@@ -138,6 +138,7 @@ export interface ConfigStatus {
     inSync: boolean;
     supported: boolean;
     agentUpdateNeeded?: string[] | null;
+    needsDeviceOwner?: string[] | null;
     lastCommand?: {
         id: number;
         status: string;

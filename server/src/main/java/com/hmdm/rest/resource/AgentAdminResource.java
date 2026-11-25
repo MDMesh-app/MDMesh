@@ -553,6 +553,7 @@ public class AgentAdminResource {
                 ConfigReconciler.applyingAgentVersion(state));
         v.setInSync(sync.inSync);
         if (!sync.agentUpdateNeeded.isEmpty()) v.setAgentUpdateNeeded(sync.agentUpdateNeeded);
+        if (!sync.needsDeviceOwner.isEmpty()) v.setNeedsDeviceOwner(sync.needsDeviceOwner);
         v.setLastCommand(ConfigStatusView.LastCommand.from(commandDAO.findLatestOfType(deviceId, DesiredConfigBuilder.COMMAND_TYPE)));
         return Response.OK(v);
     }
@@ -743,13 +744,17 @@ public class AgentAdminResource {
         return Response.OK(body);
     }
 
-    /** The API's name for a retry result: queued, alreadyQueued, inSync, agentUpdateNeeded, unsupported, noConfiguration. */
+    /**
+     * The API's name for a retry result: queued, alreadyQueued, inSync, agentUpdateNeeded, needsDeviceOwner,
+     * unsupported, noConfiguration.
+     */
     static String retryResultName(ConfigReconciler.Retry result) {
         switch (result) {
             case QUEUED: return "queued";
             case ALREADY_QUEUED: return "alreadyQueued";
             case IN_SYNC: return "inSync";
             case AGENT_UPDATE_NEEDED: return "agentUpdateNeeded";
+            case NEEDS_DEVICE_OWNER: return "needsDeviceOwner";
             case UNSUPPORTED: return "unsupported";
             default: return "noConfiguration";
         }

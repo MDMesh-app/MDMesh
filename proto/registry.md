@@ -54,9 +54,9 @@ configuration status's `agentUpdateNeeded`: the sections the configuration sets 
 apply (and the summary's count of such devices). An agent that lists none (before 0.6.0, or an empty list) applies a
 section with a `capability` when it advertises it, and any other section unless the agent that applied the
 configuration reports a version below the row's `since`. A missing or unreadable version, or one below 0.3.0 (a
-development build's), counts as applying them all. A section whose `capability` the agent lacks is named only when
-the agent predates the section: a current agent lacks it for another reason (`app.runtimePermissions`: not Device
-Owner), which no update fixes.
+development build's), counts as applying them all. A section whose `capability` the agent lacks is named there only
+when the agent predates the section: a current agent lacks it because it isn't Device Owner, which no update fixes, so
+the status names it in `needsDeviceOwner` instead.
 
 ### appManagement
 | key | meaning | notes |

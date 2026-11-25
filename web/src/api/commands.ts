@@ -271,7 +271,8 @@ export async function forceSync(deviceId: number | string): Promise<{ connected?
 }
 
 /** What Retry apply did (AgentAdminResource.retryConfig). */
-export type RetryConfigResult = 'queued' | 'alreadyQueued' | 'inSync' | 'agentUpdateNeeded' | 'unsupported' | 'noConfiguration';
+export type RetryConfigResult =
+  | 'queued' | 'alreadyQueued' | 'inSync' | 'agentUpdateNeeded' | 'needsDeviceOwner' | 'unsupported' | 'noConfiguration';
 
 /**
  * Retry apply: the server queues the device's configuration now, without the hour it otherwise waits after a failed
@@ -284,7 +285,9 @@ export async function retryConfigApply(
     `/private/agent/v1/devices/${deviceId}/retryConfig`,
     {},
   );
-  const known: RetryConfigResult[] = ['queued', 'alreadyQueued', 'inSync', 'agentUpdateNeeded', 'unsupported', 'noConfiguration'];
+  const known: RetryConfigResult[] = [
+    'queued', 'alreadyQueued', 'inSync', 'agentUpdateNeeded', 'needsDeviceOwner', 'unsupported', 'noConfiguration',
+  ];
   return {
     result: known.includes(res?.result as RetryConfigResult) ? (res?.result as RetryConfigResult) : undefined,
     connected: typeof res?.connected === 'boolean' ? res.connected : undefined,

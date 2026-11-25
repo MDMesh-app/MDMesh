@@ -118,10 +118,16 @@ public class ConfigReconciler {
         public final boolean inSync;
         /** {@link #notApplied}: the sections it needs an agent update for; apart from {@link #inSync}. */
         public final List<String> agentUpdateNeeded;
+        /**
+         * The sections it isn't sent and no update brings: a current agent lacks their capability, which only Device
+         * Owner gives ({@link ConfigSections#notApplied}). They keep it out of sync ({@link #statusRevision}).
+         */
+        public final List<String> needsDeviceOwner;
 
-        private Sync(boolean inSync, List<String> agentUpdateNeeded) {
+        private Sync(boolean inSync, List<String> agentUpdateNeeded, List<String> needsDeviceOwner) {
             this.inSync = inSync;
             this.agentUpdateNeeded = agentUpdateNeeded;
+            this.needsDeviceOwner = needsDeviceOwner;
         }
     }
 
@@ -136,10 +142,17 @@ public class ConfigReconciler {
     public static Sync syncOf(DesiredConfig doc, Set<String> deviceTokens, String appliedRevision,
                               String applyingAgentVersion) {
         String current = statusRevision(doc, deviceTokens);
+        boolean inSync = current != null && current.equals(appliedRevision);
         // An agent without config.apply needs an update for all of it, which the status says on its own (supported).
-        boolean configApply = AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, deviceTokens);
-        return new Sync(current != null && current.equals(appliedRevision), configApply
-                ? notApplied(doc, deviceTokens, applyingAgentVersion) : Collections.<String>emptyList());
+        if (doc == null || !AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, deviceTokens)) {
+            return new Sync(inSync, Collections.<String>emptyList(), Collections.<String>emptyList());
+        }
+        List<String> update = notApplied(doc, deviceTokens, applyingAgentVersion);
+        List<String> owner = new ArrayList<String>();
+        for (ConfigSections.Section s : ConfigSections.withheld(doc, deviceTokens)) {
+            if (!ConfigSections.isEmpty(s.valueIn(doc)) && !update.contains(s.getName())) owner.add(s.getName());
+        }
+        return new Sync(inSync, update, owner);
     }
 
     /**
@@ -265,6 +278,8 @@ public class ConfigReconciler {
          * ({@link #syncOf}): an agent update, not a re-send, brings it.
          */
         AGENT_UPDATE_NEEDED,
+        /** As {@link #AGENT_UPDATE_NEEDED}, but the section needs Device Owner: no re-send or update brings it. */
+        NEEDS_DEVICE_OWNER,
         /** The device's agent can't apply configurations. */
         UNSUPPORTED,
         /** The device has no configuration. */
@@ -295,7 +310,8 @@ public class ConfigReconciler {
         if (ConfigReconcileDecision.decideRetry(tokens, doc.getRevision(), applied, open, agentChanged)
                 != ConfigReconcileDecision.Action.ENQUEUE) {
             if (open) return Retry.ALREADY_QUEUED;
-            return sync.agentUpdateNeeded.isEmpty() ? Retry.IN_SYNC : Retry.AGENT_UPDATE_NEEDED;
+            if (!sync.agentUpdateNeeded.isEmpty()) return Retry.AGENT_UPDATE_NEEDED;
+            return sync.needsDeviceOwner.isEmpty() ? Retry.IN_SYNC : Retry.NEEDS_DEVICE_OWNER;
         }
         if (!enqueue(number, doc, agentVersion, now)) return Retry.ALREADY_QUEUED;
         logger.info("config.apply queued for {} by Retry apply (revision {} -> {})", number, applied, doc.getRevision());

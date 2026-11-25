@@ -14,6 +14,11 @@ export interface ConfigStatus {
    * an agent update for them. Apart from inSync. Absent when none, and on older servers.
    */
   agentUpdateNeeded?: string[] | null;
+  /**
+   * Sections the configuration sets that the device's current agent can't take without device owner, so it stays out of
+   * sync. Absent when none, and on older servers.
+   */
+  needsDeviceOwner?: string[] | null;
   lastCommand?: { id: number; status: string; detail?: string | null; createdAt?: number; completedAt?: number } | null;
   /**
    * The kiosk background image the device's configuration specifies (absent without one, and on older servers). Not

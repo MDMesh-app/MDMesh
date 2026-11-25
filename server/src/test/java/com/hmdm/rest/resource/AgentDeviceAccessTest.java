@@ -87,6 +87,8 @@ public class AgentDeviceAccessTest {
     private String agentVersion;
     private String configAgentVersion;
     private boolean connectivity;
+    /** The configuration has an app permission rule (needs app.runtimePermissions, which only Device Owner agents have). */
+    private boolean permissionRules;
     /** The device state's applied revision, for the config status (null: none reported). */
     private String stateAppliedRevision;
     /** The device's stored capabilities, for the config status (null: none). The summary's rows have CONFIG_APPLY. */
@@ -196,6 +198,12 @@ public class AgentDeviceAccessTest {
                 revisionReads++;
                 com.hmdm.rest.json.agent.DesiredConfig doc = new com.hmdm.rest.json.agent.DesiredConfig();
                 doc.setRevision("rev");
+                if (permissionRules) {
+                    com.hmdm.rest.json.agent.DesiredAppPermissions p = new com.hmdm.rest.json.agent.DesiredAppPermissions();
+                    p.setPackageName("org.example");
+                    p.setPermissions(Collections.singletonMap("android.permission.CAMERA", "deny"));
+                    doc.setAppPermissions(Collections.singletonList(p));
+                }
                 if (connectivity) {
                     com.hmdm.rest.json.agent.DesiredConnectivity c = new com.hmdm.rest.json.agent.DesiredConnectivity();
                     c.setMode("alwaysOn");
@@ -699,12 +707,13 @@ public class AgentDeviceAccessTest {
     @SuppressWarnings("unchecked")
     public void theConfigStatusAndTheSummaryAgree() {
         stateCapabilities = CONFIG_APPLY;
-        for (boolean sets : new boolean[]{true, false}) {
+        for (int sets = 0; sets < 4; sets++) {
             for (String applied : Arrays.asList("rev", "old")) {
                 for (String[] versions : new String[][]{{"0.3.8", null}, {"0.4.0", "0.3.8"}, {"0.4.0", "0.4.0"},
                         {"0.1.15", null}, {"0.0.0-dev", null}, {"0.4.0-rc1", null}, {"0.5.1+fork", null}, {null, null},
                         {"unknown", "0.3.8"}}) {
-                    connectivity = sets;
+                    connectivity = (sets & 1) != 0;
+                    permissionRules = (sets & 2) != 0;
                     appliedRevision = applied;
                     stateAppliedRevision = applied;
                     agentVersion = versions[0];
@@ -717,6 +726,25 @@ public class AgentDeviceAccessTest {
                 }
             }
         }
+    }
+
+    /**
+     * Permission rules on a current agent without app.runtimePermissions (not Device Owner): out of sync, named as
+     * needing device owner, and not called an agent update; a device before 0.5.0 needs the update.
+     */
+    @Test
+    public void permissionRulesOnACurrentAgentWithoutDeviceOwnerAreNamedApart() {
+        stateCapabilities = CONFIG_APPLY;
+        stateAppliedRevision = "applied without the rules";
+        permissionRules = true;
+        agentVersion = "0.5.1";
+        com.hmdm.rest.json.agent.ConfigStatusView v = configStatus();
+        assertFalse(v.isInSync());
+        assertEquals(Collections.singletonList("appPermissions"), v.getNeedsDeviceOwner());
+        assertNull(v.getAgentUpdateNeeded());
+        agentVersion = "0.4.2";
+        assertEquals(Collections.singletonList("appPermissions"), configStatus().getAgentUpdateNeeded());
+        assertNull(configStatus().getNeedsDeviceOwner());
     }
 
     /** An agent without config.apply: "agent too old" (supported false) says it all, with no section list. */

@@ -62,8 +62,9 @@ public class AgentCheckInConfigResyncTest {
         @Override public List<Application> getPlainConfigurationAppsOptimized(Integer configurationId) {
             return apps;
         }
+        List<ManagedAppPermission> permissions = Collections.emptyList();
         @Override public List<ManagedAppPermission> getManagedAppPermissions(Integer configurationId) {
-            return Collections.emptyList();
+            return permissions;
         }
     }
 
@@ -243,6 +244,8 @@ public class AgentCheckInConfigResyncTest {
     private ConfigReconciler reconciler;
     private AgentResource resource;
     private String revision;
+    /** The capabilities the "agent" sends (CAPS: a Device Owner agent). */
+    private String checkInCaps = CAPS;
     /** Results the "agent" sends on its next check-in. */
     private final List<AgentCommandResult> outbox = new ArrayList<>();
 
@@ -275,7 +278,7 @@ public class AgentCheckInConfigResyncTest {
     private List<com.hmdm.rest.json.agent.AgentCommand> checkIn(String agentVersion, String appliedRevision) throws Exception {
         AgentCheckInRequest req = new AgentCheckInRequest();
         req.setDeviceId(NUMBER);
-        req.setCapabilities(new AgentCapabilities(new ObjectMapper().readTree(CAPS)));
+        req.setCapabilities(new AgentCapabilities(new ObjectMapper().readTree(checkInCaps)));
         AgentDeviceState s = new AgentDeviceState();
         s.setAgentVersion(agentVersion);
         s.setAppliedConfigRevision(appliedRevision);
@@ -529,6 +532,42 @@ public class AgentCheckInConfigResyncTest {
                 ConfigReconciler.applyingAgentVersion(state));
     }
 
+    /**
+     * Permission rules on a device whose agent lacks app.runtimePermissions: it is sent the rest and applies it. Retry
+     * then says why it can't send more, as the status does: device owner on a current agent, an agent update on one
+     * before 0.5.0. Nothing is queued.
+     */
+    @Test
+    public void a_retry_names_settings_the_agent_cant_take_as_the_status_does() throws Exception {
+        for (String version : java.util.Arrays.asList("0.5.1", "0.6.0-rc1", "unknown", "0.4.2")) {
+            setUp();
+            outbox.clear();
+            checkInCaps = "{\"device\":[\"configApply\"]}"; // not Device Owner
+            Application app = new Application();
+            app.setId(4); app.setPkg("org.example.camera"); app.setAction(DesiredConfigBuilder.ACTION_INSTALL);
+            unsecureDAO.apps.add(app);
+            ManagedAppPermission rule = new ManagedAppPermission();
+            rule.setApplicationId(4); rule.setPermission("android.permission.CAMERA"); rule.setState("deny");
+            unsecureDAO.permissions = Collections.singletonList(rule);
+
+            List<com.hmdm.rest.json.agent.AgentCommand> got = checkIn(version, null);
+            assertEquals(version, 1, got.size());
+            String sent = got.get(0).getPayload().path("revision").asText();
+            checkIn(version, sent); // acked done: it applied what it was sent, without the rules
+
+            ConfigReconciler.Sync sync = verdict();
+            assertEquals(version, false, sync.inSync);
+            boolean predates = version.equals("0.4.2");
+            List<String> rules = Collections.singletonList("appPermissions");
+            assertEquals(version, predates ? rules : Collections.<String>emptyList(), sync.agentUpdateNeeded);
+            assertEquals(version, predates ? Collections.<String>emptyList() : rules, sync.needsDeviceOwner);
+            assertEquals(version, predates ? ConfigReconciler.Retry.AGENT_UPDATE_NEEDED
+                    : ConfigReconciler.Retry.NEEDS_DEVICE_OWNER, retry());
+            assertEquals(version, 1, configApplies());
+        }
+        checkInCaps = CAPS;
+    }
+
     @Test
     public void a_retry_for_an_agent_without_configurations_queues_nothing() {
         commandDAO.caps = "{\"device\":[\"lock\"]}";
@@ -566,7 +605,7 @@ public class AgentCheckInConfigResyncTest {
         checkIn("0.3.2", revision);
         AgentCheckInRequest req = new AgentCheckInRequest();
         req.setDeviceId(NUMBER);
-        req.setCapabilities(new AgentCapabilities(new ObjectMapper().readTree(CAPS)));
+        req.setCapabilities(new AgentCapabilities(new ObjectMapper().readTree(checkInCaps)));
         Response r = resource.checkin("Bearer " + SECRET, null, req);
         assertEquals(0, ((AgentCheckInResponse) r.getData()).getCommands().size());
     }
@@ -779,7 +818,7 @@ public class AgentCheckInConfigResyncTest {
     private List<com.hmdm.rest.json.agent.AgentCommand> checkInWithKioskReturn() throws Exception {
         AgentCheckInRequest req = new AgentCheckInRequest();
         req.setDeviceId(NUMBER);
-        req.setCapabilities(new AgentCapabilities(new ObjectMapper().readTree(CAPS)));
+        req.setCapabilities(new AgentCapabilities(new ObjectMapper().readTree(checkInCaps)));
         AgentDeviceState s = new AgentDeviceState();
         s.setAgentVersion("0.5.0");
         s.setAppliedConfigRevision(revision);

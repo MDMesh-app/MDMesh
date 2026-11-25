@@ -43,9 +43,14 @@ public class ConfigStatusView {
     private boolean supported;
     /**
      * Sections the configuration sets that the device's agent doesn't apply (config-sections.json names), in the
-     * order agents apply them; null when none. The device is not in sync while there is one.
+     * order agents apply them; null when none. Apart from {@link #inSync}.
      */
     private List<String> agentUpdateNeeded;
+    /**
+     * Sections the configuration sets that the device's current agent can't take without Device Owner, in the same
+     * order; null when none. It isn't sent them, so it stays out of sync; no agent update changes that.
+     */
+    private List<String> needsDeviceOwner;
     private LastCommand lastCommand;
     /**
      * The kiosk background image the device's configuration specifies ({@code kiosk.theme.backgroundImage} of the

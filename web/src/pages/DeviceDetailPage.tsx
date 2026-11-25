@@ -659,6 +659,8 @@ export function DeviceDetailPage() {
       if (result === 'inSync') toast.push('ok', 'Already applied', 'The device has the current configuration.');
       else if (result === 'agentUpdateNeeded')
         toast.push('warn', 'Not sent', 'The device has what its agent can apply. Update the agent for the rest.');
+      else if (result === 'needsDeviceOwner')
+        toast.push('warn', 'Not sent', 'The device has what its agent can apply. The rest needs the agent to be device owner.');
       else if (result === 'unsupported' || result === 'noConfiguration')
         toast.push('warn', 'Not sent', result === 'unsupported' ? 'The device’s agent is too old for configurations.' : 'The device has no configuration.');
       else if (connected === false) toast.push('warn', ...notConnected(number, 'command'));

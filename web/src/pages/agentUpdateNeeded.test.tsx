@@ -54,12 +54,32 @@ describe('the configuration panel when the agent needs an update', () => {
   });
 });
 
-// A current agent that isn't device owner can't take app permission rules: the server doesn't call that an agent update
-// (no newer agent would apply them), and the panel says why the device stays out of sync.
+// A current agent that isn't device owner can't take app permission rules: the server names them apart from an agent
+// update (no newer agent would apply them), and the panel says why the device stays out of sync, with no Retry apply.
 describe('the configuration panel for an agent that isn’t device owner', () => {
-  it('names device owner as the reason it is out of sync', () => {
-    panel({ configurationId: 3, currentRevision: REVISION, appliedRevision: 'a'.repeat(64), inSync: false, supported: true }, false);
+  const status = {
+    configurationId: 3,
+    currentRevision: REVISION,
+    appliedRevision: 'a'.repeat(64),
+    inSync: false,
+    supported: true,
+  } as ConfigStatus;
+
+  it('names the settings that need device owner and offers no retry', () => {
+    panel({ ...status, needsDeviceOwner: ['appPermissions'] }, false);
+    expect(screen.getByText('Device owner needed')).toBeTruthy();
+    expect(document.body.textContent).toContain('Warehouse sets App permissions, which an agent applies only as device owner.');
+    expect(screen.queryByRole('button', { name: /Retry apply/ })).toBeNull();
+  });
+
+  it('is the plain out-of-sync panel, with a retry, when no setting needs it', () => {
+    panel(status, false);
     expect(screen.getByText('Configuration out of sync')).toBeTruthy();
-    expect(document.body.textContent).toContain('Its agent isn’t device owner, so settings that need it, such as app permissions, can’t apply.');
+    expect(screen.getByRole('button', { name: /Retry apply/ })).toBeTruthy();
+  });
+
+  it('keeps the retry after an apply that failed', () => {
+    panel({ ...status, needsDeviceOwner: ['appPermissions'], lastCommand: { id: 1, status: 'failed' } }, false);
+    expect(screen.getByRole('button', { name: /Retry apply/ })).toBeTruthy();
   });
 });

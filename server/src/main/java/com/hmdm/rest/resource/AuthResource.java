@@ -26,7 +26,6 @@ import com.hmdm.persistence.CommonDAO;
 import com.hmdm.persistence.CustomerDAO;
 import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.Settings;
-import com.hmdm.rest.filter.AuthFilter;
 import com.hmdm.rest.json.AuthOptionsResponse;
 import com.hmdm.rest.json.Response;
 import com.hmdm.security.ConsoleSession;
@@ -169,14 +168,8 @@ public class AuthResource {
             // A new session id at sign-in: the one the browser had before is never the signed-in one.
             HttpSession userSession = ConsoleSession.start(req, user);
 
-            boolean secondFactorPending = false;
             Settings settings = settingsDAO.getSettings(user.getCustomerId());
             if (settings != null) {
-                if (settings.isTwoFactor()) {
-                    userSession.setAttribute(AuthFilter.twoFactorNeeded, "true");
-                    user.setTwoFactor(true);
-                    secondFactorPending = true;
-                }
                 user.setIdleLogout(settings.getIdleLogout());
             }
 
@@ -198,13 +191,10 @@ public class AuthResource {
             user.setDeploymentAdmin(userDAO.mayManageDeployment(user));
 
             // A full sign-in: this browser and this address now know the account, so someone failing sign-ins for it
-            // can't lock them out (LoginThrottle). Not while a second factor is pending: MDMesh has no second-factor
-            // step today, so such a session never gets further, and the password alone must not make a browser known.
-            if (!secondFactorPending) {
-                String knownBrowser = loginThrottle.signedIn(verdict.attempt(), user);
-                if (resp != null) {
-                    resp.addHeader("Set-Cookie", knownBrowser);
-                }
+            // can't lock them out (LoginThrottle).
+            String knownBrowser = loginThrottle.signedIn(verdict.attempt(), user);
+            if (resp != null) {
+                resp.addHeader("Set-Cookie", knownBrowser);
             }
 
             return Response.OK(new UserView(user));

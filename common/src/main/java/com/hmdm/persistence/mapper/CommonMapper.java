@@ -153,17 +153,6 @@ public interface CommonMapper {
     })
     void saveMiscSettings(Settings settings);
 
-    @Insert({
-            "INSERT INTO settings (twoFactor, customerId" +
-                    ") VALUES (" +
-                    "#{twoFactor}, #{customerId} " +
-                    ") " +
-                    "ON CONFLICT ON CONSTRAINT settings_customer_unique DO " +
-                    "UPDATE SET " +
-                    "twoFactor = EXCLUDED.twoFactor "
-    })
-    void setTwoFactor(Settings settings);
-
     @Select({"SELECT COUNT(*) FROM settings"})
     int getSettingsCount();
 

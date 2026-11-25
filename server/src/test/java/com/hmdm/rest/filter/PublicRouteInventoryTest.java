@@ -133,6 +133,104 @@ public class PublicRouteInventoryTest {
     }
 
     /**
+     * Docker's edge (docker/Caddyfile) is in front of the server in every hosting mode, behind your own proxy too, and it
+     * forwards only the paths its {@code @backend} matcher names; everything else is the console (or the supervisor). So
+     * every route the server serves must be one of those paths, or a new top-level prefix would be served on native
+     * installs and silently be the console's on Docker. And each of those paths must still be a server route, so the two
+     * stay in step. {@code /update} is the exception the Caddyfile names: the supervisor's on Docker (web.xml's
+     * UpdateProxyServlet passes it to the supervisor on native installs).
+     */
+    @Test
+    public void theDockerEdgeSendsEveryServerRouteToTheServer() throws Exception {
+        File root = repoRoot();
+        String caddyfile = new String(Files.readAllBytes(new File(root, CADDYFILE).toPath()), StandardCharsets.UTF_8);
+        List<String> toServer = edgeBackendPaths(caddyfile);
+        List<String> toSupervisor = edgeSupervisorPaths(caddyfile);
+        assertTrue("the Caddyfile sends the API to the server (" + toServer + ")", toServer.contains("/rest/*"));
+        assertTrue("the Caddyfile sends /update to the supervisor (" + toSupervisor + ")",
+                toSupervisor.contains("/update/*"));
+
+        Scan scan = scan(root, true);
+        addServlets(scan, PrivateRouteFilterTest.mappings(PrivateRouteFilterTest.servletModules()));
+        TreeSet<String> unrouted = new TreeSet<>();
+        for (String route : scan.paths()) {
+            String concrete = concrete(route);
+            if (!matchesAny(toServer, concrete) && !matchesAny(toSupervisor, concrete)) {
+                unrouted.add(route);
+            }
+        }
+        assertEquals("server routes Docker's edge never sends to the server: add their prefix to @backend in "
+                + CADDYFILE + " (and check the proxy examples in docs/proxies forward it)", new TreeSet<String>(), unrouted);
+
+        TreeSet<String> stale = new TreeSet<>();
+        for (String pattern : toServer) {
+            if (scan.paths().stream().noneMatch(route -> caddyPathMatches(pattern, concrete(route)))) {
+                stale.add(pattern);
+            }
+        }
+        assertEquals(CADDYFILE + " @backend paths no server route is under", new TreeSet<String>(), stale);
+    }
+
+    @Test
+    public void theEdgeRouteCheckReadsCaddyPathMatchers() {
+        assertTrue(caddyPathMatches("/rest/*", "/rest/public/name"));
+        assertTrue(!caddyPathMatches("/rest/*", "/rest"));
+        assertTrue(!caddyPathMatches("/rest/*", "/restore/x"));
+        assertTrue(caddyPathMatches("/recovery*", "/recovery/x"));
+        assertTrue(caddyPathMatches("/files/agent.apk", "/files/agent.apk"));
+        assertTrue(!caddyPathMatches("/files/agent.apk", "/files/agent.apk.x"));
+        assertEquals("/agent/ws/x", concrete("/agent/ws/{deviceNumber}"));
+        assertEquals("/files/x", concrete("/files/*"));
+        String sample = "@backend path /rest/* /files/* /agent/ws/*\n\thandle @backend {\n\t\treverse_proxy server:8080\n\t}\n"
+                + "\thandle /update/* {\n\t\treverse_proxy supervisor:9000\n\t}\n"
+                + "\thandle /files/agent.apk {\n\t\trewrite * /update/agent.apk\n\t\treverse_proxy supervisor:9000\n\t}\n";
+        assertEquals(Arrays.asList("/rest/*", "/files/*", "/agent/ws/*"), edgeBackendPaths(sample));
+        assertEquals(Arrays.asList("/update/*", "/files/agent.apk"), edgeSupervisorPaths(sample));
+    }
+
+    static final String CADDYFILE = "docker/Caddyfile";
+    private static final Pattern BACKEND = Pattern.compile("^\\s*@backend\\s+path\\s+(.+)$", Pattern.MULTILINE);
+    /** A {@code handle <path> {} block whose own lines include a reverse_proxy to the supervisor. */
+    private static final Pattern SUPERVISOR_HANDLE = Pattern.compile(
+            "^\\s*handle\\s+(/\\S*)\\s*\\{\\n((?:(?!\\s*handle\\b)[^\\n]*\\n)*?)\\s*}", Pattern.MULTILINE);
+
+    /** The paths of the Caddyfile's {@code @backend} matcher: what the edge sends to the server. */
+    static List<String> edgeBackendPaths(String caddyfile) {
+        Matcher m = BACKEND.matcher(caddyfile);
+        assertTrue(CADDYFILE + " has an @backend path matcher", m.find());
+        List<String> out = Arrays.asList(m.group(1).trim().split("\\s+"));
+        assertTrue(CADDYFILE + " has one @backend path matcher", !m.find());
+        return out;
+    }
+
+    /** The paths the Caddyfile's {@code handle <path>} blocks send to the supervisor. */
+    static List<String> edgeSupervisorPaths(String caddyfile) {
+        List<String> out = new ArrayList<>();
+        Matcher m = SUPERVISOR_HANDLE.matcher(caddyfile);
+        while (m.find()) {
+            if (m.group(2).contains("reverse_proxy supervisor:9000")) {
+                out.add(m.group(1));
+            }
+        }
+        return out;
+    }
+
+    /** A route as a request path: each {template} and a trailing servlet {@code *} become one segment, "x". */
+    static String concrete(String route) {
+        String p = route.replaceAll("\\{[^}]*}", "x");
+        return p.endsWith("/*") ? p.substring(0, p.length() - 1) + "x" : p;
+    }
+
+    private static boolean matchesAny(List<String> patterns, String path) {
+        return patterns.stream().anyMatch(pattern -> caddyPathMatches(pattern, path));
+    }
+
+    /** Caddy's path matcher for the forms the Caddyfile uses: exact, or a trailing {@code *} (a prefix). */
+    static boolean caddyPathMatches(String pattern, String path) {
+        return pattern.endsWith("*") ? path.startsWith(pattern.substring(0, pattern.length() - 1)) : path.equals(pattern);
+    }
+
+    /**
      * Jersey serves classes, and the scan reads sources: a plugin symlinked into the tree, written in Kotlin or bundled
      * only as a dependency would be served unchecked. So every resource Jersey will serve must be one the scan loaded,
      * or a library's listed in {@link #LIBRARY_RESOURCES} with its reason. The one exception is this module's own test

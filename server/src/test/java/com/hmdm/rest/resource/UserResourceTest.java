@@ -1232,6 +1232,24 @@ public class UserResourceTest {
     }
 
     @Test
+    public void aSessionStillMarkedTwofactorIsAnOrdinarySignedInSession() throws Exception {
+        // Older releases marked a sign-in "twofactor" when the customer's settings said so, then refused its every
+        // request. A session kept across the update may still carry the mark; nothing reads it now.
+        com.hmdm.testsupport.FakeSessions sessions = new com.hmdm.testsupport.FakeSessions();
+        com.hmdm.security.ConsoleSession.start(sessions.request(), copy(tenantUser, false));
+        sessions.current().attributes.put("twofactor", "true");
+        javax.servlet.http.HttpServletRequest request = sessions.request();
+        javax.servlet.http.HttpServletRequest page = (javax.servlet.http.HttpServletRequest) Proxy.newProxyInstance(
+                UserResourceTest.class.getClassLoader(), new Class<?>[]{javax.servlet.http.HttpServletRequest.class},
+                (proxy, method, args) -> "getServletPath".equals(method.getName())
+                        ? "/rest/private/users/current" : method.invoke(request, args));
+        int[] status = {0};
+        new com.hmdm.rest.filter.AuthFilter(userDAO).doFilter(page, errors(status), (req, res) -> status[0] = 200);
+        assertEquals(200, status[0]);
+        assertNotNull("still signed in", sessions.current().attributes.get("credentials"));
+    }
+
+    @Test
     public void anApiClientsRequestIsNotTouchedByTheSessionFormat() throws Exception {
         // JWTFilter set the context: AuthFilter lets it through, whatever session the request also carries
         com.hmdm.testsupport.FakeSessions sessions = new com.hmdm.testsupport.FakeSessions();

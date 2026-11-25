@@ -51,7 +51,8 @@ distro_setup() {
 build_image() {
   # shellcheck disable=SC2153  # IMAGE is run.sh's
   log "building $IMAGE from $BASE_IMAGE${BUILD_ARGS[*]:+ (with workarounds)}"
-  docker build -q -t "$IMAGE" --build-arg "BASE_IMAGE=$BASE_IMAGE" "${BUILD_ARGS[@]}" "$HERE" >> "$OUT/t2.log" 2>&1 \
+  docker build -q -t "$IMAGE" --build-arg "BASE_IMAGE=$BASE_IMAGE" --build-arg "T2_UBUNTU_MIRROR=${MDMESH_TEST_UBUNTU_MIRROR:-}" \
+    "${BUILD_ARGS[@]}" "$HERE" >> "$OUT/t2.log" 2>&1 \
     || die "image build failed (see $OUT/t2.log)"
 }
 

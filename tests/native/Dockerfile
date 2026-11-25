@@ -20,6 +20,16 @@ ENV container=docker \
     DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8
 
+# The Ubuntu mirror, as on a cloud VM (an Azure VM's sources name azure.archive.ubuntu.com): CI passes the runner's own
+# (MDMESH_TEST_UBUNTU_MIRROR, via tests/native/lib/host.sh); empty changes nothing. The guest keeps it, so the installer's apt uses it too. The
+# same rewrite as tests/lib/ubuntu-mirror.sh, which is outside this build context.
+ARG T2_UBUNTU_MIRROR=""
+RUN if [ -n "$T2_UBUNTU_MIRROR" ]; then \
+      for f in /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list; do \
+        if [ -f "$f" ]; then sed -i -E "s#https?://(archive|security)\.ubuntu\.com/ubuntu/?#${T2_UBUNTU_MIRROR%/}/#g" "$f"; fi; \
+      done; \
+    fi
+
 # 1. Stock cloud image baseline + 2. documented prerequisites (git).
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \

@@ -16,10 +16,12 @@
 #        ./setup.sh --update   # move this clone to the newest signed release (fetches the tags, verifies the
 #                              # release's signed manifest, checks out its tag), then run as usual; with
 #                              # --native, the native installer. Combine with the other options.
+#        ./setup.sh --tunnel | --domain | --proxy   # a new .env's hosting mode, without the question (as MDMESH_MODE)
 #
 # A fresh setup's questions can be answered in advance with environment variables (MDMESH_MODE, MDMESH_HOST,
-# MDMESH_TUNNEL_TOKEN or MDMESH_ACME_EMAIL) or an answers file (MDMESH_ANSWERS); MDMESH_NONINTERACTIVE=1 never asks,
-# MDMESH_DRY_RUN=1 only checks the answers and prints the plan. See install/options.json and DEPLOY.md.
+# MDMESH_TUNNEL_TOKEN, MDMESH_ACME_EMAIL, MDMESH_BIND or MDMESH_TRUSTED_PROXIES) or an answers file (MDMESH_ANSWERS);
+# MDMESH_NONINTERACTIVE=1 never asks, MDMESH_DRY_RUN=1 only checks the answers and prints the plan. See
+# install/options.json and DEPLOY.md.
 set -euo pipefail
 # An exported CDPATH makes cd (here and in every child, e.g. `bash -c 'cd web && …'`) resolve a relative path against
 # CDPATH's directories, not the current one — silently building or reading from a same-named directory elsewhere. Unset
@@ -44,6 +46,15 @@ err()  { printf '\033[1;31m%s\033[0m\n' "$*" >&2; }
 . ./install/lib/release.sh
 # shellcheck source=install/lib/answers.sh
 . ./install/lib/answers.sh
+# The hosting modes, in one table (install/lib/modes.sh).
+# shellcheck source=install/lib/modes.sh
+. ./install/lib/modes.sh
+# The versions an install's hosting mode allows: the updater's own rule (supervisor/mode-guard.sh), for --update.
+# shellcheck source=supervisor/mode-guard.sh
+. ./supervisor/mode-guard.sh
+# One stack per Docker project name: never another directory's (install/lib/stack.sh).
+# shellcheck source=install/lib/stack.sh
+. ./install/lib/stack.sh
 # mdm_load_env: reads .env as sourcing it would, without running it (install/lib/dotenv.sh).
 # shellcheck source=install/lib/dotenv.sh
 . ./install/lib/dotenv.sh
@@ -61,7 +72,7 @@ setenv() {
 }
 
 RESET=0; ALLOW_DOWNGRADE=0; UPDATE=0
-NATIVE=0; NATIVE_ARGS=(); PASS_ARGS=()
+NATIVE=0; NATIVE_ARGS=(); PASS_ARGS=(); MODE_FLAG=''
 for a in "$@"; do
   [ "$a" = --update ] || PASS_ARGS+=("$a")
   case "$a" in
@@ -71,6 +82,9 @@ for a in "$@"; do
     # --update's check (both modes; the release's setup.sh gets it too) and the Docker build's. Never passed to the
     # native installer, which has no apply to protect.
     --allow-downgrade) ALLOW_DOWNGRADE=1 ;;
+    --tunnel|--domain|--proxy)   # Docker path only: a new .env's hosting mode
+      [ -z "$MODE_FLAG" ] || [ "$MODE_FLAG" = "${a#--}" ] || { err "--${MODE_FLAG} and $a name different hosting modes: give one."; exit 2; }
+      MODE_FLAG=${a#--} ;;
     *)        NATIVE_ARGS+=("$a") ;;   # forwarded to the native installer (-y, -v)
   esac
 done
@@ -78,6 +92,10 @@ done
 # --update or --native hand over, so MDMESH_DRY_RUN from it counts for them too, and the tunnel token is out of the
 # environment before any other program runs.
 mdm_answers_load
+if [ -n "$MODE_FLAG" ] && [ "$NATIVE" = 1 ]; then
+  err "--$MODE_FLAG is a hosting mode of the Docker install; the native one runs behind your own proxy as it is (DEPLOY.md, Native)."; exit 2
+fi
+mdm_mode_from_flag "$MODE_FLAG"
 
 # --update: move this clone to the newest signed release, then run the release's own setup.sh with the other options.
 # The release tags (vX.Y.Z; pre-releases are skipped) are listed with git ls-remote, newest first. A release is trusted
@@ -242,6 +260,7 @@ update_to_release() {
   if [ "$dry" = 1 ]; then
     if [ "$cur" = "$tgt" ]; then say "Dry run (MDMESH_DRY_RUN=1): this clone is already on ${tag}, which verifies. A run would run its ./setup.sh ${PASS_ARGS[*]}"
     else
+      update_mode_check "$tag"
       [ "$have" = 0 ] || update_downgrade_check "$cur" "$tgt" "$tag"
       say "Dry run (MDMESH_DRY_RUN=1): ${tag} verifies. A run would fetch it, check it out and run its ./setup.sh ${PASS_ARGS[*]}"
       [ "$have" = 1 ] || echo "(Whether that goes back from this checkout is checked once the tag is fetched.)"
@@ -249,12 +268,22 @@ update_to_release() {
     exit 0
   fi
   if [ "$cur" = "$tgt" ]; then say "This clone is already on ${tag}, the newest signed release."; return 0; fi
+  update_mode_check "$tag"   # before anything is fetched: it needs only the tag and .env
   git fetch -q --no-tags origin "refs/tags/${tag}:refs/tags/${tag}" \
     || _upd_stop "Could not fetch ${tag} from origin (above). If this clone has a different ${tag}, remove it (git tag -d ${tag}) and re-run."
   [ "$(git rev-parse --verify -q "${tag}^{commit}")" = "$tgt" ] || _upd_stop "${tag} in this clone is not the commit origin and the signed manifest name."
   update_downgrade_check "$cur" "$tgt" "$tag"
   git -c advice.detachedHead=false checkout -q --detach "$tgt" || _upd_stop "git checkout ${tag} failed (above)."
   say "Checked out ${tag} (signed release, verified)."
+}
+# update_mode_check TAG: the updater's rule (supervisor/mode-guard.sh, mode_problem) for TAG, --allow-downgrade or not:
+# behind your own proxy, or with TRUSTED_PROXIES still saying host, never a release before 0.6.0, whose setup.sh and
+# edge don't know them.
+update_mode_check() {
+  local why
+  [ -r .env ] || return 0
+  why=$(ENV_FILE=./.env mode_problem "${1#v}")
+  [ -z "$why" ] || _upd_stop "${why} (--allow-downgrade doesn't change this.)"
 }
 # update_downgrade_check CUR TGT TAG: stop when CUR has commits TAG doesn't and is not on an older release (main ahead
 # of the release, a commit on top of it, a newer local tag), and this clone runs an install: checking out TAG would run
@@ -301,15 +330,16 @@ mdm_answer mode MODE mode MDMESH_MODE
 mdm_answer host HOST hostname MDMESH_HOST
 mdm_answer tunnel-token TUNNEL_TOKEN tunnel-token MDMESH_TUNNEL_TOKEN
 mdm_answer acme-email ACME_EMAIL email MDMESH_ACME_EMAIL
-if mdm_given mode; then
-  if [ "$MODE" = 1 ]; then mdm_unused acme-email "in tunnel mode"; else mdm_unused tunnel-token "in domain mode"; fi
-fi
+mdm_answer bind PROXY_BIND bind MDMESH_BIND
+mdm_answer trusted-proxies PROXY_TRUSTED proxies MDMESH_TRUSTED_PROXIES
 REUSE_ENV=0
 if [ -f .env ] && [ "$RESET" != 1 ]; then REUSE_ENV=1; fi
 if [ "$REUSE_ENV" = 1 ] && mdm_any_answered; then
   warn "The MDMESH_* answers are not used: an .env exists here, and a re-run reuses it (--reset starts over)."
 fi
 if [ "$REUSE_ENV" = 0 ]; then
+  # The rules that span the answers, only for a new .env: a re-run doesn't use them.
+  mdm_mode_check_answers
   mdm_need mode; mdm_need host
   if mdm_given mode && [ "$MODE" = 1 ]; then mdm_need tunnel-token; fi
 fi
@@ -322,9 +352,7 @@ if [ "${MDMESH_DRY_RUN:-0}" = 1 ]; then
   fi
   mdm_plan_line mode ''
   mdm_plan_line host ''
-  if ! mdm_given mode; then mdm_plan_line tunnel-token ''; mdm_plan_line acme-email ''
-  elif [ "$MODE" = 1 ]; then mdm_plan_line tunnel-token ''; mdm_plan_row acme-email - unused
-  else mdm_plan_row tunnel-token - unused; mdm_plan_line acme-email ''; fi
+  mdm_mode_plan
   echo "Then: write a new .env here$(if mdm_given host; then echo " with the base URL https://${HOST}"; fi), build the images from this checkout and start them with Docker."
   exit 0
 fi
@@ -339,6 +367,11 @@ if ! docker compose version >/dev/null 2>&1; then
     err "or run ./setup.sh --native."
   fi
   exit 1
+fi
+# compose would read the files COMPOSE_ENV_FILES names instead of this install's .env.
+if [ -n "${COMPOSE_ENV_FILES+x}" ]; then
+  warn "Ignoring COMPOSE_ENV_FILES (${COMPOSE_ENV_FILES}): this install's compose reads its own .env."
+  unset COMPOSE_ENV_FILES
 fi
 command -v openssl >/dev/null || { err "openssl is required."; exit 1; }
 
@@ -396,72 +429,44 @@ if [ "$REUSE_ENV" = 1 ]; then
     exit 1
   fi
   mdm_load_env .env
+  # This directory's own stack is expected; another directory's is never touched.
+  mdm_stack_guard "${COMPOSE_PROJECT_NAME:-mdmesh}" 0
   version_preflight "${CURRENT_VERSION:-${SERVER_VERSION:-}}"
   _env_base_url=${BASE_URL:-}
   mdm_check_base_url BASE_URL || { err "Fix BASE_URL in .env, then re-run."; exit 1; }
   [ "$BASE_URL" = "$_env_base_url" ] || setenv BASE_URL "$BASE_URL"   # the scheme was lower-cased: keep .env canonical
   HOST=${BASE_URL#*://}; HOST=${HOST%%/*}
-  if [ "${COMPOSE_PROFILES:-}" = "cloudflare" ]; then
-    MODE=1
-    COMPOSE_ARGS="--profile cloudflare"
-    EXTRA_NOTE="In Cloudflare, route the tunnel's public hostname ($HOST) to http://caddy:80."
-  else
-    MODE=2
-    COMPOSE_ARGS="-f docker-compose.yml -f docker-compose.domain.yml"
-    EXTRA_NOTE="Make sure ${HOST} resolves to this server and ports 80/443 are open."
+  # The hosting mode stays the one .env has (install/lib/modes.sh); a mode given now doesn't change it.
+  _asked_mode=''; if mdm_given mode; then _asked_mode=$MODE; fi
+  MODE=$(mdm_mode_of_env)
+  if [ -n "$_asked_mode" ] && [ "$_asked_mode" != "$MODE" ]; then
+    warn "This install runs in $(mdm_mode_name "$MODE") mode, and a re-run keeps it: to move it to another, see docs/UPGRADING.md (Changing the hosting mode)."
   fi
+  PROXY_BIND=${MDMESH_BIND:-$MDM_PROXY_BIND_DEFAULT}; ORIGIN_TLS=${MDMESH_ORIGIN_TLS:-0}
+  # Moved out of the proxy mode with its `host` left: the edge drops it (docker/edge-peers.sh); say so here too.
+  if [ "$MODE" != 3 ]; then
+    case " $(printf '%s' "${TRUSTED_PROXIES:-}" | tr ',' ' ') " in
+      *" host "*) warn "TRUSTED_PROXIES in .env says host, which only the proxy mode reads: the edge ignores it. Set TRUSTED_PROXIES= (docs/UPGRADING.md, Changing the hosting mode)." ;;
+    esac
+  fi
+  mdm_mode_settings "$MODE" rerun
 else
   if [ "$RESET" = 1 ] && [ -f .env ]; then
     warn "--reset: regenerating .env. If the old database still exists it needs the OLD password —"
     warn "run 'docker compose down -v' first for a genuinely clean slate."
   fi
+  # A new .env: no other install's containers or volumes may exist, or compose would take them over with new secrets.
+  # --reset over this directory's own .env keeps its warning above instead.
+  if [ "$RESET" = 1 ] && [ -f .env ]; then mdm_stack_guard mdmesh 0; else mdm_stack_guard mdmesh 1; fi
   version_preflight ""
-  if ! mdm_answered mode; then
-    echo "Hosting mode:"
-    echo "  1) Cloudflare Tunnel   (no open ports; Cloudflare manages TLS — needs a domain in Cloudflare)"
-    echo "  2) Your own domain     (open 80/443; Caddy auto-provisions a Let's Encrypt cert)"
-    MODE=""
-    while [ "$MODE" != "1" ] && [ "$MODE" != "2" ]; do
-      read -rp "Choose [1/2]: " MODE || { err "No selection (non-interactive run?). Aborting."; exit 1; }   # answer: mode
-      case "$MODE" in 1|2) ;; *) warn "Please enter 1 or 2." ;; esac
-    done
-  fi
+  mdm_mode_choose "Without Docker? Run sudo ./setup.sh --update --native (DEPLOY.md, Native)."
 
   DB_PASSWORD=$(rand)
   HASH_SECRET=$(rand)
   if [ -n "$REPO_VERSION" ]; then CURRENT_VERSION=$REPO_VERSION; fi   # else the heredoc's ${CURRENT_VERSION:-0.0.0}
 
-  if [ "$MODE" = "1" ]; then
-    mdm_answered host || read -rp "Public hostname devices will use (e.g. mdm.example.com): " HOST   # answer: host
-    mdm_check_host HOST || { err "Enter the hostname only, e.g. mdm.example.com, then re-run."; exit 1; }
-    while :; do
-      mdm_answered tunnel-token || read -rp "Cloudflare Tunnel token (Zero Trust → Tunnels → your tunnel): " TUNNEL_TOKEN   # answer: tunnel-token
-      mdm_prompt_ok tunnel-token TUNNEL_TOKEN && break
-    done
-    BASE_URL="https://${HOST}"
-    SITE_ADDRESS=":80"
-    ACME_EMAIL=""
-    COMPOSE_ARGS="--profile cloudflare"
-    COMPOSE_FILE="docker-compose.yml"
-    COMPOSE_PROFILES="cloudflare"
-    EXTRA_NOTE="In Cloudflare, route the tunnel's public hostname ($HOST) to http://caddy:80."
-  else
-    mdm_answered host || read -rp "Your domain (DNS already pointing here, e.g. mdm.example.com): " HOST   # answer: host
-    mdm_check_host HOST || { err "Enter the hostname only, e.g. mdm.example.com, then re-run."; exit 1; }
-    while :; do
-      mdm_answered acme-email || read -rp "Email for Let's Encrypt: " ACME_EMAIL   # answer: acme-email
-      mdm_prompt_ok acme-email ACME_EMAIL && break
-    done
-    BASE_URL="https://${HOST}"
-    SITE_ADDRESS="${HOST}"
-    TUNNEL_TOKEN=""
-    COMPOSE_ARGS="-f docker-compose.yml -f docker-compose.domain.yml"
-    COMPOSE_FILE="docker-compose.yml:docker-compose.domain.yml"
-    COMPOSE_PROFILES=""
-    EXTRA_NOTE="Make sure ${HOST} resolves to this server and ports 80/443 are open."
-  fi
-  # Checked before .env is written (install/lib/url.sh), so a mistyped hostname leaves nothing behind.
-  mdm_check_base_url BASE_URL || { err "Check the hostname you entered (the name only, e.g. mdm.example.com), then re-run."; exit 1; }
+  # Checked before .env is written, so a mistyped hostname leaves nothing behind.
+  mdm_mode_questions
 
   # Owner-only from the start: written to a new mode-600 file (mktemp), then renamed over .env, so no other user can
   # read the secrets at any moment, and a --reset over a looser old .env does not keep its mode.
@@ -495,6 +500,7 @@ AUTO_UPDATE=0
 COMPOSE_PROJECT_NAME=mdmesh
 COMPOSE_FILE=${COMPOSE_FILE}
 COMPOSE_PROFILES=${COMPOSE_PROFILES}
+$(mdm_mode_env)
 SMTP_HOST=
 SMTP_PORT=25
 SMTP_FROM=mdm@${HOST}
@@ -504,6 +510,14 @@ EOF
   mv -fT -- "$_envtmp" .env
   _envtmp=''; trap - INT TERM
   say "Wrote .env (secrets generated)."
+fi
+
+# Your own edge rules (site.d/*.caddy, install/lib/modes.sh): the directory and its absolute path in .env, on a new .env
+# and on the first re-run of an install from before 0.6.0. A path already in .env is kept as it is.
+if ! grep -q '^MDMESH_SITE_DIR=' .env; then
+  mdm_site_dir
+  # Not connected (it said why): left out of .env, so the next run tries again.
+  if [ -n "$MDMESH_SITE_DIR" ]; then setenv MDMESH_SITE_DIR "$MDMESH_SITE_DIR"; export MDMESH_SITE_DIR; fi
 fi
 
 # The supervisor polls this repo's GitHub Releases (updater + the verified agent-APK mirror behind
@@ -608,7 +622,7 @@ if [ -n "${GITHUB_REPO:-}" ] && command -v python3 >/dev/null && command -v curl
         "$SUPERVISOR_IMAGE" -V -p /verify/minisign.pub -m "/verify/release/$(basename -- "$msg")"
     }
     # shellcheck disable=SC2086
-    if { docker image inspect "$SUPERVISOR_IMAGE" >/dev/null 2>&1 || docker compose $COMPOSE_ARGS build supervisor >/dev/null 2>&1; } \
+    if { docker image inspect "$SUPERVISOR_IMAGE" >/dev/null 2>&1 || docker compose ${COMPOSE_ARGS[@]+"${COMPOSE_ARGS[@]}"} build supervisor >/dev/null 2>&1; } \
        && docker run --rm --pull never --network none --entrypoint minisign "$SUPERVISOR_IMAGE" -v >/dev/null 2>&1; then
       MDM_MINISIGN=mdm_container_minisign
     fi
@@ -644,7 +658,8 @@ export VITE_AGENT_PACKAGE VITE_AGENT_CHECKSUM VITE_AGENT_APK_URL
 
 say "Building + starting the stack…"
 # shellcheck disable=SC2086
-docker compose $COMPOSE_ARGS up -d --build
+docker compose ${COMPOSE_ARGS[@]+"${COMPOSE_ARGS[@]}"} up -d --build \
+  || { err "docker compose up failed (above). $(mdm_up_hint)"; err "Then re-run ./setup.sh (it reuses your .env)."; exit 1; }
 
 say "Waiting for the server to finish first-boot (Liquibase)…"
 BOOTED=0
@@ -708,8 +723,19 @@ if ! mdm_post_seed install/sql/post_seed.sql; then
   err "Post-seed repairs failed — device enrollment would not work. Fix the error above and re-run ./setup.sh."; exit 1
 fi
 
+# The edge too: MDMesh is reached only through it. Checked after the seed and the repairs, which don't need it, so the
+# database is right either way; a failure still prints what follows (a new admin password is shown only here), then
+# fails the run.
+EDGE_UP=1
+mdm_edge_up || EDGE_UP=0
+
 echo
-say "== MDMesh is up =="
+if [ "$EDGE_UP" = 1 ]; then
+  say "== MDMesh is up =="
+else
+  err "== MDMesh is installed, but its edge is not up (above), so it can't be reached yet. Fix that, then run"
+  err "   ./setup.sh again (it reuses your .env; the details below stay valid). =="
+fi
 echo "  Console:        ${BASE_URL}"
 echo "  REST API base:  ${BASE_URL}/rest"
 echo "  Recovery page:  ${BASE_URL}/recovery"
@@ -721,15 +747,20 @@ else
 fi
 echo
 echo "  Access is via the URL above only — Postgres and the server publish no host ports;"
-echo "  the edge (Caddy) is the single entry point ($([ "$MODE" = "1" ] && echo "Cloudflare Tunnel" || echo "ports 80/443"))."
+echo "  the edge (Caddy) is the single entry point (${ENTRY})."
 echo
 if [ "$SEED" = yes ]; then
   warn "Sign in with the temporary password — you'll be required to set your own on first login."
   echo
 fi
 echo "Next: $EXTRA_NOTE"
+if [ "$MODE" = 3 ] && [ "$ORIGIN_TLS" = 1 ]; then
+  echo "      Your proxy trusts MDMesh's CA: docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt ./mdmesh-origin-ca.crt"
+fi
 if [ -n "${VITE_AGENT_CHECKSUM:-}" ]; then
   echo "Agent APK: ${BASE_URL}/files/agent.apk (served from the supervisor's verified release mirror; the enrollment QR is baked to match)."
 else
   echo "Host the agent APK and enroll devices from the console's Enroll page (it builds the QR with ${BASE_URL})."
 fi
+# Not reachable without its edge: the run fails, after the details above.
+[ "$EDGE_UP" = 1 ] || exit 1

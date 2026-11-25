@@ -19,7 +19,7 @@ COPY plugins ./plugins
 COPY server ./server
 COPY install ./install
 RUN cp server/build.properties.example server/build.properties || true
-RUN mvn -B -DskipTests package
+RUN mvn -q -B -DskipTests package
 
 # Pinned by digest (Dependabot bumps it), so a release ships the base it was tested on. Its amd64 image has JDK 17.0.21.1,
 # with the fix for CVE-2026-114938 (OpenJDK); its arm64 image still has 17.0.21, where the bug can't run (it is x86_64-only).

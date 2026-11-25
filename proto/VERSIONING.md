@@ -29,9 +29,8 @@ and a fresh agent on Android 16 talk to the same server without special-casing.
 From v0.6.0 on, one row per release. A release's wire changes all go in its row, as additions to its notes, and the release cut
 freezes the row: the next release's first wire change adds the next row (and bumps `AgentProtocol.VERSION` and the
 agent's `PROTOCOL_VERSION` with it). 1.12 is the v0.6.0 row; every 0.6.0 change appends to it. Before 0.6.0 each
-change took its own number, so v0.5.0 has several rows. v0.5.2 is built from the v0.5.1 tag and speaks 1.11, so
-1.12 ships in v0.6.0; a patch release cut from `main` would instead take the open row
-with it, and the next feature release would start the next one.
+change took its own number, so v0.5.0 has several rows. A patch release built from an older tag speaks that tag's
+version; one cut from `main` would take the open row with it, and the next feature release would start the next one.
 
 The configuration sections a `config.apply` document can carry, and the release whose agent first applies each, are
 in [config-sections.json](config-sections.json) ([README](README.md#configuration-sections)).

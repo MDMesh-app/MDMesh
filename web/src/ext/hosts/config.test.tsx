@@ -898,6 +898,11 @@ describe('enrollment setup settings', () => {
     expect(screen.getByText(/PROVISIONING_LOCALE: use the setting above instead/)).toBeTruthy();
   });
 
+  it('points out typed entries that are never used: Wi-Fi and the entries MDMesh sets', async () => {
+    open({ config: { qrParameters: '"android.app.extra.PROVISIONING_WIFI_SSID": "other",\n"x.y": 1' } });
+    expect(await screen.findByText(/PROVISIONING_WIFI_SSID: not used\. Wi-Fi comes from the setup Wi-Fi above/)).toBeTruthy();
+  });
+
   it('points out an entry typed by hand that has a setting of its own', async () => {
     open({ config: { qrParameters: '"x.y": 1,\n"android.app.extra.PROVISIONING_TIME_ZONE": "UTC"' } });
     expect(await screen.findByText(/PROVISIONING_TIME_ZONE: use the setting above instead/)).toBeTruthy();

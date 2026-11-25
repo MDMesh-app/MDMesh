@@ -62,8 +62,9 @@ New
   temporary admin password).
 - Enroll: the enrollment QR now carries the configuration's setup settings (Enrollment section): **Skip intro
   screens**, **Language**, **Time zone**, a **Hidden network** and **Enroll over mobile data**, plus any other Android
-  provisioning entry in **Extra QR parameters**. Entries naming the agent, its download or its enrollment extras are
-  never replaced. The Enroll page sums up what the code adds.
+  provisioning entry in **Extra QR parameters**. Entries naming the agent, its download or its enrollment extras, and MDMesh's
+  defaults (system apps stay enabled, no encryption step), are never replaced; Wi-Fi comes from the setup Wi-Fi and
+  the Enroll page only. The Enroll page sums up what the code adds.
 - Arm64: the server, web and supervisor images are built for linux/amd64 and linux/arm64, so the quick start and
   one-click updates run on Arm64 hosts such as Oracle Ampere (#205, thanks @sgofferj). On any other architecture,
   or on Arm64 with an `MDMESH_VERSION` that has no Arm64 images, the quick start stops and says why before it pulls

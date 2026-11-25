@@ -101,8 +101,9 @@ Write them as JSON members, one or more per line (a trailing comma is fine), or 
 valid JSON, the field says so: they are saved as typed, and the Enroll page leaves them out (the settings above still
 apply) until they are fixed. An entry typed here that has a setting of its own is pointed out; once that setting is
 set, it wins. The **Enroll** page adds the entries to the code it shows for the configuration and sums them up under
-**Setup**. Entries that name the agent, its download, its checksums or its enrollment extras are never replaced, and
-Wi-Fi is the Enroll page's choice: of the Wi-Fi entries here, only a hidden network or a proxy go in the code, and only with the network the page puts in it; the page says how many it leaves out. Like the Wi-Fi password, they are in the QR code in
+**Setup**. Entries that name the agent, its download, its checksums or its enrollment extras, and MDMesh's own defaults (system
+apps stay enabled, so the Play Store does too; no encryption step), are never replaced, and
+Wi-Fi is set above (setup Wi-Fi, Hidden network) and on the Enroll page, not here: Wi-Fi entries here (a network, a password, a proxy) are not used, and the editor and the Enroll page say so. Like the Wi-Fi password, they are in the QR code in
 plain text.
 
 ### Legacy launcher settings

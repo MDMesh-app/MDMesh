@@ -18,6 +18,9 @@
   "configEditor.enrollment.qrInvalid": {
     "defaultMessage": "Not valid JSON yet. It is saved as typed; the Enroll page leaves it out until it is fixed."
   },
+  "configEditor.enrollment.qrUnused": {
+    "defaultMessage": "{keys}: not used. Wi-Fi comes from the setup Wi-Fi above and the Enroll page, and MDMesh sets the others itself."
+  },
   "configEditor.enrollment.setupScreens": {
     "defaultMessage": "Setup screens"
   },
@@ -55,6 +58,6 @@
     "defaultMessage": "{summary} (other Extra QR parameters left out: {error})"
   },
   "enroll.setup.wifiLeftOut": {
-    "defaultMessage": "{count, plural, one {# Wi-Fi entry left out} other {# Wi-Fi entries left out}}: only a hidden network or a proxy, and only with the Wi-Fi chosen here"
+    "defaultMessage": "{count, plural, one {# Wi-Fi entry left out} other {# Wi-Fi entries left out}}: Wi-Fi comes from this page (and the configuration's setup Wi-Fi)"
   }
 }

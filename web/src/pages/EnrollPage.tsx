@@ -245,7 +245,7 @@ const setupMessages = defineMessages({
 const setupWifiLeftOut = defineMessage<{ count: number }>({
   id: 'enroll.setup.wifiLeftOut',
   defaultMessage:
-    '{count, plural, one {# Wi-Fi entry left out} other {# Wi-Fi entries left out}}: only a hidden network or a proxy, and only with the Wi-Fi chosen here',
+    '{count, plural, one {# Wi-Fi entry left out} other {# Wi-Fi entries left out}}: Wi-Fi comes from this page (and the configuration\'s setup Wi-Fi)',
 });
 const setupNotKnown = defineMessages({
   serverDefault: {
@@ -555,7 +555,7 @@ export function EnrollPage() {
           value: intl.formatMessage(cfgId ? setupNotKnown.notLoaded : setupNotKnown.serverDefault),
         }]
       : []),
-    ...(selected && (qrExtras.error || extrasText || qrExtras.ignored.length > 0)
+    ...(selected
       ? [{
           key: 'qrExtras',
           label: intl.formatMessage(setupMessages.label),

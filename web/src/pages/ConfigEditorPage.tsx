@@ -90,6 +90,7 @@ import {
   joinQrParameters,
   parseExtraQrParameters,
   settingsInRest,
+  unusedInRest,
   splitQrParameters,
   type QrParametersSplit,
 } from '../enroll/provisioning';
@@ -105,6 +106,11 @@ const enrollmentMessages = defineMessages({
 const qrInvalid = defineMessage({
   id: 'configEditor.enrollment.qrInvalid',
   defaultMessage: 'Not valid JSON yet. It is saved as typed; the Enroll page leaves it out until it is fixed.',
+});
+const qrUnused = defineMessage<{ keys: string }>({
+  id: 'configEditor.enrollment.qrUnused',
+  defaultMessage:
+    '{keys}: not used. Wi-Fi comes from the setup Wi-Fi above and the Enroll page, and MDMesh sets the others itself.',
 });
 const qrDuplicates = defineMessage<{ keys: string }>({
   id: 'configEditor.enrollment.qrDuplicates',
@@ -746,8 +752,13 @@ function Editor({
       const rest = qrRestOf(draft, typedQr.current);
       const parsed = parseExtraQrParameters(rest);
       const dupes = settingsInRest(rest);
+      const unused = unusedInRest(rest);
+      const notes = [
+        dupes.length ? intl.formatMessage(qrDuplicates, { keys: dupes.join(', ') }) : null,
+        unused.length ? intl.formatMessage(qrUnused, { keys: unused.join(', ') }) : null,
+      ].filter((x): x is string => !!x);
       if (parsed.error) qrNote = { tone: 'alert', text: intl.formatMessage(qrInvalid) };
-      else if (dupes.length) qrNote = { tone: 'warn', text: intl.formatMessage(qrDuplicates, { keys: dupes.join(', ') }) };
+      else if (notes.length) qrNote = { tone: 'warn', text: notes.join(' ') };
     }
     // The PIN callout asks for a new PIN, which a disabled row (kiosk off) cannot take; the nav still flags it.
     const showPinWarn = key === 'password' && pinWarn != null && (readOnly || !off);

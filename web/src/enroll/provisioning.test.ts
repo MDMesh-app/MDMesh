@@ -9,6 +9,7 @@ import {
   splitQrParameters,
   extrasInCode,
   wifiExtrasLeftOut,
+  unusedInRest,
   summarizeQrExtras,
 } from './provisioning';
 
@@ -63,9 +64,15 @@ describe('buildProvisioningPayload with extras', () => {
     expect(p['android.app.extra.PROVISIONING_WIFI_SSID']).toBe('club');
   });
 
-  it('lets an extra change a default entry', () => {
-    const p = JSON.parse(buildProvisioningPayload('t', undefined, { 'android.app.extra.PROVISIONING_LEAVE_ALL_SYSTEM_APPS_ENABLED': false }));
-    expect(p['android.app.extra.PROVISIONING_LEAVE_ALL_SYSTEM_APPS_ENABLED']).toBe(false);
+  it("never lets an extra change MDMesh's defaults (system apps stay enabled, no encryption step)", () => {
+    const p = JSON.parse(
+      buildProvisioningPayload('t', undefined, {
+        'android.app.extra.PROVISIONING_LEAVE_ALL_SYSTEM_APPS_ENABLED': false,
+        'android.app.extra.PROVISIONING_SKIP_ENCRYPTION': false,
+      }),
+    );
+    expect(p['android.app.extra.PROVISIONING_LEAVE_ALL_SYSTEM_APPS_ENABLED']).toBe(true);
+    expect(p['android.app.extra.PROVISIONING_SKIP_ENCRYPTION']).toBe(true);
   });
 });
 
@@ -236,11 +243,27 @@ describe('review: Wi-Fi entries and the summary', () => {
     expect(p[`${W}PASSWORD`]).toBeUndefined();
   });
 
-  it('keeps only a hidden network or a proxy with the page network, and lists what it leaves out', () => {
-    const extras = { [`${W}HIDDEN`]: true, [`${W}PROXY_HOST`]: 'p', [`${W}EAP_METHOD`]: 'PEAP', [`${W}IDENTITY`]: 'me' };
-    expect(Object.keys(extrasInCode(extras, true)).sort()).toEqual([`${W}HIDDEN`, `${W}PROXY_HOST`]);
-    expect(wifiExtrasLeftOut(extras, true).sort()).toEqual([`${W}EAP_METHOD`, `${W}IDENTITY`]);
+  it('keeps only a hidden network, with the page network, and lists what it leaves out (a proxy too)', () => {
+    const extras = { [`${W}HIDDEN`]: true, [`${W}PROXY_HOST`]: 'p', [`${W}PAC_URL`]: 'u', [`${W}EAP_METHOD`]: 'PEAP' };
+    expect(Object.keys(extrasInCode(extras, true))).toEqual([`${W}HIDDEN`]);
+    expect(wifiExtrasLeftOut(extras, true).sort()).toEqual([`${W}EAP_METHOD`, `${W}PAC_URL`, `${W}PROXY_HOST`]);
     expect(wifiExtrasLeftOut(extras, false)).toHaveLength(4);
+  });
+
+  it('names typed entries that never go in the code: Wi-Fi and the entries MDMesh sets', () => {
+    const rest = [
+      `"${W}SSID": "other"`,
+      `"${W}PROXY_HOST": "p"`,
+      `"${W}HIDDEN": true`,
+      '"android.app.extra.PROVISIONING_LEAVE_ALL_SYSTEM_APPS_ENABLED": false',
+      '"x.y": 1',
+    ].join(',\n');
+    expect(unusedInRest(rest)).toEqual([
+      'PROVISIONING_WIFI_SSID',
+      'PROVISIONING_WIFI_PROXY_HOST',
+      'PROVISIONING_LEAVE_ALL_SYSTEM_APPS_ENABLED',
+    ]);
+    expect(unusedInRest('"x": tru')).toEqual([]);
   });
 
   it('counts every entry the summary cannot word, a default value included, since it goes in the code', () => {

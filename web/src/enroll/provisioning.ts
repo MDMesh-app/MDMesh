@@ -47,6 +47,9 @@ export const PROTECTED_QR_KEYS: ReadonlySet<string> = new Set([
   'android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_DOWNLOAD_LOCATION',
   'android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_NAME',
   'android.app.extra.PROVISIONING_ADMIN_EXTRAS_BUNDLE',
+  // MDMesh's own defaults: system apps stay enabled (the Play Store among them) and setup doesn't stop to encrypt.
+  'android.app.extra.PROVISIONING_LEAVE_ALL_SYSTEM_APPS_ENABLED',
+  'android.app.extra.PROVISIONING_SKIP_ENCRYPTION',
 ]);
 
 /** The configuration's Extra QR parameters, read: the entries to add, or why they can't be. */
@@ -211,6 +214,18 @@ export function joinQrParameters(settings: Record<string, unknown>, rest: string
   return tail ? `${head.join(',\n')},\n\n${tail}` : head.join(',\n');
 }
 
+/**
+ * Entries of the rest that never go in the code, without their prefix: Wi-Fi (set above and on the Enroll page) and
+ * the entries MDMesh sets itself (PROTECTED_QR_KEYS). The editor points them out.
+ */
+export function unusedInRest(rest: string): string[] {
+  const read = readQrParameters(rest);
+  if ('error' in read) return [];
+  return Object.keys(read.entries)
+    .filter((k) => PROTECTED_QR_KEYS.has(k) || (k.startsWith(WIFI_PREFIX) && !EXTRA_WIFI_KEYS.has(k)))
+    .map((k) => (k.startsWith(QR_EXTRA_PREFIX) ? k.slice(QR_EXTRA_PREFIX.length) : k));
+}
+
 /** Entries of the rest that have a setting of their own: that setting wins over them once it is set. */
 export function settingsInRest(rest: string): string[] {
   const read = readQrParameters(rest);
@@ -243,12 +258,11 @@ export function configurationQrExtras(config: Record<string, unknown> | null | u
 
 const WIFI_PREFIX = 'android.app.extra.PROVISIONING_WIFI_';
 /**
- * Wi-Fi entries a configuration may add to the page's own network: a hidden network and a proxy. The page writes the
- * network itself (SSID, security, password); any other Wi-Fi entry (EAP keys, another network) is left out.
+ * The one Wi-Fi entry a configuration adds, to the page's own network: a hidden network (its Hidden network setting).
+ * Wi-Fi is set in the configuration's Enrollment section and on the Enroll page; any other Wi-Fi entry (a network, a
+ * password, EAP keys, a proxy) is left out.
  */
-const EXTRA_WIFI_KEYS: ReadonlySet<string> = new Set(
-  ['HIDDEN', 'PROXY_HOST', 'PROXY_PORT', 'PROXY_BYPASS', 'PAC_URL'].map((k) => WIFI_PREFIX + k),
-);
+const EXTRA_WIFI_KEYS: ReadonlySet<string> = new Set([`${WIFI_PREFIX}HIDDEN`]);
 
 /**
  * The configuration's entries that go in the code: protected ones never do, and Wi-Fi is the Enroll page's choice,

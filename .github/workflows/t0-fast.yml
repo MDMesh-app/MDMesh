@@ -54,8 +54,9 @@ jobs:
             supervisor: supervisor/**, docker/supervisor.Dockerfile, release/minisign.pub, scripts/supervisor-smoke.sh, .dockerignore
             # Listed explicitly: the kit's fail-closed **/Dockerfile* does not match docker/web.Dockerfile. web/**,
             # web-entrypoint.sh, edge-peers.sh, CHANGELOG.md and .dockerignore are the web image build's inputs.
-            # DEPLOY.md: edge-check runs its site.d example; docs/proxies/**: it parses the ready proxy configurations.
-            edge: docker/Caddyfile, docker/web.Dockerfile, docker/web-entrypoint.sh, docker/edge-peers.sh, docker/edge-caddy.sh, web/**, CHANGELOG.md, .dockerignore, docker-compose*.yml, docker/dev.env, scripts/edge-check.sh, supervisor/apply.sh, DEPLOY.md, docs/proxies/**
+            # DEPLOY.md: edge-check runs its site.d example; docs/proxies/**: it parses the ready proxy configurations;
+            # install/lib/ports.sh: it runs its reading of compose config.
+            edge: docker/Caddyfile, docker/web.Dockerfile, docker/web-entrypoint.sh, docker/edge-peers.sh, docker/edge-caddy.sh, web/**, CHANGELOG.md, .dockerignore, docker-compose*.yml, docker/dev.env, scripts/edge-check.sh, install/lib/ports.sh, supervisor/apply.sh, DEPLOY.md, docs/proxies/**
             # The release images' Dockerfiles and entrypoints: where an Arm64-only break comes from (a base image, an Alpine
             # package), with npm binaries via the fail-closed lockfiles, and the server's JVM flags and their check.
             # Source changes alone don't trigger the arm64 job.

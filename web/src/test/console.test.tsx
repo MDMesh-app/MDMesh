@@ -75,7 +75,7 @@ function Loads() {
   return <p>{text}</p>;
 }
 
-// The guard in test/setup.ts fails a test that ends with a call still pending. Vitest runs it once the test's own
+// The guard in test/dom.ts fails a test that ends with a call still pending. Vitest runs it once the test's own
 // promise chain has run out, so an answer that arrived within those microtasks would pass for loaded.
 describe('a test that ends before its page has loaded', () => {
   const microtasks = async () => {
@@ -91,5 +91,11 @@ describe('a test that ends before its page has loaded', () => {
     // This test then waits, so the guard passes it.
     await settled();
     expect(screen.getByText('done')).toBeTruthy();
+  });
+
+  // Passes only because the guard fails it: take the guard out, and this reads "Expect test to fail".
+  it.fails('fails', () => {
+    stubApi();
+    render(<Loads />);
   });
 });

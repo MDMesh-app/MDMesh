@@ -5,9 +5,9 @@
 import type { AuthUser } from '../api/auth';
 import { AppRoutes } from '../App';
 import type { ExtensionDefinition } from '../ext/types';
-import { ROLES, registryOf, renderInConsole, stubApi } from '../test/console';
+import { ROLES, registryOf, renderInConsole, settled, stubApi } from '../test/console';
 
-export { ROLES, registryOf, stubApi };
+export { ROLES, registryOf, settled, stubApi };
 
 /**
  * Render the whole console (its routes, shell and pages) at `path`, signed in as `user` (a super-admin by default),

@@ -45,12 +45,14 @@ describe('the shell renders core and extension contributions', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Page not found' })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Go to the Overview' }).getAttribute('href')).toBe('/');
     expect(screen.getByRole('navigation', { name: 'Main' })).toBeTruthy();
+    await settled();
   });
 
   it('still moves an old bookmark to its page', async () => {
     stubApi(fleet);
     renderInConsole(<AppRoutes />, { registry: registryOf(demo), path: '/dashboard' });
     await waitFor(() => expect(screen.getByRole('link', { name: 'Overview' }).className).toContain('is-active'));
+    await settled();
   });
 });
 
@@ -97,6 +99,7 @@ describe('permission gating: the console hides what the role cannot use', () => 
     stubApi(fleet);
     renderInConsole(<AppRoutes />, { user: ROLES.observer, path: '/configurations' });
     expect(await screen.findByText('You don’t have access to this page')).toBeTruthy();
+    await settled();
   });
 
   it('never loads a denied page, so none of its requests go out', async () => {

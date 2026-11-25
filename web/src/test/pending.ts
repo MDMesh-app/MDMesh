@@ -1,5 +1,5 @@
-// The API calls the current stubApi (test/console.tsx) has not answered yet. Kept apart from console.tsx so the setup
-// file (test/setup.ts), which runs before every test file, can check it without loading the console's modules.
+// The API calls the current stubApi (test/console.tsx) has not answered yet. Kept apart from console.tsx so the DOM
+// setup (test/dom.ts), which runs before every test file, can check it without loading the console's modules.
 
 interface Calls {
   /** Made and not yet answered. */

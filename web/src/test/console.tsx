@@ -78,7 +78,7 @@ export function stubApi(data: (path: string, init?: RequestInit) => unknown = ()
     // An aborted call is over for the app, whatever a held mock does with it.
     init?.signal?.addEventListener('abort', done, { once: true });
     // As over a network, the answer arrives on a later task, not within the call's own microtasks: a test that ends
-    // right after its page asks still has the call pending, which test/setup.ts fails.
+    // right after its page asks still has the call pending, which test/dom.ts fails.
     const answer = fetch(input, init).then((res) => new Promise<Response>((r) => laterTask(() => r(res), 0)));
     void answer.then((res) => answered(res, done), done);
     return answer;

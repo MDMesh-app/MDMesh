@@ -92,6 +92,7 @@ describe.each([
   it('the Devices list: Sync, the row menu, selection and Enroll, the list kept', async () => {
     open('/devices', user);
     await main().findByRole('link', { name: /Front desk/ });
+    await settled();
     expectShown(main().queryAllByRole('button', { name: 'Sync now: WH-1' }));
     expectShown(main().queryAllByRole('button', { name: 'More actions for WH-1' }));
     expectShown(main().queryAllByRole('checkbox', { name: 'Select WH-1' }));

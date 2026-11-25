@@ -155,6 +155,7 @@ describe('the device page without extensions', () => {
     ]);
     expect(await within(panel()).findByRole('button', { name: 'View all activity' })).toBeTruthy();
     expect(here).toBe('/devices/WH-1');
+    await settled();
   });
 
   it('closes its own dialog and shows a requested mode as pending once queued, before the sync nudge answers', async () => {
@@ -297,6 +298,7 @@ describe('extension tabs and rail groups', () => {
   it('hides a tab the role may not use', async () => {
     openDevice({ registry: registryOf(demo), user: ROLES.user });
     await screen.findByRole('tab', { name: 'Demo' });
+    await settled();
     expect(tabNames()).not.toContain('Demo admin');
   });
 
@@ -307,6 +309,7 @@ describe('extension tabs and rail groups', () => {
     expect(selectedTab()).toBe('Control');
     await act(() => go(-1));
     await waitFor(() => expect(here).toBe('/devices'));
+    await settled();
   });
 
   it('shows a tab that throws as a callout in its own tab only', async () => {
@@ -320,6 +323,7 @@ describe('extension tabs and rail groups', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Telemetry' }));
     expect(await within(panel()).findByText('TC52')).toBeTruthy();
     expect(screen.queryByText(/ran into a problem/)).toBeNull();
+    await settled();
   });
 
   it('shows the page, without the icon, when a tab’s icon throws', async () => {
@@ -383,6 +387,7 @@ describe('the open tab lives in the URL', () => {
     // The first tab is the page without a parameter.
     fireEvent.click(screen.getByRole('tab', { name: 'Control' }));
     expect(here).toBe('/devices/WH-1');
+    await settled();
   });
 
   it('moves between tabs with the arrow keys, Home and End in place, so Back leaves the page', async () => {
@@ -396,6 +401,7 @@ describe('the open tab lives in the URL', () => {
     expect(selectedTab()).toBe('Location');
     await act(() => go(-1));
     await waitFor(() => expect(here).toBe('/devices'));
+    await settled();
   });
 
   it('shows a clicked tab at once, before the router renders the navigation', async () => {
@@ -412,6 +418,7 @@ describe('the open tab lives in the URL', () => {
       expect(within(panel()).getByText('Events')).toBeTruthy();
       await waitFor(() => expect(here).toBe('/devices/WH-1?tab=activity'));
     });
+    await settled();
   });
 
   it('follows the URL when Back comes before a click’s navigation has rendered', async () => {
@@ -424,6 +431,7 @@ describe('the open tab lives in the URL', () => {
       await waitFor(() => expect(selectedTab()).toBe('Telemetry'));
     });
     expect(await within(panel()).findByText('TC52')).toBeTruthy();
+    await settled();
   });
 
   it('opens Activity from the Control tab’s "View all activity" link, as a history entry', async () => {
@@ -443,6 +451,7 @@ describe('the open tab lives in the URL', () => {
     await waitFor(() => expect(here).toBe('/devices/WH-1?from=list&tab=telemetry#x'));
     fireEvent.click(screen.getByRole('tab', { name: 'Control' }));
     await waitFor(() => expect(here).toBe('/devices/WH-1?from=list#x'));
+    await settled();
   });
 
   it('opens an unknown tab as the first one, replacing the URL', async () => {
@@ -452,6 +461,7 @@ describe('the open tab lives in the URL', () => {
     expect(selectedTab()).toBe('Control');
     await act(() => go(-1));
     await waitFor(() => expect(here).toBe('/devices'));
+    await settled();
   });
 
   it('keeps the query and the hash when an old id link moves to the device’s number', async () => {
@@ -509,6 +519,7 @@ describe('useDevice()', () => {
     expect(await body.findByText('0.3.7')).toBeTruthy();
     expect(await body.findByText('Warehouse')).toBeTruthy();
     expect(await body.findByText('true')).toBeTruthy();
+    await settled();
   });
 
   it('hands a tab only the public fields: core’s own parts cannot be reached from it', async () => {
@@ -580,6 +591,7 @@ describe('useDevice()', () => {
     expect(await screen.findByText('Sent 1')).toBeTruthy();
     const [queued] = calls(fetch, `/devices/${DEVICE.number}/commands`, 'POST');
     expect(JSON.parse(String(queued[1]?.body))).toEqual({ type: 'device.note', payload: '{"text":"hi"}' });
+    await settled();
   });
 
   it('sendCommand() leaves the page’s own pending connection and location modes alone', async () => {
@@ -617,6 +629,7 @@ describe('useDevice()', () => {
     expect(await screen.findByText('Sent 1')).toBeTruthy();
     const [queued] = calls(fetch, `/devices/${DEVICE.number}/commands`, 'POST');
     expect(JSON.parse(String(queued[1]?.body))).toEqual({ type: 'device.ring', requiresCapability: 'device.ring' });
+    await settled();
   });
 
   it('sendCommand() leaves the page’s actions usable while its command is on the way', async () => {

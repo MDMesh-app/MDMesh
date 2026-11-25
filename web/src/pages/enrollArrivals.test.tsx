@@ -4,7 +4,7 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppRoutes } from '../App';
 import { ARRIVALS_POLL_MS, ARRIVALS_WATCH_MS } from '../enroll/arrivals';
-import { renderInConsole, stubApi } from '../test/console';
+import { renderInConsole, settled, stubApi } from '../test/console';
 
 const LOAD = { timeout: 10_000 };
 const CREATED = 1_700_000_000_000;
@@ -45,6 +45,7 @@ describe('Enroll: devices enrolled while the page is open', () => {
     renderInConsole(<AppRoutes />, { path: '/enroll' });
     const main = within(await screen.findByRole('main', undefined, LOAD));
     await waitFor(() => expect(main.getByText(/No device yet/)).toBeTruthy(), LOAD);
+    await settled();
   });
 });
 

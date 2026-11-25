@@ -81,7 +81,7 @@ describe('AuthProvider: the role is refreshed from the server', () => {
     const { result } = signedInAs(ROLES.observer);
     const before = result.current.user;
     await waitFor(() => expect(currentUserCalls(fetch)).toHaveLength(1));
-    await act(async () => {});
+    await settled();
     expect(result.current.user).toBe(before);
   });
 
@@ -131,6 +131,7 @@ describe('AuthProvider: the role is refreshed from the server', () => {
     const { result } = renderHook(() => useAuth(), { wrapper });
     await act(() => result.current.signIn('admin', 'password'));
     await waitFor(() => expect(currentUserCalls(fetch)).toHaveLength(1));
+    await settled();
   });
 
   it('makes no request signed out', async () => {

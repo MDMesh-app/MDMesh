@@ -124,11 +124,10 @@ describe('Agent rollout: a rollout newer than the server', () => {
     );
   });
   it('is not marked on a server that runs the rollout’s release', async () => {
-    const fetch = open((p) => (p === '/agent/v1/rollout/active' ? canary(3) : null));
+    open((p) => (p === '/agent/v1/rollout/active' ? canary(3) : null));
     await main().findByText(/Updating the agent to/);
     // Only once the updater's status has loaded (the stall needs it) does its absence mean anything.
-    await waitFor(() => expect(fetch.mock.calls.some(([u]) => String(u).startsWith('/update/status'))).toBe(true));
-    await act(async () => {});
+    await settled();
     expect(main().queryByText(/This rollout is stalled/)).toBeNull();
   });
 });

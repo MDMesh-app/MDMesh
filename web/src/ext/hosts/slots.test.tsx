@@ -77,6 +77,7 @@ describe('settings.section', () => {
   it('shows core’s sections and nav as before without extensions', async () => {
     open('/settings', { registry: registryOf() });
     await main().findByRole('heading', { name: 'Appearance' });
+    await settled();
     expect(navLinks()).toEqual([
       ['Account', '#account'], ['Server', '#server'], ['Updates', '#updates'], ['Agent rollout', '#agent-rollout'],
       ['Enrollment', '#enrollment'], ['Appearance', '#appearance'],
@@ -97,6 +98,7 @@ describe('settings.section', () => {
   it('drops a core section with its nav entry when it leaves the registry', async () => {
     open('/settings', { registry: coreWithout('settings.section:enrollment') });
     await main().findByRole('heading', { name: 'Appearance' });
+    await settled();
     expect(sectionIds()).not.toContain('enrollment');
     expect(navLinks().map(([label]) => label)).not.toContain('Enrollment');
   });
@@ -107,6 +109,7 @@ describe('settings.section', () => {
     ]);
     open('/settings', { registry: registryOf(gated), user: ROLES.user });
     await main().findByRole('heading', { name: 'Appearance' });
+    await settled();
     expect(navLinks().map(([label]) => label)).not.toContain('Audit');
   });
 
@@ -166,6 +169,7 @@ describe('overview.card', () => {
     open('/');
     await main().findByRole('heading', { name: 'Demo card' });
     await main().findByText('Demo stat');
+    await settled();
     expect(statLabels()).toEqual(['Configuration in sync', 'Demo stat']);
     expect(columns()[0]).toEqual([['v2-ov-main', ['v2-ov-att', 'v2-ov-act']], ['v2-ov-aside', ['v2-ov-cfg', 'Demo card', 'v2-ov-srv']]]);
   });
@@ -176,6 +180,7 @@ describe('overview.card', () => {
     ]);
     open('/', { registry: registryOf(ahead) });
     await main().findByRole('heading', { name: 'Demo card' });
+    await settled();
     expect(columns()[0]).toEqual([['v2-ov-main', ['v2-ov-att', 'v2-ov-act']], ['v2-ov-aside', ['Demo card', 'v2-ov-cfg', 'v2-ov-srv']]]);
   });
 
@@ -191,6 +196,7 @@ describe('overview.card', () => {
     const broken = ext('broken', [{ slot: 'overview.card', id: 'oops', order: 50, placement: 'main', component: throwing('boom') }]);
     open('/', { registry: registryOf(broken) });
     expect(await main().findByText(/The “Broken” extension ran into a problem/)).toBeTruthy();
+    await settled();
     expect(main().getByText('Configuration in sync')).toBeTruthy();
     expect(main().getByRole('heading', { name: /Needs attention/ })).toBeTruthy();
   });
@@ -200,6 +206,7 @@ describe('overview.card', () => {
     const broken = ext('broken', [{ slot: 'overview.card', id: 'oops', order: 150, placement: 'stat', component: throwing('boom') }]);
     open('/', { registry: registryOf(broken) });
     await main().findByText('Configuration in sync');
+    await settled();
     const grid = document.querySelector('.v2-statgrid') as HTMLElement;
     const mark = await within(grid).findByText('Error');
     expect(within(grid).queryByRole('alert')).toBeNull();
@@ -272,6 +279,7 @@ describe('list.column, list.rowAction, list.bulkAction on Devices', () => {
   it('places an extension column among core’s, and sorts by its value', async () => {
     open('/devices');
     await main().findByRole('link', { name: /Front desk/ });
+    await settled();
     expect(headers()).toEqual(['', 'Device', 'Status', 'Configuration', 'Android', 'Demo id', 'Last seen ↓', 'Actions']);
     expect(firstColumn('Demo id')).toEqual(['#7', '#8']); // last seen first, the default
     fireEvent.click(table().getByRole('button', { name: 'Demo id' }));
@@ -327,6 +335,7 @@ describe('list.column, list.rowAction, list.bulkAction on Devices', () => {
     ]);
     open('/devices', { registry: registryOf(broken) });
     await main().findByRole('link', { name: /Front desk/ });
+    await settled();
     expect(headers()).toContain('Error');
     expect(firstColumn('Error')).toEqual(['ok', 'ok']);
     const menu = await openMenu('WH-1');
@@ -368,6 +377,7 @@ describe('list.column, list.rowAction, list.bulkAction on Devices', () => {
     ]);
     open('/devices', { registry: registryOf(broken) });
     await main().findByRole('link', { name: /Front desk/ });
+    await settled();
     const menu = await openMenu('WH-1');
     expect(menu.getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['Lock', 'Ring', 'Error', 'Change configuration', 'Delete']);
     fireEvent.click(menu.getByRole('menuitem', { name: 'Error' }));
@@ -409,6 +419,7 @@ describe('list.column, list.rowAction, list.bulkAction on Devices', () => {
     const posts = fetch.mock.calls.filter(([url, init]) => init?.method === 'POST' && String(url).includes('/commands'));
     expect(posts.map(([url]) => String(url))).toEqual([expect.stringContaining('/devices/WH-2/commands')]);
     expect(JSON.parse(String(posts[0][1]?.body))).toEqual({ type: 'demo.ping' });
+    await settled();
   });
 
   it('puts an extension bulk action among core’s, and hands it the selected devices', async () => {
@@ -493,6 +504,7 @@ describe('list.column, list.rowAction, list.bulkAction on Devices', () => {
   it('hides a bulk action the role may not use', async () => {
     open('/devices', { user: ROLES.user });
     await main().findByRole('link', { name: /Front desk/ });
+    await settled();
     fireEvent.click(main().getByRole('checkbox', { name: 'Select WH-1' }));
     await screen.findByRole('region', { name: 'Selection' });
     expect(bulkButtons()).toEqual(['Run action', 'Change configuration', 'Delete']); // Demo export needs settings
@@ -518,6 +530,7 @@ describe('list.column, list.rowAction, list.bulkAction on Devices', () => {
   it('leaves an Observer only the row action that writes nothing, and no selection once no bulk action is left', async () => {
     open('/devices', { user: ROLES.observer });
     await main().findByRole('link', { name: /Front desk/ });
+    await settled();
     expect(main().queryByRole('checkbox', { name: 'Select WH-1' })).toBeNull();
     expect(main().queryByRole('button', { name: 'Sync now: WH-1' })).toBeNull();
     const menu = await openMenu('WH-1');
@@ -530,6 +543,7 @@ describe('list.column and list.rowAction on Apps', () => {
   it('keeps the library’s columns as before without extensions', async () => {
     open('/apps', { registry: registryOf() });
     await main().findByText('com.acme.scanner');
+    await settled();
     const table = within(screen.getByRole('table', { name: 'Library' }));
     expect(table.getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['App', 'Version', 'Source', 'Checksum', 'Used in', 'Actions']);
   });
@@ -537,6 +551,7 @@ describe('list.column and list.rowAction on Apps', () => {
   it('places an extension column among core’s, its element header in place', async () => {
     open('/apps');
     await main().findByText('com.acme.scanner');
+    await settled();
     const table = within(screen.getByRole('table', { name: 'Library' }));
     expect(table.getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['App', 'Version', 'Pkg', 'Source', 'Checksum', 'Used in', 'Actions']);
     expect(table.getByTitle('Package length')).toBeTruthy();
@@ -555,6 +570,7 @@ describe('list.column and list.rowAction on Apps', () => {
     ]);
     open('/apps', { registry: registryOf(peek) });
     await main().findByText('com.acme.scanner');
+    await settled();
     fireEvent.click(main().getByRole('button', { name: 'More for Notes' }));
     await screen.findByRole('menu');
     expect(frozen).toBe(true);
@@ -566,6 +582,7 @@ describe('list.column and list.rowAction on Apps', () => {
     ]);
     open('/apps', { registry: registryOf(pin) });
     await main().findByText('com.acme.scanner');
+    await settled();
     fireEvent.click(main().getByRole('button', { name: 'More for Notes' }));
     expect(within(await screen.findByRole('menu')).getAllByRole('menuitem').map((m) => m.textContent)).toEqual([
       'SHA-256 checksum', 'Pin Notes', 'Remove from library',

@@ -74,17 +74,20 @@ describe('Retry apply', () => {
     await waitFor(() => expect(posts(fetch, `/devices/${DEVICE.number}/retryConfig`)).toHaveLength(1));
     expect(posts(fetch, `/devices/${DEVICE.number}/sync`)).toHaveLength(0);
     await waitFor(() => expect(toastText()).toContain('Configuration sent again'));
+    await settled();
   });
 
   it('says when the device is not connected, so it applies at its next check-in', async () => {
     openControl({ failed: true, retry: { result: 'queued', connected: false } });
     fireEvent.click(await screen.findByRole('button', { name: 'Retry apply' }));
     await waitFor(() => expect(toastText()).toContain('isn’t connected right now'));
+    await settled();
   });
 
   it('says when there was nothing to send', async () => {
     openControl({ failed: true, retry: { result: 'inSync', connected: true } });
     fireEvent.click(await screen.findByRole('button', { name: 'Retry apply' }));
     await waitFor(() => expect(toastText()).toContain('Already applied'));
+    await settled();
   });
 });

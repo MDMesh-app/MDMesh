@@ -56,6 +56,7 @@ describe('ProtectedRoute: another tab changes the account', () => {
     const { mounts, ui } = mountCounter();
     renderInConsole(ui, { user: ROLES.observer, path: '/devices/WH-12' });
     await screen.findByText('device page');
+    await settled();
 
     const promoted = { ...ROLES.observer, userRole: { ...ROLES.observer.userRole, permissions: [{ name: 'configurations' }] } };
     act(() => otherTabWrites(promoted));

@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useIntl } from 'react-intl';
 import { Link } from 'react-router';
 import { forceSync } from '../api/commands';
 import type { ConfigSyncSummary } from '../api/configSync';
 import type { ConfigurationLookup, DeviceView } from '../api/devices';
 import type { ActiveRollout } from '../api/rollout';
+import { agentUpdateCount } from '../data/configSections';
 import { isOnline, notConnected } from '../data/presence';
 import { LOAD_DEVICES_FAILED } from '../data/useDevices';
 import { CORE_ACTION_ACCESS } from '../ext/core/access';
@@ -321,6 +323,7 @@ function UpdatedAt({ loadedAt, failed }: { loadedAt: number | null; failed: bool
 /* ---- stats beside the fleet bar ---------------------------------------------------------------------------------- */
 
 function SyncStat({ summary, failed }: { summary: ConfigSyncSummary[] | null; failed: boolean }) {
+  const intl = useIntl();
   if (!summary) {
     return (
       <StatCell
@@ -344,7 +347,7 @@ function SyncStat({ summary, failed }: { summary: ConfigSyncSummary[] | null; fa
   const notes: StatNote[] = [];
   if (t.outOfSync > 0) notes.push({ text: `${t.outOfSync} out of sync`, tone: 'warn' });
   if (t.unsupported > 0) notes.push({ text: `${t.unsupported} agent too old`, tone: 'warn' });
-  if (t.agentUpdateNeeded > 0) notes.push({ text: `${t.agentUpdateNeeded} agent update needed`, tone: 'warn' });
+  if (t.agentUpdateNeeded > 0) notes.push({ text: agentUpdateCount(intl, t.agentUpdateNeeded), tone: 'warn' });
   if (t.neverSeen > 0) notes.push({ text: `${t.neverSeen} not reported` });
   if (t.total === 0) notes.push({ text: 'No device has a configuration' });
   else if (notes.length === 0) notes.push({ text: 'All in sync', tone: 'ok' });
@@ -527,6 +530,7 @@ function ByConfiguration({
   loading: boolean;
   unknown?: boolean;
 }) {
+  const intl = useIntl();
   const rows = useMemo<ConfigRow[]>(() => {
     // Devices per configuration from the device list (the classic card); sync detail from the summary when loaded.
     const byId = new Map<number, number>();
@@ -556,7 +560,7 @@ function ByConfiguration({
       const parts = [s.inSync === s.total ? 'All in sync' : `${s.inSync} in sync`];
       if (s.outOfSync) parts.push(`${s.outOfSync} out of sync`);
       if (s.unsupported) parts.push(`${s.unsupported} agent too old`);
-      if (s.agentUpdateNeeded) parts.push(`${s.agentUpdateNeeded} agent update needed`);
+      if (s.agentUpdateNeeded) parts.push(agentUpdateCount(intl, s.agentUpdateNeeded));
       if (s.neverSeen) parts.push(`${s.neverSeen} not reported`);
       if (s.deferred) parts.push(`${s.deferred} deferred settings`);
       return {
@@ -585,7 +589,7 @@ function ByConfiguration({
       });
     }
     return out;
-  }, [devices, configurations, summary]);
+  }, [devices, configurations, summary, intl]);
 
   return (
     <Card aria-labelledby="v2-ov-cfg">

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AGENT_UPDATE_NEEDED_PREFIX, DEVICE_RESET_LABEL, type ConfigSyncSummary } from '../api/configSync';
+import { AGENT_UPDATE_NEEDED, DEVICE_RESET_LABEL, type ConfigSyncSummary } from '../api/configSync';
 import type { DeviceView } from '../api/devices';
 import { ISSUE_REASON, isCleanSummary, issueKind, presenceOf, suspectDevices } from './fleetHealth';
 import { ONLINE_WINDOW_MS } from './presence';
@@ -69,6 +69,6 @@ describe('a configuration out of date on the device', () => {
 
 describe('an agent update needed for a section', () => {
   it('is the out-of-date agent issue', () => {
-    expect(issueKind({ tone: 'warn', label: `${AGENT_UPDATE_NEEDED_PREFIX}Connectivity` })).toBe('agentTooOld');
+    expect(issueKind({ tone: 'warn', label: AGENT_UPDATE_NEEDED, sections: ['connectivity'] })).toBe('agentTooOld');
   });
 });

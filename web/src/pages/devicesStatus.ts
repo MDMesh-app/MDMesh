@@ -1,6 +1,9 @@
 // Devices-list wording for the shared fleet health rules (web/src/data/fleetHealth.ts, useFleetSync.ts): the sync
 // line's status kind and label, and the attention strip's filter chips. No per-device battery / network / agent
 // version here: those are not in the list API.
+import type { IntlShape } from 'react-intl';
+import { AGENT_UPDATE_NEEDED } from '../api/configSync';
+import { sectionList } from '../data/configSections';
 import type { IssueKind, SyncVerdict } from '../data/fleetHealth';
 import type { StatusKind } from '../ui';
 
@@ -27,7 +30,13 @@ export function syncKind(s: SyncVerdict): StatusKind {
   }
 }
 
-/** Sync-line wording: the board's "Not reported" for summarizeStatus's "Not reported yet". */
-export function syncLabel(s: SyncVerdict): string {
+/** Sync-line wording: the board's "Not reported" for summarizeStatus's "Not reported yet", and the sections' names. */
+export function syncLabel(intl: IntlShape, s: SyncVerdict): string {
+  if (s.label === AGENT_UPDATE_NEEDED) {
+    return intl.formatMessage(
+      { id: 'configSync.agentUpdate.label', defaultMessage: 'Agent update needed for: {sections}' },
+      { sections: sectionList(intl, s.sections ?? []) },
+    );
+  }
   return s.label === 'Not reported yet' ? 'Not reported' : s.label;
 }

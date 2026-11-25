@@ -1,4 +1,6 @@
+import type { IntlShape } from 'react-intl';
 import type { ConfigSyncSummary } from '../../api/configSync';
+import { agentUpdateCount } from '../../data/configSections';
 import type { BarSegment } from '../../ui';
 
 export type SyncTone = 'ok' | 'warn' | 'idle';
@@ -32,7 +34,7 @@ export function devicesBlockingDelete(s: ConfigSyncSummary | undefined): number 
  * (in sync + out of sync + agent too old + never reported = total), wiped devices aside. Out of sync reads "applying", as on the classic
  * SyncBar; a "failed" split needs data the server doesn't send.
  */
-export function syncLine(s: ConfigSyncSummary | undefined, unavailable: boolean): SyncLine {
+export function syncLine(intl: IntlShape, s: ConfigSyncSummary | undefined, unavailable: boolean): SyncLine {
   if (!s || s.total === 0) {
     return {
       segments: [],
@@ -47,7 +49,7 @@ export function syncLine(s: ConfigSyncSummary | undefined, unavailable: boolean)
   ];
   // Apart from the four counts: devices (in sync or not) whose agent doesn't apply a section the configuration sets.
   const update = s.agentUpdateNeeded ?? 0;
-  const updateNote = update > 0 ? `${update} agent update needed` : null;
+  const updateNote = update > 0 ? agentUpdateCount(intl, update) : null;
   if (s.inSync === s.total) {
     const text = s.total === 1 ? 'In sync' : `All ${s.total} in sync`;
     return update > 0 ? { segments, text: `${text} · ${updateNote}`, tone: 'warn' } : { segments, text, tone: 'ok' };

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useIntl } from 'react-intl';
 import { useNavigate, useSearchParams } from 'react-router';
 import { forceSync } from '../api/commands';
 import { listConfigurations, type ConfigurationSummary } from '../api/configurations';
@@ -134,6 +135,7 @@ const errText = (e: unknown) => (e instanceof Error ? e.message : '');
 
 /** Devices, table and cards. Classic: pages/DevicesPage.tsx. */
 export function DevicesPage() {
+  const intl = useIntl();
   const navigate = useNavigate();
   const toast = useToast();
   const [params, setParams] = useSearchParams();
@@ -595,7 +597,7 @@ export function DevicesPage() {
   const configCell = (d: DeviceView, layout: 'stack' | 'row') => {
     const s = syncOf(d);
     const name = configName(d);
-    if (s) return <ConfigSync layout={layout} name={name} sync={syncKind(s)} syncLabel={syncLabel(s)} />;
+    if (s) return <ConfigSync layout={layout} name={name} sync={syncKind(s)} syncLabel={syncLabel(intl, s)} />;
     // Sync state unknown (summary unavailable, or the per-device check failed): the name alone.
     return layout === 'row' ? (
       <div className="v2-cfgsync v2-cfgsync--row">

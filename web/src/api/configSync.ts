@@ -110,28 +110,16 @@ export function staleCause(
   return latest ? STALE_CAUSES[latest.type] : null;
 }
 
-/** Configuration sections (proto/config-sections.json) by name, as the console names them. */
-const SECTION_LABEL: Readonly<Record<string, string>> = {
-  policies: 'Policies',
-  kiosk: 'Kiosk mode',
-  location: 'Location reporting',
-  connectivity: 'Connectivity',
-  appPermissions: 'App permissions',
-};
-
-/** "Connectivity, Kiosk mode": the sections a device's agent needs an update for. An unknown name is shown as is. */
-export function sectionLabels(names: ReadonlyArray<string>): string {
-  return names.map((n) => SECTION_LABEL[n] ?? n).join(', ');
-}
-
-/** Verdict label prefix: in sync or not, the agent doesn't apply a section the configuration sets. */
-export const AGENT_UPDATE_NEEDED_PREFIX = 'Agent update needed for: ';
+/** Verdict label: in sync or not, the agent doesn't apply a section the configuration sets (the verdict's sections). */
+export const AGENT_UPDATE_NEEDED = 'agentUpdateNeeded';
 
 /** In sync, but the agent skipped some settings on purpose (e.g. Wi-Fi radio Off while Wi-Fi is the only network). */
 export const SOME_DEFERRED_LABEL = 'In sync (some settings deferred)';
 
 /** One-line verdict for badges. Pure, so it can be unit-tested. */
-export function summarizeStatus(s: ConfigStatus | null): { tone: 'ok' | 'warn' | 'alert' | 'idle'; label: string } {
+export function summarizeStatus(
+  s: ConfigStatus | null,
+): { tone: 'ok' | 'warn' | 'alert' | 'idle'; label: string; sections?: string[] } {
   if (!s || s.configurationId == null) return { tone: 'idle', label: 'No configuration' };
   if (!s.supported) return { tone: 'warn', label: 'Agent too old' };
   const st = s.lastCommand?.status;
@@ -140,9 +128,7 @@ export function summarizeStatus(s: ConfigStatus | null): { tone: 'ok' | 'warn' |
   if (!s.inSync && !s.appliedRevision) return { tone: 'idle', label: 'Not reported yet' };
   // The device's agent doesn't apply a section the configuration sets: an agent update, not a re-send, fixes it. The
   // server re-sends a newer revision by itself; a failed apply shows as such above.
-  if (s.agentUpdateNeeded?.length) {
-    return { tone: 'warn', label: AGENT_UPDATE_NEEDED_PREFIX + sectionLabels(s.agentUpdateNeeded) };
-  }
+  if (s.agentUpdateNeeded?.length) return { tone: 'warn', label: AGENT_UPDATE_NEEDED, sections: s.agentUpdateNeeded };
   if (s.inSync) {
     const outcomes = parseOutcomes(s.lastCommand?.detail)?.outcomes ?? {};
     const deferred = Object.values(outcomes).some((o) => o.startsWith('deferred'));

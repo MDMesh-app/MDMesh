@@ -82,4 +82,11 @@ describe('the configuration panel for an agent that isn’t device owner', () =>
     panel({ ...status, needsDeviceOwner: ['appPermissions'], lastCommand: { id: 1, status: 'failed' } }, false);
     expect(screen.getByRole('button', { name: /Retry apply/ })).toBeTruthy();
   });
+
+  it('keeps the retry when a setting failed', () => {
+    const detail = JSON.stringify({ outcomes: { 'policies.camera': 'failed: no' } });
+    panel({ ...status, needsDeviceOwner: ['appPermissions'], lastCommand: { id: 1, status: 'done', detail } }, false);
+    expect(screen.queryByText('Device owner needed')).toBeNull();
+    expect(screen.getByRole('button', { name: /Retry apply/ })).toBeTruthy();
+  });
 });

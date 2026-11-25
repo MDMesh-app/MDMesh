@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { defineMessages, useIntl } from 'react-intl';
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import {
   getDeviceByNumber,
@@ -243,7 +244,20 @@ function DeviceName({
  * page loads and polls the device; its tabs and rail groups are the registry's `device.tab` and `device.railGroup`
  * contributions, core's (ext/core/device.tsx) and extensions' alike, which read it through `useDevice()`.
  */
+const messages = defineMessages({
+  notSent: { id: 'device.retry.notSent', defaultMessage: 'Not sent' },
+  needsAgentUpdate: {
+    id: 'device.retry.needsAgentUpdate',
+    defaultMessage: 'The device has what its agent can apply. Update the agent for the rest.',
+  },
+  needsDeviceOwner: {
+    id: 'device.retry.needsDeviceOwner',
+    defaultMessage: 'The device has what its agent can apply. The rest needs the agent to be device owner.',
+  },
+});
+
 export function DeviceDetailPage() {
+  const intl = useIntl();
   const { id = '' } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -658,9 +672,9 @@ export function DeviceDetailPage() {
       refresh();
       if (result === 'inSync') toast.push('ok', 'Already applied', 'The device has the current configuration.');
       else if (result === 'agentUpdateNeeded')
-        toast.push('warn', 'Not sent', 'The device has what its agent can apply. Update the agent for the rest.');
+        toast.push('warn', intl.formatMessage(messages.notSent), intl.formatMessage(messages.needsAgentUpdate));
       else if (result === 'needsDeviceOwner')
-        toast.push('warn', 'Not sent', 'The device has what its agent can apply. The rest needs the agent to be device owner.');
+        toast.push('warn', intl.formatMessage(messages.notSent), intl.formatMessage(messages.needsDeviceOwner));
       else if (result === 'unsupported' || result === 'noConfiguration')
         toast.push('warn', 'Not sent', result === 'unsupported' ? 'The device’s agent is too old for configurations.' : 'The device has no configuration.');
       else if (connected === false) toast.push('warn', ...notConnected(number, 'command'));

@@ -1,4 +1,5 @@
 import { useId, useMemo, useState, type ReactNode } from 'react';
+import { defineMessages, FormattedMessage, useIntl } from 'react-intl';
 import { Link } from 'react-router';
 import {
   ACTION_TEMPLATES,
@@ -6,9 +7,10 @@ import {
   type CommandHistoryItem,
   type CommandTemplateExt,
 } from '../api/commands';
-import { AGENT_UPDATE_NEEDED_PREFIX, DEVICE_RESET_LABEL, SOME_DEFERRED_LABEL, sectionLabels, staleCause, summarizeStatus, type ConfigStatus } from '../api/configSync';
+import { AGENT_UPDATE_NEEDED, DEVICE_RESET_LABEL, SOME_DEFERRED_LABEL, staleCause, summarizeStatus, type ConfigStatus } from '../api/configSync';
 import type { DeviceEvent } from '../api/events';
 import { DO_NOT_TRACK_HINT } from '../api/locationTracking';
+import { sectionList } from '../data/configSections';
 import { paths } from '../routes';
 import {
   Button,
@@ -102,6 +104,15 @@ function OutcomeGrid({ list }: { list: Outcome[] }) {
   );
 }
 
+const configMessages = defineMessages({
+  agentUpdateTitle: { id: 'device.config.agentUpdateTitle', defaultMessage: 'Agent update needed' },
+  agentUpdateOwner: {
+    id: 'device.config.agentUpdateOwner',
+    defaultMessage: 'App permissions also need the agent to be device owner.',
+  },
+  deviceOwnerTitle: { id: 'device.config.deviceOwnerTitle', defaultMessage: 'Device owner needed' },
+});
+
 export function ConfigPanel({
   status,
   configName,
@@ -125,6 +136,7 @@ export function ConfigPanel({
   /** The device's recent events: one may say why its configuration is out of date ([staleCause]). */
   events?: ReadonlyArray<DeviceEvent>;
 }) {
+  const intl = useIntl();
   const titleId = useId();
   const verdict = summarizeStatus(status);
   const parsed = parseOutcomes(status?.lastCommand?.detail);
@@ -225,7 +237,7 @@ export function ConfigPanel({
   }
 
   // A re-send or an agent update doesn't bring these.
-  const needsOwner = verdict.label === 'Out of sync' && (status.needsDeviceOwner?.length ?? 0) > 0;
+  const needsOwner = verdict.label === 'Out of sync' && failed === 0 && (status.needsDeviceOwner?.length ?? 0) > 0;
   let tone: PanelTone = 'warn';
   let title = 'Configuration out of sync';
   let text: ReactNode = (
@@ -241,15 +253,26 @@ export function ConfigPanel({
         enforcement.
       </>
     );
-  } else if (verdict.label.startsWith(AGENT_UPDATE_NEEDED_PREFIX)) {
-    title = 'Agent update needed';
+  } else if (verdict.label === AGENT_UPDATE_NEEDED) {
+    title = intl.formatMessage(configMessages.agentUpdateTitle);
     text = (
       <>
-        {strongName} sets {sectionLabels(status.agentUpdateNeeded ?? [])}, which this device’s agent doesn’t apply.
-        Update the agent (<Link to={`${paths.settings}#agent-rollout`}>Settings → Agent rollout</Link>).
-        {isDeviceOwner === false && status.agentUpdateNeeded?.includes('appPermissions')
-          ? ' App permissions also need the agent to be device owner.'
-          : null}
+        <FormattedMessage
+          id="device.config.agentUpdateText"
+          defaultMessage="{name} sets {sections}, which this device’s agent doesn’t apply. Update the agent (<a>Settings → Agent rollout</a>)."
+          description={'name: the configuration; sections: a list such as "Connectivity"'}
+          values={{
+            name: strongName,
+            sections: sectionList(intl, status.agentUpdateNeeded ?? []),
+            a: (chunks) => <Link to={`${paths.settings}#agent-rollout`}>{chunks}</Link>,
+          }}
+        />
+        {isDeviceOwner === false && status.agentUpdateNeeded?.includes('appPermissions') ? (
+          <>
+            {' '}
+            <FormattedMessage {...configMessages.agentUpdateOwner} />
+          </>
+        ) : null}
       </>
     );
   } else if (verdict.label === 'Apply failed' || failed > 0) {
@@ -302,12 +325,14 @@ export function ConfigPanel({
       </>
     );
   } else if (needsOwner) {
-    title = 'Device owner needed';
+    title = intl.formatMessage(configMessages.deviceOwnerTitle);
     text = (
-      <>
-        {strongName} sets {sectionLabels(status.needsDeviceOwner ?? [])}, which an agent applies only as device owner.
-        An agent update doesn’t change that.
-      </>
+      <FormattedMessage
+        id="device.config.deviceOwnerText"
+        defaultMessage="{name} sets {sections}, which an agent applies only as device owner. An agent update doesn’t change that."
+        description={'name: the configuration; sections: a list such as "App permissions"'}
+        values={{ name: strongName, sections: sectionList(intl, status.needsDeviceOwner ?? []) }}
+      />
     );
   }
 

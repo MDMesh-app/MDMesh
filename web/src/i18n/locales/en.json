@@ -11,5 +11,53 @@
   },
   "app.notFound.title": {
     "defaultMessage": "Page not found"
+  },
+  "configSync.agentUpdate.count": {
+    "defaultMessage": "{count} agent update needed",
+    "description": "How many devices need an agent update, in a line of counts such as \"3 in sync · 1 agent update needed\""
+  },
+  "configSync.agentUpdate.label": {
+    "defaultMessage": "Agent update needed for: {sections}"
+  },
+  "configSync.section.appPermissions": {
+    "defaultMessage": "App permissions"
+  },
+  "configSync.section.connectivity": {
+    "defaultMessage": "Connectivity"
+  },
+  "configSync.section.kiosk": {
+    "defaultMessage": "Kiosk mode"
+  },
+  "configSync.section.location": {
+    "defaultMessage": "Location reporting"
+  },
+  "configSync.section.policies": {
+    "defaultMessage": "Policies"
+  },
+  "device.config.agentUpdateOwner": {
+    "defaultMessage": "App permissions also need the agent to be device owner."
+  },
+  "device.config.agentUpdateText": {
+    "defaultMessage": "{name} sets {sections}, which this device’s agent doesn’t apply. Update the agent (<a>Settings → Agent rollout</a>).",
+    "description": "name: the configuration; sections: a list such as \"Connectivity\""
+  },
+  "device.config.agentUpdateTitle": {
+    "defaultMessage": "Agent update needed"
+  },
+  "device.config.deviceOwnerText": {
+    "defaultMessage": "{name} sets {sections}, which an agent applies only as device owner. An agent update doesn’t change that.",
+    "description": "name: the configuration; sections: a list such as \"App permissions\""
+  },
+  "device.config.deviceOwnerTitle": {
+    "defaultMessage": "Device owner needed"
+  },
+  "device.retry.needsAgentUpdate": {
+    "defaultMessage": "The device has what its agent can apply. Update the agent for the rest."
+  },
+  "device.retry.needsDeviceOwner": {
+    "defaultMessage": "The device has what its agent can apply. The rest needs the agent to be device owner."
+  },
+  "device.retry.notSent": {
+    "defaultMessage": "Not sent"
   }
 }

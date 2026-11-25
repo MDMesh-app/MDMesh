@@ -1,8 +1,11 @@
 // The lines under a configuration, and the count the Delete dialog warns with. Wiped devices sit outside total, but the
 // server's delete rule counts them.
+import { createIntl } from 'react-intl';
 import { describe, expect, it } from 'vitest';
 import type { ConfigSyncSummary } from '../../api/configSync';
 import { devicesBlockingDelete, syncLine, usedByLine, wipedOnly, wipedOnlyLine } from './sync';
+
+const intl = createIntl({ locale: 'en' });
 
 const row = (extra: Partial<ConfigSyncSummary> = {}): ConfigSyncSummary => ({
   configurationId: 3,
@@ -16,12 +19,12 @@ const row = (extra: Partial<ConfigSyncSummary> = {}): ConfigSyncSummary => ({
 
 describe('a configuration with only wiped devices', () => {
   it('says so instead of "Not used by any device yet"', () => {
-    expect(syncLine(row({ wiped: 1 }), false)).toEqual({ segments: [], text: 'Used only by 1 wiped device', tone: 'idle' });
-    expect(syncLine(row({ wiped: 2 }), false).text).toBe('Used only by 2 wiped devices');
+    expect(syncLine(intl, row({ wiped: 1 }), false)).toEqual({ segments: [], text: 'Used only by 1 wiped device', tone: 'idle' });
+    expect(syncLine(intl, row({ wiped: 2 }), false).text).toBe('Used only by 2 wiped devices');
   });
 
   it('says so even when the rest of the page could not be checked', () => {
-    expect(syncLine(row({ wiped: 1 }), true).text).toBe('Used only by 1 wiped device');
+    expect(syncLine(intl, row({ wiped: 1 }), true).text).toBe('Used only by 1 wiped device');
   });
 
   it('has no "Used by" line, so the editor falls to the wiped one', () => {
@@ -35,7 +38,7 @@ describe('a configuration with live devices', () => {
   const s = row({ total: 2, inSync: 2, wiped: 1 });
 
   it('reads as its live devices, wiped ones aside', () => {
-    expect(syncLine(s, false).text).toBe('All 2 in sync');
+    expect(syncLine(intl, s, false).text).toBe('All 2 in sync');
     expect(usedByLine(s)).toEqual({ count: 2, rest: ', both in sync.' });
     expect(wipedOnly(s)).toBe(0);
     expect(wipedOnlyLine(s)).toBeNull();
@@ -44,11 +47,11 @@ describe('a configuration with live devices', () => {
 
 describe('devices whose agent needs an update for a section the configuration sets', () => {
   it('are named next to the sync counts, which they stay part of', () => {
-    expect(syncLine(row({ total: 2, inSync: 2, agentUpdateNeeded: 1 }), false)).toMatchObject({
+    expect(syncLine(intl, row({ total: 2, inSync: 2, agentUpdateNeeded: 1 }), false)).toMatchObject({
       text: 'All 2 in sync · 1 agent update needed',
       tone: 'warn',
     });
-    expect(syncLine(row({ total: 3, inSync: 2, neverSeen: 1, agentUpdateNeeded: 2 }), false)).toMatchObject({
+    expect(syncLine(intl, row({ total: 3, inSync: 2, neverSeen: 1, agentUpdateNeeded: 2 }), false)).toMatchObject({
       text: '2 of 3 in sync · 2 agent update needed · 1 not reported yet',
       tone: 'warn',
     });
@@ -57,10 +60,10 @@ describe('devices whose agent needs an update for a section the configuration se
 
 describe('an unused configuration, and an older server that sends no wiped count', () => {
   it('still reads as unused', () => {
-    expect(syncLine(row(), false).text).toBe('Not used by any device yet');
-    expect(syncLine(row({ wiped: 0 }), false).text).toBe('Not used by any device yet');
-    expect(syncLine(undefined, false).text).toBe('Not used by any device yet');
-    expect(syncLine(undefined, true).text).toBe('Sync status unavailable');
+    expect(syncLine(intl, row(), false).text).toBe('Not used by any device yet');
+    expect(syncLine(intl, row({ wiped: 0 }), false).text).toBe('Not used by any device yet');
+    expect(syncLine(intl, undefined, false).text).toBe('Not used by any device yet');
+    expect(syncLine(intl, undefined, true).text).toBe('Sync status unavailable');
     expect(wipedOnlyLine(row())).toBeNull();
     expect(wipedOnlyLine(undefined)).toBeNull();
   });

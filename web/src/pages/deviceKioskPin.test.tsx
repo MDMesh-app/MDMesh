@@ -90,4 +90,15 @@ describe('Retry apply', () => {
     await waitFor(() => expect(toastText()).toContain('Already applied'));
     await settled();
   });
+
+  it.each([
+    ['agentUpdateNeeded', 'Update the agent for the rest.'],
+    ['needsDeviceOwner', 'The rest needs the agent to be device owner.'],
+  ])('says what the rest needs when the device has all its agent can apply (%s)', async (result, why) => {
+    openControl({ failed: true, retry: { result, connected: true } });
+    fireEvent.click(await screen.findByRole('button', { name: 'Retry apply' }));
+    await waitFor(() => expect(toastText()).toContain(why));
+    expect(toastText()).toContain('Not sent');
+    await settled();
+  });
 });

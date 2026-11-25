@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
-  AGENT_UPDATE_NEEDED_PREFIX,
+  AGENT_UPDATE_NEEDED,
   DEVICE_RESET_LABEL,
   DEVICE_RESET_REVISION,
   STALE_CAUSE_WINDOW_MS,
-  sectionLabels,
   staleCause,
   summarizeStatus,
   type ConfigStatus,
@@ -101,12 +100,8 @@ describe('an agent update needed', () => {
     agentUpdateNeeded: ['kiosk', 'connectivity', 'futureSection'],
   } as ConfigStatus;
 
-  it('names the sections, in the console’s words', () => {
-    expect(summarizeStatus(status)).toEqual({
-      tone: 'warn',
-      label: `${AGENT_UPDATE_NEEDED_PREFIX}Kiosk mode, Connectivity, futureSection`,
-    });
-    expect(sectionLabels(['appPermissions', 'location', 'policies'])).toBe('App permissions, Location reporting, Policies');
+  it('is the verdict, with the sections', () => {
+    expect(summarizeStatus(status)).toEqual({ tone: 'warn', label: AGENT_UPDATE_NEEDED, sections: status.agentUpdateNeeded });
   });
 
   it('is in sync without it, and an older server never sends it', () => {

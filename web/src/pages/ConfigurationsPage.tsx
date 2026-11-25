@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useIntl } from 'react-intl';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { getConfigurationApps, getConfigurations, type ConfigApp, type Configuration } from '../api/configurations';
 import { listApplications, type Application } from '../api/applications';
@@ -441,8 +442,9 @@ function MainApp({
 
 /** The sync bar and its line: how many of the configuration's devices run it. */
 function SyncCell({ row, failed, loaded }: { row?: ConfigSyncSummary; failed: boolean; loaded: boolean }) {
+  const intl = useIntl();
   if (!loaded) return <Skeleton width="60%" />;
-  const line = syncLine(row, failed);
+  const line = syncLine(intl, row, failed);
   return (
     <div className="v2-configs-sync">
       <StackedBar segments={line.segments} track />

@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { Route, Routes } from 'react-router';
 import { describe, expect, it } from 'vitest';
 import type { AuthUser } from '../api/auth';
-import { renderInConsole, ROLES, stubApi } from '../test/console';
+import { renderInConsole, ROLES, settled, stubApi } from '../test/console';
 import { useAuth } from './AuthContext';
 import { ProtectedRoute } from './ProtectedRoute';
 
@@ -40,10 +40,14 @@ describe('ProtectedRoute: another tab changes the account', () => {
     const { mounts, ui } = mountCounter();
     renderInConsole(ui, { user: ROLES.admin, path: '/devices/WH-12' });
     await screen.findByText('device page');
+    await settled();
     expect(mounts).toHaveLength(1);
 
     act(() => otherTabWrites(ROLES.observer));
     screen.getByText('device page');
+    expect(mounts).toHaveLength(2);
+    // The new account's role refresh mounts nothing more.
+    await settled();
     expect(mounts).toHaveLength(2);
   });
 
@@ -52,6 +56,7 @@ describe('ProtectedRoute: another tab changes the account', () => {
     const { mounts, ui } = mountCounter();
     renderInConsole(ui, { user: ROLES.observer, path: '/devices/WH-12' });
     await screen.findByText('device page');
+    await settled();
 
     const promoted = { ...ROLES.observer, userRole: { ...ROLES.observer.userRole, permissions: [{ name: 'configurations' }] } };
     act(() => otherTabWrites(promoted));

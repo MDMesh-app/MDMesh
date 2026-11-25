@@ -5,7 +5,7 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { useLocation } from 'react-router';
 import { describe, expect, it } from 'vitest';
 import { AppRoutes } from '../App';
-import { renderInConsole, stubApi } from '../test/console';
+import { renderInConsole, settled, stubApi } from '../test/console';
 
 // The pages answer after several requests, which a loaded machine stretches: generous waits for the data, and test
 // timeouts to match (a test that times out keeps clicking in the next one's page).
@@ -106,6 +106,7 @@ describe('wiped devices on Devices', () => {
     const menu = within(await screen.findByRole('menu'));
     const disabled = Object.fromEntries(menu.getAllByRole('menuitem').map((m) => [m.textContent, m.getAttribute('aria-disabled') === 'true']));
     expect(disabled).toEqual({ Lock: true, Ring: true, 'Change configuration': false, 'Delete': false });
+    await settled();
   }, SLOW);
 
   it('does not count a wiped device as a duplicate of its re-enrolled twin', async () => {
@@ -116,6 +117,7 @@ describe('wiped devices on Devices', () => {
     ] as typeof DEVICES;
     open('/devices', null, twins);
     await main().findByRole('link', { name: /Re-enrolled/ }, LOAD);
+    await settled();
     expect(main().queryByRole('button', { name: /^Duplicates/ })).toBeNull();
   }, SLOW);
 
@@ -124,6 +126,7 @@ describe('wiped devices on Devices', () => {
     await main().findByRole('link', { name: /Front desk/ }, LOAD);
     fireEvent.change(main().getByRole('searchbox', { name: 'Search devices' }), { target: { value: 'WH-9' } });
     expect(await main().findByText('Wiped devices show under Wiped.', undefined, LOAD)).toBeTruthy();
+    await settled();
   }, SLOW);
 });
 
@@ -138,6 +141,7 @@ describe('what a sync says', () => {
     expect(await screen.findByText(title, undefined, LOAD)).toBeTruthy();
     expect(toastOf(title)?.classList.contains(kind)).toBe(true);
     if (kind === 'warn') expect(screen.getByText('It syncs at its next check-in.')).toBeTruthy();
+    await settled();
   }, SLOW);
 
   it('after a command from the row menu, says when the device will get it', async () => {
@@ -165,6 +169,7 @@ describe('what a sync says', () => {
       fireEvent.click(actions.getByRole('button', { name: 'Sync now' }));
       expect(await screen.findByText('WH-1 isn’t connected right now', undefined, LOAD)).toBeTruthy();
       expect(toastOf('WH-1 isn’t connected right now')?.classList.contains('warn')).toBe(true);
+      await settled();
     },
     SLOW,
   );
@@ -185,6 +190,7 @@ describe('wiped devices on the Overview', () => {
   it('says so when every device was wiped, not that every device is online', async () => {
     open('/', null, DEVICES.filter((d) => d.wipedAt != null));
     await main().findByText('No active devices', undefined, LOAD);
+    await settled();
     expect(main().getAllByText('Every enrolled device was wiped.').length).toBeGreaterThan(0);
     expect(main().queryByText(/Every device is online/)).toBeNull();
     expect(main().queryByText('All clear')).toBeNull();
@@ -254,6 +260,7 @@ describe('a configuration with only wiped devices', () => {
   it('is not "All in sync" on the Overview', async () => {
     openWith('/', WIPED_ONLY);
     await main().findByText('Used only by 1 wiped device', undefined, LOAD);
+    await settled();
     expect(main().queryByText('All in sync')).toBeNull();
   }, SLOW);
 });
@@ -264,6 +271,7 @@ describe('a wiped device’s page', () => {
     async () => {
       const fetch = open('/devices/WH-9');
       const actions = within(await screen.findByRole('toolbar', { name: 'Quick actions' }, LOAD));
+      await settled();
       expect(within(document.querySelector('.v2-device-id') as HTMLElement).getByText('Wiped')).toBeTruthy();
       const notice = main().getByText(/The device erased itself/).closest('.v2-callout');
       expect(notice?.textContent).toMatch(

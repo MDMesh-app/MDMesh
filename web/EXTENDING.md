@@ -773,7 +773,7 @@ tests next to your code, as `*.test.tsx`, and render the whole console with `@md
 // web/src/extensions/netaccess/netaccess.test.tsx
 import { screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { renderConsole, stubApi } from '@mdmesh/console/testing';
+import { renderConsole, settled, stubApi } from '@mdmesh/console/testing';
 import netaccess from './index';
 
 describe('netaccess', () => {
@@ -781,6 +781,7 @@ describe('netaccess', () => {
     stubApi((path) => (path.endsWith('/plugin/main/private/available') ? [{ identifier: 'netaccess' }] : null));
     renderConsole({ extensions: [netaccess], path: '/network' });
     expect(await screen.findByText('Nothing blocked')).toBeTruthy();
+    await settled();
   });
 });
 ```
@@ -788,6 +789,8 @@ describe('netaccess', () => {
 - `renderConsole({ extensions, path, user })` renders the console's routes, shell and pages at `path`, signed in as
   `user` (a super-admin by default), with core and `extensions` registered. A problem with an extension throws.
 - `stubApi(answer)` answers every API call with an OK envelope: `answer(path, init)`'s value, or null.
+- `settled()` waits until every call is answered and the page has loaded. A test that ends with a call still
+  unanswered fails, so end it with `await settled()`.
 - `ROLES` holds the seeded roles as users (`superAdmin`, `admin`, `user`, `observer`), to test `requires`.
 - `registryOf(...extensions)` builds the registry alone, for a test of the manifest's validation.
 

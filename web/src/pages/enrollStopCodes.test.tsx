@@ -5,7 +5,7 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { chooseOption } from '../test/select';
 import { describe, expect, it, vi } from 'vitest';
 import { AppRoutes } from '../App';
-import { renderInConsole, stubApi } from '../test/console';
+import { renderInConsole, settled, stubApi } from '../test/console';
 
 const LOAD = { timeout: 10_000 };
 const SLOW = 20_000;
@@ -34,12 +34,14 @@ async function openEnroll(fetch: ReturnType<typeof stubApi>) {
   renderInConsole(<AppRoutes />, { path: '/enroll' });
   await waitFor(() => expect(posts(fetch, '/agent/v1/token')).toHaveLength(1), LOAD);
   await main().findByRole('button', { name: 'New code' }, LOAD);
+  await settled();
 }
 
 async function chooseBatch(fetch: ReturnType<typeof stubApi>) {
   chooseOption(main().getByRole('combobox', { name: 'Devices' }), { value: '25' });
   await waitFor(() => expect(posts(fetch, '/agent/v1/token')).toHaveLength(2), LOAD);
   await main().findByText('Up to 25 devices, then it stops working', undefined, LOAD);
+  await settled();
 }
 
 describe('Enroll: codes for a batch', () => {
@@ -64,6 +66,7 @@ describe('Enroll: codes for a batch', () => {
     await waitFor(() => expect(posts(fetch, '/agent/v1/token')).toHaveLength(4), LOAD);
     expect(JSON.parse(String(posts(fetch, '/agent/v1/token')[3][1]?.body))).toMatchObject({ maxUses: 25 });
     await waitFor(() => expect(main().queryByText(/you replaced still works/)).toBeNull(), LOAD);
+    await settled();
   }, SLOW);
 
   it('says nothing when the replaced code was single-use', async () => {
@@ -81,9 +84,11 @@ describe('Enroll: codes for a batch', () => {
     await chooseBatch(fetch);
     chooseOption(main().getByRole('combobox', { name: 'Devices' }), { value: '100' });
     await waitFor(() => expect(posts(fetch, '/agent/v1/token')).toHaveLength(3), LOAD);
+    await settled();
     chooseOption(main().getByRole('combobox', { name: 'Devices' }), { value: '10' });
     await waitFor(() => expect(posts(fetch, '/agent/v1/token')).toHaveLength(4), LOAD);
     expect(await main().findByText(/The 2 codes for a batch you replaced still work until/, undefined, LOAD)).toBeTruthy();
+    await settled();
   }, SLOW);
 
   it('says so when the server cannot stop codes, and keeps the dialog open', async () => {

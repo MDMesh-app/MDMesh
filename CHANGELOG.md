@@ -60,6 +60,9 @@ New
 - A quick start that stopped part way (a failed pull, a slow first start) can be finished: run it again with
   `MDMESH_DIR=<its directory>`, and it carries on with the same `.env` (past a seeded database too, with a new
   temporary admin password).
+- Enroll: the enrollment QR now carries the configuration's **Extra QR parameters** (Enrollment section), e.g. a
+  locale, a time zone or `PROVISIONING_SKIP_EDUCATION_SCREENS`. Entries naming the agent, its download or its enrollment
+  extras are never replaced.
 - Arm64: the server, web and supervisor images are built for linux/amd64 and linux/arm64, so the quick start and
   one-click updates run on Arm64 hosts such as Oracle Ampere (#205, thanks @sgofferj). On any other architecture,
   or on Arm64 with an `MDMESH_VERSION` that has no Arm64 images, the quick start stops and says why before it pulls

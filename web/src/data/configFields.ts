@@ -206,7 +206,7 @@ export const CONFIG_FIELDS: FieldDef[] = [
   { key: 'timeZone', label: 'Time zone', type: 'text', group: 'Advanced', help: "Olson time zone (e.g. America/New_York) or 'auto', set by the Headwind launcher." },
   { key: 'newServerUrl', label: 'Migrate to server URL', type: 'text', group: 'Advanced', help: 'Headwind launcher moved itself to this server.' },
   { key: 'eventReceivingComponent', label: 'Event receiver', type: 'text', group: 'Advanced', help: 'package/class that received Headwind launcher broadcasts.' },
-  { key: 'qrParameters', label: 'Extra QR parameters', type: 'textarea', group: 'Advanced', help: "Extra fields for Headwind's server QR. The MDMesh enrollment QR ignores them." },
+  { key: 'qrParameters', label: 'Extra QR parameters', type: 'textarea', group: 'Enrollment', enrollQr: true, help: 'Extra entries for the enrollment QR, e.g. "android.app.extra.PROVISIONING_LOCALE": "fr_FR". JSON members or one JSON object.', more: 'The Enroll page adds them to the code it shows for this configuration. Entries naming the agent, its download, its checksum or its enrollment extras are never replaced. Wi-Fi chosen on the Enroll page wins over Wi-Fi entries here.' },
   { key: 'adminExtras', label: 'QR admin extras', type: 'textarea', group: 'Advanced', help: 'Extra admin-extras entries for Headwind\'s server QR. MDMesh\'s QR ignores them.' },
 ];
 

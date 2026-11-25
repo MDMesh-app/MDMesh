@@ -36,8 +36,67 @@ export interface WifiConfig {
   security?: WifiSecurity;
 }
 
-/** The provisioning JSON a fresh device scans (6-tap → QR scanner). Pass `wifi` to pre-connect it. */
-export function buildProvisioningPayload(token: string, wifi?: WifiConfig): string {
+/**
+ * Entries the configuration's Extra QR parameters can never replace: they say which agent is installed, where from,
+ * how it is verified, and which server and token it enrolls with.
+ */
+export const PROTECTED_QR_KEYS: ReadonlySet<string> = new Set([
+  'android.app.extra.PROVISIONING_DEVICE_ADMIN_COMPONENT_NAME',
+  'android.app.extra.PROVISIONING_DEVICE_ADMIN_SIGNATURE_CHECKSUM',
+  'android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_CHECKSUM',
+  'android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_DOWNLOAD_LOCATION',
+  'android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_NAME',
+  'android.app.extra.PROVISIONING_ADMIN_EXTRAS_BUNDLE',
+]);
+
+/** The configuration's Extra QR parameters, read: the entries to add, or why they can't be. */
+export interface ExtraQrParameters {
+  entries: Record<string, unknown>;
+  /** Protected entries that were left out (see PROTECTED_QR_KEYS). */
+  ignored: string[];
+  /** Set when the text isn't JSON: nothing is added then. */
+  error: string | null;
+}
+
+/**
+ * Reads a configuration's Extra QR parameters (`qrParameters`). Two forms are accepted: a JSON object, or its members
+ * without the braces, one or more per line, as Headwind's "Extra QR parameters" field took them, e.g.
+ *
+ *     "android.app.extra.PROVISIONING_LOCALE": "fr_FR",
+ *     "android.app.extra.PROVISIONING_TIME_ZONE": "Europe/Paris"
+ *
+ * A trailing comma is allowed. Empty or blank text adds nothing.
+ */
+export function parseExtraQrParameters(text: unknown): ExtraQrParameters {
+  const none: ExtraQrParameters = { entries: {}, ignored: [], error: null };
+  if (typeof text !== 'string' || text.trim() === '') return none;
+  let body = text.trim();
+  if (body.startsWith('{')) body = body.replace(/,\s*}\s*$/, '}');
+  else if (!body.startsWith('[')) body = `{${body.replace(/,\s*$/, '')}}`;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch (e) {
+    return { ...none, error: `Extra QR parameters aren't valid JSON: ${(e as Error).message}` };
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { ...none, error: 'Extra QR parameters must be JSON members ("key": value), or one JSON object.' };
+  }
+  const entries: Record<string, unknown> = {};
+  const ignored: string[] = [];
+  for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+    if (PROTECTED_QR_KEYS.has(key)) ignored.push(key);
+    else entries[key] = value;
+  }
+  return { entries, ignored, error: null };
+}
+
+/**
+ * The provisioning JSON a fresh device scans (6-tap → QR scanner). Pass `wifi` to pre-connect it, and `extras` (from
+ * {@link parseExtraQrParameters}) for the configuration's own entries: they are added after the core ones and can
+ * change any but the protected ones; the Wi-Fi chosen on the Enroll page wins over Wi-Fi entries in them.
+ */
+export function buildProvisioningPayload(token: string, wifi?: WifiConfig, extras?: Record<string, unknown>): string {
   const payload: Record<string, unknown> = {
     'android.app.extra.PROVISIONING_DEVICE_ADMIN_COMPONENT_NAME': ADMIN_COMPONENT,
     'android.app.extra.PROVISIONING_DEVICE_ADMIN_SIGNATURE_CHECKSUM': SIGNATURE_CHECKSUM,
@@ -49,6 +108,9 @@ export function buildProvisioningPayload(token: string, wifi?: WifiConfig): stri
     'android.app.extra.PROVISIONING_SKIP_ENCRYPTION': true,
     'android.app.extra.PROVISIONING_LEAVE_ALL_SYSTEM_APPS_ENABLED': true,
   };
+  for (const [key, value] of Object.entries(extras ?? {})) {
+    if (!PROTECTED_QR_KEYS.has(key)) payload[key] = value;
+  }
   const ssid = wifi?.ssid?.trim();
   // A network the device can't join (no password, EAP) would stop setup at the Wi-Fi step: left out instead, the
   // device asks for Wi-Fi on its screen. The Enroll page says why (enroll/checks.ts).

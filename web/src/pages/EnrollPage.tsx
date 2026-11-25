@@ -7,7 +7,13 @@ import { agentUnavailable } from '../data/updateStatus';
 import { Link } from 'react-router';
 import { ARRIVAL_LABEL, arrivalNews, useArrivals, type Arrival } from '../enroll/arrivals';
 import { addressProblem, wifiProblem } from '../enroll/checks';
-import { agentApkUrl, buildProvisioningPayload, serverBaseUrl, type WifiSecurity } from '../enroll/provisioning';
+import {
+  agentApkUrl,
+  buildProvisioningPayload,
+  parseExtraQrParameters,
+  serverBaseUrl,
+  type WifiSecurity,
+} from '../enroll/provisioning';
 import {
   Button,
   Callout,
@@ -447,15 +453,19 @@ export function EnrollPage() {
   );
   const address = useMemo(() => addressProblem(serverBaseUrl(), serverSetting), [serverSetting]);
   const expired = !!token?.expiresAt && token.expiresAt <= now;
+  // The chosen configuration's Extra QR parameters (Advanced section): added to the code, protected entries aside.
+  const qrExtras = useMemo(() => parseExtraQrParameters(selected?.qrParameters), [selected]);
+  const extraCount = Object.keys(qrExtras.entries).length;
   const payload = useMemo(
     () =>
       token
         ? buildProvisioningPayload(
             token.value,
             wifiInCode ? { ssid: wifiSsid, password: wifiPass, security: wifiSec } : undefined,
+            qrExtras.entries,
           )
         : null,
-    [token, wifiInCode, wifiSsid, wifiPass, wifiSec],
+    [token, wifiInCode, wifiSsid, wifiPass, wifiSec, qrExtras],
   );
 
   let expiresValue: ReactNode = busy ? (
@@ -478,6 +488,15 @@ export function EnrollPage() {
     { key: 'configuration', label: 'Configuration', value: givesName },
     ...(withWifi && wifiOn
       ? [{ key: 'wifi', label: 'Joins Wi-Fi', value: wifiIssue ? 'Not in the code (see Wi-Fi above)' : ssid || 'No network name yet' }]
+      : []),
+    ...(qrExtras.error || extraCount > 0 || qrExtras.ignored.length > 0
+      ? [{
+          key: 'qrExtras',
+          label: 'Extra QR entries',
+          value: qrExtras.error
+            ? `None added: ${qrExtras.error}`
+            : `${extraCount} from the configuration${qrExtras.ignored.length ? ` (${qrExtras.ignored.length} protected left out)` : ''}`,
+        }]
       : []),
     { key: 'use', label: 'Use', value: usesText(token?.maxUses ?? uses) },
     { key: 'expires', label: 'Expires', value: expiresValue },

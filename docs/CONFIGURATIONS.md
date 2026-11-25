@@ -79,6 +79,18 @@ to the server. Each setting's help text in the console explains the details.
 **Enroll** page can put this Wi-Fi network in the enrollment QR code, so a new device joins it during setup. The
 password is in the QR code in plain text.
 
+**Extra QR parameters** are more entries for the enrollment QR code, for example the device's language and time zone:
+
+```
+"android.app.extra.PROVISIONING_LOCALE": "fr_FR",
+"android.app.extra.PROVISIONING_TIME_ZONE": "Europe/Paris"
+```
+
+Write them as JSON members, one or more per line (a trailing comma is fine), or as one JSON object. The **Enroll** page
+adds them to the code it shows for the configuration and says how many it added, or why it added none. Entries that
+name the agent, its download, its checksums or its enrollment extras are never replaced, and the Wi-Fi chosen on the
+Enroll page wins over Wi-Fi entries here. Like the Wi-Fi password, they are in the QR code in plain text.
+
 ### Legacy launcher settings
 
 Older settings that only the Headwind launcher read (collapsed: select **Show settings**). The MDMesh agent doesn't

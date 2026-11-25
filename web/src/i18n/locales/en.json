@@ -33,6 +33,9 @@
   "enroll.setup.mobileData": {
     "defaultMessage": "mobile data"
   },
+  "enroll.setup.notLoaded": {
+    "defaultMessage": "Not added: the configuration didn't load, so the code has none of its setup entries"
+  },
   "enroll.setup.nothing": {
     "defaultMessage": "Nothing added"
   },
@@ -42,10 +45,16 @@
   "enroll.setup.protectedLeftOut": {
     "defaultMessage": "{summary} ({count} protected left out)"
   },
+  "enroll.setup.serverDefault": {
+    "defaultMessage": "Not added: choose a configuration to add its setup entries (the page can't tell which one is the server default)"
+  },
   "enroll.setup.skipIntro": {
     "defaultMessage": "intro screens skipped"
   },
   "enroll.setup.unreadable": {
-    "defaultMessage": "Extra QR parameters left out: {error}"
+    "defaultMessage": "{summary} (other Extra QR parameters left out: {error})"
+  },
+  "enroll.setup.wifiLeftOut": {
+    "defaultMessage": "{count, plural, one {# Wi-Fi entry left out} other {# Wi-Fi entries left out}}: only a hidden network or a proxy, and only with the Wi-Fi chosen here"
   }
 }

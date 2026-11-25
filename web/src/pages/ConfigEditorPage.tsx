@@ -86,7 +86,13 @@ import { kioskColours, type FitMode } from '../data/kioskScrim';
 import { KioskPlacement } from './configurations/KioskPlacement';
 import { KioskGallery } from './configurations/KioskGallery';
 import { AgentTag, AppSelect, FieldControl, FieldHelp } from './configurations/controls';
-import { joinQrParameters, parseExtraQrParameters, settingsInRest, splitQrParameters } from '../enroll/provisioning';
+import {
+  joinQrParameters,
+  parseExtraQrParameters,
+  settingsInRest,
+  splitQrParameters,
+  type QrParametersSplit,
+} from '../enroll/provisioning';
 import { defineMessage, defineMessages, useIntl, type MessageDescriptor } from 'react-intl';
 
 const enrollmentMessages = defineMessages({
@@ -352,37 +358,54 @@ function appPermissionsSignature(c: Configuration): string {
     .join(',');
 }
 
+/**
+ * The Extra QR parameters texts an editor wrote last, with the settings and the typed rest each was written from.
+ * Text with no settings that is only setting entries reads back as those settings (splitQrParameters), so while
+ * editing, the editor reads back what it wrote and the typed text is never taken apart under the cursor. One per
+ * editor; a few entries, so a state updater run twice (StrictMode) still finds the text it started from.
+ */
+type TypedQr = Map<string, QrParametersSplit>;
+
+function qrSplit(c: Configuration, typed: TypedQr | null): QrParametersSplit {
+  const text = c.qrParameters;
+  return (typeof text === 'string' && typed?.get(text)) || splitQrParameters(text);
+}
+
 /** A setup setting kept in the Extra QR parameters (null when unset, as Android's default). */
-function qrSettingOf(c: Configuration, qrKey: string): unknown {
-  const v = splitQrParameters(c.qrParameters).settings[qrKey];
+function qrSettingOf(c: Configuration, qrKey: string, typed: TypedQr | null): unknown {
+  const v = qrSplit(c, typed).settings[qrKey];
   return v == null || v === false || v === '' ? null : v;
 }
 
 /** The Extra QR parameters other than the setup settings, as the editor's field shows them. */
-function qrRestOf(c: Configuration): string {
-  return splitQrParameters(c.qrParameters).rest;
+function qrRestOf(c: Configuration, typed: TypedQr | null): string {
+  return qrSplit(c, typed).rest;
 }
 
 /** The Extra QR parameters with one part replaced; back to unset when nothing is left and nothing was stored. */
-function withQr(d: Configuration, change: { setting?: [string, unknown]; rest?: string }): unknown {
-  const split = splitQrParameters(d.qrParameters);
+function withQr(d: Configuration, change: { setting?: [string, unknown]; rest?: string }, typed: TypedQr): unknown {
+  const split = qrSplit(d, typed);
   const settings = { ...split.settings };
   if (change.setting) settings[change.setting[0]] = change.setting[1];
-  const text = joinQrParameters(settings, change.rest ?? split.rest);
+  const rest = change.rest ?? split.rest;
+  const text = joinQrParameters(settings, rest);
+  typed.delete(text);
+  typed.set(text, { settings, rest });
+  if (typed.size > 4) typed.delete(typed.keys().next().value as string);
   return text === '' && d.qrParameters == null ? null : text;
 }
 
-function changedKeys(before: Configuration, after: Configuration): Set<string> {
+function changedKeys(before: Configuration, after: Configuration, typed: TypedQr | null = null): Set<string> {
   const out = new Set<string>();
   for (const f of CONFIG_FIELDS) {
     // A setting kept in the Extra QR parameters changes when its entry does; the parameters themselves count as
     // changed only for their other entries, so one switch is one change.
     if (f.key === 'qrParameters') {
-      if (norm(qrRestOf(before) || null) !== norm(qrRestOf(after) || null)) out.add(f.key);
+      if (norm(qrRestOf(before, typed) || null) !== norm(qrRestOf(after, typed) || null)) out.add(f.key);
       continue;
     }
-    const was = f.qrKey ? qrSettingOf(before, f.qrKey) : before[f.key];
-    const is = f.qrKey ? qrSettingOf(after, f.qrKey) : after[f.key];
+    const was = f.qrKey ? qrSettingOf(before, f.qrKey, typed) : before[f.key];
+    const is = f.qrKey ? qrSettingOf(after, f.qrKey, typed) : after[f.key];
     if (norm(was) !== norm(is)) out.add(f.key);
   }
   // The background image picker is a managed asset control rather than a generic CONFIG_FIELDS control.
@@ -495,17 +518,20 @@ function Editor({
     };
   }, [appsSource, appsAttempt]);
 
+  const typedQr = useRef<TypedQr>(new Map());
   const set = useCallback((key: string, value: unknown) => setDraft((d) => {
     const qrKey = FIELD[key]?.qrKey;
-    if (qrKey) return { ...d, qrParameters: withQr(d, { setting: [qrKey, value] }) };
-    if (key === 'qrParameters') return { ...d, qrParameters: withQr(d, { rest: value == null ? '' : String(value) }) };
+    if (qrKey || key === 'qrParameters') {
+      const change = qrKey ? { setting: [qrKey, value] as [string, unknown] } : { rest: value == null ? '' : String(value) };
+      return { ...d, qrParameters: withQr(d, change, typedQr.current) };
+    }
     if (key === 'locationServices') {
       return { ...d, locationServices: value, locationServicesAction: locationServicesAction(value) };
     }
     return { ...d, [key]: value };
   }), []);
 
-  const changed = useMemo(() => changedKeys(baseline, draft), [baseline, draft]);
+  const changed = useMemo(() => changedKeys(baseline, draft, typedQr.current), [baseline, draft]);
 
   const kioskOn = draft.kioskMode === true;
   const allowed: ConfigApp[] = (draft.applications as ConfigApp[] | undefined) ?? [];
@@ -705,8 +731,8 @@ function Editor({
     if (!field) return null;
     // A setting kept in the Extra QR parameters reads its entry there, and waits while that text can't be read.
     // The setup settings read their entry in the Extra QR parameters, whose own field shows only the other entries.
-    const value = field.qrKey ? qrSettingOf(draft, field.qrKey) : key === 'qrParameters' ? qrRestOf(draft) : draft[key];
-    const stored = field.qrKey ? qrSettingOf(baseline, field.qrKey) : key === 'qrParameters' ? qrRestOf(baseline) || null : baseline[key];
+    const value = field.qrKey ? qrSettingOf(draft, field.qrKey, typedQr.current) : key === 'qrParameters' ? qrRestOf(draft, typedQr.current) : draft[key];
+    const stored = field.qrKey ? qrSettingOf(baseline, field.qrKey, typedQr.current) : key === 'qrParameters' ? qrRestOf(baseline, typedQr.current) || null : baseline[key];
     // An entry typed by hand that the list doesn't offer stays selectable as itself.
     const def =
       field.qrKey && field.options && typeof value === 'string' && value && !field.options.some((o) => o.value === value)
@@ -717,7 +743,7 @@ function Editor({
     const help = HELP[key] ?? def.help;
     let qrNote: { tone: 'alert' | 'warn'; text: string } | null = null;
     if (key === 'qrParameters') {
-      const rest = qrRestOf(draft);
+      const rest = qrRestOf(draft, typedQr.current);
       const parsed = parseExtraQrParameters(rest);
       const dupes = settingsInRest(rest);
       if (parsed.error) qrNote = { tone: 'alert', text: intl.formatMessage(qrInvalid) };

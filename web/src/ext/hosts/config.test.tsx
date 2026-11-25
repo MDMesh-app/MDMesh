@@ -846,12 +846,13 @@ describe('enrollment setup settings', () => {
     fireEvent.click(skip);
     chooseOption(screen.getByRole('combobox', { name: 'Language' }), { value: 'fr_FR' });
     fireEvent.click(screen.getByRole('switch', { name: 'Enroll over mobile data' }));
+    // Checked before Save: once saved, the editor goes back to the configuration list.
+    expect((screen.getByRole('textbox', { name: 'Extra QR parameters' }) as HTMLTextAreaElement).value).toBe('"x.y": 1');
     await save();
     await waitFor(() => expect(puts).toHaveLength(1));
     expect(puts[0].qrParameters).toBe(
-      '"android.app.extra.PROVISIONING_SKIP_EDUCATION_SCREENS": true,\n"android.app.extra.PROVISIONING_LOCALE": "fr_FR",\n"x.y": 1',
+      '"android.app.extra.PROVISIONING_SKIP_EDUCATION_SCREENS": true,\n"android.app.extra.PROVISIONING_LOCALE": "fr_FR",\n\n"x.y": 1',
     );
-    expect((screen.getByRole('textbox', { name: 'Extra QR parameters' }) as HTMLTextAreaElement).value).toBe('"x.y": 1');
     expect(puts[0].mobileEnrollment).toBe(true);
     expect(puts[0]).not.toHaveProperty('qrSkipEducation');
     expect(puts[0]).not.toHaveProperty('qrLocale');
@@ -871,7 +872,30 @@ describe('enrollment setup settings', () => {
     fireEvent.click(skip);
     await save();
     await waitFor(() => expect(puts).toHaveLength(1));
-    expect(puts[0].qrParameters).toBe('"android.app.extra.PROVISIONING_SKIP_EDUCATION_SCREENS": true,\n"x.y": tru');
+    expect(puts[0].qrParameters).toBe('"android.app.extra.PROVISIONING_SKIP_EDUCATION_SCREENS": true,\n\n"x.y": tru');
+  });
+
+  it('keeps an entry typed first that repeats a setting as typed text: the setting stays, the entry is pointed out', async () => {
+    const LOCALE = '"android.app.extra.PROVISIONING_LOCALE"';
+    const { puts } = open({ config: { qrParameters: `${LOCALE}: "fr_FR"` } });
+    const field = (await screen.findByRole('textbox', { name: 'Extra QR parameters' })) as HTMLTextAreaElement;
+    fireEvent.change(field, { target: { value: `${LOCALE}: "de_DE"` } });
+    expect(field.value).toBe(`${LOCALE}: "de_DE"`);
+    expect(screen.getByRole('combobox', { name: 'Language' }).textContent).toContain('fr_FR');
+    expect(screen.getByText(/PROVISIONING_LOCALE: use the setting above instead/)).toBeTruthy();
+    await save();
+    await waitFor(() => expect(puts).toHaveLength(1));
+    expect(puts[0].qrParameters).toBe(`${LOCALE}: "fr_FR",\n\n${LOCALE}: "de_DE"`);
+  });
+
+  it('keeps an entry typed alone in the field while editing, with no setting set', async () => {
+    const LOCALE = '"android.app.extra.PROVISIONING_LOCALE"';
+    open({ config: {} });
+    const field = (await screen.findByRole('textbox', { name: 'Extra QR parameters' })) as HTMLTextAreaElement;
+    fireEvent.change(field, { target: { value: `${LOCALE}: "de_DE"` } });
+    expect(field.value).toBe(`${LOCALE}: "de_DE"`);
+    expect(screen.getByRole('combobox', { name: 'Language' }).textContent).not.toContain('de_DE');
+    expect(screen.getByText(/PROVISIONING_LOCALE: use the setting above instead/)).toBeTruthy();
   });
 
   it('points out an entry typed by hand that has a setting of its own', async () => {

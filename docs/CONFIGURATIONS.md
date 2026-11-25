@@ -79,9 +79,10 @@ to the server. Each setting's help text in the console explains the details.
 **Enroll** page can put this Wi-Fi network in the enrollment QR code, so a new device joins it during setup. The
 password is in the QR code in plain text.
 
-Under **Setup screens**, a few settings Android applies while the device sets itself up go in the enrollment QR code:
+**Hidden network**, under the setup Wi-Fi, says that network doesn't broadcast its name; it goes in the code only with
+the Wi-Fi chosen on the Enroll page. Under **Setup screens**, a few settings Android applies while the device sets
+itself up go in the enrollment QR code:
 
-- **Hidden network**: the setup Wi-Fi doesn't broadcast its name.
 - **Skip intro screens**: hides Android's education screens (Android 8 and later). The setup wizard steps that come
   after enrollment, such as Google's terms, are up to the device maker and still show.
 - **Language** and **Time zone**: set during setup. A value the list doesn't offer can be written in Extra QR
@@ -89,7 +90,7 @@ Under **Setup screens**, a few settings Android applies while the device sets it
 - **Enroll over mobile data**: lets setup download the agent on mobile data (Android 10 and later).
 
 Hidden network, Skip intro screens, Language and Time zone are stored at the top of **Extra QR parameters**, one per
-line, so a configuration still has one place for everything its QR code adds; the editor's Extra QR parameters field
+line and followed by a blank line (a leading blank line when none is set), so a configuration still has one place for everything its QR code adds; the editor's Extra QR parameters field
 shows only the other entries. It takes any other Android provisioning entry, for example:
 
 ```
@@ -101,7 +102,7 @@ valid JSON, the field says so: they are saved as typed, and the Enroll page leav
 apply) until they are fixed. An entry typed here that has a setting of its own is pointed out; once that setting is
 set, it wins. The **Enroll** page adds the entries to the code it shows for the configuration and sums them up under
 **Setup**. Entries that name the agent, its download, its checksums or its enrollment extras are never replaced, and
-the Wi-Fi chosen on the Enroll page wins over Wi-Fi entries here. Like the Wi-Fi password, they are in the QR code in
+Wi-Fi is the Enroll page's choice: of the Wi-Fi entries here, only a hidden network or a proxy go in the code, and only with the network the page puts in it; the page says how many it leaves out. Like the Wi-Fi password, they are in the QR code in
 plain text.
 
 ### Legacy launcher settings

@@ -121,7 +121,11 @@ export function summarizeQrExtras(entries: Record<string, unknown>): QrExtrasSum
     skipIntro: entries[`${p}PROVISIONING_SKIP_EDUCATION_SCREENS`] === true,
     mobileData: entries[`${p}PROVISIONING_USE_MOBILE_DATA`] === true,
     hiddenWifi: entries[`${p}PROVISIONING_WIFI_HIDDEN`] === true,
-    others: Object.keys(entries).filter((k) => !known.includes(k)).length,
+    // Every entry the summary doesn't word still goes in the code: count it (a string "true", LOCALE: true, false).
+    others: Object.entries(entries).filter(([k, v]) => {
+      if (k === `${p}PROVISIONING_LOCALE` || k === `${p}PROVISIONING_TIME_ZONE`) return !(typeof v === 'string' && v);
+      return !known.includes(k) || v !== true;
+    }).length,
   };
 }
 
@@ -145,38 +149,52 @@ export interface QrParametersSplit {
   rest: string;
 }
 
+/** A setting as joinQrParameters writes it: `"android.app.extra.KEY": value`, one per line, comma optional. */
 const SETTING_LINE = new RegExp(
-  `^\\s*"${QR_EXTRA_PREFIX.replace(/\./g, '\\.')}(${QR_SETTING_KEYS.join('|')})"\\s*:\\s*(.+?)\\s*,?\\s*$`,
+  `^"${QR_EXTRA_PREFIX.replace(/\./g, '\\.')}(${QR_SETTING_KEYS.join('|')})": (.+?),?$`,
 );
 
+/** A setting is set unless null, empty or false: Android's own default for each, never written. */
+const isSet = (v: unknown) => v != null && v !== false && v !== '';
+
 /**
- * Splits the Extra QR parameters into the settings and the rest. The settings are the leading lines the editor
- * writes; the rest is kept exactly as typed, even when it isn't valid JSON yet. A setting written anywhere else stays
- * in the rest, where the editor points it out (settingsInRest): nothing is moved without the user seeing it.
+ * Splits the Extra QR parameters into the settings and the rest, the way joinQrParameters writes them: the settings
+ * first, one line each, in QR_SETTING_KEYS order and only when set, then a blank line, then the rest exactly as typed.
+ * Text that isn't in that shape is all rest (Headwind's form, an object, a hand edit): a setting entry in it stays
+ * there, where the editor points it out (settingsInRest), and is never taken out without the user seeing it. A
+ * leading blank line means no settings (joinQrParameters writes one when the typed text could read as settings).
  */
 export function splitQrParameters(text: unknown): QrParametersSplit {
-  const lines = typeof text === 'string' ? text.split('\n') : [];
+  const all = typeof text === 'string' ? text : '';
+  const lines = all.split('\n');
+  // A leading blank line: no settings, and the rest follows exactly as typed (see joinQrParameters).
+  if (lines.length > 1 && lines[0] === '') return { settings: {}, rest: lines.slice(1).join('\n') };
   const settings: Record<string, unknown> = {};
-  let i = 0;
-  for (; i < lines.length; i++) {
+  let last = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i] === '' && i > 0) return { settings, rest: lines.slice(i + 1).join('\n') };
     const m = SETTING_LINE.exec(lines[i]);
-    if (!m) break;
+    const index = m ? QR_SETTING_KEYS.indexOf(m[1]) : -1;
+    let value: unknown;
     try {
-      settings[m[1]] = JSON.parse(m[2]);
+      value = m ? JSON.parse(m[2]) : undefined;
     } catch {
-      break;
+      value = undefined;
     }
+    if (!m || index <= last || !isSet(value)) return { settings: {}, rest: all };
+    settings[m[1]] = value;
+    last = index;
   }
-  return { settings, rest: lines.slice(i).join('\n') };
+  return { settings, rest: '' };
 }
 
 /**
- * The Extra QR parameters text for these settings and other entries: the settings that are set (not null, empty or
- * false, Android's own default for each), one per line, then the rest as typed. An object typed as the rest is
- * written back as members, so the two join.
+ * The Extra QR parameters text for these settings and other entries (see splitQrParameters): the settings that are
+ * set, one per line, then a blank line and the rest as typed. An object typed as the rest is written back as members,
+ * so the text stays one list of JSON members, which Headwind's server QR takes as it is.
  */
 export function joinQrParameters(settings: Record<string, unknown>, rest: string): string {
-  const lines = QR_SETTING_KEYS.filter((k) => settings[k] != null && settings[k] !== false && settings[k] !== '').map(
+  const head = QR_SETTING_KEYS.filter((k) => isSet(settings[k])).map(
     (k) => `${JSON.stringify(QR_EXTRA_PREFIX + k)}: ${JSON.stringify(settings[k])}`,
   );
   let tail = rest.trim() === '' ? '' : rest;
@@ -184,8 +202,13 @@ export function joinQrParameters(settings: Record<string, unknown>, rest: string
     const read = readQrParameters(tail);
     if (!('error' in read)) tail = membersText(read.entries);
   }
-  if (tail) lines.push(tail);
-  return lines.join(',\n');
+  if (!head.length) {
+    // Typed text that would read back as settings (it starts with setting lines) or that starts with a blank line
+    // gets a leading blank line, which says "no settings", so it always reads back exactly as typed.
+    const ambiguous = tail.startsWith('\n') || Object.keys(splitQrParameters(tail).settings).length > 0;
+    return ambiguous ? `\n${tail}` : tail;
+  }
+  return tail ? `${head.join(',\n')},\n\n${tail}` : head.join(',\n');
 }
 
 /** Entries of the rest that have a setting of their own: that setting wins over them once it is set. */
@@ -213,9 +236,38 @@ export function configurationQrExtras(config: Record<string, unknown> | null | u
   if (config?.mobileEnrollment === true) entries[`${QR_EXTRA_PREFIX}PROVISIONING_USE_MOBILE_DATA`] = true;
   Object.assign(entries, others.entries);
   for (const [k, v] of Object.entries(split.settings)) {
-    if (v != null && v !== false && v !== '') entries[QR_EXTRA_PREFIX + k] = v;
+    if (isSet(v)) entries[QR_EXTRA_PREFIX + k] = v;
   }
   return { entries, ignored: others.ignored, error: others.error };
+}
+
+const WIFI_PREFIX = 'android.app.extra.PROVISIONING_WIFI_';
+/**
+ * Wi-Fi entries a configuration may add to the page's own network: a hidden network and a proxy. The page writes the
+ * network itself (SSID, security, password); any other Wi-Fi entry (EAP keys, another network) is left out.
+ */
+const EXTRA_WIFI_KEYS: ReadonlySet<string> = new Set(
+  ['HIDDEN', 'PROXY_HOST', 'PROXY_PORT', 'PROXY_BYPASS', 'PAC_URL'].map((k) => WIFI_PREFIX + k),
+);
+
+/**
+ * The configuration's entries that go in the code: protected ones never do, and Wi-Fi is the Enroll page's choice,
+ * so Wi-Fi entries (a hidden network, a proxy) go only with the page's own network (`joinsWifi`) and never name
+ * another network or carry another password.
+ */
+export function extrasInCode(extras: Record<string, unknown>, joinsWifi: boolean): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(extras)) {
+    if (PROTECTED_QR_KEYS.has(key)) continue;
+    if (key.startsWith(WIFI_PREFIX) && (!joinsWifi || !EXTRA_WIFI_KEYS.has(key))) continue;
+    out[key] = value;
+  }
+  return out;
+}
+
+/** The configuration's Wi-Fi entries extrasInCode leaves out, so the Enroll page can say so. */
+export function wifiExtrasLeftOut(extras: Record<string, unknown>, joinsWifi: boolean): string[] {
+  return Object.keys(extras).filter((k) => k.startsWith(WIFI_PREFIX) && (!joinsWifi || !EXTRA_WIFI_KEYS.has(k)));
 }
 
 /**
@@ -235,13 +287,12 @@ export function buildProvisioningPayload(token: string, wifi?: WifiConfig, extra
     'android.app.extra.PROVISIONING_SKIP_ENCRYPTION': true,
     'android.app.extra.PROVISIONING_LEAVE_ALL_SYSTEM_APPS_ENABLED': true,
   };
-  for (const [key, value] of Object.entries(extras ?? {})) {
-    if (!PROTECTED_QR_KEYS.has(key)) payload[key] = value;
-  }
   const ssid = wifi?.ssid?.trim();
   // A network the device can't join (no password, EAP) would stop setup at the Wi-Fi step: left out instead, the
   // device asks for Wi-Fi on its screen. The Enroll page says why (enroll/checks.ts).
-  if (ssid && !wifiProblem(wifi)) {
+  const joinsWifi = !!ssid && !wifiProblem(wifi);
+  Object.assign(payload, extrasInCode(extras ?? {}, joinsWifi));
+  if (joinsWifi) {
     const security: WifiSecurity = wifi?.security ?? (wifi?.password ? 'WPA' : 'NONE');
     payload['android.app.extra.PROVISIONING_WIFI_SSID'] = ssid;
     payload['android.app.extra.PROVISIONING_WIFI_SECURITY_TYPE'] = security;

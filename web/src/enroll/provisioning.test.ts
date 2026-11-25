@@ -7,6 +7,8 @@ import {
   QR_SETTING_KEYS,
   settingsInRest,
   splitQrParameters,
+  extrasInCode,
+  wifiExtrasLeftOut,
   summarizeQrExtras,
 } from './provisioning';
 
@@ -72,7 +74,7 @@ describe('setup settings kept in the Extra QR parameters', () => {
 
   it('writes the settings first, one per line, then the other entries as typed', () => {
     const text = joinQrParameters({ PROVISIONING_LOCALE: 'fr_FR', PROVISIONING_SKIP_EDUCATION_SCREENS: true }, '"x.y":   1');
-    expect(text).toBe(`"${SKIP}": true,\n"${LOCALE}": "fr_FR",\n"x.y":   1`);
+    expect(text).toBe(`"${SKIP}": true,\n"${LOCALE}": "fr_FR",\n\n"x.y":   1`);
     expect(splitQrParameters(text)).toEqual({
       settings: { PROVISIONING_SKIP_EDUCATION_SCREENS: true, PROVISIONING_LOCALE: 'fr_FR' },
       rest: '"x.y":   1',
@@ -98,15 +100,20 @@ describe('setup settings kept in the Extra QR parameters', () => {
   });
 
   it('writes an object typed as the other entries back as members, so the text stays one list', () => {
-    expect(joinQrParameters({ PROVISIONING_LOCALE: 'fr_FR' }, '{"x.y": 1}')).toBe(`"${LOCALE}": "fr_FR",\n"x.y": 1`);
+    expect(joinQrParameters({ PROVISIONING_LOCALE: 'fr_FR' }, '{"x.y": 1}')).toBe(`"${LOCALE}": "fr_FR",\n\n"x.y": 1`);
   });
 
   it('names other entries that are settings, and the setting wins in the code', () => {
+    // Typed after a later setting, it stays typed text: pointed out, never read back as the setting.
     const text = joinQrParameters({ PROVISIONING_LOCALE: 'fr_FR' }, `"${SKIP}": true`);
-    expect(settingsInRest(splitQrParameters(text).rest)).toEqual([]);
+    expect(splitQrParameters(text)).toEqual({ settings: { PROVISIONING_LOCALE: 'fr_FR' }, rest: `"${SKIP}": true` });
+    expect(settingsInRest(splitQrParameters(text).rest)).toEqual(['PROVISIONING_SKIP_EDUCATION_SCREENS']);
     const typed = `"${LOCALE}": "de_DE"`;
     expect(settingsInRest(typed)).toEqual(['PROVISIONING_LOCALE']);
-    expect(configurationQrExtras({ qrParameters: `"${LOCALE}": "fr_FR",\n"x": 1,\n${typed}` }).entries[LOCALE]).toBe('fr_FR');
+    // Written by the editor (settings, blank line, typed text): the setting wins.
+    expect(configurationQrExtras({ qrParameters: `"${LOCALE}": "fr_FR",\n\n"x": 1,\n${typed}` }).entries[LOCALE]).toBe('fr_FR');
+    // Not in that shape: all typed text, read as JSON (the last entry wins), as the editor shows it.
+    expect(configurationQrExtras({ qrParameters: `"${LOCALE}": "fr_FR",\n"x": 1,\n${typed}` }).entries[LOCALE]).toBe('de_DE');
   });
 
   it('lists every setting the editor shows', () => {
@@ -140,6 +147,110 @@ describe('what a configuration adds to the enrollment QR', () => {
       'android.app.extra.PROVISIONING_WIFI_HIDDEN': false,
       'android.app.extra.PROVISIONING_SENSORS_PERMISSION_GRANT_OPT_OUT': true,
     });
-    expect(s).toEqual({ locale: 'fr_FR', timeZone: 'Europe/Paris', skipIntro: true, mobileData: true, hiddenWifi: false, others: 1 });
+    // HIDDEN false still goes in the code, so it is counted with the other entry.
+    expect(s).toEqual({ locale: 'fr_FR', timeZone: 'Europe/Paris', skipIntro: true, mobileData: true, hiddenWifi: false, others: 2 });
+  });
+});
+
+describe('review: typed entries never replace a setting', () => {
+  it('keeps an entry typed first that repeats a setting as typed text, also once saved and loaded again', () => {
+    const text = joinQrParameters({ PROVISIONING_LOCALE: 'fr_FR' }, `"${LOCALE}": "de_DE"`);
+    expect(splitQrParameters(text)).toEqual({ settings: { PROVISIONING_LOCALE: 'fr_FR' }, rest: `"${LOCALE}": "de_DE"` });
+    expect(configurationQrExtras({ qrParameters: text }).entries[LOCALE]).toBe('fr_FR');
+  });
+});
+
+describe('review: Wi-Fi is the Enroll page\'s choice', () => {
+  const SSID = 'android.app.extra.PROVISIONING_WIFI_SSID';
+  const PASS = 'android.app.extra.PROVISIONING_WIFI_PASSWORD';
+  const HIDDEN = 'android.app.extra.PROVISIONING_WIFI_HIDDEN';
+  const extras = { [SSID]: 'other', [PASS]: 'secret', [HIDDEN]: true, [LOCALE]: 'fr_FR' };
+
+  it('leaves every Wi-Fi entry out when the page puts no network in the code', () => {
+    const p = JSON.parse(buildProvisioningPayload('t', undefined, extras));
+    expect(p[SSID]).toBeUndefined();
+    expect(p[PASS]).toBeUndefined();
+    expect(p[HIDDEN]).toBeUndefined();
+    expect(p[LOCALE]).toBe('fr_FR');
+  });
+
+  it('keeps the page\'s network, with a hidden-network entry, never another network or password', () => {
+    const p = JSON.parse(buildProvisioningPayload('t', { ssid: 'club', password: 'longenough', security: 'WPA' }, extras));
+    expect(p[SSID]).toBe('club');
+    expect(p[PASS]).toBe('longenough');
+    expect(p[HIDDEN]).toBe(true);
+  });
+
+  it('leaves out a page network that cannot be joined, and the Wi-Fi entries with it', () => {
+    const p = JSON.parse(buildProvisioningPayload('t', { ssid: 'club', security: 'WPA' }, extras));
+    expect(p[SSID]).toBeUndefined();
+    expect(p[PASS]).toBeUndefined();
+  });
+});
+
+describe('review: what is saved reads back the same', () => {
+  const HIDDEN = 'android.app.extra.PROVISIONING_WIFI_HIDDEN';
+  const roundTrip = (settings: Record<string, unknown>, rest: string) => splitQrParameters(joinQrParameters(settings, rest));
+
+  it('keeps typed duplicates as typed text, the last one winning in the code as in the editor', () => {
+    const rest = `"${TZ}": "UTC",\n"${TZ}": "Asia/Tokyo"`;
+    expect(roundTrip({ PROVISIONING_LOCALE: 'fr_FR' }, rest)).toEqual({ settings: { PROVISIONING_LOCALE: 'fr_FR' }, rest });
+    expect(configurationQrExtras({ qrParameters: joinQrParameters({ PROVISIONING_LOCALE: 'fr_FR' }, rest) }).entries[TZ]).toBe('Asia/Tokyo');
+    const two = `"${LOCALE}": "de_DE",\n"${LOCALE}": "en_US"`;
+    expect(roundTrip({}, two)).toEqual({ settings: {}, rest: two });
+    expect(configurationQrExtras({ qrParameters: joinQrParameters({}, two) }).entries[LOCALE]).toBe('en_US');
+  });
+
+  it('never reads an entry set to false as a setting, so it stays where it was typed', () => {
+    const rest = `"${HIDDEN}": false,\n"x.y": 1`;
+    expect(roundTrip({}, rest)).toEqual({ settings: {}, rest });
+  });
+
+  it('reads back settings followed by typed text that starts with blank lines', () => {
+    const rest = '\n\n"x.y": 1';
+    expect(roundTrip({ PROVISIONING_TIME_ZONE: 'UTC' }, rest)).toEqual({ settings: { PROVISIONING_TIME_ZONE: 'UTC' }, rest });
+  });
+
+  it('keeps typed text that could read as settings exactly as typed, with a leading blank line', () => {
+    for (const rest of [
+      `"${LOCALE}": "de_DE"`,
+      `"${LOCALE}": "fr_FR"\n\n"${LOCALE}": "en_US"`,
+      `"${LOCALE}": "fr_FR"\n\n, "x": 1`,
+      `"${TZ}": "Europe/Paris",\n\n{bad`,
+      '\n"x": 1',
+    ]) {
+      const stored = joinQrParameters({}, rest);
+      expect(stored.startsWith('\n')).toBe(true);
+      expect(splitQrParameters(stored)).toEqual({ settings: {}, rest });
+    }
+    expect(configurationQrExtras({ qrParameters: joinQrParameters({}, `"${LOCALE}": "fr_FR"\n\n,"${LOCALE}": "en_US"`) }).entries[LOCALE]).toBe('en_US');
+    expect(joinQrParameters({}, '"x.y": 1')).toBe('"x.y": 1');
+  });
+});
+
+describe('review: Wi-Fi entries and the summary', () => {
+  const W = 'android.app.extra.PROVISIONING_WIFI_';
+  it('drops a stored password with an open page network', () => {
+    const p = JSON.parse(buildProvisioningPayload('t', { ssid: 'club', security: 'NONE' }, { [`${W}PASSWORD`]: 'secret' }));
+    expect(p[`${W}SSID`]).toBe('club');
+    expect(p[`${W}PASSWORD`]).toBeUndefined();
+  });
+
+  it('keeps only a hidden network or a proxy with the page network, and lists what it leaves out', () => {
+    const extras = { [`${W}HIDDEN`]: true, [`${W}PROXY_HOST`]: 'p', [`${W}EAP_METHOD`]: 'PEAP', [`${W}IDENTITY`]: 'me' };
+    expect(Object.keys(extrasInCode(extras, true)).sort()).toEqual([`${W}HIDDEN`, `${W}PROXY_HOST`]);
+    expect(wifiExtrasLeftOut(extras, true).sort()).toEqual([`${W}EAP_METHOD`, `${W}IDENTITY`]);
+    expect(wifiExtrasLeftOut(extras, false)).toHaveLength(4);
+  });
+
+  it('counts every entry the summary cannot word, a default value included, since it goes in the code', () => {
+    const s = summarizeQrExtras({
+      'android.app.extra.PROVISIONING_SKIP_EDUCATION_SCREENS': 'true',
+      'android.app.extra.PROVISIONING_USE_MOBILE_DATA': false,
+    });
+    expect(s.skipIntro).toBe(false);
+    expect(s.mobileData).toBe(false);
+    expect(s.others).toBe(2);
+    expect(summarizeQrExtras({ 'android.app.extra.PROVISIONING_LOCALE': true }).others).toBe(1);
   });
 });

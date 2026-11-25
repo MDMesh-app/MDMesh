@@ -470,8 +470,8 @@ public class AgentCheckInConfigResyncTest {
     }
 
     /**
-     * An agent releases a section it stops getting, so neither the version it reports nor the sections it lists
-     * ({@code configSections}) leaves one out of what a check-in or a retry sends.
+     * Leaving a section out can release it on the device (it does for kiosk), so neither the version it reports nor the
+     * sections it lists ({@code configSections}) leaves one out of what a check-in or a retry sends.
      */
     @Test
     public void a_check_in_and_a_retry_send_every_section_whatever_the_agent_reports() throws Exception {

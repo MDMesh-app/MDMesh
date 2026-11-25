@@ -15,9 +15,9 @@ import java.util.function.Function;
  * The sections of a {@code config.apply} document (its top-level keys besides {@code revision} and
  * {@code configurationId}), one row each, as {@code proto/config-sections.json} lists them.
  *
- * <p>An agent releases a section it is no longer sent (absent means "not managed"). So a section is withheld from a
- * device only when it has a capability and the device's agent doesn't advertise it. Every other section is always sent:
- * an agent ignores one it doesn't know. Nothing else a device reports, its version least of all, withholds a section.</p>
+ * <p>Leaving a section out can release it on the device (it does for kiosk). So a section is withheld from a device only
+ * when it has a capability and the device's agent doesn't advertise it. Every other section is always sent: an agent
+ * ignores one it doesn't know. Nothing else a device reports, its version least of all, withholds a section.</p>
  */
 public final class ConfigSections {
 

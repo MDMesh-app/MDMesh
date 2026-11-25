@@ -9,8 +9,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hmdm.plugins.audit.persistence.domain.AuditLogRecord;
 import org.junit.Test;
 
+import javax.servlet.FilterChain;
 import javax.servlet.ServletException;
+import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 
 import static org.junit.Assert.assertEquals;
@@ -84,6 +87,27 @@ public class AgentRolloutAuditTest {
 
         assertEquals("plugin.audit.action.agent.rollout.cancel", record.getAction());
         assertTrue(record.getPayload(), record.getPayload().contains("URI: " + ROLLOUT + "/3/cancel"));
+    }
+
+    @Test
+    public void aRefusedRolloutRequestIsRecordedAsFailed() throws IOException, ServletException {
+        // A second rollout while one is running, or a promote after a cancel: the resource answers 200 with ERROR.
+        for (String uri : new String[]{ROLLOUT, ROLLOUT + "/3/promote", ROLLOUT + "/3/cancel"}) {
+            byte[] body = (uri.equals(ROLLOUT) ? "{\"targetVersion\":\"0.5.1\"}" : "").getBytes(StandardCharsets.UTF_8);
+            ResourceAuditInfo info = ResourceAuditInfo.findAuditInfo("POST", uri).get();
+            FilterChain refused = (req, res) -> {
+                ((HttpServletResponse) res).setStatus(200);
+                res.getOutputStream().write("{\"status\":\"ERROR\",\"message\":\"error.rollout.active\"}"
+                        .getBytes(StandardCharsets.UTF_8));
+            };
+            ResourceAuditor auditor = info.getResourceAuditor(DeviceCommandAuditTest.request("POST", uri, body, null),
+                    DeviceCommandAuditTest.response(), refused, "", "X-Real-IP");
+            auditor.doProcess();
+            AuditLogRecord record = auditor.getAuditLogRecord();
+
+            assertEquals(uri, info.getAuditLogAction(), record.getAction());
+            assertEquals(uri, Integer.valueOf(1), record.getErrorCode());
+        }
     }
 
     /** The request body as the record stores it. */

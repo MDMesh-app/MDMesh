@@ -10,10 +10,11 @@ const FILES = { licence: repo('LICENSE'), notice: repo('NOTICE'), allowed: repo(
 const ALLOWED = ['Apache-2.0', 'MIT', 'BSD-2-Clause'];
 
 /** Runs the plugin's generateBundle over a bundle holding `packages` as Vite's THIRD-PARTY.json. */
-function generate(packages: unknown[] | null, enforce: boolean, files = FILES) {
+function generate(packages: unknown[] | null, enforce: boolean, files = FILES, assets: string[] = []) {
   const plugin = licences(files, enforce);
   const bundle: Record<string, unknown> =
-    packages === null ? {} : { [THIRD_PARTY]: { type: 'asset', source: JSON.stringify(packages) } };
+    packages === null ? {} : { [THIRD_PARTY]: { type: 'asset', source: JSON.stringify(packages), originalFileNames: [] } };
+  if (assets.length > 0) bundle['assets/a.woff2'] = { type: 'asset', source: '', originalFileNames: assets };
   const ctx = {
     emitFile: vi.fn(),
     warn: vi.fn(),
@@ -23,7 +24,7 @@ function generate(packages: unknown[] | null, enforce: boolean, files = FILES) {
   };
   const hook = plugin.generateBundle as unknown as { handler: (this: typeof ctx, o: unknown, b: unknown) => void };
   hook.handler.call(ctx, {}, bundle);
-  return ctx;
+  return { ...ctx, bundle };
 }
 
 describe('violations', () => {
@@ -76,6 +77,24 @@ describe('licences', () => {
     expect(emitted[0].source).toContain('Apache License');
     expect(emitted[1].source).toContain('Headwind MDM');
     expect(ctx.warn).not.toHaveBeenCalled();
+  });
+
+  it('adds the packages whose files CSS loads to the third-party list, once each, with their licence text', () => {
+    const font = (name: string) => `node_modules/@fontsource/${name}/files/${name}-latin-400-normal.woff2`;
+    const { bundle } = generate([{ name: 'leaflet', version: '1.9.4', identifier: 'MIT' }], true, FILES, [
+      font('roboto'),
+      font('roboto'),
+      font('ibm-plex-mono'),
+      'node_modules/leaflet/dist/images/layers.png',
+      'src/assets/logo.png',
+    ]);
+    const list = JSON.parse((bundle[THIRD_PARTY] as { source: string }).source) as Record<string, string>[];
+    expect(list.map((p) => `${p.name} ${p.identifier}`)).toEqual([
+      'leaflet MIT',
+      '@fontsource/roboto OFL-1.1',
+      '@fontsource/ibm-plex-mono OFL-1.1',
+    ]);
+    expect(list[1].text).toContain('SIL OPEN FONT LICENSE Version 1.1');
   });
 
   it('fails the build in CI when a bundled package is under a licence the list does not allow', () => {

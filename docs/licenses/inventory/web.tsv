@@ -2,6 +2,9 @@
 @floating-ui/dom	MIT
 @floating-ui/react-dom	MIT
 @floating-ui/utils	MIT
+@fontsource/ibm-plex-mono	OFL-1.1
+@fontsource/ibm-plex-sans	OFL-1.1
+@fontsource/roboto	OFL-1.1
 @formatjs/fast-memoize	MIT
 @formatjs/icu-messageformat-parser	MIT
 @formatjs/icu-skeleton-parser	MIT

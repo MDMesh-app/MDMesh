@@ -9,7 +9,8 @@ import type { Plugin } from 'vite';
 /** Where Vite's own build.license writes the bundled packages and their licences (vite.config.ts sets it). */
 export const THIRD_PARTY = 'licenses/THIRD-PARTY.json';
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const WEB = dirname(fileURLToPath(import.meta.url));
+const ROOT = join(WEB, '..');
 const repo = (path: string) => join(ROOT, path);
 
 /** The SPDX licence ids in docs/licenses/allowed.txt: one per line, `#` starts a comment. */
@@ -25,6 +26,7 @@ export interface BundledPackage {
   name: string;
   version: string;
   identifier?: string;
+  text?: string;
 }
 
 /** The packages whose licence (an SPDX expression, `(WTFPL OR MIT)` say) the allowed licences don't satisfy. */
@@ -68,7 +70,18 @@ export function licences(
         }
         const report = bundle[THIRD_PARTY];
         if (report?.type !== 'asset') this.error(`${THIRD_PARTY} is missing: vite.config.ts must set build.license`);
-        const bad = violations(JSON.parse(String(report.source)) as BundledPackage[], readAllowed(files.allowed));
+        const packages = JSON.parse(String(report.source)) as BundledPackage[];
+        // Vite lists the packages of JS modules only: add those whose files CSS loads (the fonts).
+        for (const file of Object.values(bundle).flatMap((out) => (out.type === 'asset' ? out.originalFileNames : []))) {
+          const dir = /^node_modules\/(@[^/]+\/)?[^/]+/.exec(file)?.[0];
+          if (!dir) continue;
+          const read = (name: string) => readFileSync(join(WEB, dir, name), 'utf8');
+          const { name, version, license } = JSON.parse(read('package.json')) as Record<string, string>;
+          if (packages.some((p) => p.name === name)) continue;
+          packages.push({ name, version, identifier: license, text: read('LICENSE').trim() });
+        }
+        report.source = JSON.stringify(packages, null, 2);
+        const bad = violations(packages, readAllowed(files.allowed));
         if (bad.length === 0) return;
         const message =
           `the console bundles packages under licences docs/licenses/allowed.txt doesn't allow ` +

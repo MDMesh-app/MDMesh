@@ -29,6 +29,8 @@ brain
 **/.env
 # The operator's own edge rules: mounted into the edge at run time, never built into an image.
 site.d
+# setup.sh's database dumps (password hashes and all): never in a build context.
+backups
 **/.env.local
 **/.env.*.local
 **/*.log

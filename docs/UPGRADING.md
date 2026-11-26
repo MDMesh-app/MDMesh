@@ -71,7 +71,9 @@ already has `--update` can be ahead of the newest release: over an install, `--u
 older code. Wait for the next release and run it then, or pass `--allow-downgrade` to go to the release now. A clone
 still on a release branch (`release/vX.Y.Z`, squash-merged into the release) is not ahead: `--update` moves it on.
 
-setup.sh takes no backup, so dump the database first ([command](OPERATIONS.md#backups-and-restore)). Don't use
+From 0.6.0, setup.sh dumps the database to `backups/` in the clone before it moves the install to another version, and
+stops without changing anything when it can't ([where the dumps go, and how to restore one](OPERATIONS.md#backups-and-restore)).
+The update to 0.6.0 is the first that does: it is 0.6.0's setup.sh that runs it. Don't use
 `docker compose up -d --build` alone: only setup.sh updates `CURRENT_VERSION` and the image tags from the
 checkout's release tag. Without a release tag, it keeps the old values and warns.
 
@@ -267,6 +269,9 @@ exited or credentials cleared while the older agent ran.
 
 ### Unreleased
 
+- **From source, setup.sh backs up the database before an update** (this one included), to `backups/` in the clone. It
+  needs free space there of at least the database's size, and stops without changing anything when it can't take
+  the dump ([Backups and restore](OPERATIONS.md#backups-and-restore)).
 - **The database update deletes the history of deleted devices.** Before, deleting a device left its commands, state,
   events and locations behind, and a device added later with the same number showed them. On its first start the
   server deletes those rows (no screen showed them), then links each history table to its device, so deleting a device

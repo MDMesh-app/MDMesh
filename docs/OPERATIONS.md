@@ -399,14 +399,20 @@ check-in).
 ## Backups and restore
 
 **Docker.** One-click updates dump the database first, and a rollback restores that dump
-([Upgrading](UPGRADING.md#recovery-and-rollback)). `./setup.sh` takes no dump, so before a from-source upgrade make
-one yourself:
+([Upgrading](UPGRADING.md#recovery-and-rollback)). From source, `./setup.sh` (and so `--update`) dumps it before it
+moves the install to another version, with the command below, to
+`backups/pre-update-<time>-from-<version>.dump` in the clone: `<time>` in UTC, `<version>` the release the dump belongs
+to. The directory is readable by its owner only, and only the 3 newest dumps are kept: copy one elsewhere to keep it.
+setup.sh stops, before it changes anything, when it can't take the dump: when postgres isn't running, the dump fails,
+or `backups/` has less free space than the database takes (free some, or make `backups` a link to a directory on a
+larger disk). A dump by hand, at any time:
 
 ```bash
 docker compose exec -T postgres pg_dump -U mdmesh -Fc mdmesh > mdmesh-pre-upgrade.dump
 ```
 
-To go back to it, stop the server, restore, then build the release the dump was taken on:
+To go back to it, stop the server, restore, then build the release the dump was taken on (for one of setup.sh's, use
+its `backups/…` file in place of `mdmesh-pre-upgrade.dump`):
 
 ```bash
 docker compose stop server

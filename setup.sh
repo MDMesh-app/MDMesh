@@ -65,6 +65,9 @@ err()  { printf '\033[1;31m%s\033[0m\n' "$*" >&2; }
 # shellcheck source=install/lib/apt.sh
 . ./install/lib/apt.sh
 rand() { mdm_rand; }
+# psql in the stack's postgres container, as the mdmesh role (install/lib/db.sh mdm_psql runs it).
+# shellcheck disable=SC2034  # PSQL is consumed by install/lib/db.sh
+PSQL=(docker compose exec -T postgres psql -U mdmesh -d mdmesh)
 # Update KEY in .env in place (or append it) — persists values discovered after .env was written
 # (GITHUB_REPO autodetection, the release QR build args) so compose substitution + the supervisor
 # container keep seeing them on later runs.
@@ -409,6 +412,39 @@ version_preflight() {  # version_preflight <running>
   fi
 }
 
+# A re-run that changes the version (--update, whichever release's script handed over, or a checkout by hand) migrates
+# the database on the server's first start, so it is dumped first, before anything here changes: with OPERATIONS.md's
+# command ("Backups and restore", whose restore is the way back), into backups/ (mode 700, the dump 600), the newest 3
+# kept. Written to a temporary file, renamed once complete. No database volume yet: nothing to keep. When the dump can't
+# be taken, the run stops, saying why.
+backup_before_update() {
+  local vol size free from file tmp='' old
+  vol=$(docker volume ls -q --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME:-mdmesh}" \
+    --filter label=com.docker.compose.volume=pgdata) || { err "Could not list Docker's volumes (above). Nothing was changed."; exit 1; }
+  [ -n "$vol" ] || return 0
+  say "Backing up the database before moving to ${REPO_VERSION:-this checkout} (a large one takes a while)…"
+  if ! { mkdir -p -m 700 backups && rm -f -- backups/.pre-update.* \
+         && size=$(mdm_psql -c 'SELECT pg_database_size(current_database())') \
+         && free=$(df -B1 --output=avail backups | tail -n 1 | tr -d ' '); }; then
+    err "Could not read the database's size, or the free space in backups/ (above). Is postgres running? (docker compose"
+    err "up -d postgres) Nothing was changed."; exit 1
+  fi
+  if [ "$free" -le "$size" ]; then
+    err "backups/ has $((free >> 20)) MiB free, and the database takes $((size >> 20)) MiB: free some space, or make backups a"
+    err "link to a directory on a larger disk, then run this again. Nothing was changed."; exit 1
+  fi
+  from=${CURRENT_VERSION:-unknown}
+  file="backups/pre-update-$(date -u +%Y%m%dT%H%M%SZ)-from-${from//[!0-9A-Za-z.+-]/_}.dump"
+  if ! tmp=$(mktemp backups/.pre-update.XXXXXX) || ! docker compose exec -T postgres pg_dump -U mdmesh -Fc mdmesh > "$tmp" \
+     || [ ! -s "$tmp" ] || ! sync -- "$tmp" || ! mv -fT -- "$tmp" "$file"; then
+    [ -z "$tmp" ] || rm -f -- "$tmp"
+    err "The database backup failed (above), and this run does not update without one. Nothing was changed."; exit 1
+  fi
+  old=(backups/pre-update-*.dump)
+  [ "${#old[@]}" -le 3 ] || rm -f -- "${old[@]:0:${#old[@]}-3}"
+  say "Backed up to $file. To go back to ${CURRENT_VERSION:-the running version} with it: docs/OPERATIONS.md, Backups and restore."
+}
+
 if [ "$REUSE_ENV" = 1 ]; then
   # RE-RUN: reuse the existing .env verbatim — never regenerate secrets over a live deployment.
   # The pgdata volume keeps the ORIGINAL DB password (Postgres only reads POSTGRES_PASSWORD on
@@ -454,6 +490,7 @@ if [ "$REUSE_ENV" = 1 ]; then
   fi
   mdm_mode_settings "$MODE" rerun
   mdm_ports_guard
+  [ "${REPO_VERSION:-}" = "${CURRENT_VERSION:-}" ] || backup_before_update
 else
   if [ "$RESET" = 1 ] && [ -f .env ]; then
     warn "--reset: regenerating .env. If the old database still exists it needs the OLD password —"
@@ -692,8 +729,6 @@ fi
 # Data safety: hmdm_init.en.sql is FRESH-DB-ONLY — it DELETEs configurations and re-inserts demo
 # rows, so it must NEVER run against live data. The gate is the settings row (only the seed creates
 # it); counting users does NOT work because Liquibase inserts the admin user on first boot.
-# shellcheck disable=SC2034  # PSQL is consumed by install/lib/db.sh
-PSQL=(docker compose exec -T postgres psql -U mdmesh -d mdmesh)
 case "$(mdm_db_state)" in
   fresh)  SEED=yes ;;
   seeded) SEED=no ;;

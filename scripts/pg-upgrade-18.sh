@@ -28,7 +28,8 @@
 #        scripts/pg-upgrade-18.sh --check    exit 10 when this install still has to move (setup.sh asks), else 0
 set -euo pipefail
 
-NEW_IMAGE=postgres:18
+# The same image line as docker-compose.release.yml's postgres service (Dependabot doesn't bump it here: keep them equal).
+NEW_IMAGE=postgres:18.7-trixie@sha256:64c8b0d31e4ab6ea665e8426ea406a94bf52de3c05b3a4a8bf713704eefa9328
 WORKDIR=pg-upgrade-18
 # In pgdata18's root (next to 18/docker): written once the database is restored and checked, with the sha256 of the
 # old volume's global/pg_control as it was moved. PostgreSQL rewrites that file whenever it runs, so if 14 ran again on
@@ -102,12 +103,16 @@ MOVED=0; [ "$STATE" = 0 ] && MOVED=1
 
 # The compose file: from 0.6.0 on it already runs postgres:18 on pgdata18; a quick start's older copy needs its postgres
 # service moved, which only works on the lines as we shipped them.
+# The postgres image line of a major, as we shipped it: by tag (postgres:14) or pinned (postgres:14.25-trixie@sha256:…).
+image_re() { printf '^    image: postgres:%s([.][0-9]+-[a-z]+)?(@sha256:[0-9a-f]+)?$' "$1"; }
 compose_on_18() {
-  grep -qxF '    image: postgres:18' docker-compose.yml && grep -qxF '      - pgdata18:/var/lib/postgresql' docker-compose.yml
+  grep -qE "$(image_re 18)" docker-compose.yml && grep -qxF '      - pgdata18:/var/lib/postgresql' docker-compose.yml
 }
 compose_check_old() { # OLD_VER: dies unless docker-compose.yml has the lines edit_compose changes, once each
   local l
-  for l in "    image: postgres:$1" '      - pgdata:/var/lib/postgresql/data' '  pgdata:'; do
+  [ "$(grep -cE "$(image_re "$1")" docker-compose.yml)" = 1 ] \
+    || die "docker-compose.yml doesn't have the postgres lines this script knows (\"image: postgres:$1\" once): nothing was changed. Take the postgres service from the docker-compose.release.yml of a 0.6.0 or later release (or edit it by hand as there), then run this again."
+  for l in '      - pgdata:/var/lib/postgresql/data' '  pgdata:'; do
     [ "$(grep -cxF -- "$l" docker-compose.yml)" = 1 ] \
       || die "docker-compose.yml doesn't have the postgres lines this script knows (\"${l#"${l%%[! ]*}"}\" once): nothing was changed. Take the postgres service from the docker-compose.release.yml of a 0.6.0 or later release (or edit it by hand as there), then run this again."
   done
@@ -117,8 +122,8 @@ edit_compose() { # OLD_VER
   mkdir -p "$WORKDIR"
   BAK="$WORKDIR/docker-compose.yml.pg$1"
   cp -p docker-compose.yml "$BAK"
-  awk -v old="    image: postgres:$1" '
-    $0 == old                                       { print "    image: postgres:18"; next }
+  awk -v old="$(image_re "$1")" -v new="    image: ${NEW_IMAGE}" '
+    $0 ~ old                                        { print new; next }
     $0 == "      - pgdata:/var/lib/postgresql/data" { print "      - pgdata18:/var/lib/postgresql"; next }
     $0 == "  pgdata:"                               { print "  pgdata18:"; print; next }
                                                     { print }' "$BAK" > docker-compose.yml.new

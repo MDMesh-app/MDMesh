@@ -188,11 +188,13 @@ with `scripts/pg-upgrade-18.sh`. Run it in the install directory, as the user wh
 3. dumps the database from the PostgreSQL 14 volume (`pgdata`) into `./pg-upgrade-18/`;
 4. restores it into PostgreSQL 18 in a new volume (`pgdata18`) and gives the database role the same password;
 5. counts the rows of every table on both sides, and stops if any count differs (`pgdata18` is then removed and
-   `docker compose up -d` starts the install on 14 as before);
+   `docker compose start` starts the install on 14 as before), then marks `pgdata18` as moved;
 6. on a quick start, moves the compose file's postgres service to `postgres:18` on `pgdata18` (the original is kept in
    `./pg-upgrade-18/`), then starts the stack.
 
-It never changes or removes the PostgreSQL 14 volume. Run it again and it says there is nothing to move.
+It never changes or removes the PostgreSQL 14 volume. Run it again and it says there is nothing to move. If it stops
+part way (an error, Ctrl-C, the machine going down), `pgdata18` has no mark: the postgres container won't start on it,
+and running the script again starts the move over from the 14 volume.
 
 **Quick-start installs** keep running PostgreSQL 14 after the 0.6.0 update: updates never touch the database
 container. Move it when you can be offline for a few minutes:

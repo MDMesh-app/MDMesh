@@ -722,7 +722,7 @@ fi
 
 # Idempotent repairs that must run on EVERY install/upgrade, fresh or not (shared with the native
 # installer): the enrollment settings fix (createnewdevices + a default configuration) and the
-# aux-Headwind-app scrub. See install/sql/post_seed.sql for the rationale on each statement.
+# legacy seed-app scrub. See install/sql/post_seed.sql for the rationale on each statement.
 if ! mdm_post_seed install/sql/post_seed.sql; then
   err "Post-seed repairs failed — device enrollment would not work. Fix the error above and re-run ./setup.sh."; exit 1
 fi

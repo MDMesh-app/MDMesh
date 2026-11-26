@@ -1,4 +1,5 @@
 @echo off
+REM Derived from Headwind MDM (Apache-2.0); modified by the MDMesh contributors.
 
 grep --version >NUL 2>NUL && goto hasmingw
 echo This utility requires mingw64 (grep and sed utilities)!
@@ -9,7 +10,7 @@ exit
 
 if "%~1"=="" goto blank
 
-echo Adding plugin "%~1" to Headwind MDM code
+echo Adding plugin "%~1" to the MDMesh server code
 grep -r ^<artifactId^>%~1^</artifactId^> server\pom.xml >NUL 2>NUL && goto exists
 
 rem Plugin doesn't exist, we need to add it to the code
@@ -30,7 +31,7 @@ echo Plugin "%~1" already added to the code, nothing to do!
 
 exit
 :blank
-echo This utility adds the plugin dependency to Headwind MDM code.
+echo This utility adds the plugin dependency to the MDMesh server code.
 echo Use it to add optional plugins to your project.
 echo.
 echo Usage: init-plugin.bat plugin

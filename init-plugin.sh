@@ -1,9 +1,10 @@
 #!/bin/bash
+# Derived from Headwind MDM (Apache-2.0); modified by the MDMesh contributors.
 #
 # This utility adds a new plugin to the project code
 #
 if [ -z "$1" ]; then
-    echo "This utility adds the plugin dependency to Headwind MDM code."
+    echo "This utility adds the plugin dependency to the MDMesh server code."
     echo "Use it to add optional plugins to your project."
     echo ""
     echo "Usage: init-plugin.sh plugin"

@@ -422,34 +422,35 @@ _bk_stop() {
 # A re-run that changes the version (--update, whichever release's script handed over, or a checkout by hand) migrates
 # the database on the server's first start, so it is dumped first, before anything here changes: with OPERATIONS.md's
 # command ("Backups and restore", whose restore is the way back), into backups/ (mode 700, the dump 600), the newest 3
-# with a known version kept (a from-unknown one is left alone). Written to a temporary file, renamed once complete. No
-# database volume yet: nothing to keep. When the dump can't be taken, the run stops, saying why.
-backup_before_update() {
-  local vol size free from file tmp='' old=() f
+# kept. Written to a temporary file, renamed once complete. No database volume yet: nothing to keep. A stopped postgres
+# is started for it. When the dump can't be taken, the run stops, saying why.
+backup_before_update() {  # backup_before_update <running version>
+  local vol size free file tmp='' old from=${1:-unknown}
   vol=$(docker volume ls -q --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME:-mdmesh}" \
     --filter label=com.docker.compose.volume=pgdata) || _bk_stop "Could not list Docker's volumes (above)."
   [ -n "$vol" ] || return 0
-  say "Backing up the database before moving to ${REPO_VERSION:-this checkout} (a large one takes a while)…"
+  say "Backing up the database before moving to ${REPO_VERSION} (a large one takes a while)…"
+  if [ -z "$(docker compose ${COMPOSE_ARGS[@]+"${COMPOSE_ARGS[@]}"} ps -q --status running postgres)" ]; then
+    docker compose ${COMPOSE_ARGS[@]+"${COMPOSE_ARGS[@]}"} up -d --wait postgres \
+      || _bk_stop "postgres isn't running, and it could not be started for the backup (above)."
+  fi
   if ! { mkdir -p -m 700 backups && rm -f -- backups/.pre-update.* \
          && size=$(mdm_psql -c 'SELECT pg_database_size(current_database())') \
          && free=$(df -B1 --output=avail backups | tail -n 1 | tr -d ' '); }; then
-    _bk_stop "Could not read the database's size, or the free space in backups/ (above). Is postgres running? (docker compose up -d postgres)"
+    _bk_stop "Could not read the database's size, or the free space in backups/ (above)."
   fi
   if [ "$free" -le "$size" ]; then
     _bk_stop "backups/ has $((free >> 20)) MiB free, and the database takes $((size >> 20)) MiB: free some space, or make backups a link to a directory on a larger disk."
   fi
-  # Without a release tag CURRENT_VERSION is not moved on (below), so which code last migrated the database is unknown.
-  from=unknown; [ -z "${REPO_VERSION:-}" ] || from=${CURRENT_VERSION:-unknown}
   file="backups/pre-update-$(date -u +%Y%m%dT%H%M%SZ)-from-${from//[!0-9A-Za-z.+-]/_}.dump"
   if ! tmp=$(mktemp backups/.pre-update.XXXXXX) || ! docker compose exec -T postgres pg_dump -U mdmesh -Fc mdmesh > "$tmp" \
      || [ ! -s "$tmp" ] || ! sync -- "$tmp" || ! mv -fT -- "$tmp" "$file"; then
     [ -z "$tmp" ] || rm -f -- "$tmp"
     _bk_stop "The database backup failed (above), and this run does not update without one."
   fi
-  for f in backups/pre-update-*.dump; do [[ "$f" == *-from-unknown.dump ]] || old+=("$f"); done
+  old=(backups/pre-update-*.dump)
   [ "${#old[@]}" -le 3 ] || rm -f -- "${old[@]:0:${#old[@]}-3}"
-  if [ "$from" = unknown ]; then say "Backed up to $file, kept until removed by hand (the version it holds is unknown)."
-  else say "Backed up to $file. To go back to $from with it: docs/OPERATIONS.md, Backups and restore."; fi
+  say "Backed up to $file. To go back to ${1:-the version it ran} with it: docs/OPERATIONS.md, Backups and restore."
 }
 
 if [ "$REUSE_ENV" = 1 ]; then
@@ -477,7 +478,9 @@ if [ "$REUSE_ENV" = 1 ]; then
   mdm_load_env .env
   # This directory's own stack is expected; another directory's is never touched.
   mdm_stack_guard "${COMPOSE_PROJECT_NAME:-mdmesh}" 0
-  version_preflight "${CURRENT_VERSION:-${SERVER_VERSION:-}}"
+  # The version the install runs (an older .env has only SERVER_VERSION, which a one-click update pins by digest).
+  _running=${CURRENT_VERSION:-${SERVER_VERSION:-}}; _running=${_running%%@*}
+  version_preflight "$_running"
   _env_base_url=${BASE_URL:-}
   mdm_check_base_url BASE_URL || { err "Fix BASE_URL in .env, then re-run."; exit 1; }
   [ "$BASE_URL" = "$_env_base_url" ] || setenv BASE_URL "$BASE_URL"   # the scheme was lower-cased: keep .env canonical
@@ -497,7 +500,9 @@ if [ "$REUSE_ENV" = 1 ]; then
   fi
   mdm_mode_settings "$MODE" rerun
   mdm_ports_guard
-  [ "${REPO_VERSION:-}" = "${CURRENT_VERSION:-}" ] || backup_before_update
+  if [ -z "$REPO_VERSION" ]; then
+    warn "No automatic backup: this checkout has no release tag, so setup.sh can't tell whether the version changes. To take one: docs/OPERATIONS.md, Backups and restore."
+  elif [ "$REPO_VERSION" != "$_running" ]; then backup_before_update "$_running"; fi
 else
   if [ "$RESET" = 1 ] && [ -f .env ]; then
     warn "--reset: regenerating .env. If the old database still exists it needs the OLD password —"

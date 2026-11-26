@@ -469,13 +469,16 @@ upd ports ok PATH="$WORK/stubs-ports:$WORK/stubs:$PATH" --
 ok
 
 # The database backup before an update: --update from v9.0.0 over an install that runs 9.0.0. docker: a stub with the
-# project's pgdata volume when PGDATA_VOL names it, a database of DB_SIZE bytes, a pg_dump that writes a few bytes (then
-# fails, with DUMP_FAIL=1), and an `up` that stops the run; the dump and the `up` are logged in their order.
+# project's pgdata volume when PGDATA_VOL names it, postgres running (stopped with PG_STOPPED=1, then started by
+# `up --wait`), a database of DB_SIZE bytes, a pg_dump that writes a few bytes (then fails, with DUMP_FAIL=1), and an
+# `up` that stops the run; the start, the dump and the `up` are logged in their order.
 mkdir -p "$WORK/stubs-backup"
 cat > "$WORK/stubs-backup/docker" <<'EOF'
 #!/bin/sh
 case "$*" in
   "volume ls"*com.docker.compose.volume=pgdata) [ -z "${PGDATA_VOL:-}" ] || echo "$PGDATA_VOL" ;;
+  compose*" ps -q --status running postgres") [ "${PG_STOPPED:-}" = 1 ] || echo pg ;;
+  compose*" up -d --wait postgres") echo start >> "$WORK_ENV_LOG" ;;
   "compose exec -T postgres psql"*) echo "${DB_SIZE:-1024}" ;;
   "compose exec -T postgres pg_dump"*)
     echo dump >> "$WORK_ENV_LOG"; printf 'PGDMP'
@@ -496,7 +499,7 @@ bk_upd() { local n=$1; shift; upd "$n" ok PATH="$WORK/stubs-backup:$WORK/stubs:$
 dumps() { [ ! -d "$WORK/$1/backups" ] || (cd "$WORK/$1" && find backups -name 'pre-update-*.dump' | sort); }
 bk_clone bk-ok 9.0.0; bk_upd bk-ok PGDATA_VOL=mdmesh_pgdata
 bk=$(dumps bk-ok)
-{ [ "$(grep -x 'dump\|up' "$WORK/env.log" | tr '\n' ' ')" = "dump up " ] \
+{ [ "$(grep -x 'start\|dump\|up' "$WORK/env.log" | tr '\n' ' ')" = "dump up " ] \
   && [[ "$bk" == backups/pre-update-[0-9]*T[0-9]*Z-from-9.0.0.dump ]] && [ "$(cat "$WORK/bk-ok/$bk")" = PGDMP ] \
   && [ "$(stat -c %a "$WORK/bk-ok/$bk" "$WORK/bk-ok/backups" | tr '\n' ' ')" = "600 700 " ] \
   && grep -qF "Backed up to $bk." "$WORK/out"; } \
@@ -537,19 +540,23 @@ bk=$(dumps bk-keep)
   && [ ! -e "$WORK/bk-keep/backups/.pre-update.aaaaaa" ]; } \
   || { fail "the backups kept are not the newest 3, or a leftover temporary file stays ($bk)"; show; }
 ok
-# Untagged (on v9.1.0's commit, its tags not fetched): which version the database holds is unknown, so the dump is named
-# from-unknown, and from-unknown dumps are neither counted in the newest 3 nor removed.
-bk_clone bk-untagged 9.1.0; "${G[@]}" -C "$WORK/bk-untagged" checkout -q --detach v9.1.0
+# A stopped postgres is started (and waited for) for the dump, then the update goes on.
+bk_clone bk-start 9.0.0; bk_upd bk-start PGDATA_VOL=mdmesh_pgdata PG_STOPPED=1
+[ "$(grep -x 'start\|dump\|up' "$WORK/env.log" | tr '\n' ' ')" = "start dump up " ] \
+  || { fail "--update with postgres stopped does not start it, then dump, then go on"; show; }
+ok
+# An older .env with no CURRENT_VERSION: the version is SERVER_VERSION's, without the digest a one-click update pinned.
+bk_clone bk-old 9.0.0; sed -i 's/^CURRENT_VERSION=.*/SERVER_VERSION=9.0.0@sha256:0123/' "$WORK/bk-old/.env"
+bk_upd bk-old PGDATA_VOL=mdmesh_pgdata
+[[ "$(dumps bk-old)" == backups/pre-update-*-from-9.0.0.dump ]] || { fail "a dump over an older .env is not named from SERVER_VERSION"; show; }
+ok
+# Untagged (on v9.1.0's commit, its tags not fetched): no version change can be shown, so no dump, and it says so.
+bk_clone bk-untagged 9.0.0; "${G[@]}" -C "$WORK/bk-untagged" checkout -q --detach v9.1.0
 "${G[@]}" -C "$WORK/bk-untagged" for-each-ref --format='delete %(refname)' refs/tags | "${G[@]}" -C "$WORK/bk-untagged" update-ref --stdin
-mkdir -m 700 "$WORK/bk-untagged/backups"
-for d in 1 2 3; do : > "$WORK/bk-untagged/backups/pre-update-2000010${d}T000000Z-from-8.0.0.dump"; done
-: > "$WORK/bk-untagged/backups/pre-update-20000100T000000Z-from-unknown.dump"
 bk_upd bk-untagged PGDATA_VOL=mdmesh_pgdata
-bk=$(dumps bk-untagged)
-{ grep -qx up "$WORK/env.log" && [ "$(grep -c 'from-8\.0\.0\.dump$' <<< "$bk")" = 3 ] \
-  && [ "$(grep -c 'pre-update-[0-9]*T[0-9]*Z-from-unknown\.dump$' <<< "$bk")" = 2 ] \
-  && grep -qF 'kept until removed by hand' "$WORK/out"; } \
-  || { fail "an untagged run's dump is not named from-unknown, or from-unknown dumps count in the newest 3 ($bk)"; show; }
+{ grep -qx up "$WORK/env.log" && ! grep -qx dump "$WORK/env.log" && [ ! -e "$WORK/bk-untagged/backups" ] \
+  && grep -qF 'No automatic backup: this checkout has no release tag' "$WORK/out"; } \
+  || { fail "an untagged run takes a dump, or doesn't say it took none"; show; }
 ok
 
 # Which tree ran, and a floor on how many checks did (a few depend on the host), so a section that silently ran

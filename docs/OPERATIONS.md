@@ -403,8 +403,8 @@ check-in).
 moves the install to another version, with the command below, to
 `backups/pre-update-<time>-from-<version>.dump` in the clone: `<time>` in UTC, `<version>` the release the dump belongs
 to. The directory is readable by its owner only, and only the 3 newest dumps are kept: copy one elsewhere to keep it.
-A checkout without a release tag names its dumps `from-unknown`, and they are kept until removed by hand.
-setup.sh stops before it changes the install when it can't take the dump: when postgres isn't running, the dump fails,
+A checkout without a release tag takes none: make one with the command below. A stopped postgres is started for the
+dump. setup.sh stops before it changes the install when it can't take it: when postgres doesn't start, the dump fails,
 or `backups/` has less free space than the database takes (free some, or make `backups` a link to a directory on a
 larger disk). The install still runs its version, and only the clone has moved (to the new release, after `--update`):
 run `./setup.sh` again once fixed, or `git checkout -` to go back to the code the install runs. A dump by hand, at any

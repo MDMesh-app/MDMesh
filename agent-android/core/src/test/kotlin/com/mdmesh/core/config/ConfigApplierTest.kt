@@ -389,6 +389,20 @@ class ConfigApplierTest {
         assertEquals(ConfigStateStore.STALE_REVISION, store.reportedRevision())
     }
 
+    /** A stale report makes the server re-send the document, which enters its kiosk: an exit must not cause one. */
+    @Test fun `leaving a configured kiosk keeps the applied revision, so nothing is re-sent`() = runTest {
+        val kioskStore = InMemoryKioskStateStore(); val store = InMemoryConfigStateStore()
+        val k = kiosk(FakeController(), kioskStore)
+        val configured = KioskApplyPayload(mode = "single", pinPackage = "com.a")
+        applier(fixedToggles(), k, {}, store).apply(ConfigApplyPayload(revision = "A", kiosk = configured))
+        assertEquals(configured, kioskStore.load())
+
+        k.exit(force = true, expected = configured) // the PIN exit; the console's Exit is the same call without these
+
+        assertNull(kioskStore.load())
+        assertEquals("A", store.reportedRevision())
+    }
+
     @Test fun `a saved document whose boot re-apply fails is marked stale`() = runTest {
         val store = InMemoryConfigStateStore()
         val a = applier(fixedToggles(), kiosk(FakeController()), {}, store)
@@ -480,9 +494,9 @@ class ConfigApplierTest {
         assertEquals("A", store.reportedRevision())
     }
 
-    @Test fun `a store that never saved a document reports the stale revision once one is delivered`() = runTest {
+    @Test fun `a store that never saved a document reports the stale revision, delivered one or not`() = runTest {
         val store = InMemoryConfigStateStore()
-        assertNull(store.reportedRevision())
+        assertEquals(ConfigStateStore.STALE_REVISION, store.reportedRevision())
         applier(fixedToggles(), kiosk(FakeController()), failLocation, store)
             .apply(ConfigApplyPayload(revision = "B", location = ConfigLocation(FAIL)))
         assertEquals(ConfigStateStore.STALE_REVISION, store.reportedRevision())

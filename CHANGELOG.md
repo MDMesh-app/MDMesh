@@ -133,6 +133,8 @@ Fixes
   authenticator code is asked for) and get API tokens again, which v0.3.3 had stopped. Two-factor sign-in for each
   user is planned for a later release. The settings and user answers no longer include `twoFactor`; a request that
   still sends it is accepted, and the field ignored.
+- Agent: a device that lost its stored configuration (damaged storage) says so and is sent it again, kiosk included.
+  Before, it showed as in sync for good and no longer applied it after a restart.
 
 Under the hood
 - CI builds the agent's instrumented tests (they still run only by hand, on an emulator).

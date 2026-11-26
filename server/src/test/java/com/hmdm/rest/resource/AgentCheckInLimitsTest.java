@@ -28,6 +28,10 @@ import com.hmdm.rest.resource.support.RolloutRequeuer;
 import com.hmdm.testsupport.Fakes;
 import com.hmdm.util.CryptoUtil;
 import org.apache.ibatis.exceptions.PersistenceException;
+import org.apache.log4j.AppenderSkeleton;
+import org.apache.log4j.Level;
+import org.apache.log4j.Logger;
+import org.apache.log4j.spi.LoggingEvent;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -78,7 +82,8 @@ public class AgentCheckInLimitsTest {
         int capabilityReads;
         FakeCommandDAO() { super(null, null, null, null); }
         @Override public String getDeviceSecretHash(String n) { return CryptoUtil.getSHA256String(SECRET); }
-        @Override public void touchLastUpdate(String n) { }
+        int lastSeenStamps;
+        @Override public void touchLastUpdate(String n) { lastSeenStamps++; }
         @Override public void markResultWithTime(String n, Integer id, String status, String detail, Long at) {
             details.add(detail);
             statuses.add(status);
@@ -93,7 +98,12 @@ public class AgentCheckInLimitsTest {
         @Override public List<AgentCommand> listPending(String n) { return Collections.emptyList(); }
         DeviceState state;
         final List<String> androidVersions = new ArrayList<>();
+        /** Set: the database fails the state's write with this SQL state. */
+        String stateWriteFails;
         @Override public void upsertState(DeviceState s) {
+            if (stateWriteFails != null) {
+                throw new PersistenceException(new SQLException("failed", stateWriteFails));
+            }
             state = s;
             telemetry = s.getTelemetry();
         }
@@ -194,6 +204,68 @@ public class AgentCheckInLimitsTest {
         AgentCheckInRequest req = new AgentCheckInRequest();
         req.setEvents(Arrays.asList(events));
         return checkin(req);
+    }
+
+    private static AgentCheckInRequest stateAndAnEvent() {
+        AgentCheckInRequest req = new AgentCheckInRequest();
+        req.setState(new AgentDeviceState());
+        req.setEvents(Collections.singletonList(event("boot", null)));
+        return req;
+    }
+
+    @Test
+    public void aStateTheDatabaseRefusesCostsTheDeviceOnlyItsState() {
+        for (String refused : Arrays.asList("22001", "23514")) {
+            setUp();
+            commands.stateWriteFails = refused;
+            List<String> logged = new ArrayList<>();
+            AppenderSkeleton capture = new AppenderSkeleton() {
+                @Override protected void append(LoggingEvent event) { logged.add(event.getRenderedMessage()); }
+                @Override public void close() { }
+                @Override public boolean requiresLayout() { return false; }
+            };
+            // The repeats within the hour are at DEBUG, and another test may have had the hour's WARN.
+            Logger log = Logger.getLogger(AgentResource.class);
+            Level level = log.getLevel();
+            log.setLevel(Level.DEBUG);
+            log.addAppender(capture);
+            Response r;
+            try {
+                r = checkin(stateAndAnEvent());
+            } finally {
+                log.removeAppender(capture);
+                log.setLevel(level);
+            }
+            assertEquals(Response.ResponseStatus.OK, r.getStatus());
+            assertTrue(logged.toString(), logged.contains(
+                    "Device dev-1: state ignored, refused by the database (SQL state " + refused + ")"));
+            assertEquals(1, commands.lastSeenStamps);
+            assertEquals(Collections.singletonList("boot"), commands.events);
+        }
+    }
+
+    @Test
+    public void aDatabaseErrorInTheStateWriteFailsTheCheckInBeforeItsLastSeenStamp() {
+        for (String outage : Arrays.asList("08006", "53300", "57P03", "40P01")) {
+            setUp();
+            commands.stateWriteFails = outage;
+            try {
+                checkin(stateAndAnEvent());
+                fail(outage + " is not the state's fault");
+            } catch (PersistenceException expected) {
+                assertEquals(0, commands.lastSeenStamps);
+                assertEquals(Collections.emptyList(), commands.events);
+            }
+        }
+    }
+
+    @Test
+    public void aCheckInWithOrWithoutAStateIsStampedOnce() {
+        checkin(stateAndAnEvent());
+        assertEquals(1, commands.lastSeenStamps);
+        setUp();
+        checkin(new AgentCheckInRequest());
+        assertEquals(1, commands.lastSeenStamps);
     }
 
     @Test

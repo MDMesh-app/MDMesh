@@ -145,6 +145,8 @@ Fixes
   still sends it is accepted, and the field ignored.
 - Agent: a device that lost its stored configuration (damaged storage) says so and is sent it again, kiosk included.
   Before, it showed as in sync for good and no longer applied it after a restart.
+- Check-in: a device whose reported state the database refuses still gets its commands (the server logs why and keeps
+  the last state it could store). One whose check-in fails while storing it is no longer shown as Online.
 
 Under the hood
 - CI builds the agent's instrumented tests (they still run only by hand, on an emulator).

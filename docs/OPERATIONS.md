@@ -403,9 +403,12 @@ check-in).
 moves the install to another version, with the command below, to
 `backups/pre-update-<time>-from-<version>.dump` in the clone: `<time>` in UTC, `<version>` the release the dump belongs
 to. The directory is readable by its owner only, and only the 3 newest dumps are kept: copy one elsewhere to keep it.
-setup.sh stops, before it changes anything, when it can't take the dump: when postgres isn't running, the dump fails,
+A checkout without a release tag names its dumps `from-unknown`, and they are kept until removed by hand.
+setup.sh stops before it changes the install when it can't take the dump: when postgres isn't running, the dump fails,
 or `backups/` has less free space than the database takes (free some, or make `backups` a link to a directory on a
-larger disk). A dump by hand, at any time:
+larger disk). The install still runs its version, and only the clone has moved (to the new release, after `--update`):
+run `./setup.sh` again once fixed, or `git checkout -` to go back to the code the install runs. A dump by hand, at any
+time:
 
 ```bash
 docker compose exec -T postgres pg_dump -U mdmesh -Fc mdmesh > mdmesh-pre-upgrade.dump

@@ -469,7 +469,7 @@ upd ports ok PATH="$WORK/stubs-ports:$WORK/stubs:$PATH" --
 ok
 
 # The database backup before an update: --update from v9.0.0 over an install that runs 9.0.0. docker: a stub with the
-# project's pgdata volume when PGDATA_VOL names it, a database of DB_SIZE bytes, a pg_dump that writes a few bytes (or
+# project's pgdata volume when PGDATA_VOL names it, a database of DB_SIZE bytes, a pg_dump that writes a few bytes (then
 # fails, with DUMP_FAIL=1), and an `up` that stops the run; the dump and the `up` are logged in their order.
 mkdir -p "$WORK/stubs-backup"
 cat > "$WORK/stubs-backup/docker" <<'EOF'
@@ -478,9 +478,8 @@ case "$*" in
   "volume ls"*com.docker.compose.volume=pgdata) [ -z "${PGDATA_VOL:-}" ] || echo "$PGDATA_VOL" ;;
   "compose exec -T postgres psql"*) echo "${DB_SIZE:-1024}" ;;
   "compose exec -T postgres pg_dump"*)
-    echo dump >> "$WORK_ENV_LOG"
-    [ "${DUMP_FAIL:-}" != 1 ] || { echo 'pg_dump: error: connection to server failed' >&2; exit 1; }
-    printf 'PGDMP' ;;
+    echo dump >> "$WORK_ENV_LOG"; printf 'PGDMP'
+    [ "${DUMP_FAIL:-}" != 1 ] || { echo 'pg_dump: error: connection to server failed' >&2; exit 1; } ;;
   compose*" up "*) echo up >> "$WORK_ENV_LOG"; exit 99 ;;
 esac
 exit 0
@@ -503,11 +502,13 @@ bk=$(dumps bk-ok)
   && grep -qF "Backed up to $bk." "$WORK/out"; } \
   || { fail "--update over an install does not leave one owner-only dump in an owner-only backups/ before up ($bk)"; show; }
 ok
-# A failing pg_dump stops the run before up, saying why, and leaves no file (nor its temporary one).
+# A pg_dump that fails part way stops the run before up, saying why and in what state, and leaves no file (nor its
+# temporary one).
 bk_clone bk-fail 9.0.0; bk_upd bk-fail PGDATA_VOL=mdmesh_pgdata DUMP_FAIL=1
 { [ "$RC" = 1 ] && grep -qx dump "$WORK/env.log" && ! grep -qx up "$WORK/env.log" \
   && grep -qF 'pg_dump: error: connection to server failed' "$WORK/out" \
   && grep -qF 'The database backup failed (above), and this run does not update without one.' "$WORK/out" \
+  && grep -qF 'The install was not changed: it still runs 9.0.0. This clone is on 9.1.0' "$WORK/out" \
   && [ -z "$(ls -A "$WORK/bk-fail/backups")" ]; } \
   || { fail "a failing pg_dump does not stop --update before up, saying so, with nothing left in backups/"; show; }
 ok
@@ -535,6 +536,20 @@ bk=$(dumps bk-keep)
   && [ "$(wc -l <<< "$bk")" = 3 ] && [[ "$(tail -n 1 <<< "$bk")" == *-from-9.0.0.dump ]] \
   && [ ! -e "$WORK/bk-keep/backups/.pre-update.aaaaaa" ]; } \
   || { fail "the backups kept are not the newest 3, or a leftover temporary file stays ($bk)"; show; }
+ok
+# Untagged (on v9.1.0's commit, its tags not fetched): which version the database holds is unknown, so the dump is named
+# from-unknown, and from-unknown dumps are neither counted in the newest 3 nor removed.
+bk_clone bk-untagged 9.1.0; "${G[@]}" -C "$WORK/bk-untagged" checkout -q --detach v9.1.0
+"${G[@]}" -C "$WORK/bk-untagged" for-each-ref --format='delete %(refname)' refs/tags | "${G[@]}" -C "$WORK/bk-untagged" update-ref --stdin
+mkdir -m 700 "$WORK/bk-untagged/backups"
+for d in 1 2 3; do : > "$WORK/bk-untagged/backups/pre-update-2000010${d}T000000Z-from-8.0.0.dump"; done
+: > "$WORK/bk-untagged/backups/pre-update-20000100T000000Z-from-unknown.dump"
+bk_upd bk-untagged PGDATA_VOL=mdmesh_pgdata
+bk=$(dumps bk-untagged)
+{ grep -qx up "$WORK/env.log" && [ "$(grep -c 'from-8\.0\.0\.dump$' <<< "$bk")" = 3 ] \
+  && [ "$(grep -c 'pre-update-[0-9]*T[0-9]*Z-from-unknown\.dump$' <<< "$bk")" = 2 ] \
+  && grep -qF 'kept until removed by hand' "$WORK/out"; } \
+  || { fail "an untagged run's dump is not named from-unknown, or from-unknown dumps count in the newest 3 ($bk)"; show; }
 ok
 
 # Which tree ran, and a floor on how many checks did (a few depend on the host), so a section that silently ran

@@ -412,37 +412,44 @@ version_preflight() {  # version_preflight <running>
   fi
 }
 
+# _bk_stop REASON: stop the update before the install changes, saying why, what state that leaves, and the ways on.
+_bk_stop() {
+  err "$1"
+  err "The install was not changed: it still runs ${CURRENT_VERSION:-as it did}. This clone is on ${REPO_VERSION:-this checkout}: once that"
+  err "is fixed, run ./setup.sh again to update, or go back to the code the install runs (git checkout -)."
+  exit 1
+}
 # A re-run that changes the version (--update, whichever release's script handed over, or a checkout by hand) migrates
 # the database on the server's first start, so it is dumped first, before anything here changes: with OPERATIONS.md's
 # command ("Backups and restore", whose restore is the way back), into backups/ (mode 700, the dump 600), the newest 3
-# kept. Written to a temporary file, renamed once complete. No database volume yet: nothing to keep. When the dump can't
-# be taken, the run stops, saying why.
+# with a known version kept (a from-unknown one is left alone). Written to a temporary file, renamed once complete. No
+# database volume yet: nothing to keep. When the dump can't be taken, the run stops, saying why.
 backup_before_update() {
-  local vol size free from file tmp='' old
+  local vol size free from file tmp='' old=() f
   vol=$(docker volume ls -q --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME:-mdmesh}" \
-    --filter label=com.docker.compose.volume=pgdata) || { err "Could not list Docker's volumes (above). Nothing was changed."; exit 1; }
+    --filter label=com.docker.compose.volume=pgdata) || _bk_stop "Could not list Docker's volumes (above)."
   [ -n "$vol" ] || return 0
   say "Backing up the database before moving to ${REPO_VERSION:-this checkout} (a large one takes a while)…"
   if ! { mkdir -p -m 700 backups && rm -f -- backups/.pre-update.* \
          && size=$(mdm_psql -c 'SELECT pg_database_size(current_database())') \
          && free=$(df -B1 --output=avail backups | tail -n 1 | tr -d ' '); }; then
-    err "Could not read the database's size, or the free space in backups/ (above). Is postgres running? (docker compose"
-    err "up -d postgres) Nothing was changed."; exit 1
+    _bk_stop "Could not read the database's size, or the free space in backups/ (above). Is postgres running? (docker compose up -d postgres)"
   fi
   if [ "$free" -le "$size" ]; then
-    err "backups/ has $((free >> 20)) MiB free, and the database takes $((size >> 20)) MiB: free some space, or make backups a"
-    err "link to a directory on a larger disk, then run this again. Nothing was changed."; exit 1
+    _bk_stop "backups/ has $((free >> 20)) MiB free, and the database takes $((size >> 20)) MiB: free some space, or make backups a link to a directory on a larger disk."
   fi
-  from=${CURRENT_VERSION:-unknown}
+  # Without a release tag CURRENT_VERSION is not moved on (below), so which code last migrated the database is unknown.
+  from=unknown; [ -z "${REPO_VERSION:-}" ] || from=${CURRENT_VERSION:-unknown}
   file="backups/pre-update-$(date -u +%Y%m%dT%H%M%SZ)-from-${from//[!0-9A-Za-z.+-]/_}.dump"
   if ! tmp=$(mktemp backups/.pre-update.XXXXXX) || ! docker compose exec -T postgres pg_dump -U mdmesh -Fc mdmesh > "$tmp" \
      || [ ! -s "$tmp" ] || ! sync -- "$tmp" || ! mv -fT -- "$tmp" "$file"; then
     [ -z "$tmp" ] || rm -f -- "$tmp"
-    err "The database backup failed (above), and this run does not update without one. Nothing was changed."; exit 1
+    _bk_stop "The database backup failed (above), and this run does not update without one."
   fi
-  old=(backups/pre-update-*.dump)
+  for f in backups/pre-update-*.dump; do [[ "$f" == *-from-unknown.dump ]] || old+=("$f"); done
   [ "${#old[@]}" -le 3 ] || rm -f -- "${old[@]:0:${#old[@]}-3}"
-  say "Backed up to $file. To go back to ${CURRENT_VERSION:-the running version} with it: docs/OPERATIONS.md, Backups and restore."
+  if [ "$from" = unknown ]; then say "Backed up to $file, kept until removed by hand (the version it holds is unknown)."
+  else say "Backed up to $file. To go back to $from with it: docs/OPERATIONS.md, Backups and restore."; fi
 }
 
 if [ "$REUSE_ENV" = 1 ]; then

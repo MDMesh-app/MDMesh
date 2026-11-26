@@ -12,16 +12,33 @@
 
 services:
   postgres:
+    # PostgreSQL 18. From 18 the image keeps the cluster in /var/lib/postgresql/18/docker, so the volume (pgdata18)
+    # mounts on /var/lib/postgresql. pgdata is the PostgreSQL 14 volume of installs from before 0.6.0: it is mounted
+    # read-only only so the entrypoint below refuses to start an empty 18 cluster next to it (the server would then
+    # create a new, empty database). Such an install moves its data once with scripts/pg-upgrade-18.sh
+    # (docs/UPGRADING.md, PostgreSQL 18). On a new install pgdata stays empty.
     # tag@sha256:<index digest>, the same in both compose files; Dependabot bumps both. The major (a data format) and
     # the Debian release (text sort order) change only in a planned database migration.
-    image: postgres:14.25-trixie@sha256:c0e9c0e9bac7e4c1834b698217a03ee5c708de30d313c84a506972de0e24b059
+    image: postgres:18.7-trixie@sha256:64c8b0d31e4ab6ea665e8426ea406a94bf52de3c05b3a4a8bf713704eefa9328
+    entrypoint:
+      - sh
+      - -c
+      - |
+        if [ -s /var/lib/mdmesh-pg14/PG_VERSION ] && [ ! -s "$$PGDATA/PG_VERSION" ]; then
+          echo "MDMesh: the database is still in PostgreSQL $$(cat /var/lib/mdmesh-pg14/PG_VERSION) format (volume pgdata). Not starting an empty PostgreSQL 18 database next to it: run scripts/pg-upgrade-18.sh in the install directory (docs/UPGRADING.md, PostgreSQL 18)." >&2
+          exit 1
+        fi
+        exec docker-entrypoint.sh "$$@"
+      - pg-guard
+    command: ["postgres"]
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${DB_NAME:-mdmesh}
       POSTGRES_USER: ${DB_USER:-mdmesh}
       POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - pgdata18:/var/lib/postgresql
+      - pgdata:/var/lib/mdmesh-pg14:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-mdmesh} -d ${DB_NAME:-mdmesh}"]
       interval: 5s
@@ -152,7 +169,8 @@ services:
       TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
 
 volumes:
-  pgdata:
+  pgdata18:
+  pgdata:     # PostgreSQL 14 data of installs from before 0.6.0, kept until removed by hand (docs/UPGRADING.md)
   mdmeshdata:
   caddy_data:
   caddy_config:

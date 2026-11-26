@@ -135,7 +135,7 @@ updates:
     # postgres and cloudflared are tag@sha256:<index digest>: a bump moves tag and digest together (a same-tag rebuild
     # too), and a tag suffix (-trixie) only moves to the same suffix. T0's edge job checks every pin.
     ignore:
-      # Postgres stays on 14.x: a new major cannot open an existing 14 data directory (dump/restore or
-      # pg_upgrade). Move it only in a planned database migration.
+      # Postgres stays on 18.x: a new major cannot open an older one's data directory (dump/restore or
+      # pg_upgrade). Move it only in a planned database migration, as 14 → 18 was (scripts/pg-upgrade-18.sh).
       - dependency-name: "postgres"
         update-types: ["version-update:semver-major"]

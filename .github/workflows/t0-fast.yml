@@ -95,7 +95,7 @@ jobs:
     # random host port: a shared runner may run several jobs at once.
     services:
       postgres:
-        image: ${{ (matrix.name == 'server' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).server)) && 'postgres:14' || '' }}
+        image: ${{ (matrix.name == 'server' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).server)) && 'postgres:18' || '' }}
         env:
           POSTGRES_USER: mdmesh_test
           POSTGRES_PASSWORD: mdmesh_test

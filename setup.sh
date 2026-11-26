@@ -708,6 +708,17 @@ setenv VITE_AGENT_CHECKSUM "$VITE_AGENT_CHECKSUM"
 setenv VITE_AGENT_APK_URL "$VITE_AGENT_APK_URL"
 export VITE_AGENT_PACKAGE VITE_AGENT_CHECKSUM VITE_AGENT_APK_URL
 
+# An install from before 0.6.0 keeps its database in PostgreSQL 14 (volume pgdata); this compose file runs 18 (pgdata18),
+# whose entrypoint refuses to start next to it. Say how to move it before building anything. A docker that can't answer
+# (no volume to inspect) passes: the entrypoint still refuses.
+_pg_rc=0; bash scripts/pg-upgrade-18.sh --check >/dev/null 2>&1 || _pg_rc=$?
+if [ "$_pg_rc" = 10 ]; then
+  err "This install's database is still PostgreSQL 14 (volume ${COMPOSE_PROJECT_NAME:-mdmesh}_pgdata), and this release runs PostgreSQL 18."
+  err "Move it once with scripts/pg-upgrade-18.sh: it stops the stack, copies the database to 18 and checks it, and keeps"
+  err "the 14 volume (docs/UPGRADING.md, PostgreSQL 18). Then re-run ./setup.sh (it reuses your .env). The stack was not touched."
+  exit 1
+fi
+
 say "Building + starting the stack…"
 # shellcheck disable=SC2086
 docker compose ${COMPOSE_ARGS[@]+"${COMPOSE_ARGS[@]}"} up -d --build \

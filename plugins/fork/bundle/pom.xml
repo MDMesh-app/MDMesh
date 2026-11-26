@@ -27,6 +27,11 @@
             <version>0.1.0</version>
         </dependency>
         -->
+        <dependency>
+            <groupId>com.hmdm.plugin</groupId>
+            <artifactId>policies</artifactId>
+            <version>0.1.0</version>
+        </dependency>
     </dependencies>
 
 </project>

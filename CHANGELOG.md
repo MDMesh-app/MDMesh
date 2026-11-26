@@ -10,6 +10,8 @@ Unreleased.
 ## Unreleased
 
 Upgrading
+- The database adds the Policies plugin's tables on start (`plugin_policies_*`: jobs, automation settings, device
+  groups and brands, app schedules). Nothing changes on a phone until someone acts on the Policies page.
 - Forks that publish their own releases: record your release certificate's checksum in
   `release/agent-signature-checksum` before you tag, and have Arm64 runners for the image builds
   ([UPGRADING.md](docs/UPGRADING.md#v060-for-forks)).
@@ -53,6 +55,13 @@ Heads-up
   release's agent.
 
 New
+- Policies (Policies page, with the bundled Policies server plugin): put phones in groups by brand or one by one,
+  give each group a policy and press Apply to move its phones; set or create a phone's brand from the Devices list,
+  which also gets a "Policy group" column. Each policy shows its allowed apps (picked from a host phone's apps), the
+  extra apps found on its phones, and which phones comply. Open an app on phones right away (Client actions, Open app)
+  or on a schedule: at set times, on a policy's phones, one group or picked phones, with phones that are offline at the
+  time still getting it within a late window; nothing locks the app. It needs an agent with protocol 1.13 (app.launch);
+  phones on older agents are skipped. The Overview adds a Brands card and an "On group policy" tile.
 - Install behind the nginx, Apache, Caddy or Traefik you already run: the quick start's third choice (or `--proxy`),
   with ready configurations for each. Thanks @lared3294, @detobel36.
 - The quick start asks one plain question, how your phones will reach MDMesh; `--tunnel`, `--domain` and `--proxy` answer it.
@@ -146,6 +155,8 @@ Under the hood
 - Agent protocol 1.12 (additive): the check-in response's `eventsAccepted`, the check-in request's `protocolVersion`
   (now always sent), and the `eventsDropped` event
   ([VERSIONING](https://github.com/MDMesh-app/MDMesh/blob/main/proto/VERSIONING.md)).
+- Agent protocol 1.13 (additive): the `app.launch` command opens an app's screen on request, sent only to agents that
+  advertise the new `launch` capability (Device Owner); the user leaves the app as usual.
 
 ## v0.5.1 — 2026-11-20
 

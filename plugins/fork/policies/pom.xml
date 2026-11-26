@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+  The Policies plugin: server help for the console's Policies extension (web/src/extensions/policies). It serves
+  the whole fleet's policy status in one request instead of three per phone. See README.md.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <artifactId>policies</artifactId>
+    <packaging>jar</packaging>
+    <version>0.1.0</version>
+    <name>Policies plugin</name>
+    <parent>
+        <groupId>com.hmdm.plugin</groupId>
+        <artifactId>fork</artifactId>
+        <version>0.1.0</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+    <dependencies>
+        <dependency>
+            <groupId>com.hmdm.plugin</groupId>
+            <artifactId>platform</artifactId>
+            <version>0.1.0</version>
+        </dependency>
+    </dependencies>
+</project>

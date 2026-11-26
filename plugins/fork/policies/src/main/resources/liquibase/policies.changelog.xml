@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The Policies plugin's database changes: its plugins row, and its own job tables. Core's tables are not changed. -->
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-3.0.xsd">
+
+    <changeSet id="plugin-policies-15.11.2026-plugin-row" author="mdmesh-fork" context="common">
+        <preConditions onFail="MARK_RAN">
+            <sqlCheck expectedResult="0">SELECT COUNT(*) FROM plugins WHERE identifier = 'policies'</sqlCheck>
+        </preConditions>
+        <comment>Plugin,new: policies</comment>
+        <sql>
+            INSERT INTO plugins (identifier, name, description)
+            VALUES ('policies', 'Policies', 'Server help for the Policies page: the fleet''s policy status in one request.');
+        </sql>
+        <rollback>
+            DELETE FROM plugins WHERE identifier = 'policies';
+        </rollback>
+    </changeSet>
+
+    <!--
+      Bulk jobs (step 2). A job is one bulk action from the console. Its phones (job_device) are woken by one worker at a
+      fixed rate; its commands (job_command) link to core's agentCommand rows, which hold their real status. Only these
+      plugin tables are created; core's tables are not changed.
+    -->
+    <changeSet id="plugin-policies-15.11.2026-jobs" author="mdmesh-fork" context="common">
+        <comment>Policies plugin: bulk jobs</comment>
+        <sql>
+            CREATE TABLE plugin_policies_job (
+                id SERIAL PRIMARY KEY,
+                customerId INT NOT NULL,
+                createdBy INT,
+                action VARCHAR(32) NOT NULL,
+                label VARCHAR(200),
+                createdAt BIGINT NOT NULL,
+                cancelled BOOLEAN NOT NULL DEFAULT FALSE
+            );
+            CREATE INDEX plugin_policies_job_customer_idx ON plugin_policies_job (customerId, createdAt);
+
+            CREATE TABLE plugin_policies_job_device (
+                id SERIAL PRIMARY KEY,
+                jobId INT NOT NULL REFERENCES plugin_policies_job (id) ON DELETE CASCADE,
+                deviceNumber VARCHAR(100) NOT NULL,
+                wake VARCHAR(16) NOT NULL DEFAULT 'queued',
+                wokenAt BIGINT
+            );
+            CREATE INDEX plugin_policies_job_device_job_idx ON plugin_policies_job_device (jobId);
+            CREATE INDEX plugin_policies_job_device_queued_idx ON plugin_policies_job_device (id) WHERE wake = 'queued';
+
+            CREATE TABLE plugin_policies_job_command (
+                id SERIAL PRIMARY KEY,
+                jobId INT NOT NULL REFERENCES plugin_policies_job (id) ON DELETE CASCADE,
+                deviceNumber VARCHAR(100) NOT NULL,
+                commandId INT NOT NULL,
+                attempts INT NOT NULL DEFAULT 1
+            );
+            CREATE INDEX plugin_policies_job_command_job_idx ON plugin_policies_job_command (jobId);
+            CREATE INDEX plugin_policies_job_command_cmd_idx ON plugin_policies_job_command (commandId);
+        </sql>
+        <rollback>
+            DROP TABLE plugin_policies_job_command;
+            DROP TABLE plugin_policies_job_device;
+            DROP TABLE plugin_policies_job;
+        </rollback>
+    </changeSet>
+
+    <!--
+      Automation (step 3), one row per customer: the nightly scan sweep's settings and where tonight's sweep has got to,
+      and the time up to which finished scans were checked for auto-remove.
+    -->
+    <changeSet id="plugin-policies-15.11.2026-automation" author="mdmesh-fork" context="common">
+        <comment>Policies plugin: automation settings and state</comment>
+        <sql>
+            CREATE TABLE plugin_policies_settings (
+                customerId INT PRIMARY KEY,
+                nightlyScan BOOLEAN NOT NULL DEFAULT FALSE,
+                windowStart SMALLINT NOT NULL DEFAULT 1,
+                windowEnd SMALLINT NOT NULL DEFAULT 5,
+                timeZone VARCHAR(64) NOT NULL DEFAULT 'UTC',
+                sweepNight VARCHAR(10),
+                sweepCursor INT NOT NULL DEFAULT 0,
+                sweepJobId INT,
+                autoRemoveSince BIGINT
+            );
+        </sql>
+        <rollback>
+            DROP TABLE plugin_policies_settings;
+        </rollback>
+    </changeSet>
+
+    <!--
+      Device groups: a group covers whole brands (new phones of them join it) and phones picked by hand, and points at
+      one policy (or none yet). A brand and a phone belong to one group at most (primary keys). Brands made by hand and
+      a brand set by hand on a phone live here too. Nothing here sends anything to a phone: a group's phones are moved
+      to its policy only when someone presses Apply (core's own bulk move).
+    -->
+    <changeSet id="plugin-policies-16.11.2026-groups" author="mdmesh-fork" context="common">
+        <comment>Policies plugin: device groups and brands</comment>
+        <sql>
+            CREATE TABLE plugin_policies_group (
+                id SERIAL PRIMARY KEY,
+                customerId INT NOT NULL,
+                name VARCHAR(100) NOT NULL,
+                configurationId INT,
+                createdAt BIGINT NOT NULL
+            );
+            CREATE INDEX plugin_policies_group_customer_idx ON plugin_policies_group (customerId);
+
+            CREATE TABLE plugin_policies_group_brand (
+                customerId INT NOT NULL,
+                brand VARCHAR(40) NOT NULL,
+                groupId INT NOT NULL REFERENCES plugin_policies_group (id) ON DELETE CASCADE,
+                PRIMARY KEY (customerId, brand)
+            );
+            CREATE INDEX plugin_policies_group_brand_group_idx ON plugin_policies_group_brand (groupId);
+
+            CREATE TABLE plugin_policies_group_device (
+                deviceId INT PRIMARY KEY,
+                customerId INT NOT NULL,
+                groupId INT NOT NULL REFERENCES plugin_policies_group (id) ON DELETE CASCADE
+            );
+            CREATE INDEX plugin_policies_group_device_group_idx ON plugin_policies_group_device (groupId);
+
+            CREATE TABLE plugin_policies_brand (
+                customerId INT NOT NULL,
+                brand VARCHAR(40) NOT NULL,
+                label VARCHAR(40) NOT NULL,
+                PRIMARY KEY (customerId, brand)
+            );
+
+            CREATE TABLE plugin_policies_device_brand (
+                deviceId INT PRIMARY KEY,
+                customerId INT NOT NULL,
+                brand VARCHAR(40) NOT NULL
+            );
+        </sql>
+        <rollback>
+            DROP TABLE plugin_policies_device_brand;
+            DROP TABLE plugin_policies_brand;
+            DROP TABLE plugin_policies_group_device;
+            DROP TABLE plugin_policies_group_brand;
+            DROP TABLE plugin_policies_group;
+        </rollback>
+    </changeSet>
+
+    <!--
+      App schedules: open an app on a policy's phones at set times (agent protocol 1.13, app.launch): the whole policy,
+      one group of it (groupId; null once that group is deleted), or phones picked by hand (device ids, comma-separated).
+      A job gets a deadline: its commands still undelivered after it are expired, never sent late or retried.
+    -->
+    <changeSet id="plugin-policies-26.11.2026-app-schedules" author="mdmesh-fork" context="common">
+        <comment>Policies plugin: app schedules</comment>
+        <sql>
+            ALTER TABLE plugin_policies_job ADD COLUMN IF NOT EXISTS deadline BIGINT;
+
+            CREATE TABLE plugin_policies_app_schedule (
+                id SERIAL PRIMARY KEY,
+                customerId INT NOT NULL,
+                configurationId INT NOT NULL,
+                pkg VARCHAR(255) NOT NULL,
+                appName VARCHAR(100),
+                target VARCHAR(8) NOT NULL DEFAULT 'policy',
+                groupId INT REFERENCES plugin_policies_group (id) ON DELETE SET NULL,
+                devices TEXT,
+                days SMALLINT NOT NULL,
+                times VARCHAR(200) NOT NULL,
+                timeZone VARCHAR(64) NOT NULL,
+                lateMinutes SMALLINT NOT NULL DEFAULT 15,
+                enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                lastSlot VARCHAR(16),
+                createdAt BIGINT NOT NULL
+            );
+            CREATE INDEX plugin_policies_app_schedule_config_idx ON plugin_policies_app_schedule (customerId, configurationId);
+        </sql>
+        <rollback>
+            DROP TABLE plugin_policies_app_schedule;
+            ALTER TABLE plugin_policies_job DROP COLUMN deadline;
+        </rollback>
+    </changeSet>
+</databaseChangeLog>

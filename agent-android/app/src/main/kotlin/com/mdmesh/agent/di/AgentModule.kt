@@ -14,10 +14,12 @@ import com.mdmesh.core.capability.CapabilitySource
 import com.mdmesh.core.command.CommandDispatcher
 import com.mdmesh.core.command.CommandHandler
 import com.mdmesh.core.action.AlertNotifier
+import com.mdmesh.core.action.AndroidAppLauncher
 import com.mdmesh.core.action.ResetPasswordTokenStore
 import com.mdmesh.core.action.RingController
 import com.mdmesh.core.command.handlers.AppIconsHandler
 import com.mdmesh.core.command.handlers.AppInstallHandler
+import com.mdmesh.core.command.handlers.AppLaunchHandler
 import com.mdmesh.core.command.handlers.AppScanHandler
 import com.mdmesh.core.command.handlers.AppUninstallHandler
 import com.mdmesh.core.command.handlers.ConfigApplyHandler
@@ -237,6 +239,11 @@ object AgentModule {
     @Provides
     @IntoSet
     fun provideConfigSyncHandler(): CommandHandler = ConfigSyncHandler()
+
+    @Provides
+    @IntoSet
+    fun provideAppLaunchHandler(launcher: AndroidAppLauncher): CommandHandler =
+        AppLaunchHandler(launcher)
 
     @Provides
     @IntoSet

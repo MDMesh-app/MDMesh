@@ -4,7 +4,7 @@
 # unless the reference is an image index holding exactly one image for each of them; docker picks the host's from it.
 # A platform given as os/arch=sha256:<hex> must be exactly that image; when every one is given so, the index must hold
 # those images and nothing else (the release workflow passes the builds it tested).
-# Used by the release workflow to pin the images in the manifest.
+# Used by the release workflow to pin the images in the manifest, and by T0 to check the compose files' third-party pins.
 set -eu
 REF="${1:?usage: image-digest.sh registry/repo:tag [os/arch[=sha256:<hex>]...]}"
 shift

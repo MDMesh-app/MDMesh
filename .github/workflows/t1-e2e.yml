@@ -49,7 +49,7 @@ jobs:
             # updater, the compose files and the ready proxy configurations, the database migrations (rollback-e2e
             # rolls back across a schema change), the docs whose restore commands rollback-e2e runs as written, and the
             # tests themselves.
-            lifecycle: quickstart.sh, setup.sh, install/**, docker/**, docker-compose*.yml, supervisor/**, docs/proxies/**, docs/OPERATIONS.md, docs/UPGRADING.md, **/src/main/resources/liquibase/**, tests/proxy-e2e/**, tests/rollback-e2e/**, .dockerignore
+            lifecycle: quickstart.sh, setup.sh, install/**, docker/**, docker-compose*.yml, supervisor/**, docs/proxies/**, docs/OPERATIONS.md, docs/UPGRADING.md, **/src/main/resources/liquibase/**, tests/proxy-e2e/**, tests/rollback-e2e/**, tests/lib/dind-images.sh, .dockerignore
 
   agent-e2e:
     name: agent-e2e
@@ -226,10 +226,12 @@ jobs:
       - name: Pull the images the suite loads into its docker:dind
         run: |
           caddy=$(awk 'tolower($1) == "from" && $2 ~ /^caddy[:@]/ { print $2; exit }' docker/web.Dockerfile)
+          ROOT=$PWD; . tests/lib/dind-images.sh
+          pg=$(pinned_image postgres)
           if [ "${{ matrix.suite }}" = proxy-e2e ]; then
-            imgs="postgres:14 nginx:1.26-alpine httpd:2.4-alpine $caddy"
+            imgs="$pg nginx:1.26-alpine httpd:2.4-alpine $caddy"
           else
-            imgs="postgres:14 postgres:16 ghcr.io/mdmesh-app/mdmesh-server:0.4.0 ghcr.io/mdmesh-app/mdmesh-web:0.4.0 ghcr.io/mdmesh-app/mdmesh-supervisor:0.4.0"
+            imgs="$pg postgres:14 postgres:16 ghcr.io/mdmesh-app/mdmesh-server:0.4.0 ghcr.io/mdmesh-app/mdmesh-web:0.4.0 ghcr.io/mdmesh-app/mdmesh-supervisor:0.4.0"
           fi
           for i in $imgs; do docker pull -q "$i"; done
           df -h /

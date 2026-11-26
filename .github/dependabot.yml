@@ -131,8 +131,9 @@ updates:
     schedule: { interval: weekly, day: monday }
     groups:
       compose-images: { patterns: ["*"] }
-    # Scans docker-compose*.yml. Our own ghcr.io/.../mdmesh-* images use ${VAR:-latest} tags and are skipped;
-    # cloudflared is :latest (nothing to bump).
+    # Scans docker-compose*.yml. Our own ghcr.io/.../mdmesh-* images use ${VAR:-latest} tags and are skipped.
+    # postgres and cloudflared are tag@sha256:<index digest>: a bump moves tag and digest together (a same-tag rebuild
+    # too), and a tag suffix (-trixie) only moves to the same suffix. T0's edge job checks every pin.
     ignore:
       # Postgres stays on 14.x: a new major cannot open an existing 14 data directory (dump/restore or
       # pg_upgrade). Move it only in a planned database migration.

@@ -32,6 +32,10 @@ Upgrading
   End it with `await settled()`, new in `@mdmesh/console/testing` ([EXTENDING.md](web/EXTENDING.md#testing)).
   `stubApi`'s answers now arrive a moment later: wait with `findBy…` or `settled()`, not `act(async () => {})`. The
   same goes for tests of your own in core ([UPGRADING.md](docs/UPGRADING.md#v060-for-forks-that-change-the-console)).
+- PostgreSQL and cloudflared now run exact images, pinned by digest: `postgres:14.25-trixie` (still PostgreSQL 14)
+  and cloudflared 2026.11.2. From source, `./setup.sh --update` restarts the database for a few seconds. Quick-start
+  installs keep the images they were set up with: update cloudflared with the step in UPGRADING at least once a year,
+  as Cloudflare supports releases up to a year old ([UPGRADING.md](docs/UPGRADING.md#unreleased)).
 
 Heads-up
 - The edge sends HSTS for a request that came in over HTTP only when a trusted peer says `X-Forwarded-Proto: https`

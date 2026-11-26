@@ -6,6 +6,7 @@ Thanks for being here. Code, docs, bug reports and ideas all help. This guide ge
 - 💡 **Idea?** → [open a feature request](https://github.com/MDMesh-app/MDMesh/issues/new?template=feature_request.yml)
 - 🔧 **Code?** → read on, then send a focused PR.
 - **Security issue?** → see [SECURITY.md](SECURITY.md). Please don't file it publicly.
+- 🤖 **Using a coding agent?** → point it at [AGENTS.md](AGENTS.md).
 
 ---
 

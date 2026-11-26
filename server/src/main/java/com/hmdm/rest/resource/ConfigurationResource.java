@@ -4,6 +4,7 @@
  * https://h-mdm.com
  *
  * Copyright (C) 2019 Headwind Solutions LLC (http://h-sms.com)
+ * Modified by the MDMesh contributors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -214,17 +215,16 @@ public class ConfigurationResource {
     @ApiOperation(
             value = "Create or update configuration",
             notes = "Creates a new configuration (if id is not provided) or update existing one otherwise. " +
-                    "An update replaces the configuration: every column, and the applications list, are written " +
-                    "as sent, so a column left out becomes null and a missing applications list removes every app. " +
-                    "Only files, applicationSettings, extensions and managedAppPermissions left out (null) are kept; " +
+                    "An update replaces the configuration: every column is written as sent, so a column left out " +
+                    "becomes null. applications, files, applicationSettings, extensions and managedAppPermissions " +
+                    "left out (null) are kept; " +
                     "an empty list (or object) clears them. managedAppPermissions ({applicationId, permission, state}, " +
-                    "state grant or deny; absent = Default) keeps only the rules for apps the save installs; a " +
+                    "state grant or deny; absent = Default) keeps only the rules for apps the configuration installs; a " +
                     "malformed, duplicated or excess rule is refused with HTTP 400. extensions are checked once the user may save (com.hmdm.extension.ConfigurationExtensions), " +
                     "the plugins' validators on the namespaces the save changes: " +
                     "a refusal is an ERROR whose message is the first problem's key and whose data lists them all. " +
                     "applicationUsageParameters are upserted and never removed. " +
-                    "An explicit \"applications\": null, and a connectivityMode other than adaptive, alwaysOn or null, " +
-                    "are refused with HTTP 400. " +
+                    "A connectivityMode other than adaptive, alwaysOn or null is refused with HTTP 400. " +
                     "Kiosk background image: backgroundImageAction is keep (the default), replace or remove. replace " +
                     "takes backgroundImageFileId, an uploaded file (PNG, JPEG or WebP, at most 10 MB and 16 megapixels), " +
                     "and the server sets backgroundImageUrl and backgroundImageSha256 from it; remove clears all three. " +
@@ -249,16 +249,15 @@ public class ConfigurationResource {
                     ", user " + SecurityContext.get().getCurrentUserName());
             return Response.PERMISSION_DENIED();
         }
-        if (configuration == null || configuration.getApplications() == null) {
-            // Saving needs the applications list (an empty one for none); null used to fail with a 500.
-            throw new BadRequestException("applications must be a list");
+        if (configuration == null) {
+            throw new BadRequestException("a configuration is required");
         }
         if (configuration.getConnectivityMode() != null
                 && DesiredConfigBuilder.connectivityMode(configuration.getConnectivityMode()) == null) {
             // An unknown mode would be stored and sent as not managed; a long one used to fail with a 500.
             throw new BadRequestException("connectivityMode must be adaptive, alwaysOn or null");
         }
-        normalizeManagedAppPermissions(configuration);
+        validateManagedAppPermissions(configuration);
         validateBackgroundImageFit(configuration);
         // A cleaned copy of the background image this save hosted: taken back if the save then fails.
         KioskBackgroundImageAssets.Applied imageApplied = null;
@@ -341,24 +340,18 @@ public class ConfigurationResource {
             java.util.regex.Pattern.compile("android\\.permission\\.[A-Z][A-Z0-9_]*");
 
     /**
-     * Checks a save's managedAppPermissions and keeps only the rules for apps the save installs. A rule for an app
-     * the save leaves out or doesn't install is dropped, not refused: another path (the Applications page, a new
-     * version) can change a configuration's apps under the editor, and the console still holds that app's rules, so
-     * refusing would make the configuration unsaveable. Null (an older console or API client) keeps what is stored.
+     * Checks a save's managedAppPermissions, with or without its applications. Null (an older console or API client)
+     * keeps what is stored. The store keeps only the rules for apps the configuration installs (ConfigurationDAO).
      *
      * @throws BadRequestException for a malformed rule: a state other than grant or deny, a permission name that is
      *                             not android.permission.*, too long, duplicated, or more than
      *                             {@link #MAX_RULES_PER_APP} for one app
      */
-    static void normalizeManagedAppPermissions(Configuration configuration) {
+    static void validateManagedAppPermissions(Configuration configuration) {
         List<ManagedAppPermission> rules = configuration.getManagedAppPermissions();
         if (rules == null) return;
-        Set<Integer> eligibleApps = configuration.getApplications().stream()
-                .filter(app -> app != null && app.getId() != null && app.getAction() == DesiredConfigBuilder.ACTION_INSTALL)
-                .map(Application::getId).collect(Collectors.toSet());
         Set<String> seen = new HashSet<String>();
         java.util.Map<Integer, Integer> perApp = new java.util.HashMap<Integer, Integer>();
-        List<ManagedAppPermission> kept = new java.util.ArrayList<ManagedAppPermission>();
         for (ManagedAppPermission rule : rules) {
             if (rule == null || rule.getApplicationId() == null || rule.getPermission() == null
                     || rule.getPermission().length() > MAX_PERMISSION_LENGTH
@@ -369,9 +362,7 @@ public class ConfigurationResource {
                 throw new BadRequestException("managedAppPermissions must be unique android.permission.* names set to "
                         + "grant or deny, at most " + MAX_RULES_PER_APP + " per app");
             }
-            if (eligibleApps.contains(rule.getApplicationId())) kept.add(rule);
         }
-        configuration.setManagedAppPermissions(kept);
     }
 
     private void undo(KioskBackgroundImageAssets.Applied applied) {

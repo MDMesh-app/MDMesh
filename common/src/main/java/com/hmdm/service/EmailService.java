@@ -4,6 +4,7 @@
  * https://h-mdm.com
  *
  * Copyright (C) 2019 Headwind Solutions LLC (http://h-sms.com)
+ * Modified by the MDMesh contributors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -96,7 +97,7 @@ public class EmailService {
         this.smtpPassword = smtpPassword;
         this.smtpFrom = smtpFrom;
         if (appName.equals("")) {
-            appName = "Headwind MDM";
+            appName = "MDMesh";
         }
         this.baseUrl = baseUrl;
         this.appName = appName;

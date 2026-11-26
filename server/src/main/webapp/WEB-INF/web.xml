@@ -1,9 +1,10 @@
+<!-- Derived from Headwind MDM (Apache-2.0); modified by the MDMesh contributors. -->
 <!DOCTYPE web-app PUBLIC
         "-//Sun Microsystems, Inc.//DTD Web Application 2.3//EN"
         "http://java.sun.com/dtd/web-app_2_3.dtd" >
 
 <web-app>
-    <display-name>Headwind MDM</display-name>
+    <display-name>MDMesh</display-name>
 
     <!-- A path that routing would read differently from the security filters (";" path parameters, encoded "/", "\",
          ";" or ".", "//", "." and ".." segments): 400. Mapped first, before every other filter. -->
@@ -17,7 +18,7 @@
         <filter-name>security-headers</filter-name>
         <filter-class>com.hmdm.rest.filter.SecurityHeadersFilter</filter-class>
     </filter>
-    <!-- Headwind launcher device routes: 404 unless the legacy.device.api context parameter is 1 (mapped third). -->
+    <!-- Legacy launcher device routes: 404 unless the legacy.device.api context parameter is 1 (mapped third). -->
     <filter>
         <filter-name>legacy-device-api</filter-name>
         <filter-class>com.hmdm.rest.filter.LegacyDeviceApiFilter</filter-class>

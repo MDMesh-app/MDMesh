@@ -5,6 +5,7 @@
   ~ https://h-mdm.com
   ~
   ~ Copyright (C) 2019 Headwind Solutions LLC (http://h-sms.com)
+  ~ Modified by the MDMesh contributors.
   ~
   ~ Licensed under the Apache License, Version 2.0 (the "License");
   ~ you may not use this file except in compliance with the License.
@@ -194,7 +195,7 @@
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>license-maven-plugin</artifactId>
-                <version>2.9.0</version>
+                <version>2.7.1</version>
                 <executions>
                     <execution>
                         <id>third-party</id>

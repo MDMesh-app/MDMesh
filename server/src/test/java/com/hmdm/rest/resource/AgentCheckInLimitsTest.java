@@ -1,5 +1,5 @@
 /*
- * MDMesh: fork of Headwind MDM. Apache-2.0.
+ * Copyright (C) 2026 the MDMesh contributors. Licensed under the Apache License, Version 2.0.
  */
 package com.hmdm.rest.resource;
 
@@ -330,7 +330,7 @@ public class AgentCheckInLimitsTest {
 
     @Test
     public void storesAWholeOfflineBufferFromAnOlderAgent() {
-        // Agents before 0.5.2 send their whole buffer, up to 500 events, in one check-in and count all of it delivered.
+        // Agents before 0.6.0 send their whole buffer, up to 500 events, in one check-in and count all of it delivered.
         AgentCheckInRequest req = new AgentCheckInRequest();
         req.setEvents(events(500));
 

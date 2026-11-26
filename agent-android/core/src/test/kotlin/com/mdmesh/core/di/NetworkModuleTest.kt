@@ -89,6 +89,11 @@ class NetworkModuleTest {
     }
 
     @Test
+    fun `API client waits 30 s for a busy server's answer`() {
+        assertEquals(30_000, NetworkModule.provideApiOkHttp(serverConfig(provisioned)).readTimeoutMillis)
+    }
+
+    @Test
     fun `API client is still rewritten to the provisioned server`() {
         val client = NetworkModule.provideApiOkHttp(serverConfig(provisioned))
 

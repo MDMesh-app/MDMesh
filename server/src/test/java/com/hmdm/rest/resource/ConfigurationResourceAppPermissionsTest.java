@@ -19,7 +19,10 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.fail;
 
-/** PUT /configurations: managedAppPermissions are checked before anything is saved, and kept only for installed apps. */
+/**
+ * PUT /configurations: managedAppPermissions are checked before anything is saved, with or without the
+ * applications. Which of them are kept is ConfigurationUpdateKeepsListsTest's.
+ */
 public class ConfigurationResourceAppPermissionsTest {
 
     @Before
@@ -67,18 +70,9 @@ public class ConfigurationResourceAppPermissionsTest {
     }
 
     @Test
-    public void rulesForAppsTheSaveDoesNotInstallAreDroppedNotRefused() {
-        Configuration c = withRules(rule(1, "android.permission.CAMERA", "deny"),
-                rule(2, "android.permission.CAMERA", "deny"), rule(3, "android.permission.RECORD_AUDIO", "grant"));
-        ConfigurationResource.normalizeManagedAppPermissions(c);
-        assertEquals(1, c.getManagedAppPermissions().size());
-        assertEquals(Integer.valueOf(1), c.getManagedAppPermissions().get(0).getApplicationId());
-    }
-
-    @Test
     public void aSaveWithoutTheListKeepsWhatIsStored() {
         Configuration c = withRules((ManagedAppPermission[]) null);
-        ConfigurationResource.normalizeManagedAppPermissions(c);
+        ConfigurationResource.validateManagedAppPermissions(c);
         assertNull(c.getManagedAppPermissions());
     }
 
@@ -94,8 +88,11 @@ public class ConfigurationResourceAppPermissionsTest {
         StringBuilder longName = new StringBuilder("android.permission.");
         while (longName.length() <= ConfigurationResource.MAX_PERMISSION_LENGTH) longName.append('A');
         refused(withRules(rule(1, longName.toString(), "deny")));
-        // Malformed is refused even for an app the save drops.
+        // Malformed is refused even for an app the save drops, and in a save without the applications.
         refused(withRules(rule(3, "android.permission.CAMERA", "ask")));
+        Configuration withoutApps = withRules(rule(1, "android.permission.CAMERA", "ask"));
+        withoutApps.setApplications(null);
+        refused(withoutApps);
     }
 
     @Test
@@ -107,7 +104,7 @@ public class ConfigurationResourceAppPermissionsTest {
         refused(withRules(rules.toArray(new ManagedAppPermission[0])));
         rules.remove(0);
         Configuration atTheLimit = withRules(rules.toArray(new ManagedAppPermission[0]));
-        ConfigurationResource.normalizeManagedAppPermissions(atTheLimit);
+        ConfigurationResource.validateManagedAppPermissions(atTheLimit);
         assertEquals(ConfigurationResource.MAX_RULES_PER_APP, atTheLimit.getManagedAppPermissions().size());
     }
 

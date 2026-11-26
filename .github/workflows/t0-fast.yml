@@ -296,9 +296,12 @@ jobs:
       - if: matrix.name == 'edge' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).edge)
         name: Third-party images pinned by index digest
         run: |
+          set -o pipefail
           pins() { DB_PASSWORD=x BASE_URL=x HASH_SECRET=x docker compose -f "$1" --profile '*' config --images \
-                     | grep -v '^ghcr\.io/[^/]*/mdmesh-' | sort -u; }
-          dev=$(pins docker-compose.yml) rel=$(pins docker-compose.release.yml)
+                     | grep -v '^ghcr\.io/[^/]*/mdmesh-' | sort -u \
+                     || { echo "::error::$1: no third-party images (config failed, or none)" >&2; return 1; }; }
+          dev=$(pins docker-compose.yml)
+          rel=$(pins docker-compose.release.yml)
           [ "$dev" = "$rel" ] \
             || { echo "::error::the compose files run different third-party images:"; diff <(echo "$dev") <(echo "$rel"); exit 1; }
           for ref in $rel; do

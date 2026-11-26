@@ -12,8 +12,9 @@
 #      ANALYZE;
 #   5. counts the rows of every table on both sides and stops if any count differs (pgdata18 is then removed and the
 #      stack stays stopped on 14: `docker compose start` starts it again as it was); only then does it mark pgdata18
-#      as moved (MARKER below), and pgdata18 without that mark next to 14 data is an unfinished move: the postgres
-#      container refuses to start on it, --check reports it, and a run of this script starts the move over;
+#      as moved (MARKER below). pgdata18 without that mark next to 14 data is an unfinished move, and with a mark from
+#      before 14 ran again (going back) an out-of-date one: the postgres container refuses to start on either,
+#      --check reports it, and a run of this script starts the move over;
 #   6. a compose file from before 0.6.0 (a quick start: postgres:14 on pgdata) gets its postgres service moved to
 #      postgres:18 on pgdata18 — the original is kept as ./pg-upgrade-18/docker-compose.yml.pg14;
 #   7. starts the stack again (`docker compose up -d`). A from-source install (./setup.sh is there) is left stopped:
@@ -29,7 +30,9 @@ set -euo pipefail
 
 NEW_IMAGE=postgres:18
 WORKDIR=pg-upgrade-18
-# In pgdata18's root (next to 18/docker): written once the database is restored and checked. docker-compose*.yml's
+# In pgdata18's root (next to 18/docker): written once the database is restored and checked, with the sha256 of the
+# old volume's global/pg_control as it was moved. PostgreSQL rewrites that file whenever it runs, so if 14 ran again on
+# the old volume since (a rollback), the mark no longer matches and pgdata18 is out of date. docker-compose*.yml's
 # postgres guard reads it too.
 MARKER=.mdmesh-moved-from-pg14
 YES=0; CHECK=0
@@ -78,16 +81,64 @@ vol_pgver() {
     | tr -dc '0-9'
 }
 
-vol_moved() {
-  docker run --rm --network none -v "$1:/v:ro" --entrypoint sh "$NEW_IMAGE" -c "test -e /v/$MARKER"
+# moved_state: exit 0 when pgdata18 holds a finished move of the old volume as it is now (or the old volume is gone),
+# 1 when pgdata18 has no mark (an unfinished move), 2 when PostgreSQL ran on the old volume after the move (a rollback).
+moved_state() {
+  local o=()
+  if vol_exists "$OLD_VOL"; then o=(-v "${OLD_VOL}:/o:ro"); fi
+  docker run --rm --network none -v "${NEW_VOL}:/n:ro" ${o[@]+"${o[@]}"} --entrypoint sh "$NEW_IMAGE" -c '
+    [ -e "/n/$1" ] || exit 1
+    [ -s /o/PG_VERSION ] || exit 0
+    grep -qx "pg_control=$(sha256sum /o/global/pg_control | cut -c1-64)" "/n/$1" || exit 2' sh "$MARKER"
 }
 
-OLD_VER=; NEW_VER=; MOVED=0
+OLD_VER=; NEW_VER=; STATE=1
 if vol_exists "$OLD_VOL"; then OLD_VER=$(vol_pgver "$OLD_VOL" .); fi
 if vol_exists "$NEW_VOL"; then
   NEW_VER=$(vol_pgver "$NEW_VOL" 18/docker)
-  vol_moved "$NEW_VOL" && MOVED=1
+  STATE=0; moved_state || STATE=$?
 fi
+MOVED=0; [ "$STATE" = 0 ] && MOVED=1
+
+# The compose file: from 0.6.0 on it already runs postgres:18 on pgdata18; a quick start's older copy needs its postgres
+# service moved, which only works on the lines as we shipped them.
+compose_on_18() {
+  grep -qxF '    image: postgres:18' docker-compose.yml && grep -qxF '      - pgdata18:/var/lib/postgresql' docker-compose.yml
+}
+compose_check_old() { # OLD_VER: dies unless docker-compose.yml has the lines edit_compose changes, once each
+  local l
+  for l in "    image: postgres:$1" '      - pgdata:/var/lib/postgresql/data' '  pgdata:'; do
+    [ "$(grep -cxF -- "$l" docker-compose.yml)" = 1 ] \
+      || die "docker-compose.yml doesn't have the postgres lines this script knows (\"${l#"${l%%[! ]*}"}\" once): nothing was changed. Take the postgres service from the docker-compose.release.yml of a 0.6.0 or later release (or edit it by hand as there), then run this again."
+  done
+}
+edit_compose() { # OLD_VER
+  say "Moving docker-compose.yml's postgres service to ${NEW_IMAGE}"
+  mkdir -p "$WORKDIR"
+  BAK="$WORKDIR/docker-compose.yml.pg$1"
+  cp -p docker-compose.yml "$BAK"
+  awk -v old="    image: postgres:$1" '
+    $0 == old                                       { print "    image: postgres:18"; next }
+    $0 == "      - pgdata:/var/lib/postgresql/data" { print "      - pgdata18:/var/lib/postgresql"; next }
+    $0 == "  pgdata:"                               { print "  pgdata18:"; print; next }
+                                                    { print }' "$BAK" > docker-compose.yml.new
+  chmod 644 docker-compose.yml.new
+  mv -f docker-compose.yml.new docker-compose.yml
+  if ! docker compose config -q; then
+    cp -p "$BAK" docker-compose.yml
+    die "the edited compose file does not load (above); the original is back. ${NEW_VOL} holds the moved database: edit the postgres service by hand (image postgres:18, volume pgdata18:/var/lib/postgresql, pgdata18 under volumes:), then docker compose up -d."
+  fi
+  ok "docker-compose.yml: postgres:18 on pgdata18 (the original: $BAK)"
+}
+start_stack() {
+  if [ -f setup.sh ]; then
+    say "Done. This is a from-source install: re-run ./setup.sh (it reuses .env) to build and start the stack."
+  else
+    say "Starting the stack"
+    docker compose up -d
+    say "Done: the database runs on PostgreSQL 18."
+  fi
+}
 
 # Done: pgdata18 is marked as moved, or there is no older data to move (a new install, or the 14 volume was removed).
 if [ "$CHECK" = 1 ]; then
@@ -97,7 +148,18 @@ fi
 
 say "MDMesh · PostgreSQL 14 → 18 (project ${PROJECT}, database ${DB_NAME}, role ${DB_USER})"
 if [ "$MOVED" = 1 ]; then
-  ok "${NEW_VOL} already holds the moved database (PostgreSQL ${NEW_VER:-18}): nothing to move."
+  if compose_on_18; then
+    ok "${NEW_VOL} already holds the moved database (PostgreSQL ${NEW_VER:-18}): nothing to move."
+    exit 0
+  fi
+  # A run that stopped between marking pgdata18 and editing the compose file: finish the edit.
+  [ -n "$OLD_VER" ] || die "${NEW_VOL} holds the moved database, but docker-compose.yml doesn't run postgres:18 on pgdata18: edit its postgres service as in a 0.6.0 or later release's docker-compose.release.yml, then docker compose up -d."
+  ok "${NEW_VOL} holds the moved database; docker-compose.yml still runs PostgreSQL ${OLD_VER}: moving it now"
+  compose_check_old "$OLD_VER"
+  [ -w . ] || die "can't write in $(pwd) (the compose backup goes there): run as the install's owner"
+  docker compose stop
+  edit_compose "$OLD_VER"
+  start_stack
   exit 0
 fi
 if [ -n "$NEW_VER" ] && [ -z "$OLD_VER" ]; then
@@ -107,42 +169,53 @@ fi
 [ -n "$OLD_VER" ] || die "no PostgreSQL data in volume ${OLD_VOL}: nothing to move (a new install starts on 18 by itself)."
 [ "$OLD_VER" -lt 18 ] || die "${OLD_VOL} holds PostgreSQL ${OLD_VER} data, not an older version: not moving it."
 OLD_IMAGE="postgres:${OLD_VER}"
-# pgdata18 without the mark next to the old data: a run of this script that stopped part way (the postgres container
-# refuses to start on it, so nothing was written to it since). Started over below, from the untouched old volume.
+# pgdata18 next to the old data without a matching mark is started over below, from the untouched old volume:
+# - no mark: a run of this script that stopped part way (the postgres container refuses to start on it, so nothing
+#   was written to it since);
+# - a mark from before PostgreSQL ran on the old volume again (going back to 14): the move is out of date, and what was
+#   written on 18 before going back is dropped, as going back says.
 REDO=0
-if [ -n "$NEW_VER" ]; then
+if [ "$STATE" = 2 ]; then
+  REDO=1
+  ok "${OLD_VOL}: PostgreSQL ${OLD_VER}, which ran again after the move to 18; ${NEW_VOL}: out of date, removed and moved again (what was written on 18 before going back is not kept)"
+elif [ -n "$NEW_VER" ]; then
   REDO=1
   ok "${OLD_VOL}: PostgreSQL ${OLD_VER}; ${NEW_VOL}: an unfinished move, which is removed and done again"
 else
   ok "${OLD_VOL}: PostgreSQL ${OLD_VER}; ${NEW_VOL}: $(vol_exists "$NEW_VOL" && echo 'empty' || echo 'not created yet')"
 fi
 
-# The compose file: from 0.6.0 on it already runs postgres:18 on pgdata18; a quick start's older copy needs its postgres
-# service moved, which only works on the lines as we shipped them. Checked now, before anything stops.
+# The compose file, checked now, before anything stops.
 EDIT_COMPOSE=0
-if grep -qxF '    image: postgres:18' docker-compose.yml && grep -qxF '      - pgdata18:/var/lib/postgresql' docker-compose.yml; then
+if compose_on_18; then
   ok "docker-compose.yml already runs ${NEW_IMAGE} on pgdata18"
 else
-  for l in "    image: postgres:${OLD_VER}" '      - pgdata:/var/lib/postgresql/data' '  pgdata:'; do
-    [ "$(grep -cxF -- "$l" docker-compose.yml)" = 1 ] \
-      || die "docker-compose.yml doesn't have the postgres lines this script knows (\"${l#"${l%%[! ]*}"}\" once): nothing was changed. Take the postgres service from the docker-compose.release.yml of a 0.6.0 or later release (or edit it by hand as there), then run this again."
-  done
+  compose_check_old "$OLD_VER"
   EDIT_COMPOSE=1
   ok "docker-compose.yml will be moved to ${NEW_IMAGE} on pgdata18 (the original is kept)"
 fi
 [ -w . ] || die "can't write in $(pwd) (the dump and the compose backup go there): run as the install's owner"
 [ "$COMPOSE_ENV_OK" = 1 ] || say "(this docker compose has no \`config --environment\`: DB_USER, DB_NAME and DB_PASSWORD are read from .env directly)"
 
-# What to do after a failure that left the old database and the compose file as they were. `start` (not `up`) starts
-# the stopped containers as they were, on PostgreSQL ${OLD_VER}: on a from-source install the compose file already runs
-# 18, so `up -d` would recreate postgres from it, and its guard would refuse to start next to the old data.
-AS_IT_WAS="docker compose start starts the stack again as it was, on PostgreSQL ${OLD_VER}"
+# What to do after a failure that left the old database and the compose file as they were. While the stack's postgres
+# container is still the old one, `start` (not `up`) starts the stopped containers as they were: on a from-source
+# install the compose file already runs 18, so `up -d` would recreate postgres from it, and its guard would refuse to
+# start next to the old data.
+PG_CTR=$(docker compose ps -aq postgres 2>/dev/null | head -n1)
+if [ -n "$PG_CTR" ] && [ "$(docker inspect -f '{{.Config.Image}}' "$PG_CTR" 2>/dev/null)" = "$OLD_IMAGE" ]; then
+  AS_IT_WAS="docker compose start starts the stack again as it was, on PostgreSQL ${OLD_VER}"
+elif [ "$EDIT_COMPOSE" = 1 ]; then
+  AS_IT_WAS="docker compose up -d starts the stack again on PostgreSQL ${OLD_VER}"
+else
+  AS_IT_WAS="the stack stays stopped, as this compose file runs PostgreSQL 18, which won't start next to the ${OLD_VER} data. Fix the cause and run this again, or check out the release you ran before and run ./setup.sh to run on ${OLD_VER} meanwhile"
+fi
 
 say "Pulling ${OLD_IMAGE} and ${NEW_IMAGE}"
 { docker pull -q "$OLD_IMAGE" && docker pull -q "$NEW_IMAGE"; } >/dev/null || die "docker pull failed (above): nothing was changed"
 
 if [ "$YES" != 1 ]; then
-  printf '\nThis stops the whole stack (devices and the console are offline meanwhile: a few minutes for a small\ndatabase), copies the database to PostgreSQL 18 and starts it again. The PostgreSQL %s volume is left as it is.\nContinue? [y/N] ' "$OLD_VER"
+  printf '\nThis stops the whole stack (devices and the console are offline meanwhile: a few minutes for a small\ndatabase), copies the database to PostgreSQL 18 and starts it again. The PostgreSQL %s volume is left as it is.%s\nContinue? [y/N] ' "$OLD_VER" \
+    "$([ "$STATE" = 2 ] && printf '\nThe out-of-date %s is replaced: what was written on PostgreSQL 18 before going back is not kept.' "$NEW_VOL")"
   read -r ans || ans=
   case "$ans" in y|Y|yes|YES|o|O|oui) ;; *) echo "Nothing was changed."; exit 1 ;; esac
 fi
@@ -154,13 +227,19 @@ DUMP="$WORKDIR/${DB_NAME}-pg${OLD_VER}-${STAMP}.dump"
 C_OLD="${PROJECT}-pgupgrade-old"; C_NEW="${PROJECT}-pgupgrade-new"
 ENVF="$WORKDIR/.init-env"
 NEW_OURS=0; DONE=0
+# drop_new: remove pgdata18, with the stopped containers that reference it (a postgres container compose created from
+# an 18 compose file, which can't run next to the old data anyway). Fails if a running one still uses it.
+drop_new() {
+  docker ps -aq --filter "volume=${NEW_VOL}" --filter status=exited --filter status=created | xargs -r docker rm >/dev/null 2>&1 || true
+  docker volume rm "$NEW_VOL" >/dev/null 2>&1
+}
 cleanup() {
   docker stop -t 60 "$C_OLD" "$C_NEW" >/dev/null 2>&1 || true
   docker rm "$C_OLD" "$C_NEW" >/dev/null 2>&1 || true
   rm -f -- "$ENVF"
   # Stopped part way (an error, Ctrl-C): pgdata18 is unfinished and unmarked, so remove it. If this doesn't run (the
   # machine went down), the missing mark still keeps it from being used, and the next run starts over.
-  if [ "$NEW_OURS" = 1 ] && [ "$DONE" = 0 ] && docker volume rm "$NEW_VOL" >/dev/null 2>&1; then
+  if [ "$NEW_OURS" = 1 ] && [ "$DONE" = 0 ] && drop_new; then
     printf '  (%s, unfinished, was removed)\n' "$NEW_VOL" >&2
   fi
 }
@@ -207,13 +286,15 @@ SELECT rolpassword FROM pg_authid WHERE rolname = :'r';
 SQL
 )
 docker stop -t 60 "$C_OLD" >/dev/null; docker rm "$C_OLD" >/dev/null
+# The old cluster as it was moved (see MARKER): nothing starts PostgreSQL on it from here on.
+OLD_CONTROL=$(docker run --rm --network none -v "${OLD_VOL}:/o:ro" --entrypoint sh "$NEW_IMAGE" -c 'sha256sum /o/global/pg_control' | cut -c1-64)
+case "$OLD_CONTROL" in *[!0-9a-f]*|'') die "could not read ${OLD_VOL}'s global/pg_control. Nothing was changed: ${AS_IT_WAS}." ;; esac
+[ "${#OLD_CONTROL}" = 64 ] || die "could not read ${OLD_VOL}'s global/pg_control. Nothing was changed: ${AS_IT_WAS}."
 ok "dump: $DUMP ($(du -h "$DUMP" | cut -f1)), $(printf '%s\n' "$OLD_COUNTS" | grep -c .) tables"
 
 say "Creating PostgreSQL 18 in ${NEW_VOL}"
 if [ "$REDO" = 1 ]; then
-  docker ps -aq --filter "volume=${NEW_VOL}" | xargs -r docker rm >/dev/null \
-    || die "could not remove the stopped containers that use the unfinished ${NEW_VOL}. ${AS_IT_WAS}."
-  docker volume rm "$NEW_VOL" >/dev/null || die "could not remove the unfinished ${NEW_VOL} (above). ${AS_IT_WAS}."
+  drop_new || die "could not remove ${NEW_VOL} to start the move over (a running container uses it: docker ps --filter volume=${NEW_VOL}). ${AS_IT_WAS}."
 fi
 NEW_OURS=1
 vol_exists "$NEW_VOL" || docker volume create \
@@ -222,7 +303,7 @@ vol_exists "$NEW_VOL" || docker volume create \
 fail_new() {
   local gone="was removed"
   docker stop -t 60 "$C_NEW" >/dev/null 2>&1 || true; docker rm "$C_NEW" >/dev/null 2>&1 || true
-  docker volume rm "$NEW_VOL" >/dev/null 2>&1 || gone="is unfinished and unmarked (a container still uses it), so nothing will use it; the next run starts over"
+  drop_new || gone="could not be removed (a running container uses it: docker ps --filter volume=${NEW_VOL}); it has no mark, so nothing will start on it, and the next run starts over"
   NEW_OURS=0
   die "$1 ${NEW_VOL} ${gone}; the PostgreSQL ${OLD_VER} database and the compose file are unchanged: ${AS_IT_WAS}. The dump is kept: $DUMP"
 }
@@ -264,35 +345,12 @@ docker stop -t 60 "$C_NEW" >/dev/null || fail_new "PostgreSQL 18 did not stop cl
 docker rm "$C_NEW" >/dev/null
 # The mark goes last, once the database is complete and checked (see MARKER).
 docker run --rm --network none -v "${NEW_VOL}:/v" --entrypoint sh "$NEW_IMAGE" \
-  -c "printf 'PostgreSQL %s, %s\n' \"\$1\" \"\$2\" > /v/$MARKER" sh "$OLD_VER" "$STAMP" \
+  -c "printf 'moved from PostgreSQL %s, %s\npg_control=%s\n' \"\$1\" \"\$2\" \"\$3\" > /v/$MARKER" sh "$OLD_VER" "$STAMP" "$OLD_CONTROL" \
   || fail_new "could not mark ${NEW_VOL} as moved (above)."
 DONE=1
 
-if [ "$EDIT_COMPOSE" = 1 ]; then
-  say "Moving docker-compose.yml's postgres service to ${NEW_IMAGE}"
-  BAK="$WORKDIR/docker-compose.yml.pg${OLD_VER}"
-  cp -p docker-compose.yml "$BAK"
-  awk -v old="    image: postgres:${OLD_VER}" '
-    $0 == old                                       { print "    image: postgres:18"; next }
-    $0 == "      - pgdata:/var/lib/postgresql/data" { print "      - pgdata18:/var/lib/postgresql"; next }
-    $0 == "  pgdata:"                               { print "  pgdata18:"; print; next }
-                                                    { print }' "$BAK" > docker-compose.yml.new
-  chmod 644 docker-compose.yml.new
-  mv -f docker-compose.yml.new docker-compose.yml
-  if ! docker compose config -q; then
-    cp -p "$BAK" docker-compose.yml
-    die "the edited compose file does not load (above); the original is back. ${NEW_VOL} holds the moved database: edit the postgres service by hand (image postgres:18, volume pgdata18:/var/lib/postgresql, pgdata18 under volumes:), then docker compose up -d."
-  fi
-  ok "docker-compose.yml: postgres:18 on pgdata18 (the original: $BAK)"
-fi
-
-if [ -f setup.sh ]; then
-  say "Done. This is a from-source install: re-run ./setup.sh (it reuses .env) to build and start the stack."
-else
-  say "Starting the stack"
-  docker compose up -d
-  say "Done: the database runs on PostgreSQL 18."
-fi
+if [ "$EDIT_COMPOSE" = 1 ]; then edit_compose "$OLD_VER"; fi
+start_stack
 if [ "$EDIT_COMPOSE" = 1 ]; then back="cp $WORKDIR/docker-compose.yml.pg${OLD_VER} docker-compose.yml"
 else back="check out the release you ran before"; fi
 cat <<EOF
@@ -303,5 +361,6 @@ cat <<EOF
       docker compose down && docker volume rm ${OLD_VOL} && docker compose up -d
       rm -r ${WORKDIR}
   To go back to ${OLD_VER} meanwhile (losing what was written since): docker compose stop, then ${back},
-  then docker compose up -d.
+  then docker compose up -d. Once ${OLD_VER} has run again, ${NEW_VOL} is out of date: the postgres container of an 18
+  compose file won't start on it, and running this script again moves the database over again.
 EOF

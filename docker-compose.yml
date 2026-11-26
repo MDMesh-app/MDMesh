@@ -15,8 +15,9 @@ services:
     # PostgreSQL 18. From 18 the image keeps the cluster in /var/lib/postgresql/18/docker, so the volume (pgdata18)
     # mounts on /var/lib/postgresql. pgdata is the PostgreSQL 14 volume of installs from before 0.6.0: it is mounted
     # read-only only so the entrypoint below refuses to start 18 next to it (the server would then create a new, empty
-    # database) until scripts/pg-upgrade-18.sh has moved the data and marked pgdata18 as done (.mdmesh-moved-from-pg14;
-    # an unfinished move has no mark). Such an install moves its data once with that script (docs/UPGRADING.md,
+    # database) until scripts/pg-upgrade-18.sh has moved the data and marked pgdata18 as done (.mdmesh-moved-from-pg14,
+    # with the old cluster's pg_control checksum: an unfinished move has no mark, and if 14 ran again on pgdata since,
+    # going back, the checksum no longer matches and pgdata18 is out of date). Such an install moves its data once with that script (docs/UPGRADING.md,
     # PostgreSQL 18). On a new install pgdata stays empty.
     # tag@sha256:<index digest>, the same in both compose files; Dependabot bumps both. The major (a data format) and
     # the Debian release (text sort order) change only in a planned database migration.
@@ -25,8 +26,8 @@ services:
       - sh
       - -c
       - |
-        if [ -s /var/lib/mdmesh-pg14/PG_VERSION ] && [ ! -e /var/lib/postgresql/.mdmesh-moved-from-pg14 ]; then
-          echo "MDMesh: the database is still in PostgreSQL $$(cat /var/lib/mdmesh-pg14/PG_VERSION) format (volume pgdata), and its move to PostgreSQL 18 has not finished. Not starting PostgreSQL 18 next to it: run scripts/pg-upgrade-18.sh in the install directory (docs/UPGRADING.md, PostgreSQL 18)." >&2
+        if [ -s /var/lib/mdmesh-pg14/PG_VERSION ] && ! grep -qsx "pg_control=$$(sha256sum /var/lib/mdmesh-pg14/global/pg_control 2>/dev/null | cut -c1-64)" /var/lib/postgresql/.mdmesh-moved-from-pg14; then
+          echo "MDMesh: the database is still in PostgreSQL $$(cat /var/lib/mdmesh-pg14/PG_VERSION) format (volume pgdata), and has not been moved to PostgreSQL 18 (or the move did not finish, or 14 ran on it again since). Not starting PostgreSQL 18 next to it: run scripts/pg-upgrade-18.sh in the install directory (docs/UPGRADING.md, PostgreSQL 18)." >&2
           exit 1
         fi
         exec docker-entrypoint.sh "$$@"

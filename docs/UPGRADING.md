@@ -212,7 +212,9 @@ it never starts on an empty database.
 
 **Going back to 14** (what was written since is lost): `docker compose stop`, put the old compose file back
 (`cp pg-upgrade-18/docker-compose.yml.pg14 docker-compose.yml` on a quick start; on a from-source install, check out
-the release you ran before), then `docker compose up -d`.
+the release you ran before), then `docker compose up -d`. From then on `pgdata18` is out of date: an 18 compose file's
+postgres container won't start on it, and running the script again moves the database over again (what was written on
+18 before going back is not kept).
 
 **Afterwards:** once the install has run well on 18 for a while, free the space the old volume and the dump take:
 

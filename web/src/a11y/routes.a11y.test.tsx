@@ -34,7 +34,7 @@ function api(path: string, init?: RequestInit): unknown {
   if (byNumber) return DEVICES.find((d) => d.number === decodeURIComponent(byNumber[1])) ?? null;
   if (p === '/private/configurations/search') return [CONFIG];
   if (p === '/private/configurations/list') return [{ id: 3, name: 'Warehouse' }];
-  if (p === '/private/configurations/3') return { ...CONFIG, applications: [] };
+  if (p === '/private/configurations/3') return { ...CONFIG, applications: null };
   if (/^\/private\/configurations\/applications\/\d+$/.test(p)) return [];
   if (p.startsWith('/private/applications/search')) return APPS;
   if (/^\/private\/applications\/\d+\/versions$/.test(p)) return [];

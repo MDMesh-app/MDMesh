@@ -23,7 +23,6 @@
 package com.hmdm.persistence.domain;
 
 import java.io.Serializable;
-import java.util.LinkedList;
 import java.util.List;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -54,8 +53,9 @@ public class Configuration implements CustomerData, Serializable {
     private String password;
     @ApiModelProperty(hidden = true)
     private int type;
-    @ApiModelProperty("A list of applications set for configuration")
-    private List<Application> applications = new LinkedList<>();
+    @ApiModelProperty("The configuration's applications. Answers carry null (GET /configurations/applications/{id} has "
+            + "them); an update without them, or with null, keeps the stored ones")
+    private List<Application> applications;
     @ApiModelProperty(hidden = true)
     private int customerId;
     @ApiModelProperty(value = "A flag indicating if application versions update is enabled", hidden = true)
@@ -1100,6 +1100,7 @@ public class Configuration implements CustomerData, Serializable {
         copy.setEncryptDevice(isEncryptDevice());
         copy.setQrParameters(getQrParameters());
         copy.setAdminExtras(getAdminExtras());
+        copy.setMobileEnrollment(isMobileEnrollment());
         copy.setKioskHome(getKioskHome());
         copy.setKioskRecents(getKioskRecents());
         copy.setKioskScreenOn(getKioskScreenOn());

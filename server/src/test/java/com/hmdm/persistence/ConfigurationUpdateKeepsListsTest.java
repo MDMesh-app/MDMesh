@@ -2,9 +2,11 @@ package com.hmdm.persistence;
 
 import com.hmdm.event.Event;
 import com.hmdm.event.EventService;
+import com.hmdm.persistence.domain.Application;
 import com.hmdm.persistence.domain.ApplicationSetting;
 import com.hmdm.persistence.domain.Configuration;
 import com.hmdm.persistence.domain.ConfigurationFile;
+import com.hmdm.persistence.domain.ManagedAppPermission;
 import com.hmdm.persistence.mapper.ApplicationMapper;
 import com.hmdm.persistence.mapper.ConfigurationMapper;
 import com.hmdm.security.SecurityContext;
@@ -16,14 +18,16 @@ import org.junit.Test;
 
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
 
 /**
- * Updating a configuration replaces its files and app settings only when the request carries those lists:
- * a list left out (null) keeps what is stored, and an empty list clears it.
+ * Updating a configuration replaces its apps, files, app settings and app permission rules only when the request carries
+ * those lists: a list left out (null) keeps what is stored, and an empty list clears it. Permission rules are kept only
+ * for apps the stored configuration installs.
  */
 public class ConfigurationUpdateKeepsListsTest {
 
@@ -82,8 +86,75 @@ public class ConfigurationUpdateKeepsListsTest {
         return s;
     }
 
+    private static Application app(int id, int action) {
+        Application a = new Application();
+        a.setId(id);
+        a.setAction(action);
+        return a;
+    }
+
+    private static List<ManagedAppPermission> rulesFor(int... apps) {
+        List<ManagedAppPermission> rules = new ArrayList<>();
+        for (int app : apps) {
+            ManagedAppPermission r = new ManagedAppPermission();
+            r.setApplicationId(app);
+            r.setPermission("android.permission.CAMERA");
+            r.setState("deny");
+            rules.add(r);
+        }
+        return rules;
+    }
+
     private int calls(String method) {
         return configs.callsTo(method).size();
+    }
+
+    @Test
+    public void absentAppsKeepTheStoredOnesAndAnEmptyListClearsThem() {
+        Configuration absent = config(null, null);
+        absent.setApplications(null);
+        dao.updateConfiguration(absent);
+        assertEquals(1, calls("updateConfiguration"));
+        assertEquals(0, calls("removeConfigurationApplicationsById"));
+        assertEquals(0, calls("insertConfigurationApplications"));
+
+        dao.updateConfiguration(config(null, null));
+        assertEquals(1, calls("removeConfigurationApplicationsById"));
+        assertEquals(0, calls("insertConfigurationApplications"));
+    }
+
+    /** With the apps sent, left out, or in a new configuration; the body's list doesn't decide. */
+    @Test
+    public void permissionRulesAreKeptOnlyForAppsTheConfigurationInstalls() {
+        configs.answer("getPlainConfigurationAppsOptimized", a -> Arrays.asList(app(1, 1), app(2, 0)));
+        Configuration absent = config(null, null);
+        absent.setApplications(null);
+        absent.setManagedAppPermissions(rulesFor(1, 2, 3));
+        dao.updateConfiguration(absent);
+        Configuration sent = config(null, null);
+        sent.setApplications(Arrays.asList(app(1, 1), app(2, 1), app(3, 1)));
+        sent.setManagedAppPermissions(rulesFor(1, 2, 3));
+        dao.updateConfiguration(sent);
+        dao.insertConfiguration(sent);
+        assertEquals(3, calls("insertManagedAppPermissions"));
+        for (Fakes.Call call : configs.callsTo("insertManagedAppPermissions")) {
+            List<?> kept = (List<?>) call.args[1];
+            assertEquals(1, kept.size());
+            assertEquals(Integer.valueOf(1), ((ManagedAppPermission) kept.get(0)).getApplicationId());
+        }
+
+        sent.setManagedAppPermissions(rulesFor(2, 3));
+        dao.updateConfiguration(sent);
+        assertEquals("none left, so nothing to insert", 3, calls("insertManagedAppPermissions"));
+    }
+
+    @Test
+    public void aNewConfigurationWithoutAppsHasNone() {
+        Configuration created = config(null, null);
+        created.setApplications(null);
+        dao.insertConfiguration(created);
+        assertEquals(1, calls("insertConfiguration"));
+        assertEquals(0, calls("insertConfigurationApplications"));
     }
 
     @Test

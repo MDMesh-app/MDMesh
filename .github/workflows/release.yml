@@ -226,6 +226,7 @@ jobs:
       # The platforms every image's index must hold (one image each, the images job's matrix), recorded in the signed
       # manifest as components.platforms: the quick start refuses a host whose platform is not listed.
       # Keep it the images job's matrix.arch list (linux/<arch> each): the step that joins them reads one digest per entry.
+      # T0's "Third-party images pinned by index digest" step checks the compose files' pins against the same list.
       PLATFORMS: linux/amd64,linux/arm64
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1

@@ -35,7 +35,7 @@ Upgrading
 - PostgreSQL and cloudflared now run exact images, pinned by digest: `postgres:14.25-trixie` (still PostgreSQL 14)
   and cloudflared 2026.11.2. From source, `./setup.sh --update` restarts the database for a few seconds. Quick-start
   installs keep the images they were set up with: update cloudflared with the step in UPGRADING at least once a year,
-  as Cloudflare supports a release for a year ([UPGRADING.md](docs/UPGRADING.md#unreleased)).
+  as Cloudflare supports releases up to a year old ([UPGRADING.md](docs/UPGRADING.md#unreleased)).
 
 Heads-up
 - The edge sends HSTS for a request that came in over HTTP only when a trusted peer says `X-Forwarded-Proto: https`

@@ -140,7 +140,8 @@ services:
       - backups:/backups
 
   cloudflared:
-    # Pinned like postgres. Cloudflare supports a release for a year: quick starts keep this line (docs/UPGRADING.md).
+    # Pinned like postgres. Cloudflare supports releases up to a year old; quick starts keep this line
+    # (docs/UPGRADING.md).
     image: cloudflare/cloudflared:2026.11.2@sha256:55c7e3e8d89d5e8d20b75a82f3602cbf98e06db406e73e282073cfdc5a9a3af6
     restart: unless-stopped
     profiles: ["cloudflare"]

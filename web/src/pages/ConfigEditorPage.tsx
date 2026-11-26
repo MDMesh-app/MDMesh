@@ -1066,7 +1066,7 @@ function Editor({
             <h2 id={`${ids}-hw-h`} className="v2-cfged-h2">
               Legacy launcher settings <span className="v2-cfged-hw__count v2-num">{LEGACY_FIELDS.length}</span>
             </h2>
-            <span className="v2-cfged-hw__sub">Only the Headwind launcher read these. {hwChanged ? `${hwChanged} changed.` : ''}</span>
+            <span className="v2-cfged-hw__sub">Only the legacy launcher read these. {hwChanged ? `${hwChanged} changed.` : ''}</span>
           </div>
           <Button
             size="sm"

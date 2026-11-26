@@ -23,6 +23,7 @@
     <modules>
         <module>bundle</module>
         <!-- Your plugins: <module>netaccess</module> -->
+        <module>policies</module>
     </modules>
 
 </project>

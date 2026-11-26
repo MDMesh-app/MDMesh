@@ -14,6 +14,9 @@ object AppManagement {
     /** Per-application runtime permission grant, denial, and release through DevicePolicyManager. */
     const val RUNTIME_PERMISSIONS = "runtimePermissions"
 
+    /** Opening an app's screen on request (gates `app.launch`); the user can leave it as usual. */
+    const val LAUNCH = "launch"
+
     /** Keys (before the `app.` prefix) advertised in `capabilities.appManagement` when Device Owner. */
-    val DEVICE_OWNER_KEYS: List<String> = listOf(SILENT_INSTALL, RUNTIME_PERMISSIONS)
+    val DEVICE_OWNER_KEYS: List<String> = listOf(SILENT_INSTALL, RUNTIME_PERMISSIONS, LAUNCH)
 }

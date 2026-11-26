@@ -1,0 +1,461 @@
+/* Policies extension. Layout only: the parts are core's (Card, Table, Tabs, FieldRow…), and every colour, size and
+   radius is a core token. Classes take the x-policies- prefix. */
+
+/* ---- text helpers ---- */
+.v2 .x-policies-strong {
+  font-weight: 600;
+  color: var(--ink);
+}
+.v2 .x-policies-muted {
+  color: var(--secondary);
+}
+.v2 .x-policies-mono {
+  font-family: var(--font-mono);
+}
+.v2 .x-policies-help {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--secondary);
+}
+.v2 .x-policies-warn {
+  font-size: var(--fs-sm);
+  color: var(--warn-ink);
+}
+.v2 .x-policies-error {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--alert-ink);
+}
+
+/* ---- small layouts ---- */
+.v2 .x-policies-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.v2 .x-policies-inline {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.v2 .x-policies-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.v2 .x-policies-chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.v2 .x-policies-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.v2 .x-policies-toolbar__search {
+  flex: 1 1 240px;
+  max-width: 386px;
+}
+.v2 .x-policies-toolbar__spacer {
+  flex: 1 1 0;
+}
+.v2 .x-policies-addrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.v2 .x-policies-addrow > * {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+.v2 .x-policies-addrow > button {
+  flex: 0 0 auto;
+}
+
+/* ---- cards that hold a table: header and footer padding as a card's ---- */
+.v2 .x-policies-cardhead {
+  padding: 20px 20px 4px;
+}
+.v2 .x-policies-cardfoot {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 20px 18px;
+  border-top: 1px solid var(--line-soft);
+}
+
+/* ---- policies view: list rail beside the selected policy, as the device page lays out its rail ---- */
+.v2 .x-policies-cols {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 20px;
+}
+.v2 .x-policies-rail {
+  flex: 1 1 260px;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.v2 .x-policies-rail--narrow {
+  flex: 1 1 200px;
+  max-width: 250px;
+}
+.v2 .x-policies-main {
+  flex: 2.5 1 560px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.v2 .x-policies-railgroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.v2 .x-policies-raillist {
+  list-style: none;
+  margin: 0 -8px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.v2 .x-policies-railitem {
+  position: relative;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 40px 8px 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.v2 .x-policies-railitem:hover {
+  background: var(--hover);
+}
+.v2 .x-policies-railitem:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+.v2 .x-policies-railitem.is-selected {
+  background: var(--row-selected);
+}
+.v2 .x-policies-railitem__name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.v2 .x-policies-railitem__meta {
+  font-size: var(--fs-sm);
+  color: var(--secondary);
+}
+.v2 .x-policies-railitem__badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+}
+
+/* ---- the selected policy ---- */
+.v2 .x-policies-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+.v2 .x-policies-head__name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  min-width: 0;
+}
+.v2 .x-policies-head__h {
+  margin: 0;
+  font-size: var(--fs-h2);
+  font-weight: 600;
+  letter-spacing: var(--ls-h1);
+  overflow-wrap: anywhere;
+}
+.v2 .x-policies-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.v2 .x-policies-panel:focus-visible {
+  outline-offset: 4px;
+  border-radius: var(--radius-lg);
+}
+.v2 .x-policies-fit {
+  align-self: flex-start;
+  max-width: 100%;
+}
+.v2 .x-policies-help.is-below {
+  margin-top: 10px;
+}
+
+/* ---- modals ---- */
+.v2 .x-policies-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.v2 .x-policies-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: var(--fs-control);
+}
+.v2 .x-policies-list li:last-child {
+  border-bottom: 0;
+}
+.v2 .x-policies-fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.v2 .x-policies-fieldset legend {
+  padding: 0;
+  margin-bottom: 8px;
+  font-size: var(--fs-control);
+  font-weight: 600;
+  color: var(--ink);
+}
+.v2 .x-policies-checks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr));
+  gap: 8px 16px;
+}
+.v2 .x-policies-picklist {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 46vh;
+  overflow: auto;
+}
+
+/* ---- unsaved changes: the configuration editor's bar ---- */
+.v2 .x-policies-savebar {
+  position: sticky;
+  bottom: 16px;
+  z-index: 6;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  padding: 14px 20px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card-sm);
+  box-shadow: var(--shadow-float);
+}
+.v2 .x-policies-savebar__count {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+.v2 .x-policies-savebar__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ink);
+}
+.v2 .x-policies-savebar__msg {
+  flex: 1 1 280px;
+  color: var(--text-2);
+  font-size: var(--fs-control);
+}
+.v2 .x-policies-savebar__actions {
+  display: flex;
+  gap: 8px;
+}
+@media (max-width: 640px) {
+  .v2 .x-policies-rail {
+    max-width: none;
+  }
+  .v2 .x-policies-savebar {
+    bottom: 0;
+    margin: 0 calc(-1 * var(--page-pad));
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    border-radius: 0;
+    border-width: 1px 0 0;
+  }
+  .v2 .x-policies-savebar__msg {
+    display: none;
+  }
+  .v2 .x-policies-savebar__actions {
+    flex: 1 1 100%;
+  }
+  .v2 .x-policies-savebar__actions > * {
+    flex: 1 1 0;
+  }
+}
+
+/* ---- a phone's name in a table, as the Devices list shows it ---- */
+.v2 .x-policies-devlink,
+.v2 .x-policies-devlink:visited {
+  font-weight: 600;
+  color: var(--ink);
+  text-decoration: none;
+}
+.v2 .x-policies-devlink:hover {
+  text-decoration: underline;
+}
+
+/* ---- client actions: the device page's Remote actions rows ---- */
+.v2 .x-policies-actions {
+  display: flex;
+  flex-direction: column;
+}
+.v2 .x-policies-actrow {
+  display: grid;
+  grid-template-columns: minmax(140px, 180px) minmax(0, 1fr);
+  gap: 8px 20px;
+  align-items: start;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.v2 .x-policies-actrow:first-child {
+  padding-top: 0;
+}
+.v2 .x-policies-actrow__head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 6px;
+}
+.v2 .x-policies-actrow__tiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+}
+.v2 .x-policies-actions > .x-policies-help {
+  padding-top: 14px;
+}
+.v2 .x-policies-formfoot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+}
+@media (max-width: 640px) {
+  .v2 .x-policies-actrow {
+    grid-template-columns: 1fr;
+  }
+  .v2 .x-policies-actrow__head {
+    padding-top: 0;
+  }
+}
+
+/* Allowed apps: an app's icon beside its name. Icons come from the phone (apps.icons); a letter stands in until then. */
+.v2 .x-policies-appcell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.v2 .x-policies-appicon {
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-tile);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.v2 .x-policies-appicon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.v2 .x-policies-toolbar--below {
+  padding: 12px 0 8px;
+}
+
+/* Bulk jobs in progress, above the views. */
+.v2 .x-policies-jobs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.v2 .x-policies-job {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--line-soft);
+}
+.v2 .x-policies-job:first-child {
+  border-top: 0;
+}
+.v2 .x-policies-job__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+/* Enrollment QR. */
+.v2 .x-policies-qr {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+.v2 .x-policies-qr img {
+  width: 300px;
+  max-width: 100%;
+  height: auto;
+  box-sizing: border-box;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card-sm);
+  background: #ffffff; /* always light, as core's QR frame: scanners need dark modules on a light ground */
+  image-rendering: pixelated;
+}
+
+/* Groups: the phones picked one by one (a long list scrolls inside its box). */
+.v2 .x-policies-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 264px;
+  overflow-y: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card-sm);
+  background: var(--surface-2);
+}

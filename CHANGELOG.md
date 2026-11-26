@@ -130,6 +130,8 @@ Fixes
   authenticator code is asked for) and get API tokens again, which v0.3.3 had stopped. Two-factor sign-in for each
   user is planned for a later release. The settings and user answers no longer include `twoFactor`; a request that
   still sends it is accepted, and the field ignored.
+- Check-in: a device whose reported state the database refuses still gets its commands (the server logs why and keeps
+  the last state it could store). One whose check-in fails while storing it is no longer shown as Online.
 
 Under the hood
 - CI builds the agent's instrumented tests (they still run only by hand, on an emulator).

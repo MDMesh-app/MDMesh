@@ -62,7 +62,8 @@ export interface Configuration {
   name: string;
   description?: string;
   qrCodeKey?: string;
-  applications?: ConfigApp[];
+  /** The server answers null (getConfigurationApps reads them); a save with null keeps the stored ones, [] removes them. */
+  applications?: ConfigApp[] | null;
   /**
    * Server plugins' and extensions' data by namespace (an extension id, or `<id>.<name>`), each a JSON object. The
    * server keeps what is stored when a save leaves it out, and replaces it whole when a save carries it. Only
@@ -156,8 +157,8 @@ export async function getConfiguration(id: number): Promise<Configuration> {
 // /configurations/applications/{id}) returns EVERY library app carrying a
 // `selected` flag plus its per-config columns (action, usedVersionId, showIcon…).
 // The list endpoint (/configurations/search) does NOT include applications, so
-// the editor must fetch the assigned set here — otherwise it opens blank and a
-// save would wipe the config's apps.
+// the editor must fetch the assigned set here — otherwise it would show none, and
+// adding one would replace the rest.
 interface ConfigAppRow extends ConfigApp {
   selected?: boolean;
 }

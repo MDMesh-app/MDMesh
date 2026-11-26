@@ -88,6 +88,10 @@ Fixes
   that races the delete is answered as for an unknown device, not with a server error.
 - The API refuses to change the number of a device enrolled with the agent (`error.device.number.agent`): the agent
   signs in with that number and could not check in again. Other devices are renamed as before.
+- API: saving a configuration as `GET /configurations/{id}` answers it, or without `applications`, keeps its apps and
+  its main app. Before, it removed them. An empty list still removes them
+  ([UPGRADING.md](docs/UPGRADING.md#unreleased)). Duplicating a configuration keeps its "Enroll over mobile
+  data" setting.
 - Bulk delete deletes nothing when one of the devices is out of the user's reach. Otherwise each device is deleted on
   its own, and when some can't be, the console keeps those selected to delete again. Before, a failure partway left
   some deleted and still answered OK.

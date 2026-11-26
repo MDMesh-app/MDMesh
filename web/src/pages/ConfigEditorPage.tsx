@@ -445,7 +445,7 @@ function Editor({
   const changed = useMemo(() => changedKeys(baseline, draft), [baseline, draft]);
 
   const kioskOn = draft.kioskMode === true;
-  const allowed: ConfigApp[] = (draft.applications as ConfigApp[] | undefined) ?? [];
+  const allowed: ConfigApp[] = draft.applications ?? [];
   const allowedIds = useMemo(() => new Set(allowed.map((a) => a.id)), [allowed]);
   // Only an installed app that is shown in kiosk can be the main app.
   const mainAppChoices = apps.filter((a) =>
@@ -519,7 +519,7 @@ function Editor({
   /** Change the assigned apps; a main app that is no longer installed and shown in kiosk is cleared. */
   function updateApps(id: number, next: (assigned: ConfigApp[]) => ConfigApp[]) {
     setDraft((d) => {
-      const assigned = (d.applications as ConfigApp[] | undefined) ?? [];
+      const assigned = d.applications ?? [];
       const target = assigned.find((a) => a.id === id);
       const applications = next(assigned);
       // Permission rules are valid only for applications this configuration installs. Drop them at the same time as

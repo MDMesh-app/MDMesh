@@ -334,6 +334,10 @@ exited or credentials cleared while the older agent ran.
   ```
 
   (`up -d` recreates the edge with the directory mounted; updates read both files, so they keep it.)
+- **API: `applications` of a configuration.** `GET /configurations/{id}` and the lists now answer `null` where they
+  answered an always empty `[]` (`GET /configurations/applications/{id}` has the apps, as before). In a
+  `PUT /configurations` that updates one, `applications` left out or `null` keeps the stored apps; before, leaving it
+  out removed them all and `null` was refused. Send `[]` to remove them.
 - **A rollback below 0.6.0** of an install you moved to the proxy mode is refused by the updater: move it back first
   ([how](#changing-the-hosting-mode)).
 
@@ -357,6 +361,10 @@ For forks with their own server code: `Settings.twoFactor`, `User.twoFactor`, `U
 `AuthFilter.twoFactorNeeded` are gone, so code that used them no longer compiles. There is no replacement until
 two-factor sign-in is built.
 
+`Configuration.getApplications()` is null, not an empty list, on a configuration read from the database or saved
+without the list. `ConfigurationDAO` now drops the permission rules for apps a configuration doesn't install, whoever
+saves it.
+
 ### v0.6.0 for forks that change the console
 
 New text in core console files should be a react-intl message; `npm test` fails on most text that isn't
@@ -364,6 +372,9 @@ New text in core console files should be a react-intl message; `npm test` fails 
 this release: make it a message ([web/README.md](../web/README.md#translatable-text)), or raise that file's count in
 `web/src/i18n/literals-baseline.json`. If you removed core text, it fails with "fewer literals": run
 `npm run i18n:baseline` in `web/`. Extensions in `web/src/extensions/` are not checked.
+
+`Configuration.applications` is typed `ConfigApp[] | null`: the server answers null (read the apps with
+`getConfigurationApps`), so code that reads it without `?? []` no longer compiles.
 
 A test that ends with a `stubApi` call still unanswered now fails, and `stubApi`'s answers arrive a moment later: wait
 with `findBy…` or `settled()` (in `web/src/test/console.tsx`), not `act(async () => {})`.

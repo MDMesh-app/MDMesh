@@ -65,7 +65,7 @@ export function locationServicesAction(value: unknown): 'on' | 'off' | 'notManag
 // The configurations INSERT sets every column explicitly, so NOT-NULL columns
 // can't fall back to their DB defaults — a blank config must supply them or the
 // insert fails (e.g. "null value in column pushoptions"). customerId is set
-// server-side (insertRecord); applications must be a (possibly empty) array.
+// server-side (insertRecord).
 export const NEW_CONFIG_DEFAULTS: Partial<Configuration> = {
   type: 0,
   pushOptions: 'mqttWorker',

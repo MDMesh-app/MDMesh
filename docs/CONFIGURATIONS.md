@@ -127,7 +127,7 @@ Each device shows one of these:
 | **Out of sync** | The device has an older version of the configuration. It applies the current one at its next check-in. |
 | **Not reported yet** | The device hasn't reported a configuration yet. |
 | **Agent too old** | The agent is too old for configurations. Update it from **Settings → Agent rollout**. |
-| **Out of date on the device** | The device asked for its configuration again, and the server re-sends it. This happens when the device turned Wi-Fi back on because it couldn't reach the server after **Wi-Fi radio** turned it off (Wi-Fi then stays on until the configuration changes), restored settings its storage damaged, lost its record of the configuration, went back to its settings after a factory reset that didn't start, or couldn't fully apply a configuration. The device page names the cause when the device reported it; the Wi-Fi case and a lost record report none. A newly enrolled device can show it until it has applied its first configuration. |
+| **Out of date on the device** | The device asked for its configuration again, and the server re-sends it. This happens when the device turned Wi-Fi back on because it couldn't reach the server after **Wi-Fi radio** turned it off (Wi-Fi then stays on until the configuration changes), restored settings its storage damaged, lost its record of the configuration, went back to its settings after a factory reset that didn't start, or couldn't fully apply a configuration. The device page names the cause when the device reported it; the Wi-Fi case and a lost record report none. |
 | **No configuration** | Nothing is assigned, so nothing is enforced. |
 
 Where to look:

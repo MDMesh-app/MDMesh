@@ -100,6 +100,9 @@ public class AuditRuleSpellingTest {
         sample(ResourceAuditInfo.RETRY_DEVICE_CONFIG, "POST", "/rest/private/agent/v1/devices/h0001/retryConfig");
         sample(ResourceAuditInfo.MINT_ENROLL_TOKEN, "POST", "/rest/private/agent/v1/token");
         sample(ResourceAuditInfo.REVOKE_ENROLL_TOKENS, "POST", "/rest/private/agent/v1/token/revoke-all");
+        sample(ResourceAuditInfo.START_AGENT_ROLLOUT, "POST", "/rest/private/agent/v1/rollout");
+        sample(ResourceAuditInfo.PROMOTE_AGENT_ROLLOUT, "POST", "/rest/private/agent/v1/rollout/3/promote");
+        sample(ResourceAuditInfo.CANCEL_AGENT_ROLLOUT, "POST", "/rest/private/agent/v1/rollout/3/cancel");
     }
 
     private static void sample(ResourceAuditInfo rule, String method, String path) {

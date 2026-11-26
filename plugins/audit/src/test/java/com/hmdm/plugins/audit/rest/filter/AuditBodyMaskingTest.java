@@ -75,6 +75,9 @@ public class AuditBodyMaskingTest {
         route(ResourceAuditInfo.SYNC_DEVICE_APPS, "POST", "/rest/private/agent/v1/devices/h0001/syncApps");
         route(ResourceAuditInfo.RETRY_DEVICE_CONFIG, "POST", "/rest/private/agent/v1/devices/h0001/retryConfig");
         route(ResourceAuditInfo.MINT_ENROLL_TOKEN, "POST", "/rest/private/agent/v1/token");
+        route(ResourceAuditInfo.START_AGENT_ROLLOUT, "POST", "/rest/private/agent/v1/rollout");
+        route(ResourceAuditInfo.PROMOTE_AGENT_ROLLOUT, "POST", "/rest/private/agent/v1/rollout/3/promote");
+        route(ResourceAuditInfo.CANCEL_AGENT_ROLLOUT, "POST", "/rest/private/agent/v1/rollout/3/cancel");
     }
 
     /** Rules that store no body: it is mostly secret, or there is none. */
@@ -200,7 +203,7 @@ public class AuditBodyMaskingTest {
                 "tok-8", "sec-9", "totp-10", "at-11", "prt-12", "st-13"};
         for (ResourceAuditInfo rule : new ResourceAuditInfo[]{ResourceAuditInfo.UPDATE_APP,
                 ResourceAuditInfo.UPDATE_GROUP, ResourceAuditInfo.UPDATE_DESIGN, ResourceAuditInfo.MINT_ENROLL_TOKEN,
-                ResourceAuditInfo.UPDATE_USER, ResourceAuditInfo.DEVICE_LOCK}) {
+                ResourceAuditInfo.UPDATE_USER, ResourceAuditInfo.DEVICE_LOCK, ResourceAuditInfo.START_AGENT_ROLLOUT}) {
             AuditLogRecord record = audit(rule, body);
             assertNoSecret(record, secrets);
 

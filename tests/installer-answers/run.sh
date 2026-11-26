@@ -1366,7 +1366,18 @@ stack_refused "setup.sh in a fresh clone over another install's volumes" 'docker
 setup_run "$WORK/src9" MDMESH_NONINTERACTIVE=1 MDMESH_MODE=domain MDMESH_HOST=mdm.example.com
 [ "$(up_args)" = '-f docker-compose.yml -f docker-compose.domain.yml' ] || { fail "setup.sh with no other stack does not start one"; show; }
 ok
-setup_run "$WORK/src9" STUB_DOCKER_PS="$(printf '%s\n/project' "$WORK/src9")" STUB_DOCKER_VOLUMES=mdmesh_pgdata
+# Its own pgdata volume: the copy has no release tag, so setup.sh backs the database up before `up`. docker: the stub,
+# with a database size and a pg_dump that answer.
+mkdir -p "$WORK/stubs-dump"
+# shellcheck disable=SC2016  # the stub's own variables
+printf '%s\n' '#!/bin/sh' 'case "$*" in' \
+  '  "compose exec -T postgres psql"*) echo 1024 ;;' \
+  '  "compose exec -T postgres pg_dump"*) printf PGDMP ;;' \
+  "  *) exec \"$WORK/stubs/docker\" \"\$@\" ;;" \
+  'esac' > "$WORK/stubs-dump/docker"
+chmod +x "$WORK/stubs-dump/docker"
+setup_run "$WORK/src9" PATH="$WORK/stubs-dump:$WORK/stubs-ssfree:$WORK/stubs:$PATH" \
+  STUB_DOCKER_PS="$(printf '%s\n/project' "$WORK/src9")" STUB_DOCKER_VOLUMES=mdmesh_pgdata
 [ "$(up_args)" = '-f docker-compose.yml -f docker-compose.domain.yml' ] || { fail "a setup.sh re-run beside its own stack does not go on"; show; }
 ok
 setup_run "$WORK/src9" STUB_DOCKER_PS="$WORK/other-install"

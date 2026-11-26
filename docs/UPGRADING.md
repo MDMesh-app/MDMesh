@@ -373,8 +373,8 @@ this release: make it a message ([web/README.md](../web/README.md#translatable-t
 `web/src/i18n/literals-baseline.json`. If you removed core text, it fails with "fewer literals": run
 `npm run i18n:baseline` in `web/`. Extensions in `web/src/extensions/` are not checked.
 
-`Configuration.applications` is typed `ConfigApp[] | null`: the server answers null (read the apps with
-`getConfigurationApps`), so code that reads it without `?? []` no longer compiles.
+`Configuration.applications` is typed `ConfigApp[] | null`: the server answers null where it answered an empty list
+(read the apps with `getConfigurationApps`). Code that checks it only against `undefined` must also handle `null`.
 
 A test that ends with a `stubApi` call still unanswered now fails, and `stubApi`'s answers arrive a moment later: wait
 with `findBy…` or `settled()` (in `web/src/test/console.tsx`), not `act(async () => {})`.

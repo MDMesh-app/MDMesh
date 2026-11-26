@@ -111,7 +111,7 @@ public class ConfigurationSaveKeepsAppsPgTest {
         body.putArray("applications");
         save(body);
         assertEquals("", apps(id));
-        assertEquals("none|none|0", kiosk(id));
+        assertEquals("none|none|0", mainContentAndRules(id));
     }
 
     @Test
@@ -121,17 +121,17 @@ public class ConfigurationSaveKeepsAppsPgTest {
                 .put("action", 1);
         save(body);
         assertEquals(outside + ":" + outsideVersion + ":1", apps(id));
-        assertEquals("none|none|0", kiosk(id));
+        assertEquals("none|none|0", mainContentAndRules(id));
     }
 
     @Test
-    public void aMainAppTheStoredAppsDoNotInstallIsRefusedASaveWithoutThemToo() throws Exception {
+    public void aMainAppTheStoredAppsDoNotInstallIsClearedOnASaveWithoutThem() throws Exception {
         for (int version : new int[]{blockedVersion, outsideVersion}) {
             ObjectNode body = read();
             body.remove("applications");
             body.put("mainAppId", version).put("contentAppId", version);
             save(body);
-            assertEquals("none|none|1", kiosk(id));
+            assertEquals("none|none|1", mainContentAndRules(id));
         }
     }
 
@@ -163,8 +163,8 @@ public class ConfigurationSaveKeepsAppsPgTest {
     public void aNewConfigurationWithoutTheListHasNoAppsAndNoRules() throws Exception {
         for (boolean withNull : new boolean[]{true, false}) {
             ObjectNode body = read();
-            body.remove(withNull ? "id" : "applications");
             body.remove("id");
+            if (withNull) body.putNull("applications"); else body.remove("applications");
             body.put("name", "new " + withNull);
             save(body);
             int created = DB.scalar("SELECT id FROM configurations WHERE customerId = " + customer
@@ -182,7 +182,7 @@ public class ConfigurationSaveKeepsAppsPgTest {
         assertEquals(Response.ResponseStatus.OK, resource.copyConfiguration(copy).getStatus());
         int copied = DB.scalar("SELECT id FROM configurations WHERE customerId = " + customer + " AND name = 'copy'");
         assertEquals(apps(id), apps(copied));
-        assertEquals(kiosk(id), kiosk(copied));
+        assertEquals(mainContentAndRules(id), mainContentAndRules(copied));
         assertEquals("true", DB.text("SELECT mobileEnrollment::text FROM configurations WHERE id = " + copied));
     }
 
@@ -230,7 +230,7 @@ public class ConfigurationSaveKeepsAppsPgTest {
     }
 
     /** The main app, the content app and the number of permission rules. */
-    private static String kiosk(int configuration) throws Exception {
+    private static String mainContentAndRules(int configuration) throws Exception {
         return DB.text("SELECT COALESCE(mainAppId::text, 'none') || '|' || COALESCE(contentAppId::text, 'none') || '|' || "
                 + "(SELECT COUNT(*) FROM configurationAppPermissions p WHERE p.configurationId = c.id) "
                 + "FROM configurations c WHERE id = " + configuration);

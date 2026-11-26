@@ -57,7 +57,7 @@ jobs:
             # web-entrypoint.sh, edge-peers.sh, CHANGELOG.md and .dockerignore are the web image build's inputs.
             # DEPLOY.md: edge-check runs its site.d example; docs/proxies/**: it parses the ready proxy configurations;
             # install/lib/ports.sh: it runs its reading of compose config.
-            edge: docker/Caddyfile, docker/web.Dockerfile, docker/web-entrypoint.sh, docker/edge-peers.sh, docker/edge-caddy.sh, web/**, CHANGELOG.md, .dockerignore, docker-compose*.yml, docker/dev.env, scripts/edge-check.sh, install/lib/ports.sh, supervisor/apply.sh, DEPLOY.md, docs/proxies/**
+            edge: docker/Caddyfile, docker/web.Dockerfile, docker/web-entrypoint.sh, docker/edge-peers.sh, docker/edge-caddy.sh, web/**, CHANGELOG.md, .dockerignore, docker-compose*.yml, docker/dev.env, scripts/edge-check.sh, install/lib/ports.sh, supervisor/apply.sh, DEPLOY.md, docs/proxies/**, release/image-digest.sh
             # The release images' Dockerfiles and entrypoints: where an Arm64-only break comes from (a base image, an Alpine
             # package), with npm binaries via the fail-closed lockfiles, and the server's JVM flags and their check.
             # Source changes alone don't trigger the arm64 job.
@@ -290,6 +290,22 @@ jobs:
       - if: matrix.name == 'edge' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).edge)
         name: Caddyfile modes + compose overlays
         run: scripts/edge-check.sh
+      # Every third-party image a compose file runs is tag@sha256:<index digest> (Dependabot keeps it so), and the index
+      # holds one image per platform the release publishes (release.yml's PLATFORMS): a floating tag runs other bytes
+      # on another day, a one-platform digest runs amd64 bytes on an Arm64 host.
+      - if: matrix.name == 'edge' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).edge)
+        name: Third-party images pinned by index digest
+        run: |
+          for f in docker-compose.yml docker-compose.release.yml; do
+            refs=$(DB_PASSWORD=x BASE_URL=x HASH_SECRET=x docker compose -f "$f" --profile cloudflare config --images)
+            for ref in $refs; do
+              case $ref in
+                ghcr.io/*/mdmesh-*) ;;
+                *:*@sha256:*) echo "$f: $ref"; release/image-digest.sh "$ref" linux/amd64 linux/arm64 ;;
+                *) echo "::error::$f runs $ref: pin it as tag@sha256:<index digest>"; exit 1 ;;
+              esac
+            done
+          done
       # The web image release.yml publishes: the SPA build, the pinned caddy and web-entrypoint.sh, from the build context
       # .dockerignore shapes. A Caddy pin, a Dockerfile or a .dockerignore change that breaks it would otherwise first
       # fail in a release.

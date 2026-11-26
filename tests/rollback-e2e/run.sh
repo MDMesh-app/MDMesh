@@ -23,8 +23,8 @@
 # Everything runs in a privileged docker:dind container (its own daemon) next to a TLS registry that answers as ghcr.io,
 # on an internal network. Images (on this host): ghcr.io/local/mdmesh-{server,web,supervisor}:$E2E_NEW_TAG (this
 # branch, default rr-e2e) and :$E2E_OLD_TAG (origin/main, default rr-main), ghcr.io/mdmesh-app/mdmesh-*:0.4.0,
-# postgres:14, postgres:16, registry:3, docker:28.5.2-dind. Containers and networks are named $E2E_PREFIX-* (default
-# rr-e2e) and removed by name at the end. E2E_KEEP=1 keeps the work directory.
+# postgres:14 (v0.4.0's) and docker-compose.release.yml's, postgres:16, registry:3, docker:28.5.2-dind. Containers and
+# networks are named $E2E_PREFIX-* (default rr-e2e) and removed by name at the end. E2E_KEEP=1 keeps the work directory.
 set -uo pipefail
 umask 077
 ROOT="$(CDPATH='' cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -71,6 +71,8 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+# shellcheck source=tests/lib/dind-images.sh
+. "$ROOT/tests/lib/dind-images.sh"
 in_dind() { docker exec -i "$DIND" "$@"; }
 in_dind_reg() { docker exec -i -e SSL_CERT_FILE=/etc/docker/certs.d/ghcr.io/ca.crt "$DIND" "$@"; }
 in_dir()  { local d=$1; shift; docker exec -i -w "$d" "$DIND" "$@"; }
@@ -169,6 +171,7 @@ install() {
   local d=$1 ver=$2 src=$3 sv=$4 wv=$5 pv=$6
   in_dind mkdir -p "$d"
   docker cp "$src/docker-compose.release.yml" "$DIND:$d/docker-compose.yml" >>"$LOG"
+  unpin "$d/docker-compose.yml"
   cat > "$WORK/env" <<EOF
 DB_NAME=mdmesh
 DB_USER=mdmesh
@@ -246,17 +249,14 @@ setup_dind() {
     docker:28.5.2-dind dockerd --host=unix:///var/run/docker.sock >>"$LOG" || return 1
   for _ in $(seq 1 30); do in_dind docker info >>"$LOG" 2>&1 && break; sleep 2; done
   echo "-- loading images"
-  local imgs=() n t img
+  local imgs=() n t pg
+  pg=$(pinned_image postgres) || return 1
   for n in server web supervisor; do
     for t in "$NEW_TAG" "$OLD_TAG"; do imgs+=("ghcr.io/local/mdmesh-$n:$t"); done
     imgs+=("ghcr.io/mdmesh-app/mdmesh-$n:0.4.0")
   done
-  imgs+=(postgres:14)
-  # Each one here first (a clean host has pulled none of the public ones yet).
-  for img in "${imgs[@]}"; do
-    docker image inspect "$img" >>"$LOG" 2>&1 || docker pull -q "$img" >>"$LOG" 2>&1 || { echo "could not pull $img"; return 1; }
-  done
-  docker save "${imgs[@]}" | docker exec -i "$DIND" docker load >>"$LOG" 2>&1 || return 1
+  imgs+=(postgres:14 "$pg")
+  load_images "${imgs[@]}" || return 1
   echo "-- releases in the registry"
   push 0.4.0 ghcr.io/mdmesh-app/mdmesh 0.4.0 || return 1
   push 0.5.0 ghcr.io/local/mdmesh "$OLD_TAG" || return 1

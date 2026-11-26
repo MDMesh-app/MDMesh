@@ -336,6 +336,17 @@ exited or credentials cleared while the older agent ran.
   (`up -d` recreates the edge with the directory mounted; updates read both files, so they keep it.)
 - **A rollback below 0.6.0** of an install you moved to the proxy mode is refused by the updater: move it back first
   ([how](#changing-the-hosting-mode)).
+- **PostgreSQL and cloudflared run exact images.** Both compose files name them by tag and digest:
+  `postgres:14.25-trixie` (the same PostgreSQL 14 and Debian release that `postgres:14` is) and `cloudflared`
+  2026.11.2. From source, `./setup.sh --update` pulls them and restarts the database for a few seconds; the data is
+  not touched. A quick start keeps the compose file it was set up with: one from before 0.6.0 keeps `postgres:14` and
+  `cloudflared:latest`, and one from 0.6.0 on keeps its pinned cloudflared until you change that line. Cloudflare
+  supports a cloudflared release for a year after the newest one, so at least once a year copy the `cloudflared` and
+  `postgres` `image:` lines from the release's `docker-compose.release.yml` (on GitHub, at the release's tag) into
+  `docker-compose.yml`, then run `docker compose up -d`. Native installs use neither image.
+  - A database container started from a `postgres:14` pulled before August 2025 runs Debian 12, whose C library sorts
+    some text differently. If `docker compose exec postgres cat /etc/debian_version` prints `12.x`, rebuild the
+    indexes once after the move: `docker compose exec postgres psql -U mdmesh -d mdmesh -c 'REINDEX DATABASE mdmesh'`.
 
 ### v0.6.0 for forks
 

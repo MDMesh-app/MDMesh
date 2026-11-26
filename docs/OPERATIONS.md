@@ -402,7 +402,7 @@ check-in).
 ([Upgrading](UPGRADING.md#recovery-and-rollback)). From source, `./setup.sh` (and so `--update`) dumps it before it
 moves the install to another version, with the command below, to
 `backups/pre-update-<time>-from-<version>.dump` in the clone: `<time>` in UTC, `<version>` the release the dump belongs
-to. The directory is readable by its owner only, and only the 3 newest dumps are kept: copy one elsewhere to keep it.
+to. The dumps are readable by their owner only, and they stay until you remove them.
 A checkout without a release tag takes none: make one with the command below. A stopped postgres is started for the
 dump. setup.sh stops before it changes the install when it can't take it: when postgres doesn't start, the dump fails,
 or `backups/` has less free space than the database takes (free some, or make `backups` a link to a directory on a

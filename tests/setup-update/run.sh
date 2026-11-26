@@ -528,17 +528,15 @@ for c in "bk-novol 9.0.0 PGDATA_VOL=" "bk-same 9.1.0 PGDATA_VOL=mdmesh_pgdata"; 
     || { fail "--update ($c) takes a dump"; show; }
   ok
 done
-# The newest 3 are kept; an earlier run's leftover temporary file is removed.
+# Earlier dumps are all kept (none is deleted by count); an earlier run's leftover temporary file is removed.
 bk_clone bk-keep 9.0.0; mkdir -m 700 "$WORK/bk-keep/backups"
 for d in 1 2 3 4; do : > "$WORK/bk-keep/backups/pre-update-2000010${d}T000000Z-from-8.0.0.dump"; done
 : > "$WORK/bk-keep/backups/.pre-update.aaaaaa"
 bk_upd bk-keep PGDATA_VOL=mdmesh_pgdata
 bk=$(dumps bk-keep)
-{ grep -qx up "$WORK/env.log" && [ "$(sed -n 1,2p <<< "$bk" | tr '\n' ' ')" = \
-    "backups/pre-update-20000103T000000Z-from-8.0.0.dump backups/pre-update-20000104T000000Z-from-8.0.0.dump " ] \
-  && [ "$(wc -l <<< "$bk")" = 3 ] && [[ "$(tail -n 1 <<< "$bk")" == *-from-9.0.0.dump ]] \
+{ grep -qx up "$WORK/env.log" && [ "$(wc -l <<< "$bk")" = 5 ] && [[ "$(tail -n 1 <<< "$bk")" == *-from-9.0.0.dump ]] \
   && [ ! -e "$WORK/bk-keep/backups/.pre-update.aaaaaa" ]; } \
-  || { fail "the backups kept are not the newest 3, or a leftover temporary file stays ($bk)"; show; }
+  || { fail "an earlier backup is deleted, or a leftover temporary file stays ($bk)"; show; }
 ok
 # A stopped postgres is started (and waited for) for the dump, then the update goes on.
 bk_clone bk-start 9.0.0; bk_upd bk-start PGDATA_VOL=mdmesh_pgdata PG_STOPPED=1

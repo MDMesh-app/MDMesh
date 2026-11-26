@@ -415,17 +415,17 @@ version_preflight() {  # version_preflight <running>
 # _bk_stop REASON: stop the update before the install changes, saying why, what state that leaves, and the ways on.
 _bk_stop() {
   err "$1"
-  err "The install was not changed: it still runs ${CURRENT_VERSION:-as it did}. This clone is on ${REPO_VERSION:-this checkout}: once that"
+  err "The install was not changed: it still runs ${_running:-as it did}. This clone is on ${REPO_VERSION:-this checkout}: once that"
   err "is fixed, run ./setup.sh again to update, or go back to the code the install runs (git checkout -)."
   exit 1
 }
 # A re-run that changes the version (--update, whichever release's script handed over, or a checkout by hand) migrates
 # the database on the server's first start, so it is dumped first, before anything here changes: with OPERATIONS.md's
-# command ("Backups and restore", whose restore is the way back), into backups/ (mode 700, the dump 600), the newest 3
-# kept. Written to a temporary file, renamed once complete. No database volume yet: nothing to keep. A stopped postgres
+# command ("Backups and restore", whose restore is the way back), into backups/ (mode 700, the dump 600), kept
+# until removed by hand: a count limit could drop the one pre-update dump after a few retries. Written to a temporary file, renamed once complete. No database volume yet: nothing to keep. A stopped postgres
 # is started for it. When the dump can't be taken, the run stops, saying why.
 backup_before_update() {  # backup_before_update <running version>
-  local vol size free file tmp='' old from=${1:-unknown}
+  local vol size free file tmp='' from=${1:-unknown}
   vol=$(docker volume ls -q --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME:-mdmesh}" \
     --filter label=com.docker.compose.volume=pgdata) || _bk_stop "Could not list Docker's volumes (above)."
   [ -n "$vol" ] || return 0
@@ -448,8 +448,6 @@ backup_before_update() {  # backup_before_update <running version>
     [ -z "$tmp" ] || rm -f -- "$tmp"
     _bk_stop "The database backup failed (above), and this run does not update without one."
   fi
-  old=(backups/pre-update-*.dump)
-  [ "${#old[@]}" -le 3 ] || rm -f -- "${old[@]:0:${#old[@]}-3}"
   say "Backed up to $file. To go back to ${1:-the version it ran} with it: docs/OPERATIONS.md, Backups and restore."
 }
 

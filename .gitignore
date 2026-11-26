@@ -82,4 +82,4 @@ tests/rollback-e2e/.e2e-data/
 tests/proxy-e2e/.e2e-data/
 
 # setup.sh: the database dumps it takes before an update
-/backups/
+/backups

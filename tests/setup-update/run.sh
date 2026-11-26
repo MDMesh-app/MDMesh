@@ -468,6 +468,75 @@ upd ports ok PATH="$WORK/stubs-ports:$WORK/stubs:$PATH" --
   || { fail "--update at the same tag, with the line it showed in .env, does not go on with it"; show; }
 ok
 
+# The database backup before an update: --update from v9.0.0 over an install that runs 9.0.0. docker: a stub with the
+# project's pgdata volume when PGDATA_VOL names it, a database of DB_SIZE bytes, a pg_dump that writes a few bytes (or
+# fails, with DUMP_FAIL=1), and an `up` that stops the run; the dump and the `up` are logged in their order.
+mkdir -p "$WORK/stubs-backup"
+cat > "$WORK/stubs-backup/docker" <<'EOF'
+#!/bin/sh
+case "$*" in
+  "volume ls"*com.docker.compose.volume=pgdata) [ -z "${PGDATA_VOL:-}" ] || echo "$PGDATA_VOL" ;;
+  "compose exec -T postgres psql"*) echo "${DB_SIZE:-1024}" ;;
+  "compose exec -T postgres pg_dump"*)
+    echo dump >> "$WORK_ENV_LOG"
+    [ "${DUMP_FAIL:-}" != 1 ] || { echo 'pg_dump: error: connection to server failed' >&2; exit 1; }
+    printf 'PGDMP' ;;
+  compose*" up "*) echo up >> "$WORK_ENV_LOG"; exit 99 ;;
+esac
+exit 0
+EOF
+chmod +x "$WORK/stubs-backup/docker"
+# bk_clone NAME CURRENT: a new clone NAME on v9.0.0 over an install whose .env says CURRENT_VERSION=CURRENT.
+bk_clone() {
+  clone "$1" v9.0.0
+  printf '%s\n' DB_PASSWORD=x HASH_SECRET=y BASE_URL=https://mdm.example.com IMAGE_OWNER=local "CURRENT_VERSION=$2" > "$WORK/$1/.env"
+}
+# bk_upd NAME [NAME=VALUE...]: --update in clone NAME, with the backup stub as docker.
+bk_upd() { local n=$1; shift; upd "$n" ok PATH="$WORK/stubs-backup:$WORK/stubs:$PATH" "$@" --; }
+# dumps NAME: the backups NAME's setup.sh left, one per line (none without backups/).
+dumps() { [ ! -d "$WORK/$1/backups" ] || (cd "$WORK/$1" && find backups -name 'pre-update-*.dump' | sort); }
+bk_clone bk-ok 9.0.0; bk_upd bk-ok PGDATA_VOL=mdmesh_pgdata
+bk=$(dumps bk-ok)
+{ [ "$(grep -x 'dump\|up' "$WORK/env.log" | tr '\n' ' ')" = "dump up " ] \
+  && [[ "$bk" == backups/pre-update-[0-9]*T[0-9]*Z-from-9.0.0.dump ]] && [ "$(cat "$WORK/bk-ok/$bk")" = PGDMP ] \
+  && [ "$(stat -c %a "$WORK/bk-ok/$bk" "$WORK/bk-ok/backups" | tr '\n' ' ')" = "600 700 " ] \
+  && grep -qF "Backed up to $bk." "$WORK/out"; } \
+  || { fail "--update over an install does not leave one owner-only dump in an owner-only backups/ before up ($bk)"; show; }
+ok
+# A failing pg_dump stops the run before up, saying why, and leaves no file (nor its temporary one).
+bk_clone bk-fail 9.0.0; bk_upd bk-fail PGDATA_VOL=mdmesh_pgdata DUMP_FAIL=1
+{ [ "$RC" = 1 ] && grep -qx dump "$WORK/env.log" && ! grep -qx up "$WORK/env.log" \
+  && grep -qF 'pg_dump: error: connection to server failed' "$WORK/out" \
+  && grep -qF 'The database backup failed (above), and this run does not update without one.' "$WORK/out" \
+  && [ -z "$(ls -A "$WORK/bk-fail/backups")" ]; } \
+  || { fail "a failing pg_dump does not stop --update before up, saying so, with nothing left in backups/"; show; }
+ok
+# Too little space for it: stops before the dump, giving the numbers.
+bk_clone bk-full 9.0.0; bk_upd bk-full PGDATA_VOL=mdmesh_pgdata DB_SIZE=$((1 << 62))
+{ [ "$RC" = 1 ] && ! grep -qx 'dump\|up' "$WORK/env.log" && grep -qF 'MiB free, and the database takes' "$WORK/out" \
+  && [ -z "$(ls -A "$WORK/bk-full/backups")" ]; } \
+  || { fail "a database larger than the free space does not stop --update before the dump"; show; }
+ok
+# No pgdata volume yet (nothing installed to keep), or the same version (no migration): no dump, and on to up.
+for c in "bk-novol 9.0.0 PGDATA_VOL=" "bk-same 9.1.0 PGDATA_VOL=mdmesh_pgdata"; do
+  read -r n cur vol <<< "$c"; bk_clone "$n" "$cur"; bk_upd "$n" "$vol"
+  { grep -qx up "$WORK/env.log" && ! grep -qx dump "$WORK/env.log" && [ ! -e "$WORK/$n/backups" ]; } \
+    || { fail "--update ($c) takes a dump"; show; }
+  ok
+done
+# The newest 3 are kept; an earlier run's leftover temporary file is removed.
+bk_clone bk-keep 9.0.0; mkdir -m 700 "$WORK/bk-keep/backups"
+for d in 1 2 3 4; do : > "$WORK/bk-keep/backups/pre-update-2000010${d}T000000Z-from-8.0.0.dump"; done
+: > "$WORK/bk-keep/backups/.pre-update.aaaaaa"
+bk_upd bk-keep PGDATA_VOL=mdmesh_pgdata
+bk=$(dumps bk-keep)
+{ grep -qx up "$WORK/env.log" && [ "$(sed -n 1,2p <<< "$bk" | tr '\n' ' ')" = \
+    "backups/pre-update-20000103T000000Z-from-8.0.0.dump backups/pre-update-20000104T000000Z-from-8.0.0.dump " ] \
+  && [ "$(wc -l <<< "$bk")" = 3 ] && [[ "$(tail -n 1 <<< "$bk")" == *-from-9.0.0.dump ]] \
+  && [ ! -e "$WORK/bk-keep/backups/.pre-update.aaaaaa" ]; } \
+  || { fail "the backups kept are not the newest 3, or a leftover temporary file stays ($bk)"; show; }
+ok
+
 # Which tree ran, and a floor on how many checks did (a few depend on the host), so a section that silently ran
 # nothing can't pass.
 TREE=$(git -c safe.directory='*' -C "$REPO" describe --always --dirty 2>&1) || TREE='?'

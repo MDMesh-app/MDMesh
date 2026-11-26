@@ -1,3 +1,4 @@
+// Derived from Headwind MDM (Apache-2.0); modified by the MDMesh contributors.
 // Localization completed
 angular.module('plugin-messaging', ['ngResource', 'ui.bootstrap', 'ui.router', 'ngTagsInput', 'ncy-angular-breadcrumb'])
     .config(function ($stateProvider) {

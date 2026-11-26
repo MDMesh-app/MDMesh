@@ -71,6 +71,9 @@ New
   `onSelect` moves focus itself, so the menu leaves focus there rather than returning it to its trigger.
 
 Fixes
+- Password-recovery emails name the product MDMesh when no `rebranding.name` is set, and the API's own title says
+  MDMesh; both named the upstream product. `/rest/public/logo` answers 404 when no `rebranding.logo` is set, instead of
+  redirecting to an upstream logo.
 - Devices search finds IMEIs reported by current agents, in either SIM slot and by part of the number, also for devices
   that haven't checked in since the update. When a search matches more devices than one request returns (1,000 in the
   console), the best matches are now kept rather than the weakest; a reported IMEI counts like one set by an administrator.
@@ -140,6 +143,8 @@ Under the hood
   for it. CI refuses a component under a licence outside `docs/licenses/allowed.txt`, or one offered under several
   with no recorded choice ([policy](https://github.com/MDMesh-app/MDMesh/blob/main/docs/licenses/policy.md)).
   The server no longer ships SpotBugs' annotations (LGPL-2.1), which nothing used at runtime.
+- Every file kept from the upstream project that MDMesh changed now says so, and CI checks it
+  ([policy](https://github.com/MDMesh-app/MDMesh/blob/main/docs/licenses/policy.md#files-kept-from-upstream)).
 - Console: the groundwork for translations. New console text is written as react-intl messages (English stays in
   the code), and a test fails on most new untranslated text in core files; existing text moves over area by area. No
   other language ships yet ([web/README.md](web/README.md#translatable-text)).

@@ -1,3 +1,4 @@
+// Derived from Headwind MDM (Apache-2.0); modified by the MDMesh contributors.
 // Localization completed
 angular.module('plugin-push', ['ngResource', 'ui.bootstrap', 'ui.router', 'ngTagsInput', 'ncy-angular-breadcrumb'])
     .config(function ($stateProvider) {
@@ -385,7 +386,7 @@ angular.module('plugin-push', ['ngResource', 'ui.bootstrap', 'ui.router', 'ngTag
             deleteDir: "{\"path\": \"/path/to/dir\"}",
             purgeDir: "{\"path\": \"/path/to/dir\", \"recursive\": \"1\"}",
             permissiveMode: "",
-            intent: "{\"action\": \"android.intent.action.VIEW\", \"data\": \"https://h-mdm.com\"}",
+            intent: "{\"action\": \"android.intent.action.VIEW\", \"data\": \"https://example.com\"}",
             runCommand: "{\"command\": \"shell command\"}",
             reboot: "",
             exitKiosk: "",
@@ -515,7 +516,7 @@ angular.module('plugin-push', ['ngResource', 'ui.bootstrap', 'ui.router', 'ngTag
             deleteDir: "{\"path\": \"/path/to/dir\"}",
             purgeDir: "{\"path\": \"/path/to/dir\", \"recursive\": \"1\"}",
             permissiveMode: "",
-            intent: "{\"action\": \"android.intent.action.VIEW\", \"data\": \"https://h-mdm.com\"}",
+            intent: "{\"action\": \"android.intent.action.VIEW\", \"data\": \"https://example.com\"}",
             runCommand: "{\"command\": \"shell command\"}",
             reboot: "",
             exitKiosk: "",

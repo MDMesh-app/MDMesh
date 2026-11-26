@@ -4,6 +4,7 @@
  * https://h-mdm.com
  *
  * Copyright (C) 2019 Headwind Solutions LLC (http://h-sms.com)
+ * Modified by the MDMesh contributors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -210,7 +211,7 @@ public class Configuration implements CustomerData, Serializable {
     private String backgroundColor;
     @ApiModelProperty("A text color to use when running MDM application")
     private String textColor;
-    @ApiModelProperty("The Headwind launcher wallpaper URL; with a kiosk background image, the URL the server set "
+    @ApiModelProperty("The legacy launcher wallpaper URL; with a kiosk background image, the URL the server set "
             + "for its uploaded file. Another URL drops that image (see backgroundImageAction)")
     private String backgroundImageUrl;
     @ApiModelProperty("Uploaded file used as the kiosk background image (PNG, JPEG or WebP, at most 10 MB and "
@@ -237,7 +238,7 @@ public class Configuration implements CustomerData, Serializable {
     private DesktopHeader desktopHeader = NO_HEADER;
     @ApiModelProperty("Desktop header template")
     private String desktopHeaderTemplate;
-    @ApiModelProperty("If checked, the data of the device status bar (time, battery, etc) are displayed by Headwind MDM")
+    @ApiModelProperty("If checked, the data of the device status bar (time, battery, etc) are displayed by the legacy launcher")
     private boolean displayStatus;
 
     // An unique key used for retrieving the QR code for configuration

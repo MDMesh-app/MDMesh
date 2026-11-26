@@ -75,8 +75,8 @@ Thumbs.db
 *~
 *.swp
 
-# Maintainer-local Claude Code notes
-/CLAUDE.md
+# Maintainer-local Claude Code notes (CLAUDE.md and AGENTS.md are shared)
+/CLAUDE.local.md
 
 # tests/rollback-e2e: dind + registry storage of a run
 tests/rollback-e2e/.e2e-data/

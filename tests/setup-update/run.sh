@@ -479,9 +479,9 @@ case "$*" in
   "volume ls"*com.docker.compose.volume=pgdata) [ -z "${PGDATA_VOL:-}" ] || echo "$PGDATA_VOL" ;;
   compose*" ps -q --status running postgres") [ "${PG_STOPPED:-}" = 1 ] || echo pg ;;
   compose*" up -d --wait postgres") echo start >> "$WORK_ENV_LOG" ;;
-  "compose exec -T postgres psql"*) echo "${DB_SIZE:-1024}" ;;
+  "compose exec -T postgres psql"*) echo "$*" > "$WORK_ENV_LOG.psql"; echo "${DB_SIZE:-1024}" ;;
   "compose exec -T postgres pg_dump"*)
-    echo dump >> "$WORK_ENV_LOG"; printf 'PGDMP'
+    echo dump >> "$WORK_ENV_LOG"; echo "$*" > "$WORK_ENV_LOG.dump"; printf 'PGDMP'
     [ "${DUMP_FAIL:-}" != 1 ] || { echo 'pg_dump: error: connection to server failed' >&2; exit 1; } ;;
   compose*" up "*) echo up >> "$WORK_ENV_LOG"; exit 99 ;;
 esac
@@ -547,6 +547,12 @@ ok
 bk_clone bk-old 9.0.0; sed -i 's/^CURRENT_VERSION=.*/SERVER_VERSION=9.0.0@sha256:0123/' "$WORK/bk-old/.env"
 bk_upd bk-old PGDATA_VOL=mdmesh_pgdata
 [[ "$(dumps bk-old)" == backups/pre-update-*-from-9.0.0.dump ]] || { fail "a dump over an older .env is not named from SERVER_VERSION"; show; }
+ok
+# An .env with its own database user and name: the size query and the dump use them.
+bk_clone bk-names 9.0.0; printf '%s\n' DB_USER=mdm DB_NAME=mdmdb >> "$WORK/bk-names/.env"
+bk_upd bk-names PGDATA_VOL=mdmesh_pgdata
+{ grep -q -- '-U mdm -d mdmdb' "$WORK/env.log.psql" && grep -q -- 'pg_dump -U mdm -Fc mdmdb$' "$WORK/env.log.dump"; } \
+  || { fail "the backup ignores DB_USER/DB_NAME from .env"; show; }
 ok
 # Untagged (on v9.1.0's commit, its tags not fetched): no version change can be shown, so no dump, and it says so.
 bk_clone bk-untagged 9.0.0; "${G[@]}" -C "$WORK/bk-untagged" checkout -q --detach v9.1.0

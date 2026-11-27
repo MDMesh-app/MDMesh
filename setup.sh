@@ -443,7 +443,7 @@ backup_before_update() {  # backup_before_update <running version>
     _bk_stop "backups/ has $((free >> 20)) MiB free, and the database takes $((size >> 20)) MiB: free some space, or make backups a link to a directory on a larger disk."
   fi
   file="backups/pre-update-$(date -u +%Y%m%dT%H%M%SZ)-from-${from//[!0-9A-Za-z.+-]/_}.dump"
-  if ! tmp=$(mktemp backups/.pre-update.XXXXXX) || ! docker compose exec -T postgres pg_dump -U mdmesh -Fc mdmesh > "$tmp" \
+  if ! tmp=$(mktemp backups/.pre-update.XXXXXX) || ! docker compose exec -T postgres pg_dump -U "${DB_USER:-mdmesh}" -Fc "${DB_NAME:-mdmesh}" > "$tmp" \
      || [ ! -s "$tmp" ] || ! sync -- "$tmp" || ! mv -fT -- "$tmp" "$file"; then
     [ -z "$tmp" ] || rm -f -- "$tmp"
     _bk_stop "The database backup failed (above), and this run does not update without one."
@@ -474,6 +474,7 @@ if [ "$REUSE_ENV" = 1 ]; then
     exit 1
   fi
   mdm_load_env .env
+  PSQL=(docker compose exec -T postgres psql -U "${DB_USER:-mdmesh}" -d "${DB_NAME:-mdmesh}")  # .env may name its own
   # This directory's own stack is expected; another directory's is never touched.
   mdm_stack_guard "${COMPOSE_PROJECT_NAME:-mdmesh}" 0
   # The version the install runs (an older .env has only SERVER_VERSION, which a one-click update pins by digest).

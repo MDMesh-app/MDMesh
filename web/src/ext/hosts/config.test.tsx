@@ -920,7 +920,7 @@ describe('enrollment setup settings', () => {
 
   it('opens a configuration whose field holds keys named like object members, and points them out', async () => {
     open({ config: { qrParameters: '"x": 1,\n"android.app.extra.__proto__": "x",\n"android.app.extra.constructor": 1' } });
-    expect(await screen.findByText(/__proto__, constructor: not used\. MDMesh passes on only these setup entries/)).toBeTruthy();
+    expect(await screen.findByText(/x: not used\. A provisioning entry's name starts with android\.app\.extra\. __proto__, constructor: added to the code as typed\. MDMesh doesn't know these entries/)).toBeTruthy();
   });
 
   it('points out an entry typed by hand that has a setting of its own', async () => {

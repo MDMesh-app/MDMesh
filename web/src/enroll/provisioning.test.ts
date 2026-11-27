@@ -9,6 +9,7 @@ import {
   splitQrParameters,
   extrasInCode,
   extrasLeftOut,
+  extrasUnchecked,
   qrPayloadBytes,
   QR_MAX_BYTES,
   unusedInRest,
@@ -282,9 +283,9 @@ describe('review: Wi-Fi entries and the summary', () => {
   });
 });
 
-describe('review: only known setup entries, with values of their type', () => {
+describe('review: known entries are checked, other provisioning entries go in as typed', () => {
   const P = 'android.app.extra.';
-  it('passes on the listed entries with a valid value, and leaves out the rest by reason', () => {
+  it('passes on known entries with a valid value and unknown ones with a plain value, and leaves out the rest by reason', () => {
     const extras = {
       [`${P}PROVISIONING_SENSORS_PERMISSION_GRANT_OPT_OUT`]: true,
       [`${P}PROVISIONING_LOCAL_TIME`]: 1767225600000,
@@ -302,14 +303,36 @@ describe('review: only known setup entries, with values of their type', () => {
       `${P}PROVISIONING_ORGANIZATION_NAME`,
       `${P}PROVISIONING_SENSORS_PERMISSION_GRANT_OPT_OUT`,
       `${P}PROVISIONING_SUPPORT_URL`,
+      `${P}PROVISIONING_SUPPORT_URL_BAD`,
     ]);
+    expect(extrasUnchecked(extras, false)).toEqual([`${P}PROVISIONING_SUPPORT_URL_BAD`]);
     const out = extrasLeftOut(extras, false);
-    expect(out.invalid.sort()).toEqual([`${P}PROVISIONING_LOCALE`, `${P}PROVISIONING_SKIP_EDUCATION_SCREENS`]);
-    expect(out.unsupported).toHaveLength(4);
+    expect(out.invalid.sort()).toEqual([`${P}PROVISIONING_DISCLAIMERS`, `${P}PROVISIONING_LOCALE`, `${P}PROVISIONING_SKIP_EDUCATION_SCREENS`]);
+    expect(out.unsupported).toEqual(['x.y']);
     const p = JSON.parse(buildProvisioningPayload('t', undefined, extras));
     expect(p['x.y']).toBeUndefined();
     expect(p[`${P}PROVISIONING_DISCLAIMERS`]).toBeUndefined();
     expect(p[`${P}PROVISIONING_SKIP_EDUCATION_SCREENS`]).toBeUndefined();
+  });
+
+  it('takes offline provisioning as a known true/false entry', () => {
+    const key = `${P}PROVISIONING_ALLOW_OFFLINE`;
+    expect(JSON.parse(buildProvisioningPayload('t', undefined, { [key]: true }))[key]).toBe(true);
+    expect(extrasUnchecked({ [key]: true }, false)).toEqual([]);
+    expect(extrasLeftOut({ [key]: 'true' }, false).invalid).toEqual([key]);
+  });
+
+  it('never passes on an entry about the agent package or a role holder package, known by name or not', () => {
+    const qrParameters = [
+      `"${P}PROVISIONING_DEVICE_ADMIN_PACKAGE_DOWNLOAD_COOKIE_HEADER": "a=b"`,
+      `"${P}PROVISIONING_DEVICE_ADMIN_MINIMUM_VERSION_CODE": 1`,
+      `"${P}PROVISIONING_ROLE_HOLDER_PACKAGE_DOWNLOAD_LOCATION": "https://example.org/x.apk"`,
+    ].join(',\n');
+    const read = configurationQrExtras({ qrParameters });
+    expect(read.entries).toEqual({});
+    expect(read.ignored).toHaveLength(3);
+    expect(unusedInRest(qrParameters).protected).toHaveLength(3);
+    expect(extrasInCode({ [`${P}PROVISIONING_ROLE_HOLDER_EXTRAS_BUNDLE`]: 'x' }, false)).toEqual({});
   });
 
   it('rejects a support URL that is not https, and a negative local time', () => {

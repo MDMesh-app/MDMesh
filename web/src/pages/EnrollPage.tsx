@@ -14,6 +14,7 @@ import {
   configurationQrExtras,
   extrasInCode,
   extrasLeftOut,
+  extrasUnchecked,
   qrPayloadBytes,
   QR_DENSE_BYTES,
   QR_MAX_BYTES,
@@ -263,7 +264,11 @@ const setupNotKnown = defineMessages({
 const setupUnsupported = defineMessage<{ count: number }>({
   id: 'enroll.setup.unsupported',
   defaultMessage:
-    '{count, plural, one {# entry left out} other {# entries left out}}: not a setup entry MDMesh passes on, or a value of the wrong type',
+    '{count, plural, one {# entry left out} other {# entries left out}}: not a provisioning entry, or a value of the wrong type',
+});
+const setupUnchecked = defineMessage<{ count: number }>({
+  id: 'enroll.setup.unchecked',
+  defaultMessage: '{count} not checked by MDMesh',
 });
 const qrSizeMessages = defineMessages({
   tooLargeFrame: { id: 'enroll.qrSize.tooLargeFrame', defaultMessage: 'No QR code: it would be too large to scan.' },
@@ -524,13 +529,17 @@ export function EnrollPage() {
     const leftOut = extrasLeftOut(qrExtras.entries, wifiInCode);
     const wifiLeftOut = leftOut.wifi.length;
     const unsupported = leftOut.unsupported.length + leftOut.invalid.length;
+    const unchecked = extrasUnchecked(qrExtras.entries, wifiInCode).length;
     const parts = [
       sum.locale,
       sum.timeZone,
       sum.skipIntro ? intl.formatMessage(setupMessages.skipIntro) : null,
       sum.mobileData ? intl.formatMessage(setupMessages.mobileData) : null,
       sum.hiddenWifi ? intl.formatMessage(setupMessages.hiddenWifi) : null,
-      sum.others > 0 ? intl.formatMessage(setupOthers, { count: sum.others }) : null,
+      sum.others > 0
+        ? intl.formatMessage(setupOthers, { count: sum.others }) +
+          (unchecked > 0 ? ` (${intl.formatMessage(setupUnchecked, { count: unchecked })})` : '')
+        : null,
       wifiLeftOut > 0 ? intl.formatMessage(setupWifiLeftOut, { count: wifiLeftOut }) : null,
       unsupported > 0 ? intl.formatMessage(setupUnsupported, { count: unsupported }) : null,
     ].filter((x): x is string => !!x);

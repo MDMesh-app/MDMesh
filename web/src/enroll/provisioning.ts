@@ -51,11 +51,14 @@ export const PROTECTED_QR_KEYS: ReadonlySet<string> = new Set([
   'android.app.extra.PROVISIONING_LEAVE_ALL_SYSTEM_APPS_ENABLED',
   'android.app.extra.PROVISIONING_SKIP_ENCRYPTION',
 ]);
+/** Protected by family too: every entry about the agent's package, and about a device management role holder's. */
+const PROTECTED_QR_PREFIXES = ['android.app.extra.PROVISIONING_DEVICE_ADMIN_', 'android.app.extra.PROVISIONING_ROLE_HOLDER_'];
+const isProtected = (key: string) => PROTECTED_QR_KEYS.has(key) || PROTECTED_QR_PREFIXES.some((p) => key.startsWith(p));
 
 /** The configuration's Extra QR parameters, read: the entries to add, or why they can't be. */
 export interface ExtraQrParameters {
   entries: Record<string, unknown>;
-  /** Protected entries that were left out (see PROTECTED_QR_KEYS). */
+  /** Protected entries that were left out (see PROTECTED_QR_KEYS and PROTECTED_QR_PREFIXES). */
   ignored: string[];
   /** Set when the text isn't JSON: nothing is added then. */
   error: string | null;
@@ -76,7 +79,7 @@ export function parseExtraQrParameters(text: unknown): ExtraQrParameters {
   const entries: Record<string, unknown> = Object.create(null);
   const ignored: string[] = [];
   for (const [key, value] of Object.entries(read.entries)) {
-    if (PROTECTED_QR_KEYS.has(key)) ignored.push(key);
+    if (isProtected(key)) ignored.push(key);
     else entries[key] = value;
   }
   return { entries, ignored, error: null };
@@ -216,8 +219,8 @@ export function joinQrParameters(settings: Record<string, unknown>, rest: string
 
 /**
  * Entries typed in the rest that never go in the code, without their prefix, by reason (see leftOutReason): Wi-Fi
- * (set above and on the Enroll page), entries MDMesh sets itself, keys it doesn't pass on, and values of the wrong
- * type. Settings typed here aren't listed: settingsInRest points them out. The editor shows both.
+ * (set above and on the Enroll page), entries MDMesh sets itself, names that aren't provisioning entries, and values
+ * of the wrong type. Settings typed here aren't listed: settingsInRest points them out. The editor shows both.
  */
 export function unusedInRest(rest: string): Record<LeftOutReason, string[]> {
   const out: Record<LeftOutReason, string[]> = { protected: [], wifi: [], unsupported: [], invalid: [] };
@@ -274,6 +277,8 @@ const WIFI_PREFIX = 'android.app.extra.PROVISIONING_WIFI_';
 const EXTRA_WIFI_KEYS: ReadonlySet<string> = new Set([`${WIFI_PREFIX}HIDDEN`]);
 
 const isBool = (v: unknown) => typeof v === 'boolean';
+/** The value of an entry MDMesh doesn't know: text, a number or true/false, the values a QR entry takes. */
+const isPlain = (v: unknown) => typeof v === 'string' || typeof v === 'boolean' || (typeof v === 'number' && Number.isFinite(v));
 
 /** A time zone the browser's IANA database knows, aliases included (UTC, Etc/GMT+1, US/Eastern); not "Europe/Pariss". */
 function knownTimeZone(zone: string): boolean {
@@ -288,9 +293,9 @@ const shortText = (max: number, pattern?: RegExp) => (v: unknown) =>
   typeof v === 'string' && v.length > 0 && v.length <= max && (!pattern || pattern.test(v));
 
 /**
- * The provisioning entries a configuration may add, with the value each takes. Anything else (an unknown key, a value
- * of the wrong type or size) is left out, and the editor and the Enroll page say so: a configuration can only make
- * the setup choices listed here, never change how Android provisions the device in other ways.
+ * The provisioning entries MDMesh knows, with the value each takes: a value of the wrong type or size is left out.
+ * Any other `android.app.extra.` entry goes in the code as typed when its value is text, a number or true/false
+ * (extrasUnchecked): MDMesh can't check it, and the editor and the Enroll page say so.
  */
 // A Map, not an object: a typed key such as "constructor" or "__proto__" must not find an inherited member.
 export const QR_EXTRA_TYPES: ReadonlyMap<string, (v: unknown) => boolean> = new Map<string, (v: unknown) => boolean>([
@@ -299,6 +304,7 @@ export const QR_EXTRA_TYPES: ReadonlyMap<string, (v: unknown) => boolean> = new 
   ['PROVISIONING_SKIP_EDUCATION_SCREENS', isBool],
   ['PROVISIONING_USE_MOBILE_DATA', isBool],
   ['PROVISIONING_WIFI_HIDDEN', isBool],
+  ['PROVISIONING_ALLOW_OFFLINE', isBool],
   ['PROVISIONING_SENSORS_PERMISSION_GRANT_OPT_OUT', isBool],
   ['PROVISIONING_LOCAL_TIME', (v) => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0],
   ['PROVISIONING_ORGANIZATION_NAME', shortText(100)],
@@ -316,16 +322,22 @@ export type LeftOutReason = 'protected' | 'wifi' | 'unsupported' | 'invalid';
 
 /** Why this entry stays out of the code, or null when it goes in. */
 export function leftOutReason(key: string, value: unknown, joinsWifi: boolean): LeftOutReason | null {
-  if (PROTECTED_QR_KEYS.has(key)) return 'protected';
+  if (isProtected(key)) return 'protected';
   if (key.startsWith(WIFI_PREFIX) && (!joinsWifi || !EXTRA_WIFI_KEYS.has(key))) return 'wifi';
-  const check = key.startsWith(QR_EXTRA_PREFIX) ? QR_EXTRA_TYPES.get(key.slice(QR_EXTRA_PREFIX.length)) : undefined;
-  if (!check) return 'unsupported';
+  // Android reads only `android.app.extra.` entries: any other name is a slip (often the prefix left off).
+  if (!key.startsWith(QR_EXTRA_PREFIX)) return 'unsupported';
+  const check = QR_EXTRA_TYPES.get(key.slice(QR_EXTRA_PREFIX.length)) ?? isPlain;
   return check(value) ? null : 'invalid';
 }
 
+/** The entries that go in the code without a check, because MDMesh doesn't know them (see QR_EXTRA_TYPES). */
+export function extrasUnchecked(extras: Record<string, unknown>, joinsWifi: boolean): string[] {
+  return Object.keys(extrasInCode(extras, joinsWifi)).filter((k) => !QR_EXTRA_TYPES.has(k.slice(QR_EXTRA_PREFIX.length)));
+}
+
 /**
- * The configuration's entries that go in the code: only the ones QR_EXTRA_TYPES lists, with a value of their type.
- * Protected entries never do, and Wi-Fi is set in the configuration's Enrollment section and on the Enroll page, so
+ * The configuration's entries that go in the code: the ones QR_EXTRA_TYPES lists with a value of their type, and any
+ * other `android.app.extra.` entry with a plain value. Protected entries never do, and Wi-Fi is set in the configuration's Enrollment section and on the Enroll page, so
  * the one Wi-Fi entry that goes in, a hidden network, goes only with the page's own network (`joinsWifi`).
  */
 export function extrasInCode(extras: Record<string, unknown>, joinsWifi: boolean): Record<string, unknown> {

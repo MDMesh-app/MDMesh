@@ -24,6 +24,9 @@
   "configEditor.enrollment.qrSettingInvalid": {
     "defaultMessage": "“{value}” isn't a value Android takes here, so it is left out of the code. Choose one from the list."
   },
+  "configEditor.enrollment.qrUnchecked": {
+    "defaultMessage": "{keys}: added to the code as typed. MDMesh doesn't know these entries, so it can't check them: a wrong name or value can stop the device's setup."
+  },
   "configEditor.enrollment.qrUnusedInvalid": {
     "defaultMessage": "{keys}: not used. The value isn't of the type this entry takes."
   },
@@ -31,7 +34,7 @@
     "defaultMessage": "{keys}: not used. MDMesh sets these itself."
   },
   "configEditor.enrollment.qrUnusedUnsupported": {
-    "defaultMessage": "{keys}: not used. MDMesh passes on only these setup entries: {known}."
+    "defaultMessage": "{keys}: not used. A provisioning entry's name starts with android.app.extra."
   },
   "configEditor.enrollment.qrUnusedWifi": {
     "defaultMessage": "{keys}: not used. Wi-Fi comes from the setup Wi-Fi above and the Enroll page."
@@ -78,11 +81,14 @@
   "enroll.setup.skipIntro": {
     "defaultMessage": "intro screens skipped"
   },
+  "enroll.setup.unchecked": {
+    "defaultMessage": "{count} not checked by MDMesh"
+  },
   "enroll.setup.unreadable": {
     "defaultMessage": "{summary} (other Extra QR parameters left out: {error})"
   },
   "enroll.setup.unsupported": {
-    "defaultMessage": "{count, plural, one {# entry left out} other {# entries left out}}: not a setup entry MDMesh passes on, or a value of the wrong type"
+    "defaultMessage": "{count, plural, one {# entry left out} other {# entries left out}}: not a provisioning entry, or a value of the wrong type"
   },
   "enroll.setup.wifiLeftOut": {
     "defaultMessage": "{count, plural, one {# Wi-Fi entry left out} other {# Wi-Fi entries left out}}: Wi-Fi comes from this page (and the configuration's setup Wi-Fi)"

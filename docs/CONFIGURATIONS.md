@@ -91,15 +91,21 @@ itself up go in the enrollment QR code:
 
 Hidden network, Skip intro screens, Language and Time zone are stored at the top of **Extra QR parameters**, one per
 line and followed by a blank line (a leading blank line when none is set), so a configuration still has one place for everything its QR code adds; the editor's Extra QR parameters field
-shows only the other entries. MDMesh passes on only these other setup entries, each with a value of its type:
-`PROVISIONING_USE_MOBILE_DATA` and `PROVISIONING_SENSORS_PERMISSION_GRANT_OPT_OUT` (true/false), `PROVISIONING_LOCAL_TIME` (milliseconds since 1970),
-`PROVISIONING_ORGANIZATION_NAME` (text, up to 100 characters) and `PROVISIONING_SUPPORT_URL` (an https address, up to
-200 characters). Any other entry, or a value of the wrong type, is left out, and the editor and the Enroll page say so.
-For example:
+shows only the other entries. Those can be any Android provisioning entry (a name starting with
+`android.app.extra.`), for example:
 
 ```
-"android.app.extra.PROVISIONING_SENSORS_PERMISSION_GRANT_OPT_OUT": true
+"android.app.extra.PROVISIONING_ALLOW_OFFLINE": true
 ```
+
+MDMesh checks the value of the entries it knows, and leaves out one of the wrong type: `PROVISIONING_USE_MOBILE_DATA`,
+`PROVISIONING_ALLOW_OFFLINE` and `PROVISIONING_SENSORS_PERMISSION_GRANT_OPT_OUT` (true/false),
+`PROVISIONING_LOCAL_TIME` (milliseconds since 1970), `PROVISIONING_ORGANIZATION_NAME` (text, up to 100 characters) and
+`PROVISIONING_SUPPORT_URL` (an https address, up to 200 characters). Any other entry goes in the code as typed when
+its value is text, a number or true/false. MDMesh can't check those, and a wrong name or value can stop the device's
+setup, so the editor and the Enroll page point them out. Never added: Wi-Fi entries (Wi-Fi comes from the setup Wi-Fi
+and the Enroll page), entries about the agent's package (`PROVISIONING_DEVICE_ADMIN_…`) or a role holder's
+(`PROVISIONING_ROLE_HOLDER_…`), the enrollment extras, and MDMesh's own defaults.
 
 Write them as JSON members, one or more per line (a trailing comma is fine), or as one JSON object. While they aren't
 valid JSON, the field says so: they are saved as typed, and the Enroll page leaves them out (the settings above still

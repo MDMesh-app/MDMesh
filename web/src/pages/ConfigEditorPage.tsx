@@ -92,11 +92,10 @@ import {
   settingsInRest,
   unusedInRest,
   qrPayloadBytes,
-  QR_EXTRA_TYPES,
   QR_EXTRA_PREFIX,
   extrasInCode,
+  extrasUnchecked,
   qrSettingValueOk,
-  QR_SETTING_KEYS,
   splitQrParameters,
   type QrParametersSplit,
 } from '../enroll/provisioning';
@@ -122,15 +121,20 @@ const qrUnused = {
     id: 'configEditor.enrollment.qrUnusedProtected',
     defaultMessage: '{keys}: not used. MDMesh sets these itself.',
   }),
-  unsupported: defineMessage<{ keys: string; known: string }>({
+  unsupported: defineMessage<{ keys: string }>({
     id: 'configEditor.enrollment.qrUnusedUnsupported',
-    defaultMessage: '{keys}: not used. MDMesh passes on only these setup entries: {known}.',
+    defaultMessage: "{keys}: not used. A provisioning entry's name starts with android.app.extra.",
   }),
   invalid: defineMessage<{ keys: string }>({
     id: 'configEditor.enrollment.qrUnusedInvalid',
     defaultMessage: "{keys}: not used. The value isn't of the type this entry takes.",
   }),
 };
+const qrUnchecked = defineMessage<{ keys: string }>({
+  id: 'configEditor.enrollment.qrUnchecked',
+  defaultMessage:
+    "{keys}: added to the code as typed. MDMesh doesn't know these entries, so it can't check them: a wrong name or value can stop the device's setup.",
+});
 const qrSettingInvalid = defineMessage<{ value: string }>({
   id: 'configEditor.enrollment.qrSettingInvalid',
   defaultMessage: "“{value}” isn't a value Android takes here, so it is left out of the code. Choose one from the list.",
@@ -793,15 +797,14 @@ function Editor({
       const unused = unusedInRest(rest);
       // What these entries add to the code, not the text typed (entries left out don't count).
       const restBytes = parsed.error ? 0 : qrPayloadBytes(JSON.stringify(extrasInCode(parsed.entries, true)));
-      const known = [...QR_EXTRA_TYPES.keys()].filter((k) => !QR_SETTING_KEYS.includes(k)).map((k) => QR_EXTRA_PREFIX + k).join(', ');
+      const unchecked = parsed.error ? [] : extrasUnchecked(parsed.entries, true).map((k) => k.slice(QR_EXTRA_PREFIX.length));
       const notes = [
         dupes.length ? intl.formatMessage(qrDuplicates, { keys: dupes.join(', ') }) : null,
         unused.wifi.length ? intl.formatMessage(qrUnused.wifi, { keys: unused.wifi.join(', ') }) : null,
         unused.protected.length ? intl.formatMessage(qrUnused.protected, { keys: unused.protected.join(', ') }) : null,
-        unused.unsupported.length
-          ? intl.formatMessage(qrUnused.unsupported, { keys: unused.unsupported.join(', '), known })
-          : null,
+        unused.unsupported.length ? intl.formatMessage(qrUnused.unsupported, { keys: unused.unsupported.join(', ') }) : null,
         unused.invalid.length ? intl.formatMessage(qrUnused.invalid, { keys: unused.invalid.join(', ') }) : null,
+        unchecked.length ? intl.formatMessage(qrUnchecked, { keys: unchecked.join(', ') }) : null,
         restBytes > QR_REST_LONG_BYTES ? intl.formatMessage(qrLong, { bytes: restBytes }) : null,
       ].filter((x): x is string => !!x);
       if (parsed.error) qrNote = { tone: 'alert', text: intl.formatMessage(qrInvalid) };

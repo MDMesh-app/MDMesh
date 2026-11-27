@@ -34,9 +34,9 @@ Upgrading
   same goes for tests of your own in core ([UPGRADING.md](docs/UPGRADING.md#v060-for-forks-that-change-the-console)).
 
 Heads-up
-- Configurations carried over from Headwind with **Extra QR parameters**: the enrollment QR now uses the setup
-  entries MDMesh knows among them (Enrollment section). Check that field before making codes; the editor points out
-  the entries it leaves out.
+- Configurations carried over from Headwind with **Extra QR parameters**: the enrollment QR now uses them
+  (Enrollment section). Check that field before making codes; the editor points out the entries it leaves out and
+  the ones it can't check.
 - The edge sends HSTS for a request that came in over HTTP only when a trusted peer says `X-Forwarded-Proto: https`
   (Cloudflare Tunnel, or a proxy in `TRUSTED_PROXIES`). A proxy of your own in front of port 80 without
   `TRUSTED_PROXIES` no longer gets HSTS added: list it in `TRUSTED_PROXIES`, or use the new proxy mode.
@@ -64,8 +64,10 @@ New
   `MDMESH_DIR=<its directory>`, and it carries on with the same `.env` (past a seeded database too, with a new
   temporary admin password).
 - Enroll: the enrollment QR now carries the configuration's setup settings (Enrollment section): **Skip intro
-  screens**, **Language**, **Time zone**, a **Hidden network** and **Enroll over mobile data**, plus a few known Android
-  provisioning entries in **Extra QR parameters** (each with a value of its type; others are left out, and said so). Entries naming the agent, its download or its enrollment extras, and MDMesh's
+  screens**, **Language**, **Time zone**, a **Hidden network** and **Enroll over mobile data**, plus any other Android
+  provisioning entry in **Extra QR parameters**, such as `PROVISIONING_ALLOW_OFFLINE`. The entries MDMesh knows are
+  checked (a value of the wrong type is left out); the others go in as typed, and the editor and the Enroll page
+  point them out. Entries about the agent's package or a role holder's, the enrollment extras, and MDMesh's
   defaults (system apps stay enabled, no encryption step), are never replaced; Wi-Fi comes from the setup Wi-Fi and
   the Enroll page only. The Enroll page sums up what the code adds.
 - Arm64: the server, web and supervisor images are built for linux/amd64 and linux/arm64, so the quick start and

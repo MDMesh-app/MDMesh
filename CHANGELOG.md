@@ -23,15 +23,16 @@ Upgrading
   count for this update, get this release's supervisor first ([UPGRADING.md](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v060)).
 - Existing installs keep their mode. To move one behind your own proxy, see
   [UPGRADING, Changing the hosting mode](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#changing-the-hosting-mode).
-- From source, on your own domain, with a `COMPOSE_FILE` you edited by hand: `./setup.sh` and `--update` now start
-  only the files it lists, and no longer add `docker-compose.domain.yml` (ports 80 and 443). If that would close 80
-  or 443 on the edge, they stop before any container is touched: add `docker-compose.domain.yml` to the list in
-  `.env` and run again. With a `COMPOSE_PROFILES` you edited by hand, `cloudflare` among several profiles now means
-  the tunnel, which closes 80/443 unless the files `COMPOSE_FILE` lists publish them. The `.env` an installer wrote
-  is not affected ([UPGRADING.md](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v060)).
+- From source, with a `COMPOSE_FILE` or `COMPOSE_PROFILES` you edited by hand. `COMPOSE_FILE`: `./setup.sh` and
+  `--update` now start only the files it lists, and no longer add `docker-compose.domain.yml` (ports 80 and 443). If
+  that would close 80 or 443 on the edge, they stop before any container is touched: add `docker-compose.domain.yml` to
+  the list in `.env` and run `./setup.sh` again before any update or rollback in the console. `COMPOSE_PROFILES`:
+  `cloudflare` among several profiles now means the tunnel, which closes 80/443 unless the files `COMPOSE_FILE` lists
+  publish them. The `.env` an installer wrote is not affected
+  ([UPGRADING.md](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v060)).
 - On its first start the server removes the unused two-factor setting. An organization that had it on now signs in
   with the password alone, in the console and the API: have its users change their passwords. API tokens the setting
-  blocked work again until they expire, 24 hours after they were issued; a password change ends them at once. A
+  blocked work again until they expire (24 hours after they were issued, by default); a password change ends them at once. A
   rollback puts the setting back with the old database ([UPGRADING.md](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v060)).
 - PostgreSQL and cloudflared now run exact images, pinned by digest: `postgres:14.25-trixie` (still PostgreSQL 14)
   and cloudflared 2026.11.2. From source, `./setup.sh --update` restarts the database for a few seconds. Quick-start

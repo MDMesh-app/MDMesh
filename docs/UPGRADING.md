@@ -303,8 +303,8 @@ exited or credentials cleared while the older agent ran.
   On its first start the server drops the setting. Those accounts then sign in with their password alone (no
   authenticator code is asked for), and get API tokens again. Two-factor sign-in for each user is planned for a later
   release. If an organization had it on, have its users change their passwords after the update: the password alone
-  now signs in. API tokens issued before the setting was turned on work again until they expire, 24 hours after they
-  were issued; changing a user's password ends that user's tokens at once. **Roll back** restores the old database,
+  now signs in. API tokens issued before the setting was turned on work again until they expire (24 hours after
+  they were issued, by default); changing a user's password ends that user's tokens at once. **Roll back** restores the old database,
   setting included, so such an organization can't sign in again until it updates again.
 - **Going back to 0.5.1 without a restore** (`--allow-downgrade`, or a native install's WAR swapped back) works: 0.5.1
   starts on the new database unchanged. It keeps the links, so in 0.5.1 too, deleting a device deletes its history and

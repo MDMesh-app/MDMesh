@@ -16,6 +16,9 @@ PY=${PYTHON:-python3}
 }
 # The console's clock starts at the commit's time, so the same commit gives the same bytes.
 export SHOTS_EPOCH="${SHOTS_EPOCH:-$(git log -1 --format=%ct)}"
+# The running release from versions.mjs (the git tags), for the banner: one source for every image.
+README_RUNNING=$(node -e "import('./versions.mjs').then((m) => console.log(m.RUNNING))")
+export README_RUNNING
 # docs/readme holds only this script's output: start empty, so an image it no longer makes doesn't stay behind.
 rm -f ../../docs/readme/*
 node capture.mjs        # console crops, 2x, light + dark   -> .cache/shots/

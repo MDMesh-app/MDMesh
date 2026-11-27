@@ -160,17 +160,25 @@ in_vol() { docker run --rm --network none -v "$1:/v:ro" --entrypoint sh "$PG18" 
 marked() { in_vol "${PROJECT}_pgdata18" "test -s /v/$MARK"; }
 vol()    { docker volume ls -q --filter "name=$1" | grep -qxF "$1"; }
 # refused: the postgres container of this directory's compose file does not start PostgreSQL, and says why.
-# (The logs are read whole, then searched: a grep that leaves early would fail the pipeline.)
+# Its restart policy starts it again and again, and nothing here depends on when: the wait is for the guard's exit
+# (status 1) as Docker records it; the query must not get psql's answer (a `docker exec` that loses its container
+# prints the daemon's error on stdout, which is not one); and the log is read once the container is stopped: every
+# line of it, from every start, is the guard's. What was seen goes to the log.
 refused() {
-  local _ r=1 logs
+  local _ r=1 id st='' logs
+  local said='Not starting PostgreSQL 18 next to it: run scripts/pg-upgrade-18.sh'
   dc up -d postgres
-  for _ in $(seq 1 30); do
-    logs=$(docker compose logs postgres 2>&1)
-    case "$logs" in *'Not starting PostgreSQL 18 next to it: run scripts/pg-upgrade-18.sh'*) r=0; break ;; esac
-    sleep 1
+  id=$(docker compose ps -aq postgres 2>>"$LOG")
+  for _ in $(seq 1 300); do
+    st=$(docker inspect -f '{{.State.Status}} {{.State.ExitCode}}' "$id" 2>>"$LOG")
+    case "$st" in 'restarting 1'|'exited 1') r=0; break ;; esac
+    sleep 0.2
   done
-  [ -z "$(q 'SELECT 1')" ] || r=1
+  [ "$(q 'SELECT 1')" != 1 ] || r=1
   dc stop postgres
+  logs=$(docker logs "$id" 2>&1)
+  { [ -n "$logs" ] && ! grep -qvF "$said" <<< "$logs"; } || r=1
+  printf 'refused: container %s, last seen "%s", result %s, its log:\n%s\n' "$id" "$st" "$r" "$logs" >>"$LOG"
   return "$r"
 }
 # pg_service FILE: FILE's postgres service and database volumes as compose resolves them, under one project name.

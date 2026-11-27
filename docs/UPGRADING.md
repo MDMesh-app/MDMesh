@@ -19,7 +19,7 @@ updater on, the edge must also stay up)
 `docker compose logs supervisor` (native: `journalctl -u mdmesh-supervisor`).
 
 If the update on offer skips over a release that fixed security issues (say this server runs 0.5.0, 0.5.1 fixed one,
-and 0.5.2 is on offer), the console says so in amber: the sidebar and Overview cards say the update "includes security
+and 0.6.0 is on offer), the console says so in amber: the sidebar and Overview cards say the update "includes security
 fixes from 0.5.1 that this server is missing", the Settings list marks Updates "Security fixes", and Settings →
 Updates names the releases and links their notes. The list is the signed manifest's `securityReleases` (every release
 whose changelog has a Security section), read only from a manifest that verified; the supervisor reports the skipped
@@ -263,12 +263,17 @@ don't get Clear PIN lockout (the console disables it for a device on an older ag
 older agents). It also works with a 0.4.0 server, which sends none of these and ignores the attempt id: an
 enrollment there works as before, it just can't be resumed.
 
+Agent 0.6.0 speaks protocol 1.12: after a long offline period it sends up to 500 kept events in a check-in and
+sends again the ones the server didn't take, and it reports how many a full buffer dropped. It also works with a 0.5.x
+server, which takes the first 100 of a check-in's events: the agent then sends at most 100 at a time
+([VERSIONING](../proto/VERSIONING.md)).
+
 Downgrading the agent below 0.5.1 and upgrading again can bring back agent state removed meanwhile, such as a kiosk
 exited or credentials cleared while the older agent ran.
 
 ## Version notes
 
-### Unreleased
+### v0.6.0
 
 - **From source, setup.sh backs up the database before an update** (this one included), to `backups/` in the clone. It
   needs free space there of at least the database's size, and stops before it changes the install when it can't take
@@ -282,6 +287,8 @@ exited or credentials cleared while the older agent ran.
   Measured on a 6-core test server with 5 million events and 1 million locations (1.3 GB, 9% of it from deleted
   devices): 2.4 seconds, on top of the usual start. Expect longer on slow disks. The server answers once it is done,
   and agents retry their check-ins meanwhile.
+- **The database update adds `device_state.reportedImeis`**, filled once from each device's last check-in, so the
+  device search finds the IMEIs agents report, also for a device that hasn't checked in since the update.
 - **Quick start rolls an update back when the new server isn't healthy within 180 seconds.** With a very large
   history (tens of GB) or very slow storage, this first start could take longer, and the update would be rolled back
   each time. Take a backup first. To give it longer, add `HEALTH_TIMEOUT=900` (seconds, at least 30) to `.env` in
@@ -295,8 +302,10 @@ exited or credentials cleared while the older agent ran.
   had two-factor sign-in on (a database carried over from the upstream project, or edited by hand) couldn't sign in at all.
   On its first start the server drops the setting. Those accounts then sign in with their password alone (no
   authenticator code is asked for), and get API tokens again. Two-factor sign-in for each user is planned for a later
-  release. **Roll back**
-  restores the old database, setting included, so such an organization can't sign in again until it updates again.
+  release. If an organization had it on, have its users change their passwords after the update: the password alone
+  now signs in. API tokens issued before the setting was turned on work again until they expire (24 hours after
+  they were issued, by default); changing a user's password ends that user's tokens at once. **Roll back** restores the old database,
+  setting included, so such an organization can't sign in again until it updates again.
 - **Going back to 0.5.1 without a restore** (`--allow-downgrade`, or a native install's WAR swapped back) works: 0.5.1
   starts on the new database unchanged. It keeps the links, so in 0.5.1 too, deleting a device deletes its history and
   renaming one carries it. A check-in or command that races a delete gets a server error in 0.5.1 (this release

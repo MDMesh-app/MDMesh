@@ -73,7 +73,7 @@ function pick(page, title, option) {
   }, [title, option]);
 }
 
-const { server, base } = await startServer();
+const { server, base } = await startServer(DIST, 47321); // a fixed port: the enroll card shows the console's address
 const browser = await launch();
 try {
   for (const theme of THEMES) {

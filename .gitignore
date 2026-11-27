@@ -81,3 +81,6 @@ Thumbs.db
 # tests/rollback-e2e: dind + registry storage of a run
 tests/rollback-e2e/.e2e-data/
 tests/proxy-e2e/.e2e-data/
+
+# setup.sh: the database dumps it takes before an update
+/backups

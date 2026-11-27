@@ -468,6 +468,102 @@ upd ports ok PATH="$WORK/stubs-ports:$WORK/stubs:$PATH" --
   || { fail "--update at the same tag, with the line it showed in .env, does not go on with it"; show; }
 ok
 
+# The database backup before an update: --update from v9.0.0 over an install that runs 9.0.0. docker: a stub with the
+# project's pgdata volume when PGDATA_VOL names it, postgres running (stopped with PG_STOPPED=1, then started by
+# `up --wait`), a database of DB_SIZE bytes, a pg_dump that writes a few bytes (then fails, with DUMP_FAIL=1), and an
+# `up` that stops the run; the start, the dump and the `up` are logged in their order.
+mkdir -p "$WORK/stubs-backup"
+cat > "$WORK/stubs-backup/docker" <<'EOF'
+#!/bin/sh
+case "$*" in
+  "volume ls"*com.docker.compose.volume=pgdata) [ -z "${PGDATA_VOL:-}" ] || echo "$PGDATA_VOL" ;;
+  compose*" ps -q --status running postgres") [ "${PG_STOPPED:-}" = 1 ] || echo pg ;;
+  compose*" up -d --no-recreate --wait postgres") echo start >> "$WORK_ENV_LOG" ;;
+  "compose exec -T postgres psql"*) echo "$*" > "$WORK_ENV_LOG.psql"; echo "${DB_SIZE:-1024}" ;;
+  "compose exec -T postgres pg_dump"*)
+    echo dump >> "$WORK_ENV_LOG"; echo "$*" > "$WORK_ENV_LOG.dump"; printf 'PGDMP'
+    [ "${DUMP_FAIL:-}" != 1 ] || { echo 'pg_dump: error: connection to server failed' >&2; exit 1; } ;;
+  compose*" up "*) echo up >> "$WORK_ENV_LOG"; exit 99 ;;
+esac
+exit 0
+EOF
+chmod +x "$WORK/stubs-backup/docker"
+# bk_clone NAME CURRENT: a new clone NAME on v9.0.0 over an install whose .env says CURRENT_VERSION=CURRENT.
+bk_clone() {
+  clone "$1" v9.0.0
+  printf '%s\n' DB_PASSWORD=x HASH_SECRET=y BASE_URL=https://mdm.example.com IMAGE_OWNER=local "CURRENT_VERSION=$2" > "$WORK/$1/.env"
+}
+# bk_upd NAME [NAME=VALUE...]: --update in clone NAME, with the backup stub as docker.
+bk_upd() { local n=$1; shift; upd "$n" ok PATH="$WORK/stubs-backup:$WORK/stubs:$PATH" "$@" --; }
+# dumps NAME: the backups NAME's setup.sh left, one per line (none without backups/).
+dumps() { [ ! -d "$WORK/$1/backups" ] || (cd "$WORK/$1" && find backups -name 'pre-update-*.dump' | sort); }
+bk_clone bk-ok 9.0.0; bk_upd bk-ok PGDATA_VOL=mdmesh_pgdata
+bk=$(dumps bk-ok)
+{ [ "$(grep -x 'start\|dump\|up' "$WORK/env.log" | tr '\n' ' ')" = "dump up " ] \
+  && [[ "$bk" == backups/pre-update-[0-9]*T[0-9]*Z-from-9.0.0.dump ]] && [ "$(cat "$WORK/bk-ok/$bk")" = PGDMP ] \
+  && [ "$(stat -c %a "$WORK/bk-ok/$bk" "$WORK/bk-ok/backups" | tr '\n' ' ')" = "600 700 " ] \
+  && grep -qF "Backed up to $bk." "$WORK/out"; } \
+  || { fail "--update over an install does not leave one owner-only dump in an owner-only backups/ before up ($bk)"; show; }
+ok
+# A pg_dump that fails part way stops the run before up, saying why and in what state, and leaves no file (nor its
+# temporary one).
+bk_clone bk-fail 9.0.0; bk_upd bk-fail PGDATA_VOL=mdmesh_pgdata DUMP_FAIL=1
+{ [ "$RC" = 1 ] && grep -qx dump "$WORK/env.log" && ! grep -qx up "$WORK/env.log" \
+  && grep -qF 'pg_dump: error: connection to server failed' "$WORK/out" \
+  && grep -qF 'The database backup failed (above), and this run does not update without one.' "$WORK/out" \
+  && grep -qF 'The install was not changed: it still runs 9.0.0. This clone is on 9.1.0' "$WORK/out" \
+  && [ -z "$(ls -A "$WORK/bk-fail/backups")" ]; } \
+  || { fail "a failing pg_dump does not stop --update before up, saying so, with nothing left in backups/"; show; }
+ok
+# Too little space for it: stops before the dump, giving the numbers.
+bk_clone bk-full 9.0.0; bk_upd bk-full PGDATA_VOL=mdmesh_pgdata DB_SIZE=$((1 << 62))
+{ [ "$RC" = 1 ] && ! grep -qx 'dump\|up' "$WORK/env.log" && grep -qF 'MiB free, and the database takes' "$WORK/out" \
+  && [ -z "$(ls -A "$WORK/bk-full/backups")" ]; } \
+  || { fail "a database larger than the free space does not stop --update before the dump"; show; }
+ok
+# No pgdata volume yet (nothing installed to keep), or the same version (no migration): no dump, and on to up.
+for c in "bk-novol 9.0.0 PGDATA_VOL=" "bk-same 9.1.0 PGDATA_VOL=mdmesh_pgdata"; do
+  read -r n cur vol <<< "$c"; bk_clone "$n" "$cur"; bk_upd "$n" "$vol"
+  { grep -qx up "$WORK/env.log" && ! grep -qx dump "$WORK/env.log" && [ ! -e "$WORK/$n/backups" ] \
+    && { [ "$n" != bk-novol ] || grep -qF 'No database volume for project mdmesh was found' "$WORK/out"; }; } \
+    || { fail "--update ($c) takes a dump, or skips one without saying so"; show; }
+  ok
+done
+# Earlier dumps are all kept (none is deleted by count); an earlier run's leftover temporary file is removed.
+bk_clone bk-keep 9.0.0; mkdir -m 700 "$WORK/bk-keep/backups"
+for d in 1 2 3 4; do : > "$WORK/bk-keep/backups/pre-update-2000010${d}T000000Z-from-8.0.0.dump"; done
+: > "$WORK/bk-keep/backups/.pre-update.aaaaaa"
+bk_upd bk-keep PGDATA_VOL=mdmesh_pgdata
+bk=$(dumps bk-keep)
+{ grep -qx up "$WORK/env.log" && [ "$(wc -l <<< "$bk")" = 5 ] && [[ "$(tail -n 1 <<< "$bk")" == *-from-9.0.0.dump ]] \
+  && [ ! -e "$WORK/bk-keep/backups/.pre-update.aaaaaa" ]; } \
+  || { fail "an earlier backup is deleted, or a leftover temporary file stays ($bk)"; show; }
+ok
+# A stopped postgres is started (and waited for) for the dump, then the update goes on.
+bk_clone bk-start 9.0.0; bk_upd bk-start PGDATA_VOL=mdmesh_pgdata PG_STOPPED=1
+[ "$(grep -x 'start\|dump\|up' "$WORK/env.log" | tr '\n' ' ')" = "start dump up " ] \
+  || { fail "--update with postgres stopped does not start it, then dump, then go on"; show; }
+ok
+# An older .env with no CURRENT_VERSION: the version is SERVER_VERSION's, without the digest a one-click update pinned.
+bk_clone bk-old 9.0.0; sed -i 's/^CURRENT_VERSION=.*/SERVER_VERSION=9.0.0@sha256:0123/' "$WORK/bk-old/.env"
+bk_upd bk-old PGDATA_VOL=mdmesh_pgdata
+[[ "$(dumps bk-old)" == backups/pre-update-*-from-9.0.0.dump ]] || { fail "a dump over an older .env is not named from SERVER_VERSION"; show; }
+ok
+# An .env with its own database user and name: the size query and the dump use them.
+bk_clone bk-names 9.0.0; printf '%s\n' DB_USER=mdm DB_NAME=mdmdb >> "$WORK/bk-names/.env"
+bk_upd bk-names PGDATA_VOL=mdmesh_pgdata
+{ grep -q -- '-U mdm -d mdmdb' "$WORK/env.log.psql" && grep -q -- 'pg_dump -U mdm -Fc mdmdb$' "$WORK/env.log.dump"; } \
+  || { fail "the backup ignores DB_USER/DB_NAME from .env"; show; }
+ok
+# Untagged (on v9.1.0's commit, its tags not fetched): no version change can be shown, so no dump, and it says so.
+bk_clone bk-untagged 9.0.0; "${G[@]}" -C "$WORK/bk-untagged" checkout -q --detach v9.1.0
+"${G[@]}" -C "$WORK/bk-untagged" for-each-ref --format='delete %(refname)' refs/tags | "${G[@]}" -C "$WORK/bk-untagged" update-ref --stdin
+bk_upd bk-untagged PGDATA_VOL=mdmesh_pgdata
+{ grep -qx up "$WORK/env.log" && ! grep -qx dump "$WORK/env.log" && [ ! -e "$WORK/bk-untagged/backups" ] \
+  && grep -qF 'No automatic backup: this checkout has no release tag' "$WORK/out"; } \
+  || { fail "an untagged run takes a dump, or doesn't say it took none"; show; }
+ok
+
 # Which tree ran, and a floor on how many checks did (a few depend on the host), so a section that silently ran
 # nothing can't pass.
 TREE=$(git -c safe.directory='*' -C "$REPO" describe --always --dirty 2>&1) || TREE='?'

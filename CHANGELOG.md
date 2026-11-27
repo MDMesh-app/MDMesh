@@ -61,6 +61,8 @@ New
   with ready configurations for each. Thanks @lared3294, @detobel36.
 - The quick start asks one plain question, how your phones will reach MDMesh; `--tunnel`, `--domain` and `--proxy` answer it.
 - Your own edge rules: Caddy imports `site.d/*.caddy` from the install directory, and updates never touch it.
+- From source, `./setup.sh --update` backs up the database to `backups/` in the clone before it changes the install,
+  and stops if it can't. Backups stay until you remove them ([OPERATIONS.md](docs/OPERATIONS.md#backups-and-restore)).
 - A quick start that stopped part way (a failed pull, a slow first start) can be finished: run it again with
   `MDMESH_DIR=<its directory>`, and it carries on with the same `.env` (past a seeded database too, with a new
   temporary admin password).

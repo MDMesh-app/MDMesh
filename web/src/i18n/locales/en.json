@@ -11,5 +11,86 @@
   },
   "app.notFound.title": {
     "defaultMessage": "Page not found"
+  },
+  "configEditor.enrollment.qrDuplicates": {
+    "defaultMessage": "{keys}: use the setting above instead. Once that is set, it wins over this entry."
+  },
+  "configEditor.enrollment.qrInvalid": {
+    "defaultMessage": "Not valid JSON yet. It is saved as typed; the Enroll page leaves it out until it is fixed."
+  },
+  "configEditor.enrollment.qrLong": {
+    "defaultMessage": "These entries are long ({bytes} bytes): the enrollment QR code gets dense, and may not fit at all."
+  },
+  "configEditor.enrollment.qrSettingInvalid": {
+    "defaultMessage": "“{value}” isn't a value Android takes here, so it is left out of the code. Choose one from the list."
+  },
+  "configEditor.enrollment.qrUnchecked": {
+    "defaultMessage": "{keys}: added to the code as typed. MDMesh doesn't know these entries, so it can't check them: a wrong name or value can stop the device's setup."
+  },
+  "configEditor.enrollment.qrUnusedInvalid": {
+    "defaultMessage": "{keys}: not used. The value isn't of the type this entry takes."
+  },
+  "configEditor.enrollment.qrUnusedProtected": {
+    "defaultMessage": "{keys}: not used. MDMesh sets these itself."
+  },
+  "configEditor.enrollment.qrUnusedUnsupported": {
+    "defaultMessage": "{keys}: not used. A provisioning entry's name starts with android.app.extra."
+  },
+  "configEditor.enrollment.qrUnusedWifi": {
+    "defaultMessage": "{keys}: not used. Wi-Fi comes from the setup Wi-Fi above and the Enroll page."
+  },
+  "configEditor.enrollment.setupScreens": {
+    "defaultMessage": "Setup screens"
+  },
+  "configEditor.enrollment.setupScreensHelp": {
+    "defaultMessage": "Android applies these while the device sets itself up."
+  },
+  "enroll.qrSize.dense": {
+    "defaultMessage": "This code holds {bytes} bytes, so it is dense: some devices' setup cameras may struggle to scan it. A shorter server address or Wi-Fi, or fewer Extra QR parameters, make it lighter."
+  },
+  "enroll.qrSize.tooLarge": {
+    "defaultMessage": "This code would hold {bytes} bytes, more than a QR code can ({max}). The server address (it is in the code twice) or the Wi-Fi is too long: shorten them."
+  },
+  "enroll.qrSize.tooLargeFrame": {
+    "defaultMessage": "No QR code: it would be too large to scan."
+  },
+  "enroll.setup.hiddenWifi": {
+    "defaultMessage": "hidden Wi-Fi"
+  },
+  "enroll.setup.label": {
+    "defaultMessage": "Setup"
+  },
+  "enroll.setup.mobileData": {
+    "defaultMessage": "mobile data"
+  },
+  "enroll.setup.notLoaded": {
+    "defaultMessage": "Not added: the configuration didn't load, so the code has none of its setup entries"
+  },
+  "enroll.setup.nothing": {
+    "defaultMessage": "Nothing added"
+  },
+  "enroll.setup.others": {
+    "defaultMessage": "{count, plural, one {# other entry} other {# other entries}}"
+  },
+  "enroll.setup.protectedLeftOut": {
+    "defaultMessage": "{summary} ({count} protected left out)"
+  },
+  "enroll.setup.serverDefault": {
+    "defaultMessage": "Not added: choose a configuration to add its setup entries (the page can't tell which one is the server default)"
+  },
+  "enroll.setup.skipIntro": {
+    "defaultMessage": "intro screens skipped"
+  },
+  "enroll.setup.unchecked": {
+    "defaultMessage": "{count} not checked by MDMesh"
+  },
+  "enroll.setup.unreadable": {
+    "defaultMessage": "{summary} (other Extra QR parameters left out: {error})"
+  },
+  "enroll.setup.unsupported": {
+    "defaultMessage": "{count, plural, one {# entry left out} other {# entries left out}}: not a provisioning entry, or a value of the wrong type"
+  },
+  "enroll.setup.wifiLeftOut": {
+    "defaultMessage": "{count, plural, one {# Wi-Fi entry left out} other {# Wi-Fi entries left out}}: Wi-Fi comes from this page (and the configuration's setup Wi-Fi)"
   }
 }

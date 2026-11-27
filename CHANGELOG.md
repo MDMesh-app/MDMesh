@@ -9,6 +9,20 @@ Unreleased.
 
 ## Unreleased
 
+Heads-up
+- Configurations carried over from the upstream project with **Extra QR parameters**: the enrollment QR now uses them
+  (Enrollment section). Check that field before making codes; the editor points out the entries it leaves out and
+  the ones it can't check.
+
+New
+- Enroll: the enrollment QR now carries the configuration's setup settings (Enrollment section): **Skip intro
+  screens**, **Language**, **Time zone**, a **Hidden network** and **Enroll over mobile data**, plus any other Android
+  provisioning entry in **Extra QR parameters**, such as `PROVISIONING_ALLOW_OFFLINE`. The entries MDMesh knows are
+  checked (a value of the wrong type is left out); the others go in as typed, and the editor and the Enroll page
+  point them out. Entries about the agent's package or a role holder's, the enrollment extras, and MDMesh's
+  defaults (system apps stay enabled, no encryption step), are never replaced; Wi-Fi comes from the setup Wi-Fi and
+  the Enroll page only. The Enroll page sums up what the code adds.
+
 ## v0.6.0 — 2026-11-27
 
 Upgrading

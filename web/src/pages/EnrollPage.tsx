@@ -5,9 +5,23 @@ import { mintEnrollToken, revokeAllEnrollTokens } from '../api/enroll';
 import { getUpdateStatus, type UpdateStatus } from '../api/updates';
 import { agentUnavailable } from '../data/updateStatus';
 import { Link } from 'react-router';
+import { defineMessage, defineMessages, useIntl } from 'react-intl';
 import { ARRIVAL_LABEL, arrivalNews, useArrivals, type Arrival } from '../enroll/arrivals';
 import { addressProblem, wifiProblem } from '../enroll/checks';
-import { agentApkUrl, buildProvisioningPayload, serverBaseUrl, type WifiSecurity } from '../enroll/provisioning';
+import {
+  agentApkUrl,
+  buildProvisioningPayload,
+  configurationQrExtras,
+  extrasInCode,
+  extrasLeftOut,
+  extrasUnchecked,
+  qrPayloadBytes,
+  QR_DENSE_BYTES,
+  QR_MAX_BYTES,
+  summarizeQrExtras,
+  serverBaseUrl,
+  type WifiSecurity,
+} from '../enroll/provisioning';
 import {
   Button,
   Callout,
@@ -62,6 +76,8 @@ interface Minted {
   maxUses: number;
   /** The server applied the chosen devices and validity; false: it predates them, and made a single-use 24 h code. */
   limitsApplied: boolean;
+  /** The configuration choice it was made for: the code shows only with that configuration's setup entries. */
+  cfgId: string;
 }
 
 /**
@@ -223,7 +239,65 @@ function useArrivalNews(arrivals: Arrival[], active: boolean, watching: boolean)
 }
 
 /** Enroll. Classic: pages/EnrollPage.tsx. */
+const setupMessages = defineMessages({
+  label: { id: 'enroll.setup.label', defaultMessage: 'Setup' },
+  skipIntro: { id: 'enroll.setup.skipIntro', defaultMessage: 'intro screens skipped' },
+  mobileData: { id: 'enroll.setup.mobileData', defaultMessage: 'mobile data' },
+  hiddenWifi: { id: 'enroll.setup.hiddenWifi', defaultMessage: 'hidden Wi-Fi' },
+  nothing: { id: 'enroll.setup.nothing', defaultMessage: 'Nothing added' },
+});
+const setupWifiLeftOut = defineMessage<{ count: number }>({
+  id: 'enroll.setup.wifiLeftOut',
+  defaultMessage:
+    '{count, plural, one {# Wi-Fi entry left out} other {# Wi-Fi entries left out}}: Wi-Fi comes from this page (and the configuration\'s setup Wi-Fi)',
+});
+const setupNotKnown = defineMessages({
+  serverDefault: {
+    id: 'enroll.setup.serverDefault',
+    defaultMessage: "Not added: choose a configuration to add its setup entries (the page can't tell which one is the server default)",
+  },
+  notLoaded: {
+    id: 'enroll.setup.notLoaded',
+    defaultMessage: "Not added: the configuration didn't load, so the code has none of its setup entries",
+  },
+});
+const setupUnsupported = defineMessage<{ count: number }>({
+  id: 'enroll.setup.unsupported',
+  defaultMessage:
+    '{count, plural, one {# entry left out} other {# entries left out}}: not a provisioning entry, or a value of the wrong type',
+});
+const setupUnchecked = defineMessage<{ count: number }>({
+  id: 'enroll.setup.unchecked',
+  defaultMessage: '{count} not checked by MDMesh',
+});
+const qrSizeMessages = defineMessages({
+  tooLargeFrame: { id: 'enroll.qrSize.tooLargeFrame', defaultMessage: 'No QR code: it would be too large to scan.' },
+});
+const qrTooLarge = defineMessage<{ bytes: number; max: number }>({
+  id: 'enroll.qrSize.tooLarge',
+  defaultMessage:
+    "This code would hold {bytes} bytes, more than a QR code can ({max}). The server address (it is in the code twice) or the Wi-Fi is too long: shorten them.",
+});
+const qrDense = defineMessage<{ bytes: number }>({
+  id: 'enroll.qrSize.dense',
+  defaultMessage:
+    "This code holds {bytes} bytes, so it is dense: some devices' setup cameras may struggle to scan it. A shorter server address or Wi-Fi, or fewer Extra QR parameters, make it lighter.",
+});
+const setupOthers = defineMessage<{ count: number }>({
+  id: 'enroll.setup.others',
+  defaultMessage: '{count, plural, one {# other entry} other {# other entries}}',
+});
+const setupProtectedLeftOut = defineMessage<{ summary: string; count: number }>({
+  id: 'enroll.setup.protectedLeftOut',
+  defaultMessage: '{summary} ({count} protected left out)',
+});
+const setupUnreadable = defineMessage<{ summary: string; error: string }>({
+  id: 'enroll.setup.unreadable',
+  defaultMessage: '{summary} (other Extra QR parameters left out: {error})',
+});
+
 export function EnrollPage() {
+  const intl = useIntl();
   const toast = useToast();
   const mobile = useMediaQuery(MOBILE_QUERY);
 
@@ -362,7 +436,7 @@ export function EnrollPage() {
       const devices = typeof res.maxUses === 'number' ? res.maxUses : 1;
       if (res.token) {
         const createdAt = typeof res.createdAt === 'number' ? res.createdAt : undefined;
-        const next = { value: res.token, expiresAt: res.expiresAt, createdAt, maxUses: devices, limitsApplied: applied };
+        const next = { value: res.token, expiresAt: res.expiresAt, createdAt, maxUses: devices, limitsApplied: applied, cfgId: id };
         shown.current = next;
         setToken(next);
         if (createdAt != null) setSince((s) => s ?? createdAt);
@@ -447,15 +521,42 @@ export function EnrollPage() {
   );
   const address = useMemo(() => addressProblem(serverBaseUrl(), serverSetting), [serverSetting]);
   const expired = !!token?.expiresAt && token.expiresAt <= now;
+  // The chosen configuration's setup entries (Enrollment section): added to the code, protected entries aside.
+  const qrExtras = useMemo(() => configurationQrExtras(selected), [selected]);
+  const extrasText = useMemo(() => {
+    // What goes in the code (Wi-Fi entries only with the page's own network), as buildProvisioningPayload adds it.
+    const sum = summarizeQrExtras(extrasInCode(qrExtras.entries, wifiInCode));
+    const leftOut = extrasLeftOut(qrExtras.entries, wifiInCode);
+    const wifiLeftOut = leftOut.wifi.length;
+    const unsupported = leftOut.unsupported.length + leftOut.invalid.length;
+    const unchecked = extrasUnchecked(qrExtras.entries, wifiInCode).length;
+    const parts = [
+      sum.locale,
+      sum.timeZone,
+      sum.skipIntro ? intl.formatMessage(setupMessages.skipIntro) : null,
+      sum.mobileData ? intl.formatMessage(setupMessages.mobileData) : null,
+      sum.hiddenWifi ? intl.formatMessage(setupMessages.hiddenWifi) : null,
+      sum.others > 0
+        ? intl.formatMessage(setupOthers, { count: sum.others }) +
+          (unchecked > 0 ? ` (${intl.formatMessage(setupUnchecked, { count: unchecked })})` : '')
+        : null,
+      wifiLeftOut > 0 ? intl.formatMessage(setupWifiLeftOut, { count: wifiLeftOut }) : null,
+      unsupported > 0 ? intl.formatMessage(setupUnsupported, { count: unsupported }) : null,
+    ].filter((x): x is string => !!x);
+    return parts.join(' · ');
+  }, [qrExtras, intl, wifiInCode]);
+  // A code goes only with the setup entries of the configuration it was made for: right after another configuration is
+  // chosen, the old code is still here for a render while the new configuration's entries already are.
   const payload = useMemo(
     () =>
-      token
+      token && token.cfgId === cfgId
         ? buildProvisioningPayload(
             token.value,
             wifiInCode ? { ssid: wifiSsid, password: wifiPass, security: wifiSec } : undefined,
+            qrExtras.entries,
           )
         : null,
-    [token, wifiInCode, wifiSsid, wifiPass, wifiSec],
+    [token, cfgId, wifiInCode, wifiSsid, wifiPass, wifiSec, qrExtras],
   );
 
   let expiresValue: ReactNode = busy ? (
@@ -478,6 +579,31 @@ export function EnrollPage() {
     { key: 'configuration', label: 'Configuration', value: givesName },
     ...(withWifi && wifiOn
       ? [{ key: 'wifi', label: 'Joins Wi-Fi', value: wifiIssue ? 'Not in the code (see Wi-Fi above)' : ssid || 'No network name yet' }]
+      : []),
+    // Without the chosen configuration's settings (server default, or the list didn't load), the code has none: say so.
+    ...(!selected
+      ? [{
+          key: 'qrExtras',
+          label: intl.formatMessage(setupMessages.label),
+          value: intl.formatMessage(cfgId ? setupNotKnown.notLoaded : setupNotKnown.serverDefault),
+        }]
+      : []),
+    ...(selected
+      ? [{
+          key: 'qrExtras',
+          label: intl.formatMessage(setupMessages.label),
+          value: qrExtras.error
+            ? intl.formatMessage(setupUnreadable, {
+                summary: extrasText || intl.formatMessage(setupMessages.nothing),
+                error: qrExtras.error,
+              })
+            : qrExtras.ignored.length
+              ? intl.formatMessage(setupProtectedLeftOut, {
+                  summary: extrasText || intl.formatMessage(setupMessages.nothing),
+                  count: qrExtras.ignored.length,
+                })
+              : extrasText || intl.formatMessage(setupMessages.nothing),
+        }]
       : []),
     { key: 'use', label: 'Use', value: usesText(token?.maxUses ?? uses) },
     { key: 'expires', label: 'Expires', value: expiresValue },
@@ -617,10 +743,19 @@ export function EnrollPage() {
     </Card>
   );
 
+  // A QR code holds at most QR_MAX_BYTES: a larger code can't be drawn, and reloading wouldn't help, so say why.
+  const payloadBytes = payload ? qrPayloadBytes(payload) : 0;
+  const tooLarge = payloadBytes > QR_MAX_BYTES;
   const qrPanel = noAgent ? (
     <div className="v2-qr">
       <div className="v2-qr__frame v2-enroll__qrwait" role="status">
         No QR code: there is no agent to install yet.
+      </div>
+    </div>
+  ) : tooLarge ? (
+    <div className="v2-qr">
+      <div className="v2-qr__frame v2-enroll__qrwait" role="status">
+        {intl.formatMessage(qrSizeMessages.tooLargeFrame)}
       </div>
     </div>
   ) : payload && !expired ? (
@@ -683,6 +818,15 @@ export function EnrollPage() {
           minutes), the release this server runs has a signed manifest that doesn&rsquo;t check out, or no release with
           an agent was found (is <span className="v2-mono">GITHUB_REPO</span> set?). See Settings &rarr; Updates and the
           updater&rsquo;s log. Devices that already run the agent can still use a token.
+        </Callout>
+      ) : null}
+      {tooLarge ? (
+        <Callout tone="alert" icon={<IconAlert />} role="status">
+          {intl.formatMessage(qrTooLarge, { bytes: payloadBytes, max: QR_MAX_BYTES })}
+        </Callout>
+      ) : payloadBytes > QR_DENSE_BYTES ? (
+        <Callout tone="warn" icon={<IconWarning size={16} />} role="status">
+          {intl.formatMessage(qrDense, { bytes: payloadBytes })}
         </Callout>
       ) : null}
       {/* Pre-flight problems, not failures: amber (nothing has gone wrong yet; the admin can still fix it here). */}

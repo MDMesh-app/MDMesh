@@ -9,6 +9,7 @@ import type { Configuration } from '../../api/configurations';
 import { AppRoutes } from '../../App';
 import { ConfigEditorPage } from '../../pages/ConfigEditorPage';
 import { ROLES, registryOf, renderInConsole } from '../../test/console';
+import { chooseOption } from '../../test/select';
 import demo from '../__fixtures__/demo';
 import { CORE_EXTENSION } from '../core';
 import { ORDER } from '../core/order';
@@ -835,5 +836,95 @@ describe('configuration editor: the exit PIN', () => {
     // The save goes back to the list: let its load finish inside the test.
     await waitFor(() => expect(fetch.mock.calls.some(([u]) => String(u).includes('/configurations/search'))).toBe(true));
     await screen.findByRole('link', { name: /Warehouse/ });
+  });
+});
+
+describe('enrollment setup settings', () => {
+  it('keeps them in the Extra QR parameters, other entries untouched, and saves no column of their own', async () => {
+    const { puts } = open({ config: { qrParameters: '"x.y": 1', mobileEnrollment: false } });
+    const skip = await screen.findByRole('switch', { name: 'Skip intro screens' });
+    fireEvent.click(skip);
+    chooseOption(screen.getByRole('combobox', { name: 'Language' }), { value: 'fr_FR' });
+    fireEvent.click(screen.getByRole('switch', { name: 'Enroll over mobile data' }));
+    // Checked before Save: once saved, the editor goes back to the configuration list.
+    expect((screen.getByRole('textbox', { name: 'Extra QR parameters' }) as HTMLTextAreaElement).value).toBe('"x.y": 1');
+    await save();
+    await waitFor(() => expect(puts).toHaveLength(1));
+    expect(puts[0].qrParameters).toBe(
+      '"android.app.extra.PROVISIONING_SKIP_EDUCATION_SCREENS": true,\n"android.app.extra.PROVISIONING_LOCALE": "fr_FR",\n\n"x.y": 1',
+    );
+    expect(puts[0].mobileEnrollment).toBe(true);
+    expect(puts[0]).not.toHaveProperty('qrSkipEducation');
+    expect(puts[0]).not.toHaveProperty('qrLocale');
+  });
+
+  it('counts one change per setting, not the parameters they are kept in as well', async () => {
+    open({ config: { qrParameters: '"x.y": 1' } });
+    fireEvent.click(await screen.findByRole('switch', { name: 'Skip intro screens' }));
+    expect(await screen.findByText('1 unsaved change')).toBeTruthy();
+  });
+
+  it('keeps the settings usable while the other entries are not valid JSON, and says why they are left out', async () => {
+    const { puts } = open({ config: { qrParameters: '"x.y": tru' } });
+    const skip = await screen.findByRole('switch', { name: 'Skip intro screens' });
+    expect((skip as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.getByText(/Not valid JSON yet/)).toBeTruthy();
+    fireEvent.click(skip);
+    await save();
+    await waitFor(() => expect(puts).toHaveLength(1));
+    expect(puts[0].qrParameters).toBe('"android.app.extra.PROVISIONING_SKIP_EDUCATION_SCREENS": true,\n\n"x.y": tru');
+  });
+
+  it('keeps an entry typed first that repeats a setting as typed text: the setting stays, the entry is pointed out', async () => {
+    const LOCALE = '"android.app.extra.PROVISIONING_LOCALE"';
+    const { puts } = open({ config: { qrParameters: `${LOCALE}: "fr_FR"` } });
+    const field = (await screen.findByRole('textbox', { name: 'Extra QR parameters' })) as HTMLTextAreaElement;
+    fireEvent.change(field, { target: { value: `${LOCALE}: "de_DE"` } });
+    expect(field.value).toBe(`${LOCALE}: "de_DE"`);
+    expect(screen.getByRole('combobox', { name: 'Language' }).textContent).toContain('fr_FR');
+    expect(screen.getByText(/PROVISIONING_LOCALE: use the setting above instead/)).toBeTruthy();
+    await save();
+    await waitFor(() => expect(puts).toHaveLength(1));
+    expect(puts[0].qrParameters).toBe(`${LOCALE}: "fr_FR",\n\n${LOCALE}: "de_DE"`);
+  });
+
+  it('keeps an entry typed alone in the field while editing, with no setting set', async () => {
+    const LOCALE = '"android.app.extra.PROVISIONING_LOCALE"';
+    open({ config: {} });
+    const field = (await screen.findByRole('textbox', { name: 'Extra QR parameters' })) as HTMLTextAreaElement;
+    fireEvent.change(field, { target: { value: `${LOCALE}: "de_DE"` } });
+    expect(field.value).toBe(`${LOCALE}: "de_DE"`);
+    expect(screen.getByRole('combobox', { name: 'Language' }).textContent).not.toContain('de_DE');
+    expect(screen.getByText(/PROVISIONING_LOCALE: use the setting above instead/)).toBeTruthy();
+  });
+
+  it('points out typed entries that are never used: Wi-Fi and the entries MDMesh sets', async () => {
+    open({ config: { qrParameters: '"android.app.extra.PROVISIONING_WIFI_SSID": "other",\n"x.y": 1' } });
+    expect(await screen.findByText(/PROVISIONING_WIFI_SSID: not used\. Wi-Fi comes from the setup Wi-Fi above/)).toBeTruthy();
+  });
+
+  it('opens a configuration whose setting holds an array with no unsaved change, also after Discard', async () => {
+    open({ config: { qrParameters: '"android.app.extra.PROVISIONING_LOCALE": []' } });
+    await screen.findByRole('switch', { name: 'Skip intro screens' });
+    expect(screen.queryByText(/unsaved change/)).toBeNull();
+    fireEvent.click(screen.getByRole('switch', { name: 'Skip intro screens' }));
+    expect(await screen.findByText('1 unsaved change')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    await waitFor(() => expect(screen.queryByText(/unsaved change/)).toBeNull());
+  });
+
+  it('says on its row when a setting value is not one Android takes (a Headwind fr-FR)', async () => {
+    open({ config: { qrParameters: '"android.app.extra.PROVISIONING_LOCALE": "fr-FR"' } });
+    expect(await screen.findByText(/“fr-FR” isn't a value Android takes here/)).toBeTruthy();
+  });
+
+  it('opens a configuration whose field holds keys named like object members, and points them out', async () => {
+    open({ config: { qrParameters: '"x": 1,\n"android.app.extra.__proto__": "x",\n"android.app.extra.constructor": 1' } });
+    expect(await screen.findByText(/x: not used\. A provisioning entry's name starts with android\.app\.extra\. __proto__, constructor: added to the code as typed\. MDMesh doesn't know these entries/)).toBeTruthy();
+  });
+
+  it('points out an entry typed by hand that has a setting of its own', async () => {
+    open({ config: { qrParameters: '"x.y": 1,\n"android.app.extra.PROVISIONING_TIME_ZONE": "UTC"' } });
+    expect(await screen.findByText(/PROVISIONING_TIME_ZONE: use the setting above instead/)).toBeTruthy();
   });
 });

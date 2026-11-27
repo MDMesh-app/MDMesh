@@ -84,6 +84,43 @@ to the server. Each setting's help text in the console explains the details.
 **Enroll** page can put this Wi-Fi network in the enrollment QR code, so a new device joins it during setup. The
 password is in the QR code in plain text.
 
+**Hidden network**, under the setup Wi-Fi, says that network doesn't broadcast its name; it goes in the code only with
+the Wi-Fi chosen on the Enroll page. Under **Setup screens**, a few settings Android applies while the device sets
+itself up go in the enrollment QR code:
+
+- **Skip intro screens**: hides Android's education screens (Android 8 and later). The setup wizard steps that come
+  after enrollment, such as Google's terms, are up to the device maker and still show.
+- **Language** and **Time zone**: set during setup. A value the list doesn't offer can be written in Extra QR
+  parameters.
+- **Enroll over mobile data**: lets setup download the agent on mobile data (Android 10 and later).
+
+Hidden network, Skip intro screens, Language and Time zone are stored at the top of **Extra QR parameters**, one per
+line and followed by a blank line (a leading blank line when none is set), so a configuration still has one place for everything its QR code adds; the editor's Extra QR parameters field
+shows only the other entries. Those can be any Android provisioning entry (a name starting with
+`android.app.extra.`), for example:
+
+```
+"android.app.extra.PROVISIONING_ALLOW_OFFLINE": true
+```
+
+MDMesh checks the value of the entries it knows, and leaves out one of the wrong type: `PROVISIONING_USE_MOBILE_DATA`,
+`PROVISIONING_ALLOW_OFFLINE` and `PROVISIONING_SENSORS_PERMISSION_GRANT_OPT_OUT` (true/false),
+`PROVISIONING_LOCAL_TIME` (milliseconds since 1970), `PROVISIONING_ORGANIZATION_NAME` (text, up to 100 characters) and
+`PROVISIONING_SUPPORT_URL` (an https address, up to 200 characters). Any other entry goes in the code as typed when
+its value is text, a number or true/false. MDMesh can't check those, and a wrong name or value can stop the device's
+setup, so the editor and the Enroll page point them out. Never added: Wi-Fi entries (Wi-Fi comes from the setup Wi-Fi
+and the Enroll page), entries about the agent's package (`PROVISIONING_DEVICE_ADMIN_…`) or a role holder's
+(`PROVISIONING_ROLE_HOLDER_…`), the enrollment extras, and MDMesh's own defaults.
+
+Write them as JSON members, one or more per line (a trailing comma is fine), or as one JSON object. While they aren't
+valid JSON, the field says so: they are saved as typed, and the Enroll page leaves them out (the settings above still
+apply) until they are fixed. An entry typed here that has a setting of its own is pointed out; once that setting is
+set, it wins. The **Enroll** page adds the entries to the code it shows for the configuration and sums them up under
+**Setup**. Entries that name the agent, its download, its checksums or its enrollment extras, and MDMesh's own defaults (system
+apps stay enabled, so the Play Store does too; no encryption step), are never replaced, and
+Wi-Fi is set above (setup Wi-Fi, Hidden network) and on the Enroll page, not here: Wi-Fi entries here (a network, a password, a proxy) are not used, and the editor and the Enroll page say so. Like the Wi-Fi password, they are in the QR code in
+plain text.
+
 ### Legacy launcher settings
 
 Older settings that only the legacy launcher read (collapsed: select **Show settings**). The MDMesh agent doesn't

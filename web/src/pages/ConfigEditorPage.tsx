@@ -86,6 +86,67 @@ import { kioskColours, type FitMode } from '../data/kioskScrim';
 import { KioskPlacement } from './configurations/KioskPlacement';
 import { KioskGallery } from './configurations/KioskGallery';
 import { AgentTag, AppSelect, FieldControl, FieldHelp } from './configurations/controls';
+import {
+  joinQrParameters,
+  parseExtraQrParameters,
+  settingsInRest,
+  unusedInRest,
+  qrPayloadBytes,
+  QR_EXTRA_PREFIX,
+  extrasInCode,
+  extrasUnchecked,
+  qrSettingValueOk,
+  splitQrParameters,
+  type QrParametersSplit,
+} from '../enroll/provisioning';
+import { defineMessage, defineMessages, useIntl, type MessageDescriptor } from 'react-intl';
+
+const enrollmentMessages = defineMessages({
+  setupScreens: { id: 'configEditor.enrollment.setupScreens', defaultMessage: 'Setup screens' },
+  setupScreensHelp: {
+    id: 'configEditor.enrollment.setupScreensHelp',
+    defaultMessage: 'Android applies these while the device sets itself up.',
+  },
+});
+const qrInvalid = defineMessage({
+  id: 'configEditor.enrollment.qrInvalid',
+  defaultMessage: 'Not valid JSON yet. It is saved as typed; the Enroll page leaves it out until it is fixed.',
+});
+const qrUnused = {
+  wifi: defineMessage<{ keys: string }>({
+    id: 'configEditor.enrollment.qrUnusedWifi',
+    defaultMessage: '{keys}: not used. Wi-Fi comes from the setup Wi-Fi above and the Enroll page.',
+  }),
+  protected: defineMessage<{ keys: string }>({
+    id: 'configEditor.enrollment.qrUnusedProtected',
+    defaultMessage: '{keys}: not used. MDMesh sets these itself.',
+  }),
+  unsupported: defineMessage<{ keys: string }>({
+    id: 'configEditor.enrollment.qrUnusedUnsupported',
+    defaultMessage: "{keys}: not used. A provisioning entry's name starts with android.app.extra.",
+  }),
+  invalid: defineMessage<{ keys: string }>({
+    id: 'configEditor.enrollment.qrUnusedInvalid',
+    defaultMessage: "{keys}: not used. The value isn't of the type this entry takes.",
+  }),
+};
+const qrUnchecked = defineMessage<{ keys: string }>({
+  id: 'configEditor.enrollment.qrUnchecked',
+  defaultMessage:
+    "{keys}: added to the code as typed. MDMesh doesn't know these entries, so it can't check them: a wrong name or value can stop the device's setup.",
+});
+const qrSettingInvalid = defineMessage<{ value: string }>({
+  id: 'configEditor.enrollment.qrSettingInvalid',
+  defaultMessage: "“{value}” isn't a value Android takes here, so it is left out of the code. Choose one from the list.",
+});
+const qrLong = defineMessage<{ bytes: number }>({
+  id: 'configEditor.enrollment.qrLong',
+  defaultMessage: 'These entries are long ({bytes} bytes): the enrollment QR code gets dense, and may not fit at all.',
+});
+const qrDuplicates = defineMessage<{ keys: string }>({
+  id: 'configEditor.enrollment.qrDuplicates',
+  defaultMessage: '{keys}: use the setting above instead. Once that is set, it wins over this entry.',
+});
 import { AppPickerModal, CopyConfigModal, DeleteConfigModal, KioskConfirmModal } from './configurations/modals';
 import { devicesBlockingDelete, plural, usedByLine, wipedOnly, wipedOnlyLine } from './configurations/sync';
 import { WATCH_MS, type ConfigWatch } from './configurations/watch';
@@ -255,7 +316,7 @@ function sectionOf(f: FieldDef): SectionId {
   }
 }
 
-type Item = { eyebrow: string; help?: string; kiosk?: boolean } | string;
+type Item = { eyebrow: string | MessageDescriptor; help?: string | MessageDescriptor; kiosk?: boolean } | string;
 
 /** Field order and sub-groups; every primary field not listed falls through to the end of its section. */
 const LAYOUT: Record<'kiosk' | 'network' | 'security' | 'enrollment', Item[]> = {
@@ -279,7 +340,18 @@ const LAYOUT: Record<'kiosk' | 'network' | 'security' | 'enrollment', Item[]> = 
   ],
   network: ['wifi', 'wifiRadio', 'bluetooth', 'locationServices', 'requestUpdates', 'connectivityMode'],
   security: ['camera', 'usbStorage', 'disableScreenshots', 'disableFactoryReset', 'disableSafeBoot'],
-  enrollment: ['wifiSSID', 'wifiPassword', 'wifiSecurityType'],
+  enrollment: [
+    'wifiSSID',
+    'wifiPassword',
+    'wifiSecurityType',
+    'qrWifiHidden',
+    { eyebrow: enrollmentMessages.setupScreens, help: enrollmentMessages.setupScreensHelp },
+    'qrSkipEducation',
+    'qrLocale',
+    'qrTimeZone',
+    'mobileEnrollment',
+    'qrParameters',
+  ],
 };
 for (const [sec, items] of Object.entries(LAYOUT) as Array<[keyof typeof LAYOUT, Item[]]>) {
   const placed = new Set(items.filter((i): i is string => typeof i === 'string'));
@@ -323,9 +395,64 @@ function appPermissionsSignature(c: Configuration): string {
     .join(',');
 }
 
-function changedKeys(before: Configuration, after: Configuration): Set<string> {
+/** Other entries longer than this leave little room in the enrollment QR code (QR_DENSE_BYTES in all). */
+const QR_REST_LONG_BYTES = 600;
+
+/**
+ * The Extra QR parameters texts an editor wrote last, with the settings and the typed rest each was written from.
+ * Text with no settings that is only setting entries reads back as those settings (splitQrParameters), so while
+ * editing, the editor reads back what it wrote and the typed text is never taken apart under the cursor. One per
+ * editor; a few entries, so a state updater run twice (StrictMode) still finds the text it started from.
+ */
+type TypedQr = Map<string, QrParametersSplit>;
+
+function qrSplit(c: Configuration, typed: TypedQr | null): QrParametersSplit {
+  const text = c.qrParameters;
+  return (typeof text === 'string' && typed?.get(text)) || splitQrParameters(text);
+}
+
+/** A setup setting kept in the Extra QR parameters (null when unset, as Android's default). */
+function qrSettingOf(c: Configuration, qrKey: string, typed: TypedQr | null): unknown {
+  const v = qrSplit(c, typed).settings[qrKey];
+  return v == null || v === false || v === '' ? null : v;
+}
+
+/** The Extra QR parameters other than the setup settings, as the editor's field shows them. */
+function qrRestOf(c: Configuration, typed: TypedQr | null): string {
+  return qrSplit(c, typed).rest;
+}
+
+/** The Extra QR parameters with one part replaced; back to unset when nothing is left and nothing was stored. */
+function withQr(d: Configuration, change: { setting?: [string, unknown]; rest?: string }, typed: TypedQr): unknown {
+  const split = qrSplit(d, typed);
+  const settings = { ...split.settings };
+  if (change.setting) settings[change.setting[0]] = change.setting[1];
+  const rest = change.rest ?? split.rest;
+  const text = joinQrParameters(settings, rest);
+  typed.delete(text);
+  typed.set(text, { settings, rest });
+  if (typed.size > 4) typed.delete(typed.keys().next().value as string);
+  return text === '' && d.qrParameters == null ? null : text;
+}
+
+function changedKeys(before: Configuration, after: Configuration, typed: TypedQr | null = null): Set<string> {
   const out = new Set<string>();
-  for (const f of CONFIG_FIELDS) if (norm(before[f.key]) !== norm(after[f.key])) out.add(f.key);
+  for (const f of CONFIG_FIELDS) {
+    // A setting kept in the Extra QR parameters changes when its entry does; the parameters themselves count as
+    // changed only for their other entries, so one switch is one change.
+    if (f.key === 'qrParameters') {
+      if (norm(qrRestOf(before, typed) || null) !== norm(qrRestOf(after, typed) || null)) out.add(f.key);
+      continue;
+    }
+    if (f.qrKey) {
+      // Parsed from text: compare values, not identities (an array or object parses anew each time).
+      const was = JSON.stringify(qrSettingOf(before, f.qrKey, typed));
+      const is = JSON.stringify(qrSettingOf(after, f.qrKey, typed));
+      if (was !== is) out.add(f.key);
+      continue;
+    }
+    if (norm(before[f.key]) !== norm(after[f.key])) out.add(f.key);
+  }
   // The background image picker is a managed asset control rather than a generic CONFIG_FIELDS control.
   // Its identity must still participate in the editor's dirty state and save/apply flow.
   if (norm(before.backgroundImageFileId) !== norm(after.backgroundImageFileId)
@@ -380,6 +507,7 @@ function Editor({
   crumbs: (label: string) => ReactNode;
 }) {
   const toast = useToast();
+  const intl = useIntl();
   const apps = useMemo(() => (Array.isArray(library) ? library : []), [library]);
   const libraryReady = Array.isArray(library);
   const isNew = initial.id == null;
@@ -435,14 +563,20 @@ function Editor({
     };
   }, [appsSource, appsAttempt]);
 
+  const typedQr = useRef<TypedQr>(new Map());
   const set = useCallback((key: string, value: unknown) => setDraft((d) => {
+    const qrKey = FIELD[key]?.qrKey;
+    if (qrKey || key === 'qrParameters') {
+      const change = qrKey ? { setting: [qrKey, value] as [string, unknown] } : { rest: value == null ? '' : String(value) };
+      return { ...d, qrParameters: withQr(d, change, typedQr.current) };
+    }
     if (key === 'locationServices') {
       return { ...d, locationServices: value, locationServicesAction: locationServicesAction(value) };
     }
     return { ...d, [key]: value };
   }), []);
 
-  const changed = useMemo(() => changedKeys(baseline, draft), [baseline, draft]);
+  const changed = useMemo(() => changedKeys(baseline, draft, typedQr.current), [baseline, draft]);
 
   const kioskOn = draft.kioskMode === true;
   const allowed: ConfigApp[] = draft.applications ?? [];
@@ -638,11 +772,44 @@ function Editor({
         : null;
 
   const row = (key: string, opts: { divider?: boolean } = {}) => {
-    const def = FIELD[key];
-    if (!def) return null;
+    const field = FIELD[key];
+    if (!field) return null;
+    // A setting kept in the Extra QR parameters reads its entry there, and waits while that text can't be read.
+    // The setup settings read their entry in the Extra QR parameters, whose own field shows only the other entries.
+    const value = field.qrKey ? qrSettingOf(draft, field.qrKey, typedQr.current) : key === 'qrParameters' ? qrRestOf(draft, typedQr.current) : draft[key];
+    const stored = field.qrKey ? qrSettingOf(baseline, field.qrKey, typedQr.current) : key === 'qrParameters' ? qrRestOf(baseline, typedQr.current) || null : baseline[key];
+    // An entry typed by hand that the list doesn't offer stays selectable as itself.
+    const def =
+      field.qrKey && field.options && typeof value === 'string' && value && !field.options.some((o) => o.value === value)
+        ? { ...field, options: [{ value, label: value }, ...field.options] }
+        : field;
     // A PIN that stops the save stays editable with kiosk off, so it can be fixed or cleared without turning kiosk on.
     const off = def.kioskOnly === true && !kioskOn && !(key === 'password' && pinProblem != null);
-    const help = HELP[key] ?? def.help;
+    const help =
+      field.qrKey && !qrSettingValueOk(field.qrKey, value)
+        ? intl.formatMessage(qrSettingInvalid, { value: String(value) })
+        : HELP[key] ?? def.help;
+    let qrNote: { tone: 'alert' | 'warn'; text: string } | null = null;
+    if (key === 'qrParameters') {
+      const rest = qrRestOf(draft, typedQr.current);
+      const parsed = parseExtraQrParameters(rest);
+      const dupes = settingsInRest(rest);
+      const unused = unusedInRest(rest);
+      // What these entries add to the code, not the text typed (entries left out don't count).
+      const restBytes = parsed.error ? 0 : qrPayloadBytes(JSON.stringify(extrasInCode(parsed.entries, true)));
+      const unchecked = parsed.error ? [] : extrasUnchecked(parsed.entries, true).map((k) => k.slice(QR_EXTRA_PREFIX.length));
+      const notes = [
+        dupes.length ? intl.formatMessage(qrDuplicates, { keys: dupes.join(', ') }) : null,
+        unused.wifi.length ? intl.formatMessage(qrUnused.wifi, { keys: unused.wifi.join(', ') }) : null,
+        unused.protected.length ? intl.formatMessage(qrUnused.protected, { keys: unused.protected.join(', ') }) : null,
+        unused.unsupported.length ? intl.formatMessage(qrUnused.unsupported, { keys: unused.unsupported.join(', ') }) : null,
+        unused.invalid.length ? intl.formatMessage(qrUnused.invalid, { keys: unused.invalid.join(', ') }) : null,
+        unchecked.length ? intl.formatMessage(qrUnchecked, { keys: unchecked.join(', ') }) : null,
+        restBytes > QR_REST_LONG_BYTES ? intl.formatMessage(qrLong, { bytes: restBytes }) : null,
+      ].filter((x): x is string => !!x);
+      if (parsed.error) qrNote = { tone: 'alert', text: intl.formatMessage(qrInvalid) };
+      else if (notes.length) qrNote = { tone: 'warn', text: notes.join(' ') };
+    }
     // The PIN callout asks for a new PIN, which a disabled row (kiosk off) cannot take; the nav still flags it.
     const showPinWarn = key === 'password' && pinWarn != null && (readOnly || !off);
     return (
@@ -667,14 +834,18 @@ function Editor({
             <Callout tone={pinProblem ? 'alert' : 'warn'} icon={<IconWarning size={16} />}>
               {pinWarn}
             </Callout>
+          ) : qrNote ? (
+            <Callout tone={qrNote.tone} icon={<IconWarning size={16} />}>
+              {qrNote.text}
+            </Callout>
           ) : undefined
         }
       >
         {({ labelId, helpId }) => (
           <FieldControl
             def={def}
-            value={draft[key]}
-            stored={baseline[key]}
+            value={value}
+            stored={stored}
             onChange={(v) => set(key, v)}
             disabled={readOnly}
             labelId={labelId}
@@ -832,11 +1003,13 @@ function Editor({
   const renderItems = (items: Item[]) =>
     items.map((it) => {
       if (typeof it === 'string') return row(it);
-      const help = it.kiosk ? (kioskOn ? 'Only applies in kiosk mode' : 'Turn on kiosk mode to change these') : it.help;
+      const text = (m: string | MessageDescriptor | undefined) => (m == null || typeof m === 'string' ? m : intl.formatMessage(m));
+      const help = it.kiosk ? (kioskOn ? 'Only applies in kiosk mode' : 'Turn on kiosk mode to change these') : text(it.help);
+      const eyebrow = text(it.eyebrow);
       return (
-        <div key={it.eyebrow} className="v2-cfged-eyebrow">
+        <div key={eyebrow} className="v2-cfged-eyebrow">
           <Eyebrow as="h3" help={help}>
-            {it.eyebrow}
+            {eyebrow}
           </Eyebrow>
         </div>
       );

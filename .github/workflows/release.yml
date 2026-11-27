@@ -11,7 +11,7 @@ name: release
 # Jobs: gate → images (each image on each platform, pushed by digest, untagged) → packages (read-only: lists what each
 # pushed image holds, by digest) → release (signed APK, held to the recorded signing checksum; :VERSION tags, signed
 # manifest, GitHub Release with the six image package lists NOTICE's source offer relies on, :latest).
-# After it, `readme` opens a PR with the regenerated README images (contents and pull-requests write, no secrets).
+# After it, `readme-images` regenerates the README images (read-only) and `readme-pr` opens a PR with them (no secrets).
 # Who may release: the `gate` job (no secrets, read-only token) refuses a tag whose commit is not on main. The `release`
 # job, which alone holds the signing secrets, runs in the `release` environment: it waits for a required reviewer, and
 # the secrets live there as environment secrets, so a workflow edited on an unmerged commit can't reach them without
@@ -495,20 +495,22 @@ jobs:
   # --- README images (scripts/readme/README.md), after the Release is out ---
   # Regenerates docs/readme/* from main's head (not the tag) with the sample versions from the release tags, and opens
   # a PR "README images for vX.Y.Z" when they changed; it never pushes to main. The release is already published when
-  # this runs, so a failure here is not a failed release: "Re-run failed jobs" re-runs only this job (the release job
-  # succeeded). Needs "Allow GitHub Actions to create and approve pull requests"; its PR starts no CI (workflow token).
-  readme:
+  # these run, so a failure here is not a failed release: "Re-run failed jobs" re-runs only the failed job and the
+  # ones after it (the release job succeeded). Needs "Allow GitHub Actions to create and approve pull requests"; the
+  # PR starts no CI (workflow token). Two jobs: the build (npm, pip, Chromium) has a read-only token, and only the PR
+  # job, which runs nothing from packages or the repo, can push.
+  readme-images:
     needs: release
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           ref: main
           fetch-depth: 0   # the release tags, for the sample versions (versions.mjs)
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version-file: web/package.json
@@ -518,23 +520,45 @@ jobs:
             scripts/readme/package-lock.json
       - name: Install the console, the generator, Chromium and fontTools
         run: |
-          npm ci --prefix web
-          npm ci --prefix scripts/readme
+          npm ci --ignore-scripts --prefix web
+          npm ci --ignore-scripts --prefix scripts/readme
           (cd scripts/readme && npx playwright install --with-deps chromium)
           python3 -m venv scripts/readme/.venv
           scripts/readme/.venv/bin/pip install -r scripts/readme/requirements.txt
       - name: Regenerate docs/readme
         run: scripts/readme/generate.sh --build
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: readme-images
+          path: docs/readme/
+          if-no-files-found: error
+
+  readme-pr:
+    needs: readme-images
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: main
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: readme-images
+          path: docs/readme/
       - name: Open a PR if the images changed
         env:
           GH_TOKEN: ${{ github.token }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
+          echo "$REF_NAME" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' || { echo "::error::Tag must be vMAJOR.MINOR.PATCH (got '$REF_NAME')"; exit 1; }
           if [ -z "$(git status --porcelain -- docs/readme)" ]; then
             echo "docs/readme is unchanged; no PR."
             exit 0
           fi
-          version=v$(node --input-type=module -e "import { AVAILABLE } from './scripts/readme/versions.mjs'; console.log(AVAILABLE)")
-          branch=readme/$version
+          branch=readme/$REF_NAME
           if [ -n "$(git ls-remote --heads origin "$branch")" ]; then
             echo "::error::Branch $branch already exists. Merge or close its PR and delete the branch, then re-run this job."
             exit 1
@@ -543,8 +567,8 @@ jobs:
           git config user.email '41898081+github-actions[bot]@users.noreply.github.com'
           git switch -c "$branch"
           git add docs/readme
-          git commit -m "docs: README images for $version"
+          git commit -m "docs: README images for $REF_NAME"
           git push origin "$branch"
-          gh pr create --base main --head "$branch" --title "README images for $version" --body "Regenerated by the release workflow's readme job (scripts/readme/generate.sh) with the sample versions of $version.
+          gh pr create --base main --head "$branch" --title "README images for $REF_NAME" --body "Regenerated by the release workflow (scripts/readme/generate.sh) with the sample versions of $REF_NAME.
 
           Opened with the workflow token, so CI hasn't run: close and reopen this PR to run it."

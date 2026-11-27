@@ -287,7 +287,7 @@ The unfinished ${NEW_VOL} that an earlier run of this script left is deleted and
   esac
   printf '\nThis stops the whole stack (devices and the console are offline meanwhile: a few minutes for a small\ndatabase), copies the database to PostgreSQL 18 and starts it again. The PostgreSQL %s volume is left as it is.%s\nContinue? [y/N] ' "$OLD_VER" "$gone"
   read -r ans || ans=
-  case "$ans" in y|Y|yes|YES|o|O|oui) ;; *) echo "Nothing was changed."; exit 1 ;; esac
+  case "$ans" in y|Y|yes|YES) ;; *) echo "Nothing was changed."; exit 1 ;; esac
 fi
 
 STAMP=$(date +%Y%m%d-%H%M%S)

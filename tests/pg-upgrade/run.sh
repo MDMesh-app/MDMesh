@@ -5,11 +5,11 @@
 # Usage: tests/pg-upgrade/run.sh [static] [quick] [source] [errors]      (default: all four)
 #   static  the image the script moves to is the compose files' (tag and digest), and both compose files run the same
 #           postgres service.
-#   quick   a quick start from before 0.7.0 (a compose file of its own, "image: postgres:14" on pgdata, no setup.sh): a
-#           move killed part way, then run again; the data in 18 (row counts, the role's password); the compose file
-#           the script writes runs the release's postgres service, guard included; going back to 14, the guard refusing
-#           the out-of-date pgdata18, and the move done again from what 14 wrote since. Then the same move from 0.6.0's
-#           pinned image line.
+#   quick   a quick start from before 0.7.0 (a compose file of its own, "image: postgres:14" on pgdata, no setup.sh): the
+#           question before the stack stops, answered no; a move killed part way, then run again; the data in 18 (row
+#           counts, the role's password); the compose file the script writes runs the release's postgres service, guard
+#           included; going back to 14, the guard refusing the out-of-date pgdata18, and the move done again from what
+#           14 wrote since. Then the same move from 0.6.0's pinned image line.
 #   source  a from-source install (setup.sh, a release tag, this checkout's docker-compose.yml) that ran 0.6.0's pinned
 #           PostgreSQL 14: the guard refuses to start 18 next to the 14 data; ./setup.sh stops before it writes,
 #           starts or backs up anything; a move that fails says how to start 14 again, and that works; after the move,
@@ -20,8 +20,9 @@
 # Runs on this machine's Docker daemon (with the compose plugin), which must be able to pull postgres:14 and the
 # compose files' postgres image. Each install is a compose project of its own ($PGU_PREFIX-quick, -pinned, -source and
 # -errors; PGU_PREFIX defaults to pgu-<pid>) in a temporary directory; only those projects' containers, volumes and
-# networks are created, and they are removed by name at the end. docker is wrapped (a stub in front of the real one) only to inject one fault at a time
-# and to stop setup.sh at its build. PGU_KEEP=1 keeps the work directory. Needs: bash, docker, git, python3.
+# networks are created, and they are removed by name at the end. docker is wrapped (a stub in front of the real one)
+# only to inject one fault at a time and to stop setup.sh at its build. PGU_KEEP=1 keeps the work directory.
+# Needs: bash, docker, git, python3.
 # shellcheck disable=SC2016,SC2034  # check's `eval '…'` conditions: expanded when they run, with the phase's variables
 set -uo pipefail
 unset CDPATH
@@ -198,6 +199,10 @@ phase_quick() {
   c0=$(counts)
   check "PostgreSQL 14 runs with the seeded data ($c0)" [ "$(major):$c0" = "14:2000/2/0/2000" ]
   check "--check: the move is due (10)" need 10
+  RC=0; echo n | env PATH="$WORK/stub:$PATH" bash "$SCRIPT" > "$OUT" 2>&1 || RC=$?
+  cat "$OUT" >> "$LOG"
+  check "asked first, and answered no, the script changes nothing: PostgreSQL 14 still runs" \
+    eval '[ "$RC" = 1 ] && grep -q "Nothing was changed" "$OUT" && [ "$(major):$(counts)" = "14:$c0" ] && ! vol "${PROJECT}_pgdata18"'
 
   # Killed (as when the machine goes down) once PostgreSQL 18 is being made in pgdata18: nothing cleans up.
   env PATH="$WORK/stub:$PATH" bash "$SCRIPT" -y < /dev/null > "$OUT" 2>&1 &

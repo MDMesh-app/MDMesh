@@ -11,9 +11,11 @@ import { configurationsFixtures } from './fixtures.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const DIST = path.resolve(__dirname, '../../web/dist');
-// SOURCE_DATE_EPOCH (seconds) freezes the clock: the fixtures and every page's Date use it, so a rerun gives the
-// same shots. Unset, the fixtures are built around the current time and pages run on the real clock.
-const NOW = process.env.SOURCE_DATE_EPOCH ? Number(process.env.SOURCE_DATE_EPOCH) * 1000 : undefined;
+// SOURCE_DATE_EPOCH (whole seconds) fixes the start of the clock: the fixtures are built around it and every page's
+// clock starts there, so a rerun gives the same shots. Unset, both use the current time.
+const EPOCH = process.env.SOURCE_DATE_EPOCH;
+if (EPOCH !== undefined && !/^\d+$/.test(EPOCH)) throw new Error(`SOURCE_DATE_EPOCH must be whole seconds (got '${EPOCH}')`);
+const NOW = EPOCH === undefined ? undefined : Number(EPOCH) * 1000;
 export const fx = buildFixtures(NOW);
 const fxOverview = buildOverviewFixtures(NOW); // v2 overview fixtures
 // --- v2 configurations fixtures ---
@@ -50,7 +52,10 @@ export function serve(dist = DIST) {
 /** Starts the static server on `port` (default: a free one); resolves to { server, base }. */
 export async function startServer(dist = DIST, port = 0) {
   const server = serve(dist);
-  await new Promise((r) => server.listen(port, '127.0.0.1', r));
+  await new Promise((resolve, reject) => {
+    server.once('error', reject); // e.g. "listen EADDRINUSE: address already in use 127.0.0.1:<port>"
+    server.listen(port, '127.0.0.1', resolve);
+  });
   return { server, base: `http://127.0.0.1:${server.address().port}` };
 }
 
@@ -138,8 +143,9 @@ export async function newContext(
     updateStatus = fx.updateStatus,
   } = {},
 ) {
-  const context = await browser.newContext({ viewport, deviceScaleFactor });
-  if (NOW !== undefined) await context.clock.setFixedTime(NOW);
+  // The host's locale and time zone would change every formatted date and number.
+  const context = await browser.newContext({ viewport, deviceScaleFactor, locale: 'en-US', timezoneId: 'UTC' });
+  if (NOW !== undefined) await context.clock.install({ time: NOW });
   if (blockGoogleFonts) {
     await context.route(/^https:\/\/fonts\.(googleapis|gstatic)\.com\//, (route) => route.abort());
   }

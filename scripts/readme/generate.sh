@@ -14,8 +14,8 @@ PY=${PYTHON:-python3}
   echo "  python3 -m venv scripts/readme/.venv && scripts/readme/.venv/bin/pip install -r scripts/readme/requirements.txt"
   exit 1
 }
-# A fixed clock (the commit's time) in UTC for the console's dates, so the same commit gives the same bytes.
-export TZ=UTC SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git log -1 --format=%ct)}"
+# The console's clock starts at the commit's time, so the same commit gives the same bytes.
+export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git log -1 --format=%ct)}"
 node capture.mjs        # console crops, 2x, light + dark   -> .cache/shots/
 node compose.mjs        # hero, features, how-it-works parts -> docs/readme/*.webp, .cache/parts/
 "$PY" svg/build.py      # banner, how-it-works, architecture -> docs/readme/*.svg

@@ -22,8 +22,9 @@ Python with [fontTools](https://github.com/fonttools/fonttools) is a dev depende
 the text into outlines, because GitHub shows README SVGs through `<img>`, where web fonts can't load. `generate.sh`
 uses `scripts/readme/.venv` when it exists, otherwise `$PYTHON` or `python3`.
 
-The output is byte-for-byte reproducible: `generate.sh` runs the console in UTC on a fixed clock, the commit's
-time (`SOURCE_DATE_EPOCH`), and capture serves it on a fixed port, so the same commit gives the same files.
+The output is byte-for-byte reproducible: `generate.sh` starts the console's clock at the commit's time
+(`SOURCE_DATE_EPOCH`), the browser runs in en-US and UTC, and capture serves the console on a fixed port, so the same
+commit gives the same files.
 
 ## Automatic updates
 

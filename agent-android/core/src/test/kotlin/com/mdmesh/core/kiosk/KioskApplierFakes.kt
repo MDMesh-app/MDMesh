@@ -12,7 +12,7 @@ import kotlinx.coroutines.CompletableDeferred
 
 internal class FakeController(
     private var enterResult: KioskResult,
-    private val exitResult: KioskResult = KioskResult.Ok,
+    var exitResult: KioskResult = KioskResult.Ok,
     var volumeResult: KioskResult = KioskResult.Ok,
 ) : KioskController {
     var entered: List<String>? = null; var exited = false
@@ -32,12 +32,25 @@ internal class FakeController(
     override fun enter(homeComponent: ComponentName, allowedPackages: List<String>, features: Int): KioskResult {
         beforeEnter(allowedPackages)
         entered = allowedPackages; enters += allowedPackages; featureFlags += features
+        allowlist = allowedPackages + "com.mdmesh.agent"
         return if (allowedPackages == failFor) KioskResult.Failed("dpm") else enterResult
     }
-    override fun exit(): KioskResult { exited = true; return exitResult }
+    /** The lock-task allowlist now: an enter sets it, an exit empties it unless [exitKeepsAllowlist] (it failed). */
+    var allowlist: List<String> = emptyList()
+    var exitKeepsAllowlist = false
+    /** Runs at each exit, before it takes effect: a test logs the order of calls with it. */
+    var onExit: () -> Unit = {}
+    override fun exit(): KioskResult {
+        onExit()
+        exited = true
+        if (!exitKeepsAllowlist) allowlist = emptyList()
+        return exitResult
+    }
     override fun setVolumeLocked(locked: Boolean): KioskResult { volume += locked; return volumeResult }
     override fun isLocked(context: android.content.Context): Boolean = false
-    override fun allowedPackages(): List<String> = entered ?: emptyList()
+    /** The allowlist can't be read now (a DPM call that throws). */
+    var allowlistUnreadable = false
+    override fun allowedPackages(): List<String>? = if (allowlistUnreadable) null else allowlist
 }
 
 internal class FakeHome : KioskHomeSwitch {
@@ -45,6 +58,7 @@ internal class FakeHome : KioskHomeSwitch {
     override fun setClaimEnabled(enabled: Boolean) { log += "claim:$enabled" }
     override fun showLauncher() { log += "launcher" }
     override fun showOemHome() { log += "oem" }
+    override fun relaunchCleared(pkg: String) { log += "cleared:$pkg" }
 }
 
 internal class MemJournal : ExitJournal {

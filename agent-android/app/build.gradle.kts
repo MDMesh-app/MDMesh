@@ -180,6 +180,8 @@ dependencies {
         exclude(group = "androidx.test.espresso")
     }
     testImplementation(libs.kotlinx.coroutines.test)
+    // WorkManagerTestInitHelper: the lock-task callbacks queue the kiosk guard's reconcile.
+    testImplementation(libs.work.testing)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.test.runner)
 }

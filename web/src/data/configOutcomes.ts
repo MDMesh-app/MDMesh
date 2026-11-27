@@ -35,8 +35,8 @@ function words(key: string): string {
 }
 
 /**
- * config.apply outcome key → label: `policies.usbStorage` → "USB storage", `kiosk` → "Kiosk mode", a server plugin's
- * `policies.x.netaccess.blockTethering` → "netaccess: block tethering".
+ * config.apply outcome key → label: `policies.usbStorage` → "USB storage", `kiosk` → "Kiosk mode", `kiosk.guard` →
+ * "Kiosk protection", a server plugin's `policies.x.netaccess.blockTethering` → "netaccess: block tethering".
  */
 export function outcomeKeyLabel(key: string): string {
   if (key.startsWith('appPermissions.')) {
@@ -47,6 +47,7 @@ export function outcomeKeyLabel(key: string): string {
   }
   const k = key.startsWith('policies.') ? key.slice('policies.'.length) : key;
   if (k === 'kiosk') return 'Kiosk mode';
+  if (k === 'kiosk.guard') return 'Kiosk protection';
   if (k === 'location') return 'Location reporting';
   if (k === 'connectivity') return 'Connectivity';
   if (k === 'apps' || k === 'applications') return 'Apps';

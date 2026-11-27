@@ -78,6 +78,30 @@ if anything goes wrong.
 - **Launcher grid:** the **MDMesh Kiosk** grid. Closing an app returns to the grid.
 - **Exit:** a visible **Exit kiosk** button at the bottom, or nothing visible (see below).
 
+### While a device is in kiosk
+
+With agent 0.6.0 or later, while a device is in kiosk mode (from its configuration or a custom kiosk):
+
+- **App permissions:** the kiosk's apps get the permissions they ask for (camera, microphone, location and the
+  rest) without Android asking the person at the device. An app permission rule set to **Deny** in the configuration
+  still wins. On Android 12 or later devices set up without letting the admin grant sensor permissions, the agent
+  leaves requests for camera, microphone, location, physical activity and body sensors to Android, and denies the
+  kiosk's apps the background ones (location and body sensors) they don't already have, unless an app permission rule
+  covers them.
+- **Kiosk apps are protected:** they can't be stopped, have their storage cleared, or be uninstalled from the
+  device. An **Uninstall** from the console of an app that is still in the kiosk is refused: take the app out of the
+  kiosk first.
+- **Factory reset** can't be started from the device's settings, whatever the configuration's **Factory reset**
+  says. The console's **Wipe** still works.
+- **Installs from unknown sources** are blocked on the device. Installs from the console still work.
+
+When kiosk mode ends, the device answers permission requests as it did before kiosk. A device set up with the QR code
+on Android 12 or later grants them without asking, as during kiosk. A device that asked before kiosk (set up with adb,
+or on Android 11) asks again, and the permissions granted in kiosk stay granted but can be revoked in Android settings.
+The apps can be managed again, and **Factory reset** follows the configuration again. A device already in kiosk when
+its agent updates to 0.6.0 gets all of this at once. An agent update while in kiosk briefly takes the device out of
+lock task; from 0.6.0 it returns to the kiosk by itself within seconds.
+
 ## Leaving kiosk mode
 
 ### On the device, with the exit PIN

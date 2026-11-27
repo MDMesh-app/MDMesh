@@ -64,6 +64,34 @@ Heads-up
   release isn't published (a development build, say), or whose release has no agent in its manifest, offers the latest
   release's agent.
 
+Security
+- Kiosk mode: while a device is in kiosk mode, agent 0.6.0 answers app permission requests itself and protects the
+  kiosk apps until kiosk mode ends. Affects agents up to 0.5.1 on Android 11 and newer
+  ([GHSA-m47r-3wjg-qx79](https://github.com/MDMesh-app/MDMesh/security/advisories/GHSA-m47r-3wjg-qx79)). Update the
+  agent on every kiosk device once the server is updated (Settings → Agent rollout). A device updated while in kiosk
+  applies the change at once, with no server contact, and returns to its kiosk by itself within seconds; a one-app
+  kiosk starts its app afresh. If a launcher-grid device may not be showing its kiosk after the update, exit kiosk and
+  enter it again from the console ([UPGRADING.md](docs/UPGRADING.md#unreleased)).
+- Devices in kiosk mode, those already in it when the agent updates included, change without leaving kiosk:
+  - Apps get the permissions they ask for (camera, microphone, location and the rest) without Android asking the
+    person at the device. App permission rules set to Deny still win. On Android 12 or later devices set up
+    without letting the admin grant sensor permissions, the agent leaves requests for camera, microphone, location,
+    physical activity and body sensors to Android, and denies the kiosk's apps the background ones (location and body
+    sensors) they don't already have, unless an app permission rule covers them. This case is untested on hardware.
+  - The kiosk apps can't be stopped, cleared or uninstalled from the device. `app.uninstall` of an app that is still
+    in the kiosk is refused: take it out of the kiosk first.
+  - Factory reset can't be started from the device's settings, even where the configuration says Allow; Allow
+    takes effect when kiosk ends. A configuration applied in kiosk reports it as deferred, so the device shows "In sync
+    (some settings deferred)". The result shown refreshes with the next configuration change, not when a device enters
+    or leaves kiosk by itself. The console's Wipe still works.
+  - Apps can't be installed from unknown sources on the device. Installs from the console still work.
+  - When a configuration applied on the device couldn't fully set or lift this, the device page shows a "Kiosk
+    protection" line (`kiosk.guard` on an older console).
+- When kiosk mode ends, the device answers permission requests as it did before kiosk, the apps can be managed again,
+  and Factory reset follows the configuration again. On a device that asked before kiosk, the permissions granted in
+  kiosk stay granted and can be revoked in Android settings
+  ([Kiosk mode](https://github.com/MDMesh-app/MDMesh/blob/main/docs/KIOSK.md#while-a-device-is-in-kiosk)).
+
 New
 - Install behind the nginx, Apache, Caddy or Traefik you already run: the quick start's third choice (or `--proxy`),
   with ready configurations for each. Thanks @lared3294, @detobel36.

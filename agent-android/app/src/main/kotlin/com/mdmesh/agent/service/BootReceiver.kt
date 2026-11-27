@@ -3,7 +3,17 @@ package com.mdmesh.agent.service
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import androidx.core.content.ContextCompat
+import com.mdmesh.core.kiosk.KioskApplier
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import com.mdmesh.core.sync.CheckInWorker
 import com.mdmesh.core.sync.ConfigReapplyWorker
 import com.mdmesh.core.telemetry.EventLog
@@ -19,6 +29,9 @@ class BootReceiver : BroadcastReceiver() {
         if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
             runCatching { EventLog(context).record(EventType.BOOT) }
         }
+        // First: replacing the agent ends the lock task its process held. The kiosk comes back now, not at the
+        // re-apply below or when someone presses HOME.
+        if (intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) returnToKiosk(context)
         when (intent.action) {
             Intent.ACTION_BOOT_COMPLETED,
             "android.intent.action.LOCKED_BOOT_COMPLETED",
@@ -44,5 +57,32 @@ class BootReceiver : BroadcastReceiver() {
                 runCatching { WakeKeepAlive.schedule(context) }
             }
         }
+    }
+
+    private fun returnToKiosk(context: Context) {
+        val pending = goAsync()
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                EntryPointAccessors.fromApplication(context.applicationContext, Kiosk::class.java)
+                    .kioskApplier().returnToKiosk()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
+                Log.w(TAG, "returning to the kiosk after an update failed; the re-apply tries again", e)
+            } finally {
+                pending.finish()
+            }
+        }
+    }
+
+    /** The kiosk applier, for a receiver Hilt doesn't inject. */
+    @EntryPoint
+    @InstallIn(SingletonComponent::class)
+    interface Kiosk {
+        fun kioskApplier(): KioskApplier
+    }
+
+    private companion object {
+        const val TAG = "BootReceiver"
     }
 }

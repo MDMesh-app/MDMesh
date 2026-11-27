@@ -1,6 +1,7 @@
 package com.mdmesh.core.command.handlers
 
 import com.mdmesh.core.command.CommandHandler
+import com.mdmesh.core.kiosk.KioskApplier
 import com.mdmesh.core.command.CommandResults
 import com.mdmesh.core.install.ApkPart
 import com.mdmesh.core.install.InstallManager
@@ -75,6 +76,28 @@ class AppInstallHandler(
             }
             is InstallOutcome.Skipped -> CommandResults.done(command, "skipped: ${outcome.reason}")
             is InstallOutcome.Failure -> CommandResults.failed(command, outcome.reason)
+        }
+    }
+
+    companion object {
+        /**
+         * The agent's after-install steps: [rules] (the configuration's permission rules for the app), then the kiosk
+         * guard, so a kiosk app installed while in kiosk is protected now; each runs whatever the other does.
+         */
+        fun afterInstall(rules: suspend (packageName: String) -> Unit, kiosk: KioskApplier): suspend (String) -> Unit =
+            each(rules, { kiosk.reconcileGuard() })
+
+        /**
+         * [steps] as one [afterInstall], each run whatever the one before did (a step that throws is logged and the
+         * next still runs): the permission rules failing must never skip protecting a kiosk app, or the reverse.
+         */
+        fun each(vararg steps: suspend (packageName: String) -> Unit): suspend (String) -> Unit = { pkg ->
+            steps.forEach { step ->
+                runCatching { step(pkg) }.onFailure {
+                    if (it is kotlinx.coroutines.CancellationException) throw it
+                    runCatching { android.util.Log.w("AppInstallHandler", "after-install step failed", it) }
+                }
+            }
         }
     }
 }

@@ -14,6 +14,8 @@ import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import android.os.Bundle
 import android.os.Looper
+import com.mdmesh.agent.service.BootReceiver
+import dagger.hilt.android.EntryPointAccessors
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
@@ -44,7 +46,7 @@ import org.robolectric.shadows.ShadowDialog
  * start/stopLockTask); it does not enforce lock task, so escapes through the system UI are analysed separately.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34], qualifiers = "w800dp-h1280dp-port-notnight-mdpi")
+@Config(sdk = [34], qualifiers = "w800dp-h1280dp-port-notnight-mdpi", shadows = [AdminRestrictionsShadow::class])
 abstract class KioskHarness {
 
     protected val app: Application get() = ApplicationProvider.getApplicationContext()
@@ -103,13 +105,27 @@ abstract class KioskHarness {
         )
     }
 
-    /** Drains the main looper and the DataStore/IO threads (real threads) until quiet. */
-    protected fun settle() {
+    /**
+     * Drains the main looper and the DataStore/IO threads (real threads) until quiet: at least the old fixed wait,
+     * then until no kiosk operation runs (they do their device and disk work on real IO threads, slower on a loaded
+     * runner) and the main looper has nothing left, three checks in a row. Fails loudly past [timeoutMs].
+     */
+    protected fun settle(timeoutMs: Long = SETTLE_TIMEOUT_MS) {
+        val looper = shadowOf(Looper.getMainLooper())
         repeat(12) {
-            shadowOf(Looper.getMainLooper()).idle()
+            looper.idle()
             Thread.sleep(25)
         }
-        shadowOf(Looper.getMainLooper()).idle()
+        val applier = EntryPointAccessors.fromApplication(app, BootReceiver.Kiosk::class.java).kioskApplier()
+        val deadline = System.currentTimeMillis() + timeoutMs
+        var quiet = 0
+        while (quiet < 3) {
+            check(System.currentTimeMillis() < deadline) { "the kiosk didn't settle within $timeoutMs ms" }
+            looper.idle()
+            Thread.sleep(25)
+            quiet = if (applier.busy || !looper.isIdle) 0 else quiet + 1
+        }
+        looper.idle()
     }
 
     protected fun saveKiosk(k: KioskApplyPayload?) {
@@ -265,3 +281,6 @@ abstract class KioskHarness {
     /** Close the pinned app [times] times in a row (each return to HOME counts towards the crash guard). */
     protected fun bounce(times: Int) = repeat(times) { coverAndReturn() }
 }
+
+/** How long [KioskHarness.settle] waits for the kiosk to go quiet before it fails the test. */
+private const val SETTLE_TIMEOUT_MS = 10_000L

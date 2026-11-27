@@ -19,7 +19,8 @@ bug. We keep the design, drop the implementation:
 OSS only has an overlay hack; the COSU engine is stubbed in `ProUtils`. We build it the native way:
 - `setLockTaskPackages` + `setLockTaskFeatures(HOME | OVERVIEW | NOTIFICATIONS | …)`,
   `android:lockTaskMode="if_whitelisted"` on the kiosk activity, `addPersistentPreferredActivity`
-  for HOME, and `DISALLOW_CREATE_WINDOWS` in `onLockTaskModeEntering`/clear on exit.
+  for HOME, and a kiosk guard held for as long as lock task may be active (permission auto-grant, kiosk apps
+  protected, factory reset and overlays blocked; see `agent-android/kiosk/README.md`).
 - **Take from upstream:** the default-launcher claim pattern (`addPersistentPreferredActivity` +
   HOME/LEANBACK manifest filters) and the **crash-loop protection** algorithm (SharedPreferences
   counter; >N crashes/60s → stop self-restart, offer a launcher chooser so a broken DPC can't brick

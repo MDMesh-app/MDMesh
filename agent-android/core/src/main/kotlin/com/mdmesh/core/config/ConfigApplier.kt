@@ -8,8 +8,10 @@ import com.mdmesh.policy.PolicyOutcome
 import com.mdmesh.policy.ReleasablePolicy
 import com.mdmesh.policy.ResolvedToggles
 import com.mdmesh.policy.AppRuntimePermissions
+import com.mdmesh.policy.PermissionGrantLock
 import com.mdmesh.policy.AppPermissionOutcome
 import com.mdmesh.policy.UnsupportedAppRuntimePermissions
+import com.mdmesh.policy.factoryreset.FactoryResetPolicy
 import com.mdmesh.policy.safeboot.SafeBootPolicy
 import com.mdmesh.policy.wifi.WifiRadioPolicy
 import com.mdmesh.proto.ConfigApplyPayload
@@ -40,7 +42,8 @@ import kotlinx.coroutines.sync.withLock
  * @param setPowerMode sets the live-connection mode for the `connectivity` section (1.5), as `device.powerMode` does.
  *   Only called with a mode this agent knows; another one is reported unsupported.
  */
-@Suppress("TooManyFunctions") // Coordinator for independently releasable desired-state sections.
+// Coordinator for independently releasable desired-state sections; each collaborator is one section's device side.
+@Suppress("TooManyFunctions", "LongParameterList")
 class ConfigApplier(
     private val toggles: () -> ResolvedToggles,
     private val kiosk: KioskApplier,
@@ -48,6 +51,8 @@ class ConfigApplier(
     private val store: ConfigStateStore,
     private val setPowerMode: (String) -> Unit,
     private val appPermissions: AppRuntimePermissions = UnsupportedAppRuntimePermissions,
+    /** Shared with the kiosk guard, the other writer of grant states ([PermissionGrantLock]). */
+    private val grantLock: PermissionGrantLock = PermissionGrantLock(),
 ) {
     private val mutex = Mutex()
 
@@ -165,6 +170,10 @@ class ConfigApplier(
         releaseUnmanaged(doc, toggles, previousKeys.toSet(), outcomes)
         val previousKiosk = previous.any { it.kiosk != null } || KIOSK in unreleased
         section(KIOSK) { applyKiosk(doc, previousKiosk) }?.let { outcomes[KIOSK] = it }
+        // The guard, on its own key: a document with a kiosk has just armed it through its entry; one without settles
+        // it here, whatever left it (an exit just now, an ad-hoc kiosk, a past failure).
+        reconcileKioskGuard(doc, outcomes)
+        reportHeldFactoryReset(doc, toggles, outcomes)
         // Last: the policies and the kiosk are now what this document says, so Safe Mode can follow both. The
         // setting is the delivered document's (ConfiguredSafeModeSetting): this one on a normal apply (recorded as
         // delivered above), and on the boot re-apply the newer one the server sent, if any. Only a failed block is
@@ -208,7 +217,7 @@ class ConfigApplier(
             .mapNotNull(::ruleFromKey)
         val desiredKeys = desiredRules.map { it.key }.toSet()
         priorRules.distinctBy { it.key }.filter { it.key !in desiredKeys }.forEach { rule ->
-            section(rule.key) { appPermissionOutcome(appPermissions.release(rule.packageName, rule.permission)) }
+            section(rule.key) { appPermissionOutcome(release(rule)) }
                 ?.takeIf(ConfigOutcome::isFailed)
                 ?.let { outcomes[rule.key] = it }
         }
@@ -232,8 +241,16 @@ class ConfigApplier(
         if (rule.state != AppRuntimePermissions.GRANT && rule.state != AppRuntimePermissions.DENY) {
             ConfigOutcome.UNSUPPORTED
         } else {
-            appPermissionOutcome(appPermissions.set(rule.packageName, rule.permission, rule.state))
+            appPermissionOutcome(write(rule))
         }
+
+    /** A rule's write, under the lock the kiosk guard takes for the same pairs ([PermissionGrantLock]). */
+    private fun write(rule: AppPermissionRule): AppPermissionOutcome =
+        grantLock.withLock { appPermissions.set(rule.packageName, rule.permission, rule.state) }
+
+    /** A rule's release to default, under the same lock. */
+    private fun release(rule: AppPermissionRule): AppPermissionOutcome =
+        grantLock.withLock { appPermissions.release(rule.packageName, rule.permission) }
 
     private fun appPermissionKeys(doc: ConfigApplyPayload): Set<String> =
         doc.appPermissions.orEmpty().flatMap { entry ->
@@ -297,6 +314,42 @@ class ConfigApplier(
         ConfigOutcome.failed(e.message ?: "$what threw ${e.javaClass.simpleName}") as T
     }
 
+    /**
+     * The kiosk guard follows the kiosk wherever the device is, so one a past apply or exit couldn't finish is
+     * finished here. A step the device won't take is reported on its own key, [KIOSK_GUARD], as deferred: never on
+     * [KIOSK] (that would read as a configured kiosk whose exit failed, and the next apply would exit an ad-hoc
+     * kiosk), and never as failed (the document would be re-sent forever for a step only the device can fix). Nor
+     * for a document with a kiosk: its kiosk is up whatever the guard could set. It is tried again at every apply,
+     * at boot, after an agent update and at every lock-task change.
+     */
+    private suspend fun reconcileKioskGuard(doc: ConfigApplyPayload, outcomes: MutableMap<String, String>) {
+        val r = try {
+            // A document with a kiosk armed the guard through its entry just now: that result. Any other settles it.
+            if (doc.kiosk != null) kiosk.lastGuardResult() else kiosk.reconcileGuard()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
+            KioskResult.Failed(e.message ?: e.javaClass.simpleName)
+        }
+        if (r is KioskResult.Failed) outcomes[KIOSK_GUARD] = ConfigOutcome.deferred(r.reason)
+    }
+
+    /**
+     * Factory reset: Allow applied before this document's kiosk armed the guard (the document that enters kiosk runs
+     * its policies first) is held by the guard now: asked again, so it reports deferred, as on every later apply,
+     * rather than applied while the device is blocked. One held until this document ended kiosk applies now.
+     */
+    private fun reportHeldFactoryReset(
+        doc: ConfigApplyPayload,
+        toggles: ResolvedToggles,
+        outcomes: MutableMap<String, String>,
+    ) {
+        val name = FactoryResetPolicy.CAPABILITY_KEY
+        val key = "$POLICIES$name"
+        if (doc.policies[name] != true || name !in toggles) return
+        outcomes[key] = section(key) { toOutcome(toggles[name]?.setEnabled(true)) }
+    }
+
     /** @return the kiosk outcome, or null when nothing was asserted or exited (the key is then omitted). */
     private suspend fun applyKiosk(doc: ConfigApplyPayload, previousConfigHadKiosk: Boolean): String? {
         // Absent kiosk = "configuration does not assert kiosk". Exit only when a PREVIOUS CONFIG (last saved or last
@@ -355,6 +408,9 @@ class ConfigApplier(
     companion object {
         private const val POLICIES = "policies."
         private const val KIOSK = "kiosk"
+
+        /** The kiosk guard's own outcome, apart from [KIOSK]: never a configured kiosk's, never in `unreleased`. */
+        const val KIOSK_GUARD = "kiosk.guard"
         private const val CONNECTIVITY = "connectivity"
         private const val APP_PERMISSIONS = "appPermissions."
         private const val NOT_REQUESTED = "not-requested"

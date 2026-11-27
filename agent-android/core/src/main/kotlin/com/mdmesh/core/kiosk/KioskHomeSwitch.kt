@@ -13,6 +13,8 @@ interface KioskHomeSwitch {
     fun showLauncher()
     /** Send the device to the OEM launcher after kiosk exit. */
     fun showOemHome()
+    /** Start [pkg] afresh, its task cleared (any screen left on top of it goes). */
+    fun relaunchCleared(pkg: String) {}
 }
 
 class AndroidKioskHomeSwitch(private val context: Context, private val homeComponent: ComponentName) : KioskHomeSwitch {
@@ -24,6 +26,13 @@ class AndroidKioskHomeSwitch(private val context: Context, private val homeCompo
     }
     override fun showLauncher() {
         runCatching { context.startActivity(Intent().setComponent(homeComponent).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+    }
+    override fun relaunchCleared(pkg: String) {
+        runCatching {
+            context.packageManager.getLaunchIntentForPackage(pkg)
+                ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                ?.let(context::startActivity)
+        }
     }
     override fun showOemHome() {
         runCatching { context.startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }

@@ -69,6 +69,11 @@ blocked included. To lift a block, set the setting to **Allow**. The exceptions:
 - **Safe Mode** (agent 0.3.7 or later): Not managed blocks Safe Mode on a configuration with kiosk on and on any
   device in kiosk, and otherwise allows it, lifting an earlier block.
 
+**Factory reset in kiosk** (agent 0.6.0 or later): a device in kiosk can't be factory reset from its settings,
+whatever this setting says. **Allow** takes effect when kiosk ends ([Kiosk mode](KIOSK.md#while-a-device-is-in-kiosk)).
+A configuration applied in kiosk reports it as deferred. The result shown refreshes with the next configuration change,
+not when a device enters or leaves kiosk by itself. The console's Wipe still works.
+
 **Location reporting** (Do not track, Last known (passive), GPS (fresh fix)) sets what location MDMesh collects;
 **Connectivity** (Battery-saver, Always-on, or **—** for not managed) sets how the device keeps its live connection
 to the server. Each setting's help text in the console explains the details.

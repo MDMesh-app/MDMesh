@@ -104,6 +104,9 @@ public class APKFileAnalyzer {
             result.setPkg(apkMeta.getPackageName());
             String label = apkMeta.getLabel();
             result.setName(label != null ? label : "");
+            // A base APK has no split name. A standalone APK and bundletool's universal APK have the same form.
+            String splitName = apkMeta.getSplit();
+            result.setBaseApk(splitName == null || splitName.trim().isEmpty());
             result.setVersion(apkMeta.getVersionName());
             Long versionCode = apkMeta.getVersionCode();
             result.setVersionCode(versionCode != null ? versionCode.intValue() : 0);

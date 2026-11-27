@@ -816,15 +816,17 @@ public class FilesResource {
                 }
             }
 
-            // Package + version come from any part (splits share them); prefer one that parses cleanly.
-            APKFileDetails meta = null;
+            // Package + version are shared by bundle parts. The human-readable label is not: it belongs to the
+            // base/universal APK, while configuration splits often have none. Keep reading after finding package
+            // metadata so a label-less config split cannot become the Library name.
+            List<APKFileDetails> partMetadata = new LinkedList<>();
             for (File part : partTmps) {
                 try {
                     APKFileDetails d = apkFileAnalyzer.analyzeFile(part.getAbsolutePath());
-                    if (d != null && d.getPkg() != null && d.getVersionCode() != 0) { meta = d; break; }
-                    if (meta == null) meta = d;
+                    if (d != null) partMetadata.add(d);
                 } catch (Exception ignored) { /* a config split may not parse standalone — try the next */ }
             }
+            APKFileDetails meta = selectBundleMetadata(partMetadata);
             if (meta == null || meta.getPkg() == null) {
                 return Response.ERROR("error.bundle.unreadable");
             }
@@ -846,7 +848,9 @@ public class FilesResource {
             partTmps.clear(); // moved/reused into the files area — nothing left to clean up
 
             java.util.Map<String, Object> out = new java.util.LinkedHashMap<>();
-            out.put("name", fileName);
+            // A manifest label is optional. The package name is a stable useful fallback; the archive filename is
+            // intentionally not used because it is a transport artifact, not an application identity.
+            out.put("name", hasText(meta.getName()) ? meta.getName().trim() : meta.getPkg());
             out.put("packageName", meta.getPkg());
             out.put("version", meta.getVersion());
             out.put("versionCode", meta.getVersionCode());
@@ -864,6 +868,37 @@ public class FilesResource {
             if (bundleTmp != null) bundleTmp.delete();
             for (File f : partTmps) f.delete();
         }
+    }
+
+    /**
+     * Selects common package metadata and the best available application label from extracted bundle parts.
+     * The base/universal APK wins when it has a label; otherwise accept a usable label from another part.
+     */
+    static APKFileDetails selectBundleMetadata(List<APKFileDetails> partMetadata) {
+        APKFileDetails metadata = null;
+        String fallbackLabel = null;
+        String baseLabel = null;
+        for (APKFileDetails details : partMetadata) {
+            if (details == null) continue;
+            // Preserve the former tolerance for a parser that cannot obtain a version code, while preferring a
+            // later complete result when one is available.
+            if (hasText(details.getPkg()) && (metadata == null
+                    || (metadata.getVersionCode() == 0 && details.getVersionCode() != 0))) {
+                metadata = details;
+            }
+            if (!hasText(details.getName())) continue;
+            String label = details.getName().trim();
+            if (fallbackLabel == null) fallbackLabel = label;
+            if (details.isBaseApk() && baseLabel == null) baseLabel = label;
+        }
+        if (metadata != null && (baseLabel != null || fallbackLabel != null)) {
+            metadata.setName(baseLabel != null ? baseLabel : fallbackLabel);
+        }
+        return metadata;
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.trim().isEmpty();
     }
 
     /** The most a bundle's APK entries may unpack to in total: 4 GiB, Google Play's limit for an app's whole download.

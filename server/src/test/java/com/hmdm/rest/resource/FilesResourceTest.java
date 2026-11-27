@@ -1,6 +1,7 @@
 package com.hmdm.rest.resource;
 
 import com.hmdm.persistence.domain.Customer;
+import com.hmdm.rest.json.APKFileDetails;
 import org.junit.Assert;
 import org.junit.Rule;
 import org.junit.Test;
@@ -24,6 +25,59 @@ public class FilesResourceTest {
         Customer customer = new Customer();
         customer.setId(1);
         return customer;
+    }
+
+    @Test
+    public void testBundleMetadataPrefersBaseApkLabelOverFirstSplit() {
+        APKFileDetails split = details("org.example.app", "", false);
+        APKFileDetails base = details("org.example.app", "Example App", true);
+
+        APKFileDetails selected = FilesResource.selectBundleMetadata(java.util.Arrays.asList(split, base));
+
+        Assert.assertSame(split, selected);
+        Assert.assertEquals("Example App", selected.getName());
+    }
+
+    @Test
+    public void testBundleMetadataUsesNonBaseLabelWhenBaseHasNoLabel() {
+        APKFileDetails base = details("org.example.app", " ", true);
+        APKFileDetails split = details("org.example.app", "Example App", false);
+
+        APKFileDetails selected = FilesResource.selectBundleMetadata(java.util.Arrays.asList(base, split));
+
+        Assert.assertSame(base, selected);
+        Assert.assertEquals("Example App", selected.getName());
+    }
+
+    @Test
+    public void testBundleMetadataLeavesMissingLabelForPackageFallback() {
+        APKFileDetails base = details("org.example.app", "", true);
+
+        APKFileDetails selected = FilesResource.selectBundleMetadata(java.util.Collections.singletonList(base));
+
+        Assert.assertSame(base, selected);
+        Assert.assertEquals("", selected.getName());
+    }
+
+    @Test
+    public void testBundleMetadataAcceptsPackageWhenVersionCodeIsUnavailable() {
+        APKFileDetails base = details("org.example.app", "Example App", true);
+        base.setVersionCode(0);
+
+        APKFileDetails selected = FilesResource.selectBundleMetadata(java.util.Collections.singletonList(base));
+
+        Assert.assertSame(base, selected);
+        Assert.assertEquals("Example App", selected.getName());
+    }
+
+    private APKFileDetails details(String pkg, String name, boolean baseApk) {
+        APKFileDetails details = new APKFileDetails();
+        details.setPkg(pkg);
+        details.setName(name);
+        details.setVersion("1.0");
+        details.setVersionCode(1);
+        details.setBaseApk(baseApk);
+        return details;
     }
 
     @Test

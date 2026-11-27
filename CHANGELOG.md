@@ -80,6 +80,7 @@ Fixes
 - Password-recovery emails name the product MDMesh when no `rebranding.name` is set, and the API's own title says
   MDMesh; both named the upstream product. `/rest/public/logo` answers 404 when no `rebranding.logo` is set, instead of
   redirecting to an upstream logo.
+- Split APK bundle uploads now use the app label from the base APK in the Library instead of the uploaded archive filename.
 - Devices search finds IMEIs reported by current agents, in either SIM slot and by part of the number, also for devices
   that haven't checked in since the update. When a search matches more devices than one request returns (1,000 in the
   console), the best matches are now kept rather than the weakest; a reported IMEI counts like one set by an administrator.

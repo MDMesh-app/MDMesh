@@ -12,8 +12,8 @@ Unreleased.
 ## v0.6.0 — 2026-11-26
 
 Upgrading
-- From source, `./setup.sh --update` now backs up the database to `backups/` in the clone before it changes the
-  install, this update included. It needs free space there of the database's size, and stops if it can't take the
+- From-source Docker installs: `./setup.sh --update` now backs up the database to `backups/` in the clone before it
+  changes the install, this update included. It needs free space there of the database's size, and stops if it can't take the
   backup. Backups stay until you remove them
   ([OPERATIONS.md](https://github.com/MDMesh-app/MDMesh/blob/main/docs/OPERATIONS.md#backups-and-restore)).
 - On its first start the server deletes the commands, state, events and locations of devices deleted before this
@@ -31,9 +31,9 @@ Upgrading
   publish them. The `.env` an installer wrote is not affected
   ([UPGRADING.md](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v060)).
 - On its first start the server removes the unused two-factor setting. An organization that had it on now signs in
-  with the password alone, in the console and the API: have its users change their passwords. API tokens the setting
-  blocked work again until they expire (24 hours after they were issued, by default); a password change ends them at once. A
-  rollback puts the setting back with the old database ([UPGRADING.md](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v060)).
+  with the password alone, in the console and the API: have its users change their passwords. API tokens issued before
+  the setting was turned on work again until they expire (24 hours after they were issued, by default); a password
+  change ends them at once. A rollback puts the setting back with the old database ([UPGRADING.md](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v060)).
 - PostgreSQL and cloudflared now run exact images, pinned by digest: `postgres:14.25-trixie` (still PostgreSQL 14)
   and cloudflared 2026.11.2. From source, `./setup.sh --update` restarts the database for a few seconds. Quick-start
   installs keep the images they were set up with: update cloudflared with the step in UPGRADING at least once a year,
@@ -71,7 +71,7 @@ Security
   agent on every kiosk device once the server is updated (Settings → Agent rollout). A device updated while in kiosk
   applies the change at once, with no server contact, and returns to its kiosk by itself within seconds; a one-app
   kiosk starts its app afresh. If a launcher-grid device may not be showing its kiosk after the update, exit kiosk and
-  enter it again from the console ([UPGRADING.md](docs/UPGRADING.md#v060)).
+  enter it again from the console ([UPGRADING.md](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v060)).
 - Devices in kiosk mode, those already in it when the agent updates included, change without leaving kiosk:
   - Apps get the permissions they ask for (camera, microphone, location and the rest) without Android asking the
     person at the device. App permission rules set to Deny still win. On Android 12 or later devices set up

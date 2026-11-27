@@ -146,23 +146,42 @@ compose_check_old() { # OLD_VER: dies unless docker-compose.yml has the lines ed
       || die "docker-compose.yml doesn't have the postgres lines this script knows (\"${l#"${l%%[! ]*}"}\" once): nothing was changed. Take the postgres service from the docker-compose.release.yml of a 0.7.0 or later release (or edit it by hand as there), then run this again."
   done
 }
+# What docker-compose.release.yml's postgres service has besides the image and the volume: the entrypoint that refuses
+# to start PostgreSQL 18 while the old volume holds a database that pgdata18 is not the finished, current move of. A
+# quick start gets it too, or after going back to 14 its 18 compose file would start on the out-of-date pgdata18.
+# (tests/pg-upgrade checks that the edited service is the release's.)
+PG_GUARD=$(cat <<'EOF'
+    entrypoint:
+      - sh
+      - -c
+      - |
+        if [ -s /var/lib/mdmesh-pg14/PG_VERSION ] && ! grep -qsx "pg_control=$$(sha256sum /var/lib/mdmesh-pg14/global/pg_control 2>/dev/null | cut -c1-64)" /var/lib/postgresql/.mdmesh-moved-from-pg14; then
+          echo "MDMesh: the database is still in PostgreSQL $$(cat /var/lib/mdmesh-pg14/PG_VERSION) format (volume pgdata), and has not been moved to PostgreSQL 18 (or the move did not finish, or 14 ran on it again since). Not starting PostgreSQL 18 next to it: run scripts/pg-upgrade-18.sh in the install directory (docs/UPGRADING.md, PostgreSQL 18)." >&2
+          exit 1
+        fi
+        exec docker-entrypoint.sh "$$@"
+      - pg-guard
+    command: ["postgres"]
+EOF
+)
 edit_compose() { # OLD_VER
   say "Moving docker-compose.yml's postgres service to ${NEW_IMAGE}"
   mkdir -p "$WORKDIR"
   BAK="$WORKDIR/docker-compose.yml.pg$1"
   cp -p docker-compose.yml "$BAK"
-  awk -v old="$(image_re "$1")" -v new="    image: ${NEW_IMAGE}" '
-    $0 ~ old                                        { print new; next }
-    $0 == "      - pgdata:/var/lib/postgresql/data" { print "      - pgdata18:/var/lib/postgresql"; next }
+  PG_GUARD=$PG_GUARD awk -v old="$(image_re "$1")" -v new="    image: ${NEW_IMAGE}" '
+    $0 ~ old                                        { print new; print ENVIRON["PG_GUARD"]; next }
+    $0 == "      - pgdata:/var/lib/postgresql/data" { print "      - pgdata18:/var/lib/postgresql"
+                                                      print "      - pgdata:/var/lib/mdmesh-pg14:ro"; next }
     $0 == "  pgdata:"                               { print "  pgdata18:"; print; next }
                                                     { print }' "$BAK" > docker-compose.yml.new
   chmod 644 docker-compose.yml.new
   mv -f docker-compose.yml.new docker-compose.yml
   if ! docker compose config -q; then
     cp -p "$BAK" docker-compose.yml
-    die "the edited compose file does not load (above); the original is back. ${NEW_VOL} holds the moved database: edit the postgres service by hand (image postgres:18, volume pgdata18:/var/lib/postgresql, pgdata18 under volumes:), then docker compose up -d."
+    die "the edited compose file does not load (above); the original is back. ${NEW_VOL} holds the moved database: make the postgres service the one of a 0.7.0 or later release's docker-compose.release.yml by hand (image, entrypoint, command, its two volumes, pgdata18 under volumes:), then docker compose up -d."
   fi
-  ok "docker-compose.yml: postgres:18 on pgdata18 (the original: $BAK)"
+  ok "docker-compose.yml: postgres:18 on pgdata18, with the release's check of the old volume (the original: $BAK)"
 }
 start_stack() {
   if [ -f setup.sh ]; then

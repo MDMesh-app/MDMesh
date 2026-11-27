@@ -48,7 +48,7 @@ import static org.junit.Assert.fail;
  *
  * <p>Needs a database it may create a schema in; skipped without one. Run it with a throwaway container:</p>
  * <pre>
- * docker run -d --rm --name mdmesh-enroll-it -e POSTGRES_PASSWORD=x -p 127.0.0.1:55432:5432 postgres:14
+ * docker run -d --rm --name mdmesh-enroll-it -e POSTGRES_PASSWORD=x -p 127.0.0.1:55432:5432 postgres:18
  * MDMESH_TEST_PG_URL=jdbc:postgresql://127.0.0.1:55432/postgres MDMESH_TEST_PG_USER=postgres \
  *   MDMESH_TEST_PG_PASSWORD=x mvn -pl server -am test -Dtest=AgentEnrollmentTransactionTest \
  *   -Dsurefire.failIfNoSpecifiedTests=false

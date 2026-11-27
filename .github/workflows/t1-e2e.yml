@@ -13,6 +13,9 @@
 # A second job, lifecycle-e2e, runs the install lifecycle suites (tests/proxy-e2e, tests/rollback-e2e) when the
 # installers, the edge, the updater or the compose files change. They build the images and run in docker:dind, so they
 # take longer (up to about an hour) and are not part of the 10-minute target.
+#
+# A third job, pg-upgrade, runs tests/pg-upgrade when the PostgreSQL 14 → 18 move, the compose files or setup.sh
+# change: the move on real PostgreSQL 14 and 18 containers (a few minutes; no image is built).
 name: t1-e2e
 
 on:
@@ -50,6 +53,10 @@ jobs:
             # rolls back across a schema change), the docs whose restore commands rollback-e2e runs as written, and the
             # tests themselves.
             lifecycle: quickstart.sh, setup.sh, install/**, docker/**, docker-compose*.yml, supervisor/**, docs/proxies/**, docs/OPERATIONS.md, docs/UPGRADING.md, **/src/main/resources/liquibase/**, tests/proxy-e2e/**, tests/rollback-e2e/**, tests/lib/dind-images.sh, .dockerignore
+            # The PostgreSQL 14 → 18 move (tests/pg-upgrade): the script, the compose files' postgres service (its image
+            # is repeated in the script, which a Dependabot bump of the compose files must not leave behind), and
+            # setup.sh with what it sources, whose check and backup the suite runs.
+            pgupgrade: scripts/pg-upgrade-18.sh, docker-compose*.yml, setup.sh, install/**, supervisor/mode-guard.sh, tests/pg-upgrade/**, tests/lib/dind-images.sh
 
   agent-e2e:
     name: agent-e2e
@@ -260,10 +267,41 @@ jobs:
             docker rmi "ghcr.io/local/mdmesh-$n:$E2E_NEW_TAG" "ghcr.io/local/mdmesh-$n:$E2E_OLD_TAG" >/dev/null 2>&1 || true
           done
 
+  # scripts/pg-upgrade-18.sh on real PostgreSQL 14 and 18 containers: a quick start and a from-source install moved, a
+  # move killed part way and run again, going back to 14 and moving again, the compose guard, setup.sh's check and
+  # backup around the move, and docker failures that must leave pgdata18 alone. Plain containers and volumes on the
+  # runner's daemon, in compose projects named per run and removed by name at the end.
+  pg-upgrade:
+    name: pg-upgrade
+    needs: paths
+    if: needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).pgupgrade
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 20
+    env:
+      PGU_PREFIX: pgu-${{ github.run_id }}-${{ github.run_attempt }}
+      PGU_KEEP: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Run tests/pg-upgrade
+        env:
+          TMPDIR: ${{ runner.temp }}/pg-upgrade-work
+        run: |
+          mkdir -p "$TMPDIR"
+          tests/pg-upgrade/run.sh
+      # The work directory (docker.log: docker's and the scripts' output; the test installs' files) is kept and
+      # uploaded when the suite fails.
+      - if: failure() || cancelled()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: pg-upgrade-work
+          path: ${{ runner.temp }}/pg-upgrade-work/
+          retention-days: 7
+          if-no-files-found: warn
+
   # A red T1 on main means main is broken for real devices: open/update one tracking issue.
   # PR failures are already visible on the PR, so they do not file issues.
   report:
-    needs: [agent-e2e, lifecycle-e2e]
+    needs: [agent-e2e, lifecycle-e2e, pg-upgrade]
     if: failure() && github.event_name == 'push'
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 5

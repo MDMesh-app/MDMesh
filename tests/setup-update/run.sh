@@ -69,6 +69,9 @@ mkdir -p "$O/release"
 mkdir -p "$O/supervisor"; cp -- "$REPO/supervisor/mode-guard.sh" "$O/supervisor/"
 cp -R -- "$REPO/setup.sh" "$REPO/quickstart.sh" "$REPO/install" "$REPO/docker-compose.release.yml" \
   "$REPO/docker-compose.domain.yml" "$O/"
+# setup.sh asks it, over an install, whether the database still has to move to PostgreSQL 18 (it wants the clone's
+# docker-compose.yml there).
+mkdir -p "$O/scripts"; cp -- "$REPO/scripts/pg-upgrade-18.sh" "$O/scripts/"; cp -- "$REPO/docker-compose.yml" "$O/"
 cp -- "$WORK/k.pub" "$O/release/minisign.pub"
 # The fixture's setup.sh looks for a native install in $WORK/native-tc instead of /opt/mdmesh-tc (the native tests
 # below create it). The shipped one must keep the real path: a typo there would hide every native install.
@@ -471,11 +474,17 @@ ok
 # The database backup before an update: --update from v9.0.0 over an install that runs 9.0.0. docker: a stub with the
 # project's pgdata volume when PGDATA_VOL names it, postgres running (stopped with PG_STOPPED=1, then started by
 # `up --wait`), a database of DB_SIZE bytes, a pg_dump that writes a few bytes (then fails, with DUMP_FAIL=1), and an
-# `up` that stops the run; the start, the dump and the `up` are logged in their order.
+# `up` that stops the run; the start, the dump and the `up` are logged in their order. With PG14=1 the pgdata volume
+# holds a PostgreSQL 14 database and there is no pgdata18 (scripts/pg-upgrade-18.sh --check: the move is due); with
+# PG14=fail Docker can't read the volume.
 mkdir -p "$WORK/stubs-backup"
 cat > "$WORK/stubs-backup/docker" <<'EOF'
 #!/bin/sh
 case "$*" in
+  "volume ls -q --filter name=mdmesh_pgdata") [ -z "${PG14:-}" ] || echo mdmesh_pgdata ;;
+  run*PG_VERSION*)
+    [ "${PG14:-}" != fail ] || { echo 'docker: Error response from daemon: no' >&2; exit 125; }
+    [ -z "${PG14:-}" ] || echo 14 ;;
   "volume ls"*com.docker.compose.volume=pgdata) [ -z "${PGDATA_VOL:-}" ] || echo "$PGDATA_VOL" ;;
   compose*" ps -q --status running postgres") [ "${PG_STOPPED:-}" = 1 ] || echo pg ;;
   compose*" up -d --no-recreate --wait postgres") echo start >> "$WORK_ENV_LOG" ;;
@@ -544,6 +553,21 @@ bk_clone bk-start 9.0.0; bk_upd bk-start PGDATA_VOL=mdmesh_pgdata PG_STOPPED=1
 [ "$(grep -x 'start\|dump\|up' "$WORK/env.log" | tr '\n' ' ')" = "start dump up " ] \
   || { fail "--update with postgres stopped does not start it, then dump, then go on"; show; }
 ok
+# A PostgreSQL 14 database still to move to 18 (scripts/pg-upgrade-18.sh --check): the run stops before it starts
+# postgres, takes a dump or writes to .env, naming the script.
+bk_clone bk-pg14 9.0.0; before=$(cat "$WORK/bk-pg14/.env")
+bk_upd bk-pg14 PGDATA_VOL=mdmesh_pgdata PG_STOPPED=1 PG14=1
+{ [ "$RC" = 1 ] && ! grep -qx 'start\|dump\|up' "$WORK/env.log" && grep -qF 'Move it once with scripts/pg-upgrade-18.sh' "$WORK/out" \
+  && grep -qF 'The install was not changed: it still runs 9.0.0.' "$WORK/out" \
+  && [ "$(cat "$WORK/bk-pg14/.env")" = "$before" ] && [ ! -e "$WORK/bk-pg14/backups" ]; } \
+  || { fail "--update over a PostgreSQL 14 database does not stop before the start, the dump and .env"; show; }
+ok
+# A check that can't tell (Docker can't read the volume) says so, and the run goes on to the dump and up.
+bk_clone bk-pgfail 9.0.0; bk_upd bk-pgfail PGDATA_VOL=mdmesh_pgdata PG14=fail
+{ [ "$(grep -x 'start\|dump\|up' "$WORK/env.log" | tr '\n' ' ')" = "dump up " ] \
+  && grep -qF "Could not check whether this install's database still has to move to PostgreSQL 18" "$WORK/out"; } \
+  || { fail "--update with a PostgreSQL 18 check that can't tell does not say so and go on"; show; }
+ok
 # An older .env with no CURRENT_VERSION: the version is SERVER_VERSION's, without the digest a one-click update pinned.
 bk_clone bk-old 9.0.0; sed -i 's/^CURRENT_VERSION=.*/SERVER_VERSION=9.0.0@sha256:0123/' "$WORK/bk-old/.env"
 bk_upd bk-old PGDATA_VOL=mdmesh_pgdata
@@ -569,5 +593,5 @@ ok
 TREE=$(git -c safe.directory='*' -C "$REPO" describe --always --dirty 2>&1) || TREE='?'
 TREE="$REPO at $TREE"
 if [ "$FAILS" != 0 ]; then echo "setup --update: $FAILS failure(s) ($TREE)" >&2; exit 1; fi
-if [ "$CHECKS" -lt 80 ]; then echo "setup --update: only $CHECKS checks ran, expected at least 80 ($TREE)" >&2; exit 1; fi
+if [ "$CHECKS" -lt 82 ]; then echo "setup --update: only $CHECKS checks ran, expected at least 82 ($TREE)" >&2; exit 1; fi
 echo "setup --update: all $CHECKS checks passed ($TREE)"

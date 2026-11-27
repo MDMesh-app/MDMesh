@@ -64,8 +64,9 @@ jobs:
             images: docker/**, .dockerignore, install/tomcat-setenv.sh, scripts/server-jvm-check.sh
             # The installer scripts, and the signed manifest they and the supervisor read. Only the edge entry's cheap
             # quickstart.sh checks run on these, not its image work. README.md and DEPLOY.md carry the install commands
-            # release-manifest-check.sh checks. setup.sh sources supervisor/mode-guard.sh (--update's version rule).
-            installers: README.md, DEPLOY.md, quickstart.sh, setup.sh, install/**, release/**, supervisor/lib.js, supervisor/mode-guard.sh, scripts/release-manifest-check.sh, tests/installer-answers/**, tests/setup-update/**, tests/apt-lock/**, tests/lib/**
+            # release-manifest-check.sh checks. setup.sh sources supervisor/mode-guard.sh (--update's version rule) and
+            # runs scripts/pg-upgrade-18.sh --check.
+            installers: README.md, DEPLOY.md, quickstart.sh, setup.sh, install/**, release/**, supervisor/lib.js, supervisor/mode-guard.sh, scripts/release-manifest-check.sh, scripts/pg-upgrade-18.sh, tests/installer-answers/**, tests/setup-update/**, tests/apt-lock/**, tests/lib/**
             # The T2 native rig's own helpers (the rig itself runs in t2-native.yml).
             native: tests/native/**
 
@@ -95,7 +96,7 @@ jobs:
     # random host port: a shared runner may run several jobs at once.
     services:
       postgres:
-        image: ${{ (matrix.name == 'server' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).server)) && 'postgres:14' || '' }}
+        image: ${{ (matrix.name == 'server' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).server)) && 'postgres:18' || '' }}
         env:
           POSTGRES_USER: mdmesh_test
           POSTGRES_PASSWORD: mdmesh_test

@@ -177,6 +177,66 @@ A release before 0.6.0 doesn't know the proxy mode, so while an install runs beh
 `./setup.sh --update`) refuses an update or a Roll back to one, saying so, and changes nothing. Move the install back
 to its old mode first. The updater refuses one too while `TRUSTED_PROXIES` still says `host`: set `TRUSTED_PROXIES=`.
 
+## PostgreSQL 18
+
+From 0.7.0 the Docker stack runs PostgreSQL 18 (PostgreSQL 14, which earlier releases ran, reached its end of life in
+November 2026). A new major version can't open an older one's data, so an existing install moves its database once,
+with `scripts/pg-upgrade-18.sh`. Run it in the install directory, as the user who runs `docker compose` there. It:
+
+1. checks the volumes and the compose file, and pulls `postgres:14` and `postgres:18`, before it changes anything;
+2. asks, then stops the stack (devices and the console are offline until the end: a few minutes for a small database);
+3. dumps the database from the PostgreSQL 14 volume (`pgdata`) into `./pg-upgrade-18/`;
+4. restores it into PostgreSQL 18 in a new volume (`pgdata18`) and gives the database role the same password;
+5. counts the rows of every table on both sides, and stops if any count differs (`pgdata18` is then removed and
+   `docker compose start` starts the install on 14 as before), then marks `pgdata18` as moved;
+6. on a quick start, moves the compose file's postgres service to `postgres:18` on `pgdata18`, with the release's
+   check that keeps PostgreSQL 18 from starting on an unfinished or out-of-date `pgdata18` (the original is kept in
+   `./pg-upgrade-18/`), then starts the stack.
+
+It never changes or removes the PostgreSQL 14 volume. Run it again and it says there is nothing to move. If it stops
+part way (an error, Ctrl-C, the machine going down), `pgdata18` has no mark: the postgres container won't start on it,
+and running the script again starts the move over from the 14 volume. It removes a `pgdata18` only when that is its
+own unfinished or out-of-date move. Next to any other `pgdata18` with data in it, or when Docker can't tell it what
+the volumes hold, it stops and changes nothing.
+
+**Quick-start installs** keep running PostgreSQL 14 after the 0.7.0 update: updates never touch the database
+container. Until the script has run, don't copy the `postgres` `image:` line of a 0.7.0 or later
+`docker-compose.release.yml` into your compose file: PostgreSQL 18 does not start on the PostgreSQL 14 volume. The
+script writes that line. Move the database when you can be offline for a few minutes:
+
+```bash
+cd /path/to/install     # the directory with .env and docker-compose.yml
+curl -fsSLO https://raw.githubusercontent.com/MDMesh-app/MDMesh/refs/tags/v0.7.0/scripts/pg-upgrade-18.sh
+bash pg-upgrade-18.sh
+```
+
+**From-source installs:** `./setup.sh --update` to 0.7.0 stops with the command to run, before it backs up, writes
+or starts anything. Run `scripts/pg-upgrade-18.sh`, then `./setup.sh` again: its backup before the update is then
+taken from the PostgreSQL 18 database. (Running the script first, before any `./setup.sh`, works as well.) If the
+stack was started some other way (`docker compose up -d`),
+the postgres container refuses to start next to the PostgreSQL 14 volume and logs why, and the server waits for it:
+it never starts on an empty database.
+
+**Going back to 14** (what was written since is lost): `docker compose stop`, put the old compose file back
+(`cp pg-upgrade-18/docker-compose.yml.pg14 docker-compose.yml` on a quick start; on a from-source install, check out
+the release you ran before), then `docker compose up -d`. From then on `pgdata18` is out of date: an 18 compose file's
+postgres container won't start on it, and running the script again moves the database over again (what was written on
+18 before going back is not kept).
+
+**Afterwards:** once the install has run well on 18 for a while, free the space the old volume and the dump take:
+
+```bash
+docker compose down && docker volume rm mdmesh_pgdata && docker compose up -d    # your COMPOSE_PROJECT_NAME_pgdata
+rm -r pg-upgrade-18
+```
+
+(`down` without `-v`: the postgres container mounts the old volume read-only to check it, and compose creates an empty
+one again, as on a new install.)
+
+**Native installs** use the distribution's PostgreSQL package and are not changed. On a distribution that ships 14
+(Ubuntu 22.04), move it with the distribution's tools (`pg_upgradecluster` on Debian and Ubuntu) after a
+[backup](OPERATIONS.md#backups-and-restore).
+
 ## Recovery and rollback
 
 ### The recovery page
@@ -272,6 +332,18 @@ Downgrading the agent below 0.5.1 and upgrading again can bring back agent state
 exited or credentials cleared while the older agent ran.
 
 ## Version notes
+
+### Unreleased
+
+- **Docker installs move to PostgreSQL 18, once, by hand.** PostgreSQL 14 is end of life. New installs start on 18;
+  an existing one keeps running on 14 until you move it with `scripts/pg-upgrade-18.sh` (a few minutes offline).
+  From source, `./setup.sh --update` stops before it changes anything until you have. See
+  [PostgreSQL 18](#postgresql-18).
+- **Quick starts: the `postgres` image line is no longer copied by hand.** The v0.6.0 note below says to copy the
+  `cloudflared` and `postgres` `image:` lines from the release's `docker-compose.release.yml` once a year. From 0.7.0
+  that file's postgres line is PostgreSQL 18, which does not start on a PostgreSQL 14 volume: copy the `cloudflared`
+  line only. `scripts/pg-upgrade-18.sh` writes the postgres line when it moves the database; once it has, a later
+  release's `postgres:18.x` line can be copied again.
 
 ### v0.6.0
 
@@ -383,7 +455,8 @@ exited or credentials cleared while the older agent ran.
   `cloudflared:latest`, and one from 0.6.0 on keeps its pinned cloudflared until you change that line. Cloudflare
   supports cloudflared releases up to a year old, so at least once a year copy the `cloudflared` and `postgres`
   `image:` lines from the release's `docker-compose.release.yml` (on GitHub, at the release's tag) into
-  `docker-compose.yml`, then run `docker compose up -d`. Native installs use neither image.
+  `docker-compose.yml`, then run `docker compose up -d`. (From 0.7.0, the `cloudflared` line only: see
+  [PostgreSQL 18](#postgresql-18).) Native installs use neither image.
 
 ### v0.6.0 for forks
 

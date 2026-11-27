@@ -419,19 +419,53 @@ _bk_stop() {
   err "is fixed, run ./setup.sh again to update, or go back to the code the install runs (git checkout -)."
   exit 1
 }
+# An install from before 0.7.0 keeps its database in PostgreSQL 14 (volume pgdata); this release's compose file runs 18
+# (pgdata18), whose entrypoint refuses to start next to it. scripts/pg-upgrade-18.sh moves it, and its --check says
+# whether that is still due (10). Asked over an existing .env before this run writes, starts or backs up anything, and
+# the run stops when the move is due. A check that can't tell says why and the run goes on: the entrypoint still
+# refuses, and the backup below never starts PostgreSQL 14.
+pg18_preflight() {
+  local out rc=0
+  out=$(bash scripts/pg-upgrade-18.sh --check 2>&1) || rc=$?
+  [ "$rc" != 0 ] || return 0
+  if [ "$rc" = 10 ]; then
+    err "This install's database is still PostgreSQL 14 (volume ${COMPOSE_PROJECT_NAME:-mdmesh}_pgdata), and this release runs PostgreSQL 18."
+    err "Move it once with scripts/pg-upgrade-18.sh: it stops the stack, copies the database to 18 and checks it, and keeps"
+    err "the 14 volume (docs/UPGRADING.md, PostgreSQL 18). Then run ./setup.sh again (it reuses your .env)."
+    err "The install was not changed: it still runs ${_running:-as it did}."
+    exit 1
+  fi
+  [ -z "$out" ] || printf '%s\n' "$out" >&2
+  warn "Could not check whether this install's database still has to move to PostgreSQL 18 (scripts/pg-upgrade-18.sh --check, above)."
+  warn "Going on: PostgreSQL 18 does not start next to a PostgreSQL 14 database, and says so (docs/UPGRADING.md, PostgreSQL 18)."
+}
 # A re-run that changes the version (--update, whichever release's script handed over, or a checkout by hand) migrates
 # the database on the server's first start, so it is dumped first, before anything here changes: with OPERATIONS.md's
 # command ("Backups and restore", whose restore is the way back), into backups/ (mode 700, the dump 600), kept
 # until removed by hand: a count limit could drop the one pre-update dump after a few retries. Written to a temporary file, renamed once complete. No database volume yet: nothing to keep. A stopped postgres
 # is started for it. When the dump can't be taken, the run stops, saying why.
+# The volume is pgdata18, or pgdata alone on an install from before 0.7.0 (whose move pg18_preflight asked for first).
+# A stopped postgres container from before that move, with its data on /var/lib/postgresql/data, is not started
+# again: PostgreSQL 14 running on pgdata once more would put the moved pgdata18 out of date, and the dump would be the
+# old database's. compose makes the container anew from this release's compose file instead (which starts on the
+# moved database only).
 backup_before_update() {  # backup_before_update <running version>
-  local vol size free file tmp='' from=${1:-unknown}
-  vol=$(docker volume ls -q --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME:-mdmesh}" \
-    --filter label=com.docker.compose.volume=pgdata) || _bk_stop "Could not list Docker's volumes (above)."
+  local vol='' v ctr mounts='' keep=--no-recreate size free file tmp='' from=${1:-unknown}
+  for v in pgdata18 pgdata; do
+    [ -n "$vol" ] || vol=$(docker volume ls -q --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME:-mdmesh}" \
+      --filter "label=com.docker.compose.volume=$v") || _bk_stop "Could not list Docker's volumes (above)."
+  done
   [ -n "$vol" ] || { warn "No database volume for project ${COMPOSE_PROJECT_NAME:-mdmesh} was found, so none was backed up."; return 0; }
   say "Backing up the database before moving to ${REPO_VERSION} (a large one takes a while)…"
   if [ -z "$(docker compose ${COMPOSE_ARGS[@]+"${COMPOSE_ARGS[@]}"} ps -q --status running postgres)" ]; then
-    docker compose ${COMPOSE_ARGS[@]+"${COMPOSE_ARGS[@]}"} up -d --no-recreate --wait postgres \
+    ctr=$(docker compose ${COMPOSE_ARGS[@]+"${COMPOSE_ARGS[@]}"} ps -aq postgres) \
+      || _bk_stop "postgres isn't running, and Docker could not say which container it has (above)."
+    # shellcheck disable=SC2086  # one id per line
+    [ -z "$ctr" ] || mounts=$(docker inspect -f '{{range .Mounts}}{{println .Destination}}{{end}}' $ctr) \
+      || _bk_stop "postgres isn't running, and its container could not be read (above)."
+    if grep -qx /var/lib/postgresql/data <<< "$mounts"; then keep=''; fi
+    # shellcheck disable=SC2086  # $keep: one option or none
+    docker compose ${COMPOSE_ARGS[@]+"${COMPOSE_ARGS[@]}"} up -d $keep --wait postgres \
       || _bk_stop "postgres isn't running, and it could not be started for the backup (above)."
   fi
   if ! { mkdir -p -m 700 backups && rm -f -- backups/.pre-update.* \
@@ -480,6 +514,7 @@ if [ "$REUSE_ENV" = 1 ]; then
   # The version the install runs (an older .env has only SERVER_VERSION, which a one-click update pins by digest).
   _running=${CURRENT_VERSION:-${SERVER_VERSION:-}}; _running=${_running%%@*}
   version_preflight "$_running"
+  pg18_preflight
   _env_base_url=${BASE_URL:-}
   mdm_check_base_url BASE_URL || { err "Fix BASE_URL in .env, then re-run."; exit 1; }
   [ "$BASE_URL" = "$_env_base_url" ] || setenv BASE_URL "$BASE_URL"   # the scheme was lower-cased: keep .env canonical
@@ -511,6 +546,8 @@ else
   # --reset over this directory's own .env keeps its warning above instead.
   if [ "$RESET" = 1 ] && [ -f .env ]; then mdm_stack_guard mdmesh 0; else mdm_stack_guard mdmesh 1; fi
   version_preflight ""
+  # --reset over an install: its database has to be on 18 as well (a new one has no volume yet: mdm_stack_guard).
+  if [ -f .env ]; then pg18_preflight; fi
   mdm_mode_choose "Without Docker? Run sudo ./setup.sh --update --native (DEPLOY.md, Native)."
 
   DB_PASSWORD=$(rand)

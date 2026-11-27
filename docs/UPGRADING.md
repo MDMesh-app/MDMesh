@@ -200,7 +200,9 @@ own unfinished or out-of-date move. Next to any other `pgdata18` with data in it
 the volumes hold, it stops and changes nothing.
 
 **Quick-start installs** keep running PostgreSQL 14 after the 0.7.0 update: updates never touch the database
-container. Move it when you can be offline for a few minutes:
+container. Until the script has run, don't copy the `postgres` `image:` line of a 0.7.0 or later
+`docker-compose.release.yml` into your compose file: PostgreSQL 18 does not start on the PostgreSQL 14 volume. The
+script writes that line. Move the database when you can be offline for a few minutes:
 
 ```bash
 cd /path/to/install     # the directory with .env and docker-compose.yml
@@ -454,7 +456,7 @@ exited or credentials cleared while the older agent ran.
   supports cloudflared releases up to a year old, so at least once a year copy the `cloudflared` and `postgres`
   `image:` lines from the release's `docker-compose.release.yml` (on GitHub, at the release's tag) into
   `docker-compose.yml`, then run `docker compose up -d`. (From 0.7.0, the `cloudflared` line only: see
-  [Unreleased](#unreleased) above.) Native installs use neither image.
+  [PostgreSQL 18](#postgresql-18).) Native installs use neither image.
 
 ### v0.6.0 for forks
 

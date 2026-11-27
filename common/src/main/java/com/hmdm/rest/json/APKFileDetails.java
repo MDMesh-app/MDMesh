@@ -22,6 +22,7 @@
 
 package com.hmdm.rest.json;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
@@ -60,6 +61,9 @@ public class APKFileDetails implements Serializable {
      */
     private String name;
 
+    /** Whether this APK is the base (or a standalone/universal) APK rather than a split. */
+    private boolean baseApk = true;
+
     /** Permissions declared by the APK manifest. Stored with a library version so the console need not guess. */
     private List<String> requestedPermissions = new ArrayList<>();
 
@@ -83,6 +87,15 @@ public class APKFileDetails implements Serializable {
 
     public void setName(String name) {
         this.name = name;
+    }
+
+    @JsonIgnore
+    public boolean isBaseApk() {
+        return baseApk;
+    }
+
+    public void setBaseApk(boolean baseApk) {
+        this.baseApk = baseApk;
     }
 
     public String getVersion() {

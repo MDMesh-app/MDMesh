@@ -428,10 +428,10 @@ backup_before_update() {  # backup_before_update <running version>
   local vol size free file tmp='' from=${1:-unknown}
   vol=$(docker volume ls -q --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME:-mdmesh}" \
     --filter label=com.docker.compose.volume=pgdata) || _bk_stop "Could not list Docker's volumes (above)."
-  [ -n "$vol" ] || return 0
+  [ -n "$vol" ] || { warn "No database volume for project ${COMPOSE_PROJECT_NAME:-mdmesh} was found, so none was backed up."; return 0; }
   say "Backing up the database before moving to ${REPO_VERSION} (a large one takes a while)…"
   if [ -z "$(docker compose ${COMPOSE_ARGS[@]+"${COMPOSE_ARGS[@]}"} ps -q --status running postgres)" ]; then
-    docker compose ${COMPOSE_ARGS[@]+"${COMPOSE_ARGS[@]}"} up -d --wait postgres \
+    docker compose ${COMPOSE_ARGS[@]+"${COMPOSE_ARGS[@]}"} up -d --no-recreate --wait postgres \
       || _bk_stop "postgres isn't running, and it could not be started for the backup (above)."
   fi
   if ! { mkdir -p -m 700 backups && rm -f -- backups/.pre-update.* \

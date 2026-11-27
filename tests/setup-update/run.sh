@@ -478,7 +478,7 @@ cat > "$WORK/stubs-backup/docker" <<'EOF'
 case "$*" in
   "volume ls"*com.docker.compose.volume=pgdata) [ -z "${PGDATA_VOL:-}" ] || echo "$PGDATA_VOL" ;;
   compose*" ps -q --status running postgres") [ "${PG_STOPPED:-}" = 1 ] || echo pg ;;
-  compose*" up -d --wait postgres") echo start >> "$WORK_ENV_LOG" ;;
+  compose*" up -d --no-recreate --wait postgres") echo start >> "$WORK_ENV_LOG" ;;
   "compose exec -T postgres psql"*) echo "$*" > "$WORK_ENV_LOG.psql"; echo "${DB_SIZE:-1024}" ;;
   "compose exec -T postgres pg_dump"*)
     echo dump >> "$WORK_ENV_LOG"; echo "$*" > "$WORK_ENV_LOG.dump"; printf 'PGDMP'
@@ -524,8 +524,9 @@ ok
 # No pgdata volume yet (nothing installed to keep), or the same version (no migration): no dump, and on to up.
 for c in "bk-novol 9.0.0 PGDATA_VOL=" "bk-same 9.1.0 PGDATA_VOL=mdmesh_pgdata"; do
   read -r n cur vol <<< "$c"; bk_clone "$n" "$cur"; bk_upd "$n" "$vol"
-  { grep -qx up "$WORK/env.log" && ! grep -qx dump "$WORK/env.log" && [ ! -e "$WORK/$n/backups" ]; } \
-    || { fail "--update ($c) takes a dump"; show; }
+  { grep -qx up "$WORK/env.log" && ! grep -qx dump "$WORK/env.log" && [ ! -e "$WORK/$n/backups" ] \
+    && { [ "$n" != bk-novol ] || grep -qF 'No database volume for project mdmesh was found' "$WORK/out"; }; } \
+    || { fail "--update ($c) takes a dump, or skips one without saying so"; show; }
   ok
 done
 # Earlier dumps are all kept (none is deleted by count); an earlier run's leftover temporary file is removed.

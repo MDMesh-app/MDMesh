@@ -36,14 +36,14 @@ APK.
 - **There is no paid edition.** Kiosk mode, app installs, location and the installers are all open source under
   Apache-2.0.
 - **Updates are signed, and on quick-start installs a failed update rolls back.** The updater only offers releases
-  whose signature verifies. You apply an update with one click. The updater backs up the
-  database first and rolls back by itself if the new version fails its health check.
+  whose signature verifies. You apply an update with one click. The updater backs up the database first and rolls
+  back by itself if the new version fails its health check. From source, `./setup.sh --update` backs up the database
+  before it moves a release checkout to a new release.
 - **Older agents keep working after a server update.** The agent is a Device Owner app written in Kotlin. The server
   only sends it commands it reports it supports, and the agent protocol (`/agent/v1`) only ever adds fields. A test
   in CI checks this.
-- **One command installs the server.** It runs on Docker Compose with automatic HTTPS (Caddy) or a Cloudflare Tunnel,
-  or natively on Debian 12/13 and Ubuntu 24.04, on x86_64 or Arm64. The published Docker images cover Arm64 from
-  0.6.0.
+- **One command installs the server.** It runs on Docker Compose with automatic HTTPS (Caddy), a Cloudflare Tunnel or
+  behind the reverse proxy you already run, or natively on Debian 12/13 and Ubuntu 24.04, on x86_64 or Arm64.
 
 ## ■ Features
 
@@ -59,9 +59,10 @@ APK.
 - **Device page:** tabs for remote actions, telemetry (hardware, battery, storage, network), apps, activity and
   location. The Apps tab lists the device's apps that have a launcher icon, from its latest scan, with search and a
   CSV export.
-- **Configurations:** a configuration sets up to 25 device settings, from kiosk options to Wi-Fi, factory reset and
-  Safe Mode. Devices apply it at their next check-in, and the device page shows the result for each setting. Apps
-  added to a configuration install on its devices at their next check-in.
+- **Configurations:** a configuration sets up to 25 device settings, from kiosk options to Wi-Fi, camera, factory
+  reset and Safe Mode, and can grant or deny each app's permissions. Devices apply it at their next check-in, and the
+  device page shows the result for each setting. Apps added to a configuration install on its devices at their next
+  check-in.
 - **Kiosk mode:** locks a device to one app or to a grid of chosen apps, in the colours the configuration sets. Safe
   Mode is blocked in kiosk unless the configuration allows it. If a one-app kiosk's app closes, the launcher opens it
   again; if it closes more than 3 times within a minute, the device stays in kiosk and shows an "Open again" button.
@@ -79,7 +80,8 @@ APK.
   The device page shows the location history on a map, for the last hour, 24 hours, 7 days or all of it.
 - **Staged agent rollouts:** a new agent version goes to a set of canary devices first. You promote it to the other
   devices once the canaries have updated.
-- **Sign-in and audit:** failed sign-ins are limited per address and per account. The audit log records sign-ins,
+- **Users and audit:** roles set what each console user can do, and per-account access limits them to chosen device
+  groups and configurations. Failed sign-ins are limited per address and per account. The audit log records sign-ins,
   changes and the commands sent to devices, with who did it and from where.
 - **Extending:** forks add console pages, tabs and sections in `web/src/extensions/` and server plugins in
   `plugins/fork/`, without editing core files ([EXTENDING](web/EXTENDING.md)).
@@ -148,20 +150,34 @@ On a test device you can also use `adb shell dpm set-device-owner` ([docs/DEV.md
 </picture>
 </p>
 
-The server is a Java (Jersey) REST API with a PostgreSQL database. In the Docker install, Caddy serves the React
-console and passes API requests to the server. Caddy gets the TLS certificate. With a Cloudflare Tunnel, Cloudflare
-handles TLS instead. A native install serves the console from Tomcat, behind your own TLS proxy. Agents check in
-over REST and keep a WebSocket open, so the server can wake them when there's a command. The updater, a separate
-service, checks GitHub Releases and verifies each release's minisign signature. On quick-start installs it also
-applies the update, with a database backup and an automatic rollback. [STRUCTURE.md](STRUCTURE.md) describes the
-code layout.
+The server is a Java (Jersey) REST API with a PostgreSQL database. In the Docker install, Caddy serves the React console
+and passes API requests to the server. Caddy gets the TLS certificate. With a Cloudflare Tunnel, Cloudflare handles TLS
+instead, and behind your own proxy, your proxy does. A native install serves the console from Tomcat, behind your own
+TLS proxy. Agents check in over REST and keep a WebSocket open, so the server can wake them when there's a command. The
+updater, a separate service, checks GitHub Releases and verifies each release's minisign signature. On quick-start
+installs it also applies the update, with a database backup and an automatic rollback. [STRUCTURE.md](STRUCTURE.md)
+describes the code layout.
 
 ## ■ Roadmap
 
-- Done: the web console, the Device Owner agent, kiosk mode, app installs, location, signed updates, staged agent
-  rollouts and extensions for forks.
-- Next: remote control of a device's screen (view and input) over WebRTC, with a self-hosted TURN server.
-- Later: support for device makers' management APIs (Samsung Knox, Zebra) through the agent's capability layer.
+- Done: the web console, the Device Owner agent, kiosk mode, app installs and permissions, location, signed updates
+  with backup and rollback, staged agent rollouts, users and roles, extensions for forks, and installs behind your own
+  proxy or on Arm64.
+- In progress:
+  - Translations: the console's text is moving to translatable messages, with Russian and French first
+    ([how it works](web/README.md#translatable-text)).
+  - Sync status per setting: which settings each device applied, and which need a newer agent.
+  - App access: required, hidden and suspended apps, and an Ask, Grant or Deny policy for app permissions.
+  - Private DNS ([#184](https://github.com/MDMesh-app/MDMesh/pull/184)) and system update policies
+    ([#161](https://github.com/MDMesh-app/MDMesh/pull/161)).
+  - Device names: marketing names next to model codes ([#154](https://github.com/MDMesh-app/MDMesh/issues/154)),
+    naming at enrollment ([#186](https://github.com/MDMesh-app/MDMesh/issues/186)), and one record for a phone
+    that re-enrolls after a reset ([#197](https://github.com/MDMesh-app/MDMesh/issues/197)).
+  - Recovery: a command to reset the admin password, and a console that stays reachable during an update.
+- Later: remote control of a device's screen over WebRTC with a self-hosted TURN server, and device makers'
+  management APIs (Samsung Knox, Zebra) through the agent's capability layer.
+
+Requests and plans are in the [open issues](https://github.com/MDMesh-app/MDMesh/issues).
 
 ## ■ Contributing
 

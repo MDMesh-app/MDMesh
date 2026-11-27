@@ -9,33 +9,43 @@ Unreleased.
 
 ## Unreleased
 
+## v0.6.0 — YYYY-MM-DD
+
 Upgrading
-- Forks that publish their own releases: record your release certificate's checksum in
-  `release/agent-signature-checksum` before you tag, and have Arm64 runners for the image builds
-  ([UPGRADING.md](docs/UPGRADING.md#v060-for-forks)).
+- From source, `./setup.sh --update` now backs up the database to `backups/` in the clone before it changes the
+  install, this update included. It needs free space there of the database's size, and stops if it can't take the
+  backup. Backups stay until you remove them
+  ([OPERATIONS.md](https://github.com/MDMesh-app/MDMesh/blob/main/docs/OPERATIONS.md#backups-and-restore)).
 - On its first start the server deletes the commands, state, events and locations of devices deleted before this
-  release. No screen showed them ([UPGRADING.md](docs/UPGRADING.md#unreleased)).
+  release. No screen showed them ([UPGRADING.md](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v060)).
 - Quick start: `HEALTH_TIMEOUT` in `.env` sets how many seconds an updated server gets to answer before the update is
   rolled back (default 180, at least 30). Raise it before an update whose database work may take longer; to have it
-  count for this update, get this release's supervisor first ([UPGRADING.md](docs/UPGRADING.md#unreleased)).
+  count for this update, get this release's supervisor first ([UPGRADING.md](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v060)).
 - Existing installs keep their mode. To move one behind your own proxy, see
   [UPGRADING, Changing the hosting mode](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#changing-the-hosting-mode).
-- From source, with a `COMPOSE_FILE` you edited by hand: `./setup.sh` and `--update` now start the files it names. On
-  your own domain they stop, before any container is touched, if that would close port 80 or 443 on the edge, and show
-  the `.env` line to set. With a `COMPOSE_PROFILES` you edited by hand, `cloudflare` among several profiles now means
-  the tunnel, which closes 80/443 unless the files `COMPOSE_FILE` lists publish them. The `.env` an installer
-  wrote is not affected ([UPGRADING.md](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#unreleased)).
-- On its first start the server removes the unused two-factor setting from the database. A rollback puts it back
-  with the old database ([UPGRADING.md](docs/UPGRADING.md#unreleased)). Forks: code that used it no longer compiles
-  ([UPGRADING.md](docs/UPGRADING.md#v060-for-forks)).
-- Forks with console extensions: an extension's own test that ends with an API call still unanswered now fails.
-  End it with `await settled()`, new in `@mdmesh/console/testing` ([EXTENDING.md](web/EXTENDING.md#testing)).
-  `stubApi`'s answers now arrive a moment later: wait with `findBy…` or `settled()`, not `act(async () => {})`. The
-  same goes for tests of your own in core ([UPGRADING.md](docs/UPGRADING.md#v060-for-forks-that-change-the-console)).
+- From source, on your own domain, with a `COMPOSE_FILE` you edited by hand: `./setup.sh` and `--update` now start
+  only the files it lists, and no longer add `docker-compose.domain.yml` (ports 80 and 443). If that would close 80
+  or 443 on the edge, they stop before any container is touched: add `docker-compose.domain.yml` to the list in
+  `.env` and run again. With a `COMPOSE_PROFILES` you edited by hand, `cloudflare` among several profiles now means
+  the tunnel, which closes 80/443 unless the files `COMPOSE_FILE` lists publish them. The `.env` an installer wrote
+  is not affected ([UPGRADING.md](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v060)).
+- On its first start the server removes the unused two-factor setting. An organization that had it on now signs in
+  with the password alone, in the console and the API: have its users change their passwords. API tokens the setting
+  blocked work again until they expire, 24 hours after they were issued; a password change ends them at once. A
+  rollback puts the setting back with the old database ([UPGRADING.md](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v060)).
 - PostgreSQL and cloudflared now run exact images, pinned by digest: `postgres:14.25-trixie` (still PostgreSQL 14)
   and cloudflared 2026.11.2. From source, `./setup.sh --update` restarts the database for a few seconds. Quick-start
   installs keep the images they were set up with: update cloudflared with the step in UPGRADING at least once a year,
-  as Cloudflare supports releases up to a year old ([UPGRADING.md](docs/UPGRADING.md#unreleased)).
+  as Cloudflare supports releases up to a year old ([UPGRADING.md](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v060)).
+- Forks that publish their own releases: record your release certificate's checksum in
+  `release/agent-signature-checksum` before you tag, and have Arm64 runners for the image builds. Forks with their
+  own server code: code that used the two-factor setting no longer compiles
+  ([UPGRADING.md](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v060-for-forks)).
+- Forks with console extensions: an extension's own test that ends with an API call still unanswered now fails.
+  End it with `await settled()`, new in `@mdmesh/console/testing`
+  ([EXTENDING.md](https://github.com/MDMesh-app/MDMesh/blob/main/web/EXTENDING.md#testing)). `stubApi`'s answers now
+  arrive a moment later: wait with `findBy…` or `settled()`, not `act(async () => {})`. The same goes for tests of
+  your own in core ([UPGRADING.md](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v060-for-forks-that-change-the-console)).
 
 Heads-up
 - The edge sends HSTS for a request that came in over HTTP only when a trusted peer says `X-Forwarded-Proto: https`
@@ -48,9 +58,6 @@ Heads-up
   move the install back to its earlier hosting mode and set `TRUSTED_PROXIES=` first (either alone is still refused).
 - Your own edge rules load only from files nobody but their owner can change (`site.d`'s owner's or root's,
   `chmod 644`, not a link); the edge leaves any other out at start, saying why in its log.
-  The documented check before a restart (`MDMESH_RAW_SITE_D=1 … caddy validate`) validates exactly what the restart
-  would load, and fails if the restart would leave a file out or there is no file to check (`site.d` not mounted);
-  `caddy validate` and `adapt` run as the edge's own user, so they never leave root-owned files in its data volume.
 - New devices and rollouts get the agent of the release the server runs, never a newer one: update the server first,
   then roll out its agent from Settings → Agent rollout, which says so while a newer release waits. Only a server whose
   release isn't published (a development build, say), or whose release has no agent in its manifest, offers the latest
@@ -61,8 +68,6 @@ New
   with ready configurations for each. Thanks @lared3294, @detobel36.
 - The quick start asks one plain question, how your phones will reach MDMesh; `--tunnel`, `--domain` and `--proxy` answer it.
 - Your own edge rules: Caddy imports `site.d/*.caddy` from the install directory, and updates never touch it.
-- From source, `./setup.sh --update` backs up the database to `backups/` in the clone before it changes the install,
-  and stops if it can't. Backups stay until you remove them ([OPERATIONS.md](docs/OPERATIONS.md#backups-and-restore)).
 - A quick start that stopped part way (a failed pull, a slow first start) can be finished: run it again with
   `MDMESH_DIR=<its directory>`, and it carries on with the same `.env` (past a seeded database too, with a new
   temporary admin password).
@@ -99,22 +104,18 @@ Fixes
   signs in with that number and could not check in again. Other devices are renamed as before.
 - API: saving a configuration as `GET /configurations/{id}` answers it, or without `applications`, keeps its apps and
   its main app. Before, it removed them. An empty list still removes them
-  ([UPGRADING.md](docs/UPGRADING.md#unreleased)). Duplicating a configuration keeps its "Enroll over mobile
-  data" setting.
+  ([UPGRADING.md](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v060)). Duplicating a
+  configuration keeps its "Enroll over mobile data" setting.
 - Bulk delete deletes nothing when one of the devices is out of the user's reach. Otherwise each device is deleted on
   its own, and when some can't be, the console keeps those selected to delete again. Before, a failure partway left
   some deleted and still answered OK.
 - Bulk configuration and group changes apply to every selected device or to none, and a configuration change must
   name one. Taking devices out of a group the user may not use is refused, as putting them in one already was.
-- Console: the location map's path is easy to see on any map, in both themes: a dark line on a white casing, arrows
-  for the direction, a ring at the oldest fix and a dot at the latest, and a key under the map.
-- Console: activity says which command ran and how it went ("Lock: done", not "Command 1234:done"), labels kiosk exit
-  and return, and the Overview no longer shows the device's description as if it were the event's detail.
+- Console: the location map's path is easy to see on any map, in both themes, with arrows and a key. Activity says
+  which command ran and how it went ("Lock: done", not "Command 1234:done"), and labels kiosk exit and return.
 - Console: an action shows in one place: a configuration card's "…" holds only Delete, and the device page's "…"
-  holds Ring and Reboot and then All actions, which opens Remote actions on the Control tab. A lone Delete or Remove
-  from library stays in its "…" rather than becoming a button next to the row.
-- Console: after you delete a configuration, an app from the library, a user or a role, keyboard focus moves to the
-  next card or row instead of to the top of the page. Any dialog whose opener is gone when it closes does the same.
+  holds Ring, Reboot and All actions. After you delete a configuration, a library app, a user or a role, keyboard
+  focus moves to the next card or row instead of to the top of the page.
 - The quick start, or `./setup.sh` in a new clone, run in a second directory no longer takes over an install that
   already exists elsewhere on the machine (both use the Docker project `mdmesh`): it stops before changing anything,
   names that install's directory and says how to update it. Over the data volumes of an install whose containers are
@@ -128,30 +129,24 @@ Fixes
 - Events: a device that was offline for a while no longer loses all but 100 of the events it kept. The server update
   alone fixes it for devices on older agents. When an agent's buffer of 500 fills, the device's events say how many
   older ones it dropped.
-- Check-ins: a device whose reported Android release, agent version or power mode the server can't store (too long,
-  or with a control character) no longer fails every check-in; the server ignores that value and logs it.
 - Agent: check-ins wait 30 seconds for a busy server's answer instead of 10. On Android 7 and 8, an app download from
   an HTTPS address no longer follows a redirect to HTTP (Android 9 and later already refused it).
-- Enrollment and check-ins: a hardware id longer than 128 characters or with a control character is ignored, so the
-  device enrolls and checks in without it. Before, one too long or holding a NUL failed the enrollment on every
-  retry, and every check-in.
 - Native: an update names the release the host runs as the one it updates from, not the release the clone is already
   on (it read "0.5.1 → 0.5.1" on a host still running 0.5.0). Answering "no" to the installer's question no longer
   wipes the previous run's log, and when the clone is ahead of the install it says the install is unchanged and how to
   finish the update.
-- An organization whose settings had two-factor sign-in turned on (possible only in a database carried over from
-  the upstream project, or edited by hand) couldn't sign in at all, in the console or through the API. MDMesh has no second
-  sign-in step yet, so the unused setting is removed. Those accounts now sign in with their password alone (no
-  authenticator code is asked for) and get API tokens again, which v0.3.3 had stopped. Two-factor sign-in for each
-  user is planned for a later release. The settings and user answers no longer include `twoFactor`; a request that
-  still sends it is accepted, and the field ignored.
+- An organization whose settings had two-factor sign-in on (a database carried over from the upstream project, or
+  edited by hand) couldn't sign in at all: MDMesh has no second sign-in step, so the setting is removed (Upgrading,
+  above). Two-factor sign-in for each user is planned. The settings and user answers no longer include `twoFactor`;
+  a request that still sends it is accepted, and the field ignored.
 - Agent: a device that lost its stored configuration (damaged storage) says so and is sent it again, kiosk included.
   Before, it showed as in sync for good and no longer applied it after a restart.
-- Check-in: a device whose reported state the database refuses still gets its commands (the server logs why and keeps
-  the last state it could store). One whose check-in fails while storing it is no longer shown as Online.
+- Enrollment and check-ins: a reported Android release, agent version, power mode or hardware id that the server
+  can't store (too long, or with a control character) is ignored, instead of failing every check-in or enrollment.
+  A device whose reported state the database refuses still gets its commands (the server logs why), and one whose
+  check-in fails while storing it is no longer shown as Online.
 
 Under the hood
-- CI builds the agent's instrumented tests (they still run only by hand, on an emulator).
 - Licences: the server WAR, the console and the agent APK each carry LICENSE, NOTICE and a list of the third-party
   components they bundle, with their licences (the console at `/licenses/`). In `/usr/share/doc/mdmesh/`, the server
   image carries all three and the supervisor image LICENSE and NOTICE. Each release attaches a package list for every
@@ -163,7 +158,7 @@ Under the hood
   ([policy](https://github.com/MDMesh-app/MDMesh/blob/main/docs/licenses/policy.md#files-kept-from-upstream)).
 - Console: the groundwork for translations. New console text is written as react-intl messages (English stays in
   the code), and a test fails on most new untranslated text in core files; existing text moves over area by area. No
-  other language ships yet ([web/README.md](web/README.md#translatable-text)).
+  other language ships yet ([web/README.md](https://github.com/MDMesh-app/MDMesh/blob/main/web/README.md#translatable-text)).
 - Agent protocol 1.12 (additive): the check-in response's `eventsAccepted`, the check-in request's `protocolVersion`
   (now always sent), and the `eventsDropped` event
   ([VERSIONING](https://github.com/MDMesh-app/MDMesh/blob/main/proto/VERSIONING.md)).

@@ -11,11 +11,14 @@ cards ride the groups while invisible, arriving in exact lockstep. Cards only an
 `butter` (starts from rest, long deceleration), every fade uses `fade`. The base styles are the finished state, so
 prefers-reduced-motion (animation: none) shows the settled banner. Spec: docs in this folder's README.md.
 """
+import os
+import sys
+
 from kit import (TOK, SANS, MONO, GLYPHS, CHECK_D, f, measure, text, dot, shadow_filter, grid, vignette, wordmark,
                  kf, bz, HOLD, svg_doc, write)
 
 W, H, K = 1200, 300, 1.35          # K: console CSS px -> banner units
-VERSION = '0.5.0'                  # the running release; keep in step with scripts/readme/versions.mjs
+VERSION = os.environ.get('README_RUNNING') or sys.exit('banner.py: README_RUNNING is not set (generate.sh sets it)')
 BUTTER, FADE = bz((.3, 0, .1, 1)), bz((.4, 0, .2, 1))
 RISE = 12
 # Timeline (ms). Durations: rise 990, fade 1210, green 660, edge 836, push 968, card fades 1265.

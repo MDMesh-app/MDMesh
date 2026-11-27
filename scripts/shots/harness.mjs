@@ -11,14 +11,19 @@ import { configurationsFixtures } from './fixtures.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const DIST = path.resolve(__dirname, '../../web/dist');
-export const fx = buildFixtures();
-const fxOverview = buildOverviewFixtures(); // v2 overview fixtures
+// SHOTS_EPOCH (whole seconds; scripts/readme/generate.sh sets it) fixes the start of the clock: the fixtures are
+// built around it and every page's clock starts there, so a rerun gives the same shots. Unset, both use the current time.
+const EPOCH = process.env.SHOTS_EPOCH;
+if (EPOCH !== undefined && !/^\d+$/.test(EPOCH)) throw new Error(`SHOTS_EPOCH must be whole seconds (got '${EPOCH}')`);
+const NOW = EPOCH === undefined ? undefined : Number(EPOCH) * 1000;
+export const fx = buildFixtures(NOW);
+const fxOverview = buildOverviewFixtures(NOW); // v2 overview fixtures
 // --- v2 configurations fixtures ---
 const cfx = configurationsFixtures(fx);
 // --- end v2 configurations fixtures ---
 // --- v2 enroll fixtures ---
 import { buildEnrollFixtures } from './fixtures.mjs';
-const efx = buildEnrollFixtures(fx);
+const efx = buildEnrollFixtures(fx, NOW);
 // --- end v2 enroll fixtures ---
 // One /configurations/search answer for every page: the configurations page's full rows with Enroll's saved Wi-Fi
 // merged in where a row has none (Field Ops).
@@ -44,10 +49,13 @@ export function serve(dist = DIST) {
   });
 }
 
-/** Starts the static server on a free port; resolves to { server, base }. */
-export async function startServer(dist = DIST) {
+/** Starts the static server on `port` (default: a free one); resolves to { server, base }. */
+export async function startServer(dist = DIST, port = 0) {
   const server = serve(dist);
-  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  await new Promise((resolve, reject) => {
+    server.once('error', reject); // e.g. "listen EADDRINUSE: address already in use 127.0.0.1:<port>"
+    server.listen(port, '127.0.0.1', resolve);
+  });
   return { server, base: `http://127.0.0.1:${server.address().port}` };
 }
 
@@ -135,7 +143,9 @@ export async function newContext(
     updateStatus = fx.updateStatus,
   } = {},
 ) {
-  const context = await browser.newContext({ viewport, deviceScaleFactor });
+  // The host's locale and time zone would change every formatted date and number.
+  const context = await browser.newContext({ viewport, deviceScaleFactor, locale: 'en-US', timezoneId: 'UTC' });
+  if (NOW !== undefined) await context.clock.install({ time: NOW });
   if (blockGoogleFonts) {
     await context.route(/^https:\/\/fonts\.(googleapis|gstatic)\.com\//, (route) => route.abort());
   }
@@ -157,7 +167,7 @@ export async function newContext(
     // /update/status and /update/check both answer with the supervisor status (check returns it fresh).
     const u = route.request().url();
     const body = u.includes('/update/status') ? updateStatus
-      : u.includes('/update/check') ? { ...updateStatus, checkedAt: Date.now() } : { ok: true };
+      : u.includes('/update/check') ? { ...updateStatus, checkedAt: NOW ?? Date.now() } : { ok: true };
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
   });
   return context;
@@ -165,7 +175,7 @@ export async function newContext(
 
 // --- v2 device-detail fixtures ---
 import { buildDeviceDetailFixtures, deviceDetailRest } from './fixtures.mjs';
-const deviceDetailFx = buildDeviceDetailFixtures(fx);
+const deviceDetailFx = buildDeviceDetailFixtures(fx, NOW);
 // --- end v2 device-detail fixtures ---
 // --- v2 apps fixtures ---
 import { buildAppsFixtures, appsRest } from './fixtures.mjs';

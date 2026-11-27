@@ -161,10 +161,10 @@ export function updateScenarios(base) {
 // --- v2 overview fixtures ---
 // Configuration sync for the Overview (and the classic Dashboard, which asks the same endpoints): per-configuration
 // summary rows and per-device configStatus, consistent with the devices above (online = seen in the last 10 min).
-export function buildOverviewFixtures() {
+export function buildOverviewFixtures(now = Date.now()) {
   const rev = (c) => c.repeat(64);
   const ok = (configurationId) => ({
-    configurationId, currentRevision: rev('a'), appliedRevision: rev('a'), appliedAt: Date.now() - 3_600_000,
+    configurationId, currentRevision: rev('a'), appliedRevision: rev('a'), appliedAt: now - 3_600_000,
     inSync: true, supported: true, lastCommand: { id: 30 + configurationId, status: 'done', detail: null },
   });
   const syncSummary = [
@@ -178,7 +178,7 @@ export function buildOverviewFixtures() {
     'KIOSK-FRONT': ok(5),
     // Last config.apply failed (USB storage needs device owner).
     'KIOSK-CAFE': {
-      configurationId: 5, currentRevision: rev('b'), appliedRevision: rev('a'), appliedAt: Date.now() - 86_400_000,
+      configurationId: 5, currentRevision: rev('b'), appliedRevision: rev('a'), appliedAt: now - 86_400_000,
       inSync: false, supported: true,
       lastCommand: { id: 41, status: 'failed', detail: JSON.stringify({ revision: rev('b'), outcomes: { usbStorage: 'failed: needs device owner' } }) },
     },

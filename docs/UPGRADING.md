@@ -305,6 +305,27 @@ exited or credentials cleared while the older agent ran.
   a newer one. Update the server, then roll out its agent from **Settings → Agent rollout**. After a rollback, a
   rollout of the newer agent stops: cancel it, or update the server again. A server whose release isn't published
   (a development build), or has no agent in its manifest, gets the latest release's agent.
+- **Kiosk devices need agent 0.6.0** (security fix,
+  [GHSA-m47r-3wjg-qx79](https://github.com/MDMesh-app/MDMesh/security/advisories/GHSA-m47r-3wjg-qx79)). Once the
+  server is updated, roll it out from **Settings → Agent rollout**. Nothing to configure. A device updated while in
+  kiosk returns to its kiosk by itself within seconds; if a launcher-grid device may not be showing its kiosk after the
+  update, exit kiosk and enter it again from the console.
+- **In kiosk, the device protects its kiosk.** It answers app permission requests itself, and the kiosk apps can't be
+  stopped, cleared or uninstalled, the device reset, or apps from unknown sources installed, from the device until
+  kiosk mode ends ([what changes](KIOSK.md#while-a-device-is-in-kiosk)). Devices already in kiosk get this at the
+  update. On Android 12 or later devices set up without letting the admin grant sensor permissions, the agent leaves
+  requests for camera, microphone, location, physical activity and body sensors to Android, and denies the kiosk's apps
+  the background ones (location and body sensors) they don't already have, unless an app permission rule covers them.
+  This case is untested on hardware.
+- **Factory reset: Allow waits for kiosk to end.** A configuration applied in kiosk reports it as deferred, so such a
+  device shows **In sync (some settings deferred)**. The result shown refreshes with the next configuration change, not
+  when a device enters or leaves kiosk by itself. The console's Wipe still works.
+- **Don't go back to an older agent.** Agent downgrades aren't supported. On a device that has been in kiosk under
+  0.6.0, an older agent (0.5.1 or earlier) leaves the protection in place, through its own kiosk exit and after it: the
+  device keeps granting permissions itself, no app can be force-stopped or cleared from Settings, the kiosk apps can't
+  be uninstalled (`app.uninstall` fails), installs from unknown sources stay blocked, and factory reset stays blocked
+  unless the configuration sets Factory reset to Allow. Updating to 0.6.0 or later again lifts it, at boot or right
+  after the update, once the device is out of kiosk.
 - **Existing installs keep their hosting mode.** Cloudflare Tunnel and own-domain installs, quick start or from
   source, keep their mode and the `.env` an installer wrote through the update. Answers files and `MDMESH_MODE=1` or
   `2` mean what they meant before; `3` (or `proxy`) is the new mode. Native is unchanged.

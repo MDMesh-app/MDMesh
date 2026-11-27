@@ -28,4 +28,7 @@ dependencies {
     implementation(libs.androidx.core.ktx)
 
     testImplementation(libs.junit)
+    // Robolectric: the guard's device calls on the framework's DevicePolicyManager shadow.
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
 }

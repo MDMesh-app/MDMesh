@@ -123,10 +123,17 @@ class AgentDataStores(
         configuredKiosk() ?: lockedApps()?.let { DataStoreKioskStateStore.prefsOf(lockedKiosk(it)) to FROM_LOCK_TASK }
     }
 
+    /**
+     * What the kiosk guard has set on the device ([com.mdmesh.core.kiosk.DataStoreGuardRecordStore]). Recovery:
+     * mirror, else empty: the guard then recovers from the device itself (it alone sets its restrictions, so holding
+     * them outside kiosk is its evidence) and, in kiosk, keeps the device guarded.
+     */
+    val guard: MirroredDataStore = mirrored(GUARD)
+
     private fun configuredKiosk(): Pair<Preferences, String>? =
         configStore.configuredKiosk()?.let { DataStoreKioskStateStore.prefsOf(it) to FROM_CONFIGURATION }
 
-    private val all = listOf(IDENTITY to identity, ENROLL to enroll, KIOSK to kiosk)
+    private val all = listOf(IDENTITY to identity, ENROLL to enroll, KIOSK to kiosk, GUARD to guard)
 
     /**
      * Reads every store now (one that is damaged is recovered here, at start, rather than when a command needs it),
@@ -278,6 +285,7 @@ class AgentDataStores(
         const val IDENTITY = "mdm_identity"
         const val ENROLL = "mdm_enroll"
         const val KIOSK = "mdm_kiosk"
+        const val GUARD = "mdm_kiosk_guard"
         const val MIRROR_SUFFIX = "_mirror"
 
         /** Next to a store's file once this agent has written it whole ([MirroredDataStore]). */

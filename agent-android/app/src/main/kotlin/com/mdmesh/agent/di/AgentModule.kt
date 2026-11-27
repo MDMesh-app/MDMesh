@@ -43,6 +43,8 @@ import com.mdmesh.core.kiosk.AndroidKioskHomeSwitch
 import com.mdmesh.core.kiosk.ConfiguredSafeModeSetting
 import com.mdmesh.core.kiosk.KioskApplier
 import com.mdmesh.core.kiosk.KioskBackgroundPrefetchWorker
+import com.mdmesh.core.kiosk.KioskGuard
+import com.mdmesh.core.kiosk.GuardRecordStore
 import com.mdmesh.core.kiosk.SharedPrefsExitJournal
 import com.mdmesh.core.command.handlers.PolicyApplyHandler
 import com.mdmesh.core.device.AppInventoryCollector
@@ -76,6 +78,7 @@ import com.mdmesh.kiosk.SharedPrefsHoldStore
 import com.mdmesh.kiosk.ExitPinGate
 import com.mdmesh.kiosk.FaultStore
 import com.mdmesh.kiosk.KioskController
+import com.mdmesh.kiosk.DpmKioskGuardControl
 import com.mdmesh.kiosk.LockTaskKioskController
 import com.mdmesh.kiosk.PinAttemptStore
 import com.mdmesh.kiosk.SharedPrefsFaultStore
@@ -86,6 +89,8 @@ import com.mdmesh.oem.OemAdapter
 import com.mdmesh.policy.CapabilityRegistry
 import com.mdmesh.policy.AppRuntimePermissions
 import com.mdmesh.policy.DeviceOwnerAppRuntimePermissions
+import com.mdmesh.policy.PermissionGrantLock
+import com.mdmesh.policy.factoryreset.FactoryResetPolicy
 import com.mdmesh.policy.factoryreset.FactoryResetWipeHold
 import com.mdmesh.policy.factoryreset.SharedPrefsWipeHoldStore
 import com.mdmesh.policy.wifi.AndroidWifiRadio
@@ -129,8 +134,43 @@ object AgentModule {
         @ApplicationContext context: Context,
         handle: DpmHandle,
         wipeHold: FactoryResetWipeHold,
+        guard: KioskGuard,
     ): CapabilityRegistry =
-        CapabilityRegistry(handle, AndroidWifiRadio.from(context), SharedPrefsWifiRadioOffState(context), wipeHold)
+        CapabilityRegistry(
+            handle, AndroidWifiRadio.from(context), SharedPrefsWifiRadioOffState(context), wipeHold, kioskHold = guard,
+        )
+
+    /**
+     * The kiosk guard: answers permission requests and protects the kiosk apps while in kiosk ([KioskApplier] drives
+     * it). Reads the configuration the server last delivered, as the Safe Mode setting does.
+     */
+    @Provides
+    @Singleton
+    @Suppress("LongParameterList") // Hilt's explicit bindings keep this wiring auditable.
+    fun provideKioskGuard(
+        @ApplicationContext context: Context,
+        handle: DpmHandle,
+        configStore: ConfigStateStore,
+        wipeHold: FactoryResetWipeHold,
+        grantLock: PermissionGrantLock,
+        records: GuardRecordStore,
+        controller: KioskController,
+    ): KioskGuard {
+        fun configured() = configStore.delivered ?: configStore.load()
+        return KioskGuard(
+            DpmKioskGuardControl(context, handle.dpm, handle.admin), records,
+            ownPackage = context.packageName,
+            factoryResetSetting = { configured()?.policies?.get(FactoryResetPolicy.CAPABILITY_KEY) },
+            permissionRules = {
+                (configured()?.appPermissions.orEmpty() + configStore.activeAppPermissions).flatMap { entry ->
+                    entry.permissions.keys.map { KioskGuard.pair(entry.packageName, it) }
+                }.toSet()
+            },
+            wiping = { wipeHold.held },
+            grantLock = grantLock,
+            isLockTaskActive = { controller.isLocked(context) },
+        )
+    }
 
     @Provides
     @Singleton
@@ -287,13 +327,20 @@ object AgentModule {
 
     @Provides
     @IntoSet
-    fun provideAppInstallHandler(installManager: InstallManager, applier: ConfigApplier): CommandHandler =
-        AppInstallHandler(installManager) { pkg -> applier.applyAfterInstall(pkg) }
+    fun provideAppInstallHandler(
+        installManager: InstallManager,
+        applier: ConfigApplier,
+        kiosk: KioskApplier,
+    ): CommandHandler =
+        AppInstallHandler(
+            installManager,
+            AppInstallHandler.afterInstall({ pkg -> applier.applyAfterInstall(pkg) }, kiosk),
+        )
 
     @Provides
     @IntoSet
-    fun provideAppUninstallHandler(installManager: InstallManager): CommandHandler =
-        AppUninstallHandler(installManager)
+    fun provideAppUninstallHandler(installManager: InstallManager, kiosk: KioskApplier): CommandHandler =
+        AppUninstallHandler(installManager, inKiosk = kiosk::protectsApp)
 
     @Provides
     @Singleton
@@ -322,6 +369,7 @@ object AgentModule {
         store: KioskStateStore,
         configStore: ConfigStateStore,
         @ApplicationContext context: Context,
+        guard: KioskGuard,
     ): KioskApplier {
         val home = kioskHomeAlias(context)
         return KioskApplier(
@@ -334,6 +382,7 @@ object AgentModule {
             onEntered = { p -> KioskBackgroundPrefetchWorker.follow(context, p.theme.backgroundImage) },
             onExited = { KioskBackgroundPrefetchWorker.cancel(context) },
             bootId = { Boot.count(context) },
+            guard = guard,
             isLockTaskActive = { kiosk.isLocked(context) },
         )
     }
@@ -388,18 +437,22 @@ object AgentModule {
 
     @Provides
     @IntoSet
+    @Suppress("LongParameterList") // Hilt's explicit bindings keep this wiring auditable.
     fun provideWipeHandler(
         @ApplicationContext context: Context,
         handle: DpmHandle,
         applier: ConfigApplier,
         wipeHold: FactoryResetWipeHold,
         configStore: ConfigStateStore,
+        kiosk: KioskApplier,
     ): CommandHandler =
         DeviceWipeHandler(
             DpmWipeTarget(handle, context.getSystemService(UserManager::class.java)),
             wipeHold,
             markConfigStale = configStore::markStale,
-        ) { wipe -> applier.exclusive(wipe) }
+            // No apply and no kiosk guard step (which sets Factory reset: Block in kiosk) between the lift and the wipe
+            // call. The configuration's lock first, as every apply takes them.
+        ) { wipe -> applier.exclusive { kiosk.exclusive(wipe) } }
 
     @Provides
     @IntoSet
@@ -432,8 +485,14 @@ object AgentModule {
         store: ConfigStateStore,
         power: PowerModeStore,
         appPermissions: AppRuntimePermissions,
+        grantLock: PermissionGrantLock,
     ): ConfigApplier = ConfigApplier(registry::togglePolicies, kiosk, location::set, store,
-        setPowerMode = power::set, appPermissions = appPermissions)
+        setPowerMode = power::set, appPermissions = appPermissions, grantLock = grantLock)
+
+    /** The one lock for both writers of per-app grant states: the configuration's rules and the kiosk guard. */
+    @Provides
+    @Singleton
+    fun providePermissionGrantLock(): PermissionGrantLock = PermissionGrantLock()
 
     @Provides
     @Singleton

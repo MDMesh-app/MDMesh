@@ -29,9 +29,15 @@ import kotlinx.coroutines.sync.withLock
  * Safe Mode follows [safeModeBlocked] on every path here: blocked in kiosk unless the configuration allows it, and
  * after kiosk only if the configuration blocks it. [syncSafeMode] is how `config.apply` re-checks it last.
  *
- * Serialized: [enter], [exit], [syncSafeMode] and [releaseStaleVolumeLock] run one at a time, whichever path calls them
- * (`kiosk.enter`/`kiosk.exit`, `config.apply` and its boot re-apply, the launcher's exits, agent start). Otherwise
- * the boot-time release could read "no kiosk", then clear the volume lock a concurrent enter had just set.
+ * The [guard] ([KioskGuard]) is armed before every lock and kept armed while lock task may be active: it is
+ * disarmed only once an exit has observed lock task ended and the allowlist empty. [reconcileGuard] makes it match
+ * the device again whenever the device may have changed under it (boot, an agent update, the kiosk HOME's start, lock
+ * task entered or left).
+ *
+ * Serialized: [enter], [exit], [syncSafeMode], [releaseStaleVolumeLock] and [reconcileGuard] run one at a time,
+ * whichever path calls them (`kiosk.enter`/`kiosk.exit`, `config.apply` and its boot re-apply, the launcher's exits,
+ * agent start, the lock-task callbacks). Otherwise the boot-time release could read "no kiosk", then clear the volume
+ * lock a concurrent enter had just set.
  */
 // Its collaborators are the kiosk's moving parts (controller, state, HOME, Safe Mode, exit journal, lock state); its
 // functions are the serialized kiosk operations. Splitting either would split the one mutex that orders them.
@@ -71,10 +77,16 @@ class KioskApplier(
     private val onExited: () -> Unit = {},
     /** Which boot this is (Settings.Global.BOOT_COUNT): written into a journal entry, for the logs. */
     private val bootId: () -> Long = { 0L },
+    /** Answers permission requests and protects the kiosk apps while in kiosk. The default is for tests: none. */
+    private val guard: KioskGuard = KioskGuard.none(),
     /** Whether lock task is active now ([KioskController.isLocked]). Last, so a trailing lambda can only be this. */
     private val isLockTaskActive: () -> Boolean,
 ) {
     private val mutex = Mutex()
+
+    /** See [lastGuardResult]. */
+    @Volatile
+    private var guardResult: KioskResult = KioskResult.Ok
     /** Sets Safe Mode per [safeModeBlocked] from [safeMode]; see [KioskSafeMode]. */
     private val safeModeSetter = KioskSafeMode(kiosk, safeMode)
 
@@ -100,6 +112,9 @@ class KioskApplier(
         current: KioskApplyPayload?,
         pending: ExitJournal.Pending?,
     ): KioskResult {
+        // Re-asserted first: anything changed out of band (a policy another tool reset) is put right. Its result is
+        // the guard's own ([lastGuardResult]), never the kiosk's: the kiosk is up whatever the guard could set.
+        guardFor(targetOf(p), p.pinPackage)
         // Only an entry that is there is settled: no disk write on every entry.
         val locked = if (pending != null) settleUnderSameKiosk(p, pending) else KioskResult.Ok
         // The same kiosk, perhaps with a new look (colours, image, fit, focal point, or the image at a new URL): saved
@@ -160,6 +175,10 @@ class KioskApplier(
         pending: ExitJournal.Pending?,
     ): KioskResult {
         home.setClaimEnabled(true)
+        // Before the lock: no kiosk app runs locked unguarded. A switch protects the old kiosk's apps and the new
+        // one's until the new one is locked and saved. A guard that fails in part doesn't stop the kiosk: it is
+        // reported apart ([lastGuardResult]), and armed again at the next apply, boot or lock-task change.
+        val armed = guarded { arm(targetOf(p)) }
         val r = lockTo(p)
         if (r == KioskResult.Ok) {
             // The device IS in kiosk now, so the state says so even if the volume lock fails below: a failed volume
@@ -168,6 +187,7 @@ class KioskApplier(
             store.save(p)
             // Locked and saved: nothing is left to settle. Not before: see [supersede].
             if (pending != null) clearJournal("kiosk locked")
+            guardResult = firstFailure(armed, guarded { commit(targetOf(p)) })
             home.showLauncher()
             entered(p)
             return applySafeMode(applyVolume(p, r))
@@ -179,10 +199,12 @@ class KioskApplier(
             // Nor with the allowlist the failed entry may have set: lock task's allowlist is the evidence that a kiosk
             // is active when its saved state is lost (AgentDataStores), so a half entry must not leave one behind.
             kiosk.exit()
+            disarmOnceUnlocked(targetOf(p))
         } else {
             // A device in kiosk stays in it: the failed entry may already have replaced the allowlist, so put back the
             // kiosk it had, and keep HOME, or a restart would boot to the phone's own launcher.
-            lockTo(current)
+            // Only once it is back does the guard stop protecting the failed entry's apps.
+            if (lockTo(current) == KioskResult.Ok) guarded { commit(targetOf(current)) }
             applySafeMode(r) // its result is r again, already Failed: the device keeps its kiosk and the block
         }
         return r
@@ -298,7 +320,14 @@ class KioskApplier(
             return r
         }
         kiosk.setVolumeLocked(false) // best effort: lift the kiosk's volume lock (and its mute)
+        val exiting = store.load()
         store.save(null)
+        // After the state is cleared, so a death from here on is finished by the next start's reconcile (no kiosk
+        // saved, the record still there), never re-armed as a new kiosk that would take the auto-grant as the prior
+        // policy. Only once lock task has ended, even when forced.
+        // Its failure is not the exit's: the device is out of kiosk. It is logged, kept for the next reconcile, and
+        // reported by config.apply on its own key. Not cancellable: cut off here, HOME would stay claimed.
+        withContext(NonCancellable) { disarmOnceUnlocked(exiting?.let(::targetOf).orEmpty()) }
         // Guarded: queuing the prefetch's cancel must never skip the Safe Mode lift, the HOME release or the clear.
         runCatching { onExited() }.onFailure { warn("kiosk exit hand-on failed: $it") }
         safeModeSetter.set(inKiosk = false) // best effort, like the volume lock
@@ -309,6 +338,118 @@ class KioskApplier(
         clearJournal("exit finished")
         return r
     }
+
+    /**
+     * Makes the guard match the device: armed while a kiosk is saved, lock task is active, or the allowlist is set
+     * (any allowlisted app can start lock task again); disarmed otherwise. Run at boot, after an agent update, when the
+     * kiosk HOME starts, when lock task is entered or left (whatever started or stopped it), after an app is
+     * installed, and by `config.apply`.
+     */
+    suspend fun reconcileGuard(): KioskResult = withContext(io) { mutex.withLock { reconcileGuardLocked() } }
+
+    private suspend fun reconcileGuardLocked(): KioskResult {
+        val saved = store.load()
+        val allowlist = kiosk.allowedPackages()
+        // An allowlist that can't be read (null) is no evidence either way: the guard stays as it is.
+        val wanted = saved != null || isLockTaskActive() || allowlist.orEmpty().isNotEmpty() ||
+            (allowlist == null && guard.armed())
+        if (!wanted) return guarded { settleOutsideKiosk() }
+        // With no kiosk saved either, which apps are the kiosk's is unknown: none is let go.
+        val known = saved != null || allowlist != null
+        return guardFor(saved?.let(::targetOf).orEmpty() + allowlist.orEmpty(), saved?.pinPackage, known)
+    }
+
+    /**
+     * Runs [block] with no kiosk operation in progress and none able to start: `device.wipe` lifts Factory reset:
+     * Block for the wipe, and the guard (which sets it in kiosk) must not put it back before the wipe call.
+     */
+    suspend fun <T> exclusive(block: suspend () -> T): T = mutex.withLock { block() }
+
+    /**
+     * A kiosk is saved but lock task is off (an agent update replaced the process that held it, or the device was
+     * left on another screen): start the kiosk HOME, which arms the guard and locks again. A Device Owner may start
+     * it from the background. True when it was started. Run right after an agent update and at boot.
+     */
+    suspend fun returnToKiosk(): Boolean = withContext(io) {
+        mutex.withLock {
+            val away = store.load() != null && !isLockTaskActive()
+            if (away) {
+                warn("kiosk saved but lock task is off: showing the kiosk again")
+                home.setClaimEnabled(true)
+                // The pinned app's task from before may hold a screen that isn't the kiosk's: started afresh, then
+                // HOME (which locks and brings it forward).
+                store.load()?.pinPackage?.let(home::relaunchCleared)
+                home.showLauncher()
+            }
+            away
+        }
+    }
+
+    /** Whether a kiosk operation is running now (tests wait for it rather than for a fixed time). */
+    val busy: Boolean get() = mutex.isLocked
+
+    /** Whether [pkg] is a kiosk app the guard protects now (its uninstall is blocked). */
+    fun protectsApp(pkg: String): Boolean = guard.protects(pkg)
+
+    /**
+     * Arms the guard for the kiosk apps [target] and, when they are all of them ([known]), settles it on them;
+     * [pinned]: the kiosk's pinned app, if any.
+     */
+    private suspend fun guardFor(target: Set<String>, pinned: String?, known: Boolean = true): KioskResult {
+        // Locked already when the guard first arms (an agent updated in kiosk): the task may hold a screen opened
+        // before there was a guard. The pinned app is started once afresh, clearing its task.
+        val unguardedLock = !guard.armed() && isLockTaskActive()
+        val armed = guarded { arm(target) }
+        val r = if (known) firstFailure(armed, guarded { commit(target) }) else armed
+        if (unguardedLock && guard.armed() && pinned != null) {
+            warn("kiosk guard armed on a locked device: starting the pinned app afresh")
+            home.relaunchCleared(pinned)
+        }
+        guardResult = r
+        return r
+    }
+
+    /**
+     * The guard's result at the last kiosk entry or re-assert: `config.apply` reports it on its own key, apart from the
+     * kiosk's (a step only the device can fix is never the kiosk failing).
+     */
+    fun lastGuardResult(): KioskResult = guardResult
+
+    /**
+     * Disarms the guard, but only once lock task is observed ended and nothing is allowlisted: a forced exit whose
+     * controller call failed may have left the task locked, and the guard must hold for as long as the kiosk does.
+     * Otherwise the guard stays armed, and lock task's end
+     * ([reconcileGuard], from the lock-task callback) disarms it.
+     */
+    private suspend fun disarmOnceUnlocked(kioskApps: Set<String>): KioskResult {
+        if (isLockTaskActive() || kiosk.allowedPackages()?.isEmpty() != true) {
+            warn("kiosk guard kept: lock task has not ended yet")
+            return KioskResult.Ok
+        }
+        return guarded { disarm(kioskApps) }
+    }
+
+    /** The kiosk's apps (the guard leaves the agent's own package out). */
+    private fun targetOf(p: KioskApplyPayload): Set<String> = (p.allowedPackages + listOfNotNull(p.pinPackage)).toSet()
+
+    /**
+     * Runs a guard operation off the main thread (it reads every app's grant states on a first arm and a disarm).
+     * Unsupported (not the Device Owner) is no failure here: the kiosk itself reports that. A throw is a failure.
+     */
+    @Suppress("TooGenericExceptionCaught") // a guard step's own bug is its failure, never the kiosk's crash
+    private suspend fun guarded(op: KioskGuard.() -> KioskResult): KioskResult = withContext(io) {
+        try {
+            guard.op().takeUnless { it == KioskResult.Unsupported } ?: KioskResult.Ok
+        } catch (e: Exception) {
+            KioskResult.Failed("kiosk guard: ${e.message ?: e.javaClass.simpleName}")
+        }
+    }
+
+    /** The first failure among [results], else Ok. */
+    private fun firstFailure(vararg results: KioskResult): KioskResult =
+        results.firstOrNull { it is KioskResult.Failed }
+            ?: results.firstOrNull { it != KioskResult.Ok }
+            ?: KioskResult.Ok
 
     /**
      * At start (the kiosk launcher, the boot re-apply): settle an exit that began but was cut off (process death

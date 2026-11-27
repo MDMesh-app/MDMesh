@@ -579,7 +579,7 @@ function Editor({
   const changed = useMemo(() => changedKeys(baseline, draft, typedQr.current), [baseline, draft]);
 
   const kioskOn = draft.kioskMode === true;
-  const allowed: ConfigApp[] = (draft.applications as ConfigApp[] | undefined) ?? [];
+  const allowed: ConfigApp[] = draft.applications ?? [];
   const allowedIds = useMemo(() => new Set(allowed.map((a) => a.id)), [allowed]);
   // Only an installed app that is shown in kiosk can be the main app.
   const mainAppChoices = apps.filter((a) =>
@@ -653,7 +653,7 @@ function Editor({
   /** Change the assigned apps; a main app that is no longer installed and shown in kiosk is cleared. */
   function updateApps(id: number, next: (assigned: ConfigApp[]) => ConfigApp[]) {
     setDraft((d) => {
-      const assigned = (d.applications as ConfigApp[] | undefined) ?? [];
+      const assigned = d.applications ?? [];
       const target = assigned.find((a) => a.id === id);
       const applications = next(assigned);
       // Permission rules are valid only for applications this configuration installs. Drop them at the same time as
@@ -1239,7 +1239,7 @@ function Editor({
             <h2 id={`${ids}-hw-h`} className="v2-cfged-h2">
               Legacy launcher settings <span className="v2-cfged-hw__count v2-num">{LEGACY_FIELDS.length}</span>
             </h2>
-            <span className="v2-cfged-hw__sub">Only the Headwind launcher read these. {hwChanged ? `${hwChanged} changed.` : ''}</span>
+            <span className="v2-cfged-hw__sub">Only the legacy launcher read these. {hwChanged ? `${hwChanged} changed.` : ''}</span>
           </div>
           <Button
             size="sm"

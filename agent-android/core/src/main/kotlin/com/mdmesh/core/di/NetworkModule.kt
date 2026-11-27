@@ -44,6 +44,8 @@ object NetworkModule {
             // below is only a placeholder and one APK serves every deployment.
             .addInterceptor(BaseUrlInterceptor(serverConfig))
             .addInterceptor(logging)
+            // OkHttp's default 10 s gave up on a busy server's answer, and with it on the commands in it.
+            .readTimeout(API_READ_TIMEOUT_S, TimeUnit.SECONDS)
             .build()
     }
 
@@ -65,6 +67,7 @@ object NetworkModule {
             .callTimeout(0, TimeUnit.SECONDS)
             .build()
 
+    private const val API_READ_TIMEOUT_S = 30L
     private const val DOWNLOAD_CONNECT_TIMEOUT_S = 30L
     private const val DOWNLOAD_READ_TIMEOUT_S = 60L
 

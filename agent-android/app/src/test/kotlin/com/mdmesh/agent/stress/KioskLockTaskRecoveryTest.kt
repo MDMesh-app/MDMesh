@@ -15,7 +15,6 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.Implementation
 import org.robolectric.annotation.Implements
-import org.robolectric.shadows.ShadowDevicePolicyManager
 import java.time.Duration
 
 /**
@@ -28,7 +27,7 @@ class KioskLockTaskRecoveryTest : KioskHarness() {
 
     /** Reading lock task's allowlist throws [failures] more times (the system service briefly unavailable). */
     @Implements(DevicePolicyManager::class)
-    class ThrowsOnce : ShadowDevicePolicyManager() {
+    class ThrowsOnce : AdminRestrictionsShadow() {
         @Implementation
         override fun getLockTaskPackages(admin: ComponentName): Array<String> {
             if (failures > 0) {

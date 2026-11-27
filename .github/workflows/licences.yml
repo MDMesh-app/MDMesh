@@ -1,7 +1,8 @@
 # Licences (docs/licenses/policy.md). The server, console and agent builds check their own third-party components
 # against docs/licenses/allowed.txt wherever CI is set, and T0's server, web and agent entries run
-# scripts/licenses/inventory.py on what they built, on a dependency or a licence policy change too. This workflow runs
-# the licence scripts' own tests, on every change.
+# scripts/licenses/inventory.py on what they built, on a dependency or a licence policy change too. This workflow checks
+# on every change that each file kept from Headwind MDM that MDMesh changed says so, and keeps the upstream header
+# (scripts/licenses/headers.py, docs/licenses/upstream-files.tsv), and runs the licence scripts' own tests.
 name: licences
 
 on:
@@ -23,7 +24,10 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - name: inventory.py's and image-packages.sh's own tests
+      - name: Change notices on the files kept from upstream
+        run: scripts/licenses/headers.py check
+      - name: The licence scripts' own tests
         run: |
+          tests/licenses/headers-test.sh
           tests/licenses/inventory-test.sh
           tests/licenses/image-packages-test.sh

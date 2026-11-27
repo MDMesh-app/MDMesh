@@ -12,7 +12,9 @@
 
 services:
   postgres:
-    image: postgres:14
+    # tag@sha256:<index digest>, the same in both compose files; Dependabot bumps both. The major (a data format) and
+    # the Debian release (text sort order) change only in a planned database migration.
+    image: postgres:14.25-trixie@sha256:c0e9c0e9bac7e4c1834b698217a03ee5c708de30d313c84a506972de0e24b059
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${DB_NAME:-mdmesh}
@@ -138,7 +140,9 @@ services:
       - backups:/backups
 
   cloudflared:
-    image: cloudflare/cloudflared:latest
+    # Pinned like postgres. Cloudflare supports releases up to a year old; quick starts keep this line
+    # (docs/UPGRADING.md).
+    image: cloudflare/cloudflared:2026.11.2@sha256:55c7e3e8d89d5e8d20b75a82f3602cbf98e06db406e73e282073cfdc5a9a3af6
     restart: unless-stopped
     profiles: ["cloudflare"]
     depends_on:

@@ -12,9 +12,9 @@
 # Every install is followed by the same check step: units active, initialized.txt OK, /rest/public/name 200, and that
 # version's scripts/agent-v1-e2e.sh with FAIL=0.
 #
-# Runs on pull requests that touch the installers or the rig, nightly on main, and by hand (one distro / scenario /
-# from-ref). Slow by nature (a full JDK + Postgres + Maven + npm install per container), so it is its own tier and is
-# not part of T0/T1.
+# Runs on pull requests that touch the installers, the rig or a pom.xml, nightly on main, and by hand (one distro /
+# scenario / from-ref). Slow by nature (a full JDK + Postgres + Maven + npm install per container), so it is its own
+# tier and is not part of T0/T1.
 name: t2-native
 
 on:
@@ -25,6 +25,7 @@ on:
       - supervisor/mode-guard.sh
       - quickstart.sh
       - tests/native/**
+      - "**/pom.xml"  # what the distros' own Maven builds
       - .github/workflows/t2-native.yml
   schedule:
     - cron: "23 2 * * *"

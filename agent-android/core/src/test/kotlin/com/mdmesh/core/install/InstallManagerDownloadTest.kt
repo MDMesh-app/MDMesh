@@ -13,11 +13,16 @@ import okhttp3.Protocol
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.asResponseBody
 import okhttp3.ResponseBody.Companion.toResponseBody
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
+import okhttp3.tls.HandshakeCertificates
+import okhttp3.tls.HeldCertificate
 import okio.Buffer
 import okio.Source
 import okio.Timeout
 import okio.buffer
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -98,6 +103,31 @@ class InstallManagerDownloadTest {
         val outcome = manager { chain -> respond(chain, 200, apk) }.install(request(sha256 = "0".repeat(64)))
         assertTrue((outcome as InstallOutcome.Failure).reason.startsWith("checksum mismatch"))
         assertEquals(emptyList<java.io.File>(), leftovers())
+    }
+
+    /** Installs from an [https] (else HTTP) address that redirects to the other kind: was that one asked? */
+    private fun followsRedirect(https: Boolean): Boolean = runBlocking {
+        val cert = HeldCertificate.Builder().addSubjectAlternativeName("localhost").build()
+        val tls = HandshakeCertificates.Builder().heldCertificate(cert).addTrustedCertificate(cert.certificate).build()
+        MockWebServer().use { secure ->
+            MockWebServer().use { plain ->
+                secure.useHttps(tls.sslSocketFactory(), false)
+                val (from, to) = if (https) secure to plain else plain to secure
+                to.enqueue(MockResponse().setBody("not the APK"))
+                from.enqueue(MockResponse().setResponseCode(302).setHeader("Location", to.url("/app.apk")))
+                val client = OkHttpClient.Builder().sslSocketFactory(tls.sslSocketFactory(), tls.trustManager).build()
+                val outcome = InstallManager(context, InstallResultBus(), client, InstallIntegrityPolicy())
+                    .install(request().copy(url = from.url("/app.apk").toString()))
+                assertTrue(outcome is InstallOutcome.Failure)
+                to.requestCount > 0
+            }
+        }
+    }
+
+    @Test
+    fun `an APK named over HTTPS is not fetched over HTTP after a redirect, one named over HTTP may move to HTTPS`() {
+        assertFalse(followsRedirect(https = true))
+        assertTrue(followsRedirect(https = false))
     }
 
     @Test

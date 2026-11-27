@@ -167,6 +167,8 @@ class KioskLauncherActivity : ComponentActivity() {
                 runCatching { applier.resumeInterruptedExit() }
                     .onFailure { Log.w(TAG, "settling an interrupted kiosk exit failed", it) }
                     .getOrDefault(false)
+                    // Then the kiosk guard, before this HOME locks anything: armed for the kiosk saved now.
+                    .also { runCatching { applier.reconcileGuard() }.onFailure { Log.w(TAG, "kiosk guard", it) } }
             }
             if (finished) CheckInWorker.scheduleAfterCurrent(applicationContext)
             repeatOnLifecycle(Lifecycle.State.STARTED) {

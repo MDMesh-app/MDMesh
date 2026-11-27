@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- Derived from Headwind MDM (Apache-2.0); modified by the MDMesh contributors. -->
 <Context>
     <!-- The session cookie is SameSite=Lax: a cross-site page cannot send a POST, PUT or DELETE with it. -->
     <CookieProcessor className="org.apache.tomcat.util.http.Rfc6265CookieProcessor" sameSiteCookies="lax"/>
@@ -24,7 +25,7 @@
     <!-- If set to 1, the device configuration request must be signed by a shared secret (setup in hash.secret and in the Android app) 
          0 or empty value does not require request signature which is less secure -->
     <Parameter name="secure.enrollment" value="${secure.enrollment}"/>
-    <!-- Headwind launcher device routes (and the MQTT broker): off unless 1 -->
+    <!-- Legacy launcher device routes (and the MQTT broker): off unless 1 -->
     <Parameter name="legacy.device.api" value="${legacy.device.api}"/>
     <Parameter name="hash.secret" value="${hash.secret}"/>
 
@@ -39,7 +40,7 @@
 
     <Parameter name="plugin.photo.enable.places" value="${plugin.photo.enable.places}"/>
 
-    <!-- If Headwind MDM uses an embedded MQTT broker, this parameter is a
+    <!-- If the server uses an embedded MQTT broker, this parameter is a
     local address to which the server binds to listen on port 31000
     (MQTT for Push notifications), for example, demo.h-mdm.com:31000
     If an external MQTT server is used, this is the address of this MQTT server
@@ -56,7 +57,7 @@
     <Parameter name="mqtt.client.tag" value="${mqtt.client.tag}"/>
 
     <!-- Optional tag for MQTT authentication for more security 
-         (supported by Headwind MDM launcher v5.05 and above) -->
+         (supported by legacy launcher v5.05 and above) -->
     <Parameter name="mqtt.auth" value="${mqtt.auth}"/>
 
     <!-- Optional tag for delaying MQTT messages in milliseconds

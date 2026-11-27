@@ -47,9 +47,9 @@
    `proto/VERSIONING.md`. A release never ships with a protocol bump held: once Unreleased is moved, the server test
    `AgentProtocolVersionTest.aHeldBumpIsStillUnreleased` fails on the release PR until the hold is cleared (t0-fast's
    server job runs on any change to CHANGELOG.md or proto/VERSIONING.md, so it runs on a changelog-only release PR).
-3. **Review and CI.** The PR's code review, green CI, and the native install matrix on the release branch, all nine
-   matrix jobs, 3 distros × 3 scenarios (T2; see "T2 native rig" in [docs/DEV.md](docs/DEV.md)). Pull requests run
-   T2 only when the installers change, so this is what catches a server change that breaks a native upgrade:
+3. **Review and CI.** The PR's code review, green CI, and the native install matrix on the release branch, every
+   matrix job (T2; see "T2 native rig" in [docs/DEV.md](docs/DEV.md)). Pull requests run T2 only when the installers or
+   a `pom.xml` change, so this is what catches a server change that breaks a native upgrade:
    `gh workflow run t2-native.yml --ref release/vX.Y.Z`
 4. **The owner's phone check** of the release branch, and the owner's go.
 5. **Squash-merge** the release PR as `vX.Y.Z (#N)`.

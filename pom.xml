@@ -5,6 +5,7 @@
   ~ https://h-mdm.com
   ~
   ~ Copyright (C) 2019 Headwind Solutions LLC (http://h-sms.com)
+  ~ Modified by the MDMesh contributors.
   ~
   ~ Licensed under the Apache License, Version 2.0 (the "License");
   ~ you may not use this file except in compliance with the License.
@@ -28,7 +29,7 @@
     <artifactId>root</artifactId>
     <packaging>pom</packaging>
     <version>0.1.0</version>
-    <name>Headwind MDM</name>
+    <name>MDMesh</name>
 
     <modules>
         <module>common</module>

@@ -9,7 +9,7 @@
   "src/api/users.ts": 17,
   "src/data/apps.ts": 2,
   "src/data/configFields.ts": 236,
-  "src/data/configOutcomes.ts": 8,
+  "src/data/configOutcomes.ts": 9,
   "src/data/configurationRules.ts": 4,
   "src/data/deviceActivity.ts": 33,
   "src/data/deviceApps.ts": 1,

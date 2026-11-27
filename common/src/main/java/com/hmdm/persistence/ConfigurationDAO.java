@@ -4,6 +4,7 @@
  * https://h-mdm.com
  *
  * Copyright (C) 2019 Headwind Solutions LLC (http://h-sms.com)
+ * Modified by the MDMesh contributors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,6 +32,8 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import com.google.inject.Singleton;
 import com.hmdm.event.ConfigurationUpdatedEvent;
@@ -39,11 +42,13 @@ import com.hmdm.persistence.domain.Application;
 import com.hmdm.persistence.domain.ApplicationSetting;
 import com.hmdm.persistence.domain.Configuration;
 import com.hmdm.persistence.domain.ConfigurationFile;
+import com.hmdm.persistence.domain.ManagedAppPermission;
 import com.hmdm.persistence.mapper.ApplicationMapper;
 import com.hmdm.persistence.domain.ConfigurationApplicationParameters;
 import com.hmdm.persistence.mapper.ConfigurationMapper;
 import com.hmdm.security.SecurityException;
 import com.hmdm.util.CryptoUtil;
+import com.hmdm.util.DesiredConfigBuilder;
 import com.hmdm.util.HostedFiles;
 import org.mybatis.guice.transactional.Transactional;
 import org.slf4j.Logger;
@@ -135,16 +140,11 @@ public class ConfigurationDAO extends AbstractLinkedDAO<Configuration, Applicati
     public void insertConfiguration(Configuration config) {
         insertRecord(config, configuration -> {
             this.mapper.insertConfiguration(configuration);
-            if (configuration.getApplications().size() > 0) {
-                configuration.getApplications().forEach(app -> app.setRemove(app.getAction() == 2));
-                this.mapper.insertConfigurationApplications(configuration.getId(), configuration.getApplications());
-            }
+            insertApplications(configuration);
             if (configuration.getApplicationSettings() != null && !configuration.getApplicationSettings().isEmpty()) {
                 this.mapper.insertConfigurationApplicationSettings(configuration.getId(), configuration.getApplicationSettings());
             }
-            if (configuration.getManagedAppPermissions() != null && !configuration.getManagedAppPermissions().isEmpty()) {
-                this.mapper.insertManagedAppPermissions(configuration.getId(), configuration.getManagedAppPermissions());
-            }
+            insertManagedAppPermissions(configuration);
             if (configuration.getApplicationUsageParameters() != null && !configuration.getApplicationUsageParameters().isEmpty()) {
                 this.mapper.saveConfigurationApplicationUsageParameters(configuration.getId(), configuration.getApplicationUsageParameters());
             }
@@ -156,6 +156,32 @@ public class ConfigurationDAO extends AbstractLinkedDAO<Configuration, Applicati
         });
     }
 
+    private void insertApplications(Configuration configuration) {
+        final List<Application> applications = configuration.getApplications();
+        if (applications != null && !applications.isEmpty()) {
+            applications.forEach(app -> app.setRemove(app.getAction() == 2));
+            this.mapper.insertConfigurationApplications(configuration.getId(), applications);
+        }
+    }
+
+    /**
+     * Stores the save's permission rules (none sent: the stored ones stay) for the apps the configuration installs once
+     * its apps are written, those sent or those kept. A rule for another app is dropped, not refused: another path (the
+     * Applications page, a new version) can change a configuration's apps under the editor, and the console still holds
+     * that app's rules, so refusing would make the configuration unsaveable.
+     */
+    private void insertManagedAppPermissions(Configuration configuration) {
+        if (configuration.getManagedAppPermissions() == null) return;
+        final Set<Integer> installed = this.mapper.getPlainConfigurationAppsOptimized(configuration.getId()).stream()
+                .filter(app -> app.getAction() == DesiredConfigBuilder.ACTION_INSTALL)
+                .map(Application::getId).collect(Collectors.toSet());
+        final List<ManagedAppPermission> kept = configuration.getManagedAppPermissions().stream()
+                .filter(rule -> installed.contains(rule.getApplicationId())).collect(Collectors.toList());
+        if (!kept.isEmpty()) {
+            this.mapper.insertManagedAppPermissions(configuration.getId(), kept);
+        }
+    }
+
     @Transactional
     public void updateConfiguration(Configuration config) {
         updateRecord(
@@ -163,10 +189,11 @@ public class ConfigurationDAO extends AbstractLinkedDAO<Configuration, Applicati
                 this.mapper::getConfigurationById,
                 configuration -> {
                     this.mapper.updateConfiguration(configuration);
-                    this.mapper.removeConfigurationApplicationsById(configuration.getId());
-                    if (configuration.getApplications().size() > 0) {
-                        configuration.getApplications().forEach(app -> app.setRemove(app.getAction() == 2));
-                        this.mapper.insertConfigurationApplications(configuration.getId(), configuration.getApplications());
+                    // A list the request leaves out (null) keeps what is stored; an empty list clears it. A client that
+                    // sends a configuration without its apps, files or app settings must not delete them.
+                    if (configuration.getApplications() != null) {
+                        this.mapper.removeConfigurationApplicationsById(configuration.getId());
+                        insertApplications(configuration);
                     }
 
                     this.applicationMapper.recheckConfigurationMainApplication(configuration.getId());
@@ -174,9 +201,6 @@ public class ConfigurationDAO extends AbstractLinkedDAO<Configuration, Applicati
                     // #6159: When updating the configuration via configuration editor page the state of Kiosk Mode flag
                     // is specified explicitly by the submitted form value, so there is no need to re-check the state of
                     // that flag based on presence of content app in configuration
-
-                    // A list the request leaves out (null) keeps what is stored; an empty list clears it. A client that
-                    // sends a configuration without its files or app settings must not delete them.
                     if (configuration.getApplicationSettings() != null) {
                         this.mapper.removeConfigurationApplicationSettingsById(configuration.getId());
                         if (!configuration.getApplicationSettings().isEmpty()) {
@@ -185,10 +209,8 @@ public class ConfigurationDAO extends AbstractLinkedDAO<Configuration, Applicati
                     }
                     if (configuration.getManagedAppPermissions() != null) {
                         this.mapper.removeManagedAppPermissions(configuration.getId());
-                        if (!configuration.getManagedAppPermissions().isEmpty()) {
-                            this.mapper.insertManagedAppPermissions(configuration.getId(), configuration.getManagedAppPermissions());
-                        }
                     }
+                    insertManagedAppPermissions(configuration);
                     if (configuration.getApplicationUsageParameters() != null && !configuration.getApplicationUsageParameters().isEmpty()) {
                         this.mapper.saveConfigurationApplicationUsageParameters(configuration.getId(), configuration.getApplicationUsageParameters());
                     }

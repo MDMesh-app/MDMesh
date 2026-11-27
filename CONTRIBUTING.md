@@ -6,6 +6,7 @@ Thanks for being here. Code, docs, bug reports and ideas all help. This guide ge
 - 💡 **Idea?** → [open a feature request](https://github.com/MDMesh-app/MDMesh/issues/new?template=feature_request.yml)
 - 🔧 **Code?** → read on, then send a focused PR.
 - **Security issue?** → see [SECURITY.md](SECURITY.md). Please don't file it publicly.
+- 🤖 **Using a coding agent?** → point it at [AGENTS.md](AGENTS.md).
 
 ---
 
@@ -75,7 +76,7 @@ stack.
 |------|----------|--------------|------|
 | **T0** | `t0-fast.yml` | Build + DB-free tests for each plane you touched (agent: detekt too), the supervisor smoke test, the edge (Caddy + compose) check | Every PR and push to `main` |
 | **T1** | `t1-e2e.yml` | The [Agent v1 end-to-end loop](docs/DEV.md#end-to-end-agent-loop-agent-v1) against a real server + Postgres, isolated from your dev stack | PRs and pushes to `main` that touch the server, `proto/`, `install/` or the dev stack |
-| **T2** | `t2-native.yml` | The [native rig](docs/DEV.md#t2-native-rig-native-install--upgrade): fresh install, upgrade, killed upgrade, on Debian 12, Debian 13 and Ubuntu 24.04 | PRs that touch the installers or the rig; nightly; by hand; before every release ([RELEASING.md](RELEASING.md)) |
+| **T2** | `t2-native.yml` | The [native rig](docs/DEV.md#t2-native-rig-native-install--upgrade): fresh install, upgrade, killed upgrade, on Debian 12, Debian 13 and Ubuntu 24.04 | PRs that touch the installers, the rig or a `pom.xml`; nightly; by hand; before every release ([RELEASING.md](RELEASING.md)) |
 
 The exact triggers are the path filters in each workflow under `.github/workflows/` (the `paths` job in T0/T1,
 `on.pull_request.paths` in T2). In T0 and T1, a change under `.github/`, to a compose file, a lockfile, a `package.json`, a `tsconfig*.json` or a

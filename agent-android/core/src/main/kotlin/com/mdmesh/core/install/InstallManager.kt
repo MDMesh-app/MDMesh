@@ -145,6 +145,9 @@ class InstallManager @Inject constructor(
     private val packageInstaller: PackageInstaller
         get() = context.packageManager.packageInstaller
 
+    /** For an APK named over HTTPS: a redirect doesn't take it to HTTP. One from HTTP to HTTPS is still followed. */
+    private val httpsClient by lazy { httpClient.newBuilder().followSslRedirects(false).build() }
+
     private val downloads = DownloadCache({ context.cacheDir }, owner = Process.myPid())
 
     /**
@@ -321,7 +324,9 @@ class InstallManager @Inject constructor(
     private fun download(url: String, downloaded: MutableList<File>): File {
         val dest = downloads.newFile()
         downloaded += dest
-        httpClient.newCall(Request.Builder().url(url).build()).execute().use { response ->
+        val request = Request.Builder().url(url).build()
+        val client = if (request.isHttps) httpsClient else httpClient
+        client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) error("HTTP ${response.code} for $url")
             val body = response.body ?: error("empty response body for $url")
             body.byteStream().use { input -> dest.outputStream().use { input.copyTo(it) } }

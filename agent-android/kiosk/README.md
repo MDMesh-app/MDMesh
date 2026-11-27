@@ -1,8 +1,8 @@
 # :kiosk
 
 COSU (Corporate-Owned Single-Use) lock-task / kiosk control, built independently on the
-native `DevicePolicyManager` lock-task APIs (Headwind's real COSU engine is closed
-"Pro"; OSS only ships an overlay hack).
+native `DevicePolicyManager` lock-task APIs (the upstream open-source agent only ships an
+overlay hack).
 
 This module does **not** depend on `:policy` — its result type (`KioskResult`) is
 defined locally.
@@ -16,7 +16,7 @@ defined locally.
 | `LockTaskKioskController` | real impl over `DevicePolicyManager` lock-task APIs |
 | `StubKioskController` | no-op fallback for non-Device-Owner / tests (all ops `Unsupported`) |
 | `KioskToggles` + `lockTaskFeatures()` | kiosk UI toggles → `LOCK_TASK_FEATURE_*` bitmask (`KioskFeatures.kt`) |
-| `CrashLoopGuard` | crash-loop protection (ported from Headwind `CrashLoopProtection`) |
+| `CrashLoopGuard` | crash-loop protection (ported from the upstream agent's `CrashLoopProtection`) |
 | `FaultStore` | counter persistence behind an interface |
 | `SharedPrefsFaultStore` | production store (SharedPreferences, synchronous `commit()`) |
 | `InMemoryFaultStore` | Android-free store for unit tests |
@@ -79,8 +79,19 @@ loop. `:app` is responsible for (done there, not here):
    allowlisted the package, `KioskLauncherActivity` calls `startLockTask()` in the
    foreground (and `stopLockTask()` on exit).
 
-3. **`DISALLOW_CREATE_WINDOWS`** — set by `AdminReceiver` in `onLockTaskModeEntering(...)`
-   and cleared in `onLockTaskModeExiting(...)` to block apps from drawing over the kiosk.
+3. **Kiosk guard** — `KioskApplier` arms `KioskGuard` (`:core`) before it locks a kiosk, and disarms it only
+   once lock task has ended. While armed, the device answers app permission requests itself (auto-grant; on
+   Android 12+ devices set up without admin sensor grants, the guard leaves foreground sensor requests to Android
+   and denies the kiosk apps the background ones), the kiosk apps can't be stopped, cleared or uninstalled
+   (`DISALLOW_APPS_CONTROL`, an uninstall block per app), factory reset and installs from unknown sources are
+   blocked, and `DISALLOW_CREATE_WINDOWS` keeps other apps from drawing over the kiosk. Disarming puts back the
+   permission policy the device had (auto-grant on an Android 12+ QR-provisioned device, so nothing asks after kiosk
+   either; a device that asked before asks again, the grants made in kiosk released to revocable ones), and sets
+   Factory reset to what the configuration says (or, when it doesn't manage it, what the device had).
+   `AdminReceiver`'s
+   `onLockTaskModeEntering`/`onLockTaskModeExiting` reconcile it whatever started or stopped lock task.
+   `KioskGuardControl` (here) is its device seam. After an agent update and at boot, a kiosk saved with lock task off
+   is shown again (`KioskApplier.returnToKiosk`).
 
 4. **Crash-loop wiring** — `KioskLauncherActivity` gets a `CrashLoopGuard` from Hilt and
    calls `registerFault()` each time the pinned single app returns to HOME; once

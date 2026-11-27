@@ -21,11 +21,11 @@ run: only `GITHUB_REPO` and `GITHUB_TOKEN` survive a hand edit there (a hand-edi
 | `BASE_URL` | `.env`; native: env or prompt → `ROOT.xml` | none | Public address of the server ([rules](#base-url-and-hostname-rules)). Open the console there to make enrollment QR codes: a code carries the address the console is open at, and Enroll warns when that isn't `BASE_URL`. |
 | `HTTP_PORT` | native env | current port; fresh install `8080` | Tomcat's HTTP port. |
 | `REPLACE_DATA` | native env | asks; `-y`: keep | `yes` erases existing data on a re-run. |
-| `DB_PASSWORD`, `HASH_SECRET` | `.env`; native: `ROOT.xml` | generated | Don't change them: the database keeps its original password, and a new `HASH_SECRET` breaks devices running the legacy Headwind launcher (MDMesh agents don't use it). |
+| `DB_PASSWORD`, `HASH_SECRET` | `.env`; native: `ROOT.xml` | generated | Don't change them: the database keeps its original password, and a new `HASH_SECRET` breaks devices running the legacy launcher (MDMesh agents don't use it). |
 | `SERVER_JWT_SECRET` | `.env`; native: `ROOT.xml` `jwt.secretkey` | generated | API token signing key ([details](#api-signing-key-jwt)). |
 | `SERVER_JAVA_OPTS` | `.env` (native: `JAVA_OPTS` in a `systemctl edit mdmesh-server` drop-in) | empty | Extra JVM flags, e.g. `-Xmx1g`. The server always adds `-XX:-UseBASE64Intrinsics` after them (CVE-2026-114938, OpenJDK). |
-| `LEGACY_DEVICE_API` | `.env`; native env → `ROOT.xml` | `0` | `1` re-enables the Headwind launcher's device routes. Launcher devices need a configuration that no MDMesh agent device uses and no agent enrollment code enrolls into (a code without a configuration enrolls into the default one for new devices); in any other, the launcher gets an error. The routes answer requests for an agent device with the launcher's device-not-found error. |
-| `SECURE_ENROLLMENT` | `.env`; native: always `0` | `0` | Legacy Headwind setting. Leave it at `0`: `1` blocks agent downloads. |
+| `LEGACY_DEVICE_API` | `.env`; native env → `ROOT.xml` | `0` | `1` re-enables the device routes of the legacy launcher: the Headwind MDM launcher app (`com.hmdm.launcher`), which devices set up before the MDMesh agent may still run. The docs call it the legacy launcher. Launcher devices need a configuration that no MDMesh agent device uses and no agent enrollment code enrolls into (a code without a configuration enrolls into the default one for new devices); in any other, the launcher gets an error. The routes answer requests for an agent device with the launcher's device-not-found error. |
+| `SECURE_ENROLLMENT` | `.env`; native: always `0` | `0` | Legacy launcher setting. Leave it at `0`: `1` blocks agent downloads. |
 | `SMTP_HOST`, `SMTP_PORT` | `.env`; native env → `ROOT.xml` | empty, `25` | Mail server for password recovery and kiosk alerts. Empty host: no email. |
 | `SMTP_FROM` | same | `mdm@<hostname>` (Docker), `mdm@localhost` (native) | Sender address. |
 | `SMTP_USERNAME`, `SMTP_PASSWORD` | same | empty | Mail login. |
@@ -56,7 +56,7 @@ of [your own edge rules](../DEPLOY.md#your-own-edge-rules).
 | `SUPERVISOR_VERSION` | `.env` | quick start: the installed release by digest | Supervisor image tag. When it is `latest` or a digest pin, each update moves it to the release's signed digest; `docker compose up -d` then starts that supervisor. Any other value is left alone. |
 | `APPLY_SUPPORTED` | `.env` (native: always `0`) | `1` with a registry `IMAGE_OWNER`, else `0` | `1` shows one-click **Update**, `0` shows manual steps. |
 | `AUTO_UPDATE` | `.env` | `0` | `1` applies releases unattended ([details](UPGRADING.md#quick-start-installs)). |
-| `HEALTH_TIMEOUT` | `.env` (not on native) | `180` | Seconds a new server gets to answer after an update or a rollback before it counts as failed (an update is then rolled back). At least `30`: a smaller value, `0` included (it doesn't mean "no limit"), is ignored and the supervisor's log says so. Raise it when a release's database update may take longer on your data. Read from `.env` when an update starts, so adding a line there is enough; supervisors before this release ignore it ([Upgrading](UPGRADING.md#unreleased)). |
+| `HEALTH_TIMEOUT` | `.env` (not on native) | `180` | Seconds a new server gets to answer after an update or a rollback before it counts as failed (an update is then rolled back). At least `30`: a smaller value, `0` included (it doesn't mean "no limit"), is ignored and the supervisor's log says so. Raise it when a release's database update may take longer on your data. Read from `.env` when an update starts, so adding a line there is enough; supervisors before 0.6.0 ignore it ([Upgrading](UPGRADING.md#v060)). |
 
 `./setup.sh` rewrites the version variables and `APPLY_SUPPORTED` from the clone on every run
 ([Upgrading](UPGRADING.md#from-source-docker-installs)).
@@ -235,7 +235,7 @@ Your proxy must also set the headers itself and not pass on what the device sent
   so a proxy that appends still gets the right address recorded, but overwriting leaves a device nothing to set.)
 - Remove `CF-Connecting-IP`, unless the proxy is cloudflared, or sits behind Cloudflare and accepts connections only
   from Cloudflare. Otherwise a client that bypasses Cloudflare can set it.
-- Overwrite `X-Real-IP` the same way. Code inherited from Headwind reads it from a proxy on the same host (or one
+- Overwrite `X-Real-IP` the same way. Inherited code reads it from a proxy on the same host (or one
   listed in `proxy.addresses`): the IP allowlists `ui.allowed.address` and `device.allowed.address`, and the audit log.
   An allowlist blocks a request whose `X-Real-IP` isn't an IP address. When the proxy sends no `X-Real-IP`, the audit
   log takes the last `X-Forwarded-For` entry, as the sign-in limit does.
@@ -399,14 +399,23 @@ check-in).
 ## Backups and restore
 
 **Docker.** One-click updates dump the database first, and a rollback restores that dump
-([Upgrading](UPGRADING.md#recovery-and-rollback)). `./setup.sh` takes no dump, so before a from-source upgrade make
-one yourself:
+([Upgrading](UPGRADING.md#recovery-and-rollback)). From source, `./setup.sh` (and so `--update`) dumps it before it
+moves the install to another version, with the command below, to
+`backups/pre-update-<time>-from-<version>.dump` in the clone: `<time>` in UTC, `<version>` the release the dump belongs
+to. The dumps are readable by their owner only, and they stay until you remove them.
+A checkout without a release tag takes none: make one with the command below. A stopped postgres is started for the
+dump. setup.sh stops before it changes the install when it can't take it: when postgres doesn't start, the dump fails,
+or `backups/` has less free space than the database takes (free some, or make `backups` a link to a directory on a
+larger disk). The install still runs its version, and only the clone has moved (to the new release, after `--update`):
+run `./setup.sh` again once fixed, or `git checkout -` to go back to the code the install runs. A dump by hand, at any
+time:
 
 ```bash
 docker compose exec -T postgres pg_dump -U mdmesh -Fc mdmesh > mdmesh-pre-upgrade.dump
 ```
 
-To go back to it, stop the server, restore, then build the release the dump was taken on:
+To go back to it, stop the server, restore, then build the release the dump was taken on (for one of setup.sh's, use
+its `backups/…` file in place of `mdmesh-pre-upgrade.dump`):
 
 ```bash
 docker compose stop server
@@ -568,7 +577,7 @@ It never touches apt packages, your proxy or the git checkout.
   the database and server ports. The agent speaks HTTPS only.
 - The admin must set a new password at first sign-in. A database the server created without an installer run has an
   admin no password works for, until an installer (or `scripts/dev-seed.sh`) sets one.
-- The Headwind launcher endpoints are off by default (404). MQTT push is off; agents are woken over a WebSocket.
+- The legacy launcher endpoints are off by default (404). MQTT push is off; agents are woken over a WebSocket.
 - The supervisor mounts the Docker socket, so it is trusted. It acts only on minisign-verified manifests, runs only
   the images they pin by digest, and answers only authorized callers (the recovery token, or the session of an admin
   who may update: a super-admin, or the org admin of a single-customer install). Apply and rollback only recreate

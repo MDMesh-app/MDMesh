@@ -1,5 +1,5 @@
 /*
- * MDMesh: fork of Headwind MDM. Apache-2.0.
+ * Copyright (C) 2026 the MDMesh contributors. Licensed under the Apache License, Version 2.0.
  */
 package com.hmdm.persistence;
 
@@ -415,13 +415,14 @@ public class DeviceHistoryOnDeleteTest {
                     injector.getInstance(com.hmdm.persistence.mapper.DeviceStateMapper.class),
                     injector.getInstance(com.hmdm.persistence.mapper.DeviceEventMapper.class)) {
                 @Override
-                public void touchLastUpdate(String deviceNumber) {
+                public String getDeviceSecretHash(String deviceNumber) {
+                    String hash = super.getDeviceSecretHash(deviceNumber);
                     try {
                         sql("DELETE FROM " + schema + ".devices WHERE id = " + id);
                     } catch (Exception e) {
                         throw new IllegalStateException(e);
                     }
-                    super.touchLastUpdate(deviceNumber);
+                    return hash;
                 }
             };
             com.hmdm.rest.resource.AgentResource resource = new com.hmdm.rest.resource.AgentResource(
@@ -430,11 +431,12 @@ public class DeviceHistoryOnDeleteTest {
             request.setDeviceId(number);
             if (withState) {
                 request.setState(new com.hmdm.rest.json.agent.AgentDeviceState());
+            } else {
+                com.hmdm.rest.json.agent.AgentTelemetryEvent event = new com.hmdm.rest.json.agent.AgentTelemetryEvent();
+                event.setType("boot");
+                event.setTs(1L);
+                request.setEvents(Collections.singletonList(event));
             }
-            com.hmdm.rest.json.agent.AgentTelemetryEvent event = new com.hmdm.rest.json.agent.AgentTelemetryEvent();
-            event.setType("boot");
-            event.setTs(1L);
-            request.setEvents(Collections.singletonList(event));
 
             com.hmdm.rest.json.Response response = resource.checkin("Bearer " + secret, null, request);
 
@@ -631,6 +633,11 @@ public class DeviceHistoryOnDeleteTest {
 
     @Test
     public void aCheckInWaitsForADeleteInProgressThenAnswersAsAnUnknownDevice() throws Exception {
+        checkInWaitsForADelete(false);
+        checkInWaitsForADelete(true); // its first write is the state's, refused by the history foreign key
+    }
+
+    private void checkInWaitsForADelete(boolean withState) throws Exception {
         String number = "inflight-" + UUID.randomUUID();
         int id = deviceWithHistory(number);
         String secret = "secret-" + UUID.randomUUID();
@@ -643,10 +650,14 @@ public class DeviceHistoryOnDeleteTest {
             int deleterPid = backendPid(deleter);
             com.hmdm.rest.json.agent.AgentCheckInRequest request = new com.hmdm.rest.json.agent.AgentCheckInRequest();
             request.setDeviceId(number);
-            com.hmdm.rest.json.agent.AgentTelemetryEvent event = new com.hmdm.rest.json.agent.AgentTelemetryEvent();
-            event.setType("boot");
-            event.setTs(1L);
-            request.setEvents(Collections.singletonList(event));
+            if (withState) {
+                request.setState(new com.hmdm.rest.json.agent.AgentDeviceState());
+            } else {
+                com.hmdm.rest.json.agent.AgentTelemetryEvent event = new com.hmdm.rest.json.agent.AgentTelemetryEvent();
+                event.setType("boot");
+                event.setTs(1L);
+                request.setEvents(Collections.singletonList(event));
+            }
             // It still sees the device and authenticates, then its writes wait for the delete.
             java.util.concurrent.Future<com.hmdm.rest.json.Response> checkin = pool.submit(() ->
                     agentResource(injector.getInstance(AgentCommandDAO.class)).checkin("Bearer " + secret, null, request));

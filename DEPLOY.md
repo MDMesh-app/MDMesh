@@ -287,7 +287,7 @@ edge doesn't start with your rules (a rule the new Caddy refuses) is rolled back
 fails its health check; `docker compose logs caddy` says which rule. `.env`'s
 `MDMESH_SITE_DIR` names the directory (an absolute path, so the updater mounts the same one). An install from
 before 0.6.0 gets it at its first `./setup.sh` run (from source), or as in
-[Upgrading, Unreleased](docs/UPGRADING.md#unreleased) (quick start).
+[Upgrading, v0.6.0](docs/UPGRADING.md#v060) (quick start).
 
 ## Option B — from source (clone + build)
 
@@ -303,7 +303,9 @@ is skipped, saying so; over an install it never goes below the release the clone
 newest tags. If GitHub
 can't be reached (a timeout, DNS, TLS or a server error, each retried twice), it stops and changes nothing. It also
 stops on a manifest that doesn't verify (or, from before 0.5.0, names no commit) and on local changes. Run the same
-command to update later; the clone stays on a release tag, so don't `git pull`.
+command to update later; the clone stays on a release tag, so don't `git pull`. Before it moves the install to another
+version, setup.sh dumps the database to `backups/` in the clone
+([Backups and restore](docs/OPERATIONS.md#backups-and-restore)).
 
 A clone from 0.4.x has no `--update` yet. Move it to 0.5.0 once, whether it is on `main` or on a release tag:
 `git fetch --tags && git checkout v0.5.0 && ./setup.sh --update` (native: `git fetch --tags && git checkout v0.5.0 && sudo ./setup.sh --update --native`). Git refuses the checkout if it

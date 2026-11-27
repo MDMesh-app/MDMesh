@@ -123,6 +123,29 @@ scripts/licenses/inventory.py --write --war server/target/launcher.war --web web
 `agent-android/`). A Dependabot pull request that brings in a new component shows the warning: review the component,
 and update the inventory in the pull request, or in the next one.
 
+## Files kept from upstream
+
+MDMesh started from Headwind MDM's server at upstream commit `daed2099` (May 2026, after release 5.39.2).
+[upstream-files.tsv](upstream-files.tsv) lists every file kept from it, with the file's blob there and whether it
+carried the upstream copyright header. Apache-2.0 asks two things of them:
+
+- A file MDMesh changed says so (section 4(b)): `Modified by the MDMesh contributors.` under the upstream copyright
+  line, or, in a file upstream left without a header, a first-line comment `Derived from Headwind MDM (Apache-2.0);
+  modified by the MDMesh contributors.` `scripts/licenses/headers.py mark PATH` adds the right one. A JSON file can't
+  carry a comment: the list says so, and NOTICE points to it.
+- A file keeps the upstream header it had: the copyright line and the licence notice (section 4(c)). Never remove
+  them to make a check pass.
+
+A file that comes from an upstream one under another path (moved, copied, or ported from another Headwind MDM file)
+is a kept file too: it keeps its upstream header, and gets a row with `derived from <upstream path>` in the blob
+column, then `mark`. The agent files ported from the upstream Android agent are listed the same way (`ported from
+hmdm-android`) and say what changed. Only a file MDMesh wrote itself carries the MDMesh header instead
+(`Copyright (C) 2026 the MDMesh contributors. Licensed under the Apache License, Version 2.0.`).
+
+The licences workflow runs `scripts/licenses/headers.py check` on every pull request. When the first change to a
+kept file fails it, run `mark` on the file. When a kept file moves, change its path in the list; remove its row only
+when the file is deleted.
+
 ## Code copied from elsewhere
 
 No build sees source code copied into the repository. Don't copy code from a project under a licence this page

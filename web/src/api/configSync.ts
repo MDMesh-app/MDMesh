@@ -53,7 +53,8 @@ export function parseOutcomes(detail: string | null | undefined): ConfigOutcomes
 /**
  * Applied revision an agent reports when its configuration is out of date on the device, so the server re-sends it:
  * after turning Wi-Fi back on by itself (Wi-Fi radio self-heal, 0.3.4+), recovering storage, lifting Factory reset:
- * Block for a wipe, holding a newer configuration that didn't fully apply, or failing to re-apply it after a restart.
+ * Block for a wipe, holding a newer configuration that didn't fully apply, failing to re-apply it after a restart, or
+ * holding none (its store was lost, or nothing was applied yet; 0.6.0+).
  */
 export const DEVICE_RESET_REVISION = '0'.repeat(64);
 export const DEVICE_RESET_LABEL = 'Out of date on the device';

@@ -62,7 +62,10 @@ interface ConfigStateStore {
 
 /**
  * The revision the check-in reports as applied: [ConfigStateStore.STALE_REVISION] while the newest delivered
- * document is not the saved one (a section of it failed), else the saved revision.
+ * document is not the saved one (a section of it failed) or none is saved, else the saved revision.
+ *
+ * Never null: the server keeps the last revision it stored for a missing one, so a device whose store was lost would
+ * show in sync with a configuration it no longer has and never be sent it again.
  *
  * The boot re-apply replays the newest delivered document, so the saved revision alone would claim a document the
  * device no longer follows. After a revert to exactly the saved document the server would see it in sync and never
@@ -70,9 +73,10 @@ interface ConfigStateStore {
  * that differs from the last config.apply it sent (a revert), after its usual backoff otherwise.
  * [ConfigStateStore.revision] itself is left as it is.
  */
-fun ConfigStateStore.reportedRevision(): String? {
-    val newest = delivered?.revision
-    return if (newest != null && newest != revision()) ConfigStateStore.STALE_REVISION else revision()
+fun ConfigStateStore.reportedRevision(): String {
+    val saved = revision() ?: return ConfigStateStore.STALE_REVISION
+    val newest = delivered?.revision ?: saved
+    return if (newest == saved) saved else ConfigStateStore.STALE_REVISION
 }
 
 /** A newer document with kiosk disabled must win even if an unrelated section failed to apply. */
@@ -96,7 +100,7 @@ class SharedPrefsConfigStateStore(context: Context) : ConfigStateStore {
         awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
     }.distinctUntilChanged()
     override fun save(doc: ConfigApplyPayload) {
-        prefs.edit().putString(KEY_DOC, ConfigStateCodec.encode(doc)).putString(KEY_REV, doc.revision).apply()
+        prefs.edit().putString(KEY_DOC, ConfigStateCodec.encode(doc)).putString(KEY_REV, doc.revision).commit()
     }
     override fun load(): ConfigApplyPayload? = ConfigStateCodec.decode(prefs.getString(KEY_DOC, null))
     override fun revision(): String? = prefs.getString(KEY_REV, null)
@@ -108,7 +112,7 @@ class SharedPrefsConfigStateStore(context: Context) : ConfigStateStore {
             .remove(KEY_UNRELEASED)
             .remove(KEY_APP_PERMISSIONS)
             .remove(KEY_HOLD_ENDED)
-            .apply()
+            .commit()
     }
     override fun markStale() { prefs.edit().putString(KEY_REV, ConfigStateStore.STALE_REVISION).commit() }
     override var delivered: ConfigApplyPayload?

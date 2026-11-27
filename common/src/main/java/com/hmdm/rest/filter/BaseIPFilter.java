@@ -1,3 +1,4 @@
+// Derived from Headwind MDM (Apache-2.0); modified by the MDMesh contributors.
 package com.hmdm.rest.filter;
 
 import com.google.common.net.InetAddresses;

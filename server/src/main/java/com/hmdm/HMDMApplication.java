@@ -1,3 +1,4 @@
+// Derived from Headwind MDM (Apache-2.0); modified by the MDMesh contributors.
 package com.hmdm;
 
 import com.google.inject.Injector;
@@ -40,7 +41,7 @@ public class HMDMApplication extends ResourceConfig {
                 guiceBridge.bridgeGuiceInjector(injector);
 
                 BeanConfig beanConfig = new BeanConfig();
-                beanConfig.setTitle("Headwind MDM API");
+                beanConfig.setTitle("MDMesh API");
                 beanConfig.setVersion("0.0.2");
                 beanConfig.setSchemes(new String[]{"http"});
                 beanConfig.setBasePath(servletContainer.getServletContext().getContextPath() + "/rest");

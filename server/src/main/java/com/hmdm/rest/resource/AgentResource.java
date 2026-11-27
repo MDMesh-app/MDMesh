@@ -1,22 +1,5 @@
 /*
- *
- * Headwind MDM: Open Source Android MDM Software
- * https://h-mdm.com
- *
- * Copyright (C) 2019 Headwind Solutions LLC (http://h-sms.com)
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
+ * Copyright (C) 2026 the MDMesh contributors. Licensed under the Apache License, Version 2.0.
  */
 
 package com.hmdm.rest.resource;
@@ -412,9 +395,6 @@ public class AgentResource {
         // one the agent is not running (ConfigReconciler).
         long receivedAt = System.currentTimeMillis();
 
-        // Stamp last-seen so the admin UI shows the device online.
-        commandDAO.touchLastUpdate(deviceNumber);
-
         if (device.getWipedAt() != null && receivedAt - device.getWipedAt() > WIPE_GRACE_MS
                 && commandDAO.clearWipedBefore(deviceNumber, receivedAt - WIPE_GRACE_MS)) {
             logger.info("Device {} checked in after its wipe was delivered, so it wasn't wiped: unmarked", deviceNumber);
@@ -443,7 +423,6 @@ public class AgentResource {
         // Persist the latest device-state snapshot (powers the admin console).
         String appliedRevision = validRevision(deviceNumber,
                 request.getState() == null ? null : request.getState().getAppliedConfigRevision());
-        // A state value the database can't store would fail its write, and with it every check-in from the device.
         String agentVersion = request.getState() == null ? null : storable("Device " + deviceNumber, "agentVersion",
                 request.getState().getAgentVersion(), MAX_AGENT_VERSION_CHARS);
         if (request.getState() != null) {
@@ -479,15 +458,30 @@ public class AgentResource {
             row.setTelemetry(telJson);
             row.setReportedImeis(reportedImeis(tel));
             row.setUpdatedAt(System.currentTimeMillis());
-            commandDAO.upsertState(row);
-            // Mirror the Android version into the device row (infojson) so the device LIST — which
-            // reads infojson->>'androidVersion', not the state table — shows it.
-            if (androidRelease != null && !androidRelease.isEmpty()) {
-                commandDAO.updateAndroidVersion(deviceNumber, androidRelease);
+            try {
+                commandDAO.upsertState(row);
+                // Mirror the Android version into the device row (infojson) so the device LIST — which
+                // reads infojson->>'androidVersion', not the state table — shows it.
+                if (androidRelease != null && !androidRelease.isEmpty()) {
+                    commandDAO.updateAndroidVersion(deviceNumber, androidRelease);
+                }
+            } catch (PersistenceException ex) {
+                // A state the database refuses is skipped (the last one stored stays): the device would send it again
+                // on every check-in and never get a command. Outside any transaction, so a refused statement leaves
+                // the rest of the check-in alone. An error that isn't the state's fault fails the check-in.
+                if (!isDataError(ex)) {
+                    throw ex;
+                }
+                warnIgnored("Device " + deviceNumber, "state", "refused by the database (SQL state "
+                        + sqlState(ex).orElse(null) + ")");
             }
             // Append the reported location (dynamic.location) to the device's breadcrumb trail.
             recordLocation(deviceNumber, tel);
         }
+
+        // Stamp last-seen so the admin UI shows the device online: after the state, so a check-in that fails on its
+        // write doesn't.
+        commandDAO.touchLastUpdate(deviceNumber);
 
         int eventsAccepted = ingestEvents(device, request.getEvents(),
                 AgentProtocol.atLeast(request.getProtocolVersion(), 1, 12));
@@ -772,19 +766,28 @@ public class AgentResource {
         return out.toString();
     }
 
-    /**
-     * One WARN per sender and field an hour for a value {@link #storable} ignores, DEBUG for the repeats: a device
-     * keeps reporting the same value on every check-in (every 5 s in the foreground). Keyed by authenticated device
-     * or token, capped all the same.
-     */
+    /** {@link #warnIgnored}'s limit. Keyed by authenticated device or token, capped all the same. */
     private static final WindowLimiter IGNORED_VALUE_WARNINGS =
             new WindowLimiter(WindowLimiter.MONOTONIC, 60L * 60L * 1000L, 1, 10_000, 20);
 
     /**
+     * One WARN per sender and field an hour for a device-sent value the server ignores, DEBUG for the repeats: a device
+     * keeps reporting the same value on every check-in (every 5 s in the foreground).
+     */
+    private static void warnIgnored(String who, String field, String reason) {
+        String message = "{}: {} ignored, {}";
+        if (IGNORED_VALUE_WARNINGS.tryAcquire(who + "/" + field)) {
+            logger.warn(message, who, field, reason);
+        } else {
+            logger.debug(message, who, field, reason);
+        }
+    }
+
+    /**
      * The trimmed {@code value} of {@code field} a device sent, or null when there is none, it carries a control
      * character (PostgreSQL refuses a NUL) or it is longer than its column's {@code max}: such a value would fail its
-     * write, and with it every check-in (or enroll) from the device. {@code who} names the sender in the log: the
-     * device, or the enrollment's token.
+     * write, and with it the enroll or the check-in, or cost the device its state. {@code who} names the sender in the
+     * log: the device, or the enrollment's token.
      */
     static String storable(String who, String field, String value, int max) {
         String v = value == null ? null : value.trim();
@@ -792,13 +795,8 @@ public class AgentResource {
             return null;
         }
         if (v.chars().anyMatch(Character::isISOControl) || v.length() > max) {
-            String message = "{}: {} ignored, the server can't store it ({} characters, at most {}, no control "
-                    + "characters)";
-            if (IGNORED_VALUE_WARNINGS.tryAcquire(who + "/" + field)) {
-                logger.warn(message, who, field, v.length(), max);
-            } else {
-                logger.debug(message, who, field, v.length(), max);
-            }
+            warnIgnored(who, field, "the server can't store it (" + v.length() + " characters, at most " + max
+                    + ", no control characters)");
             return null;
         }
         return v;

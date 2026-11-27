@@ -7,12 +7,12 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.PersistableBundle
-import android.os.UserManager
 import com.mdmesh.agent.service.CheckInService
 import com.mdmesh.core.config.ServerConfigStore
 import com.mdmesh.core.location.LocationPermissions
 import com.mdmesh.core.store.AgentDataStores
 import com.mdmesh.core.sync.CheckInWorker
+import com.mdmesh.core.sync.KioskGuardWorker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -71,16 +71,19 @@ class AdminReceiver : DeviceAdminReceiver() {
         }
     }
 
-    /** Entering kiosk: block other apps/services from drawing toasts/dialogs over the kiosk. */
+    /**
+     * Lock task entered, by whatever path: the kiosk guard (KioskGuard: overlays, permission prompts, kiosk app
+     * protection) is armed before every kiosk entry; this is the backstop where every path meets.
+     */
     override fun onLockTaskModeEntering(context: Context, intent: Intent, pkg: String) {
         super.onLockTaskModeEntering(context, intent, pkg)
-        setCreateWindowsRestriction(context, restrict = true)
+        KioskGuardWorker.schedule(context)
     }
 
-    /** Leaving kiosk: allow overlays again. */
+    /** Lock task left: the guard is disarmed once nothing keeps the device in kiosk (an exit may wait on this). */
     override fun onLockTaskModeExiting(context: Context, intent: Intent) {
         super.onLockTaskModeExiting(context, intent)
-        setCreateWindowsRestriction(context, restrict = false)
+        KioskGuardWorker.schedule(context)
     }
 
     /**
@@ -120,19 +123,6 @@ class AdminReceiver : DeviceAdminReceiver() {
                 ?: return
             if (!dpm.isDeviceOwnerApp(context.packageName)) return
             dpm.setUserControlDisabledPackages(componentName(context), listOf(context.packageName))
-        }
-    }
-
-    private fun setCreateWindowsRestriction(context: Context, restrict: Boolean) {
-        runCatching {
-            val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
-            if (!dpm.isDeviceOwnerApp(context.packageName)) return
-            val admin = componentName(context)
-            if (restrict) {
-                dpm.addUserRestriction(admin, UserManager.DISALLOW_CREATE_WINDOWS)
-            } else {
-                dpm.clearUserRestriction(admin, UserManager.DISALLOW_CREATE_WINDOWS)
-            }
         }
     }
 

@@ -12,6 +12,7 @@ import com.mdmesh.core.config.ConfigApplier
 import com.mdmesh.core.kiosk.KioskApplier
 import com.mdmesh.core.store.AgentDataStores
 import com.mdmesh.core.telemetry.EventSink
+import com.mdmesh.kiosk.KioskResult
 import com.mdmesh.proto.ConfigApplyResult
 import com.mdmesh.proto.ConfigOutcome
 import com.mdmesh.proto.EventType
@@ -44,6 +45,11 @@ class ConfigReapplyWorker @AssistedInject constructor(
             // An on-device or remote exit cut off by a reboot is finished first, so the re-apply below doesn't build
             // on it.
             "interrupted kiosk exit" to suspend { kiosk.resumeInterruptedExit(); null },
+            // Before anything else touches the kiosk: a guard cut off mid-arm or mid-disarm (or an agent updated
+            // in kiosk from a version without one) is settled at once, with no server round-trip.
+            "kiosk guard" to suspend { (kiosk.reconcileGuard() as? KioskResult.Failed)?.reason },
+            // A kiosk the device was taken out of without an exit (an agent update ends lock task) comes back.
+            "kiosk return" to suspend { kiosk.returnToKiosk(); null },
             "stale volume lock" to suspend { kiosk.releaseStaleVolumeLock(); null },
             "config re-apply" to suspend { applier.reapplyPersisted()?.let(ReapplySteps::failedOutcomes) },
         )

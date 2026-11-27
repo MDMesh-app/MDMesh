@@ -1,3 +1,4 @@
+# Derived from Headwind MDM (Apache-2.0); modified by the MDMesh contributors.
 # maven target dir
 target
 
@@ -74,9 +75,12 @@ Thumbs.db
 *~
 *.swp
 
-# Maintainer-local Claude Code notes
-/CLAUDE.md
+# Maintainer-local Claude Code notes (CLAUDE.md and AGENTS.md are shared)
+/CLAUDE.local.md
 
 # tests/rollback-e2e: dind + registry storage of a run
 tests/rollback-e2e/.e2e-data/
 tests/proxy-e2e/.e2e-data/
+
+# setup.sh: the database dumps it takes before an update
+/backups

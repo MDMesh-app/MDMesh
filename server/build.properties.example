@@ -1,3 +1,4 @@
+# Derived from Headwind MDM (Apache-2.0); modified by the MDMesh contributors.
 # This is a sample file; copy this file to build.properties
 
 # database settings
@@ -24,7 +25,7 @@ usage.scenario=private
 # 0 or empty value does not require request signature which is less secure
 secure.enrollment=0
 
-# 1 turns on the Headwind launcher device routes (/rest/public/sync/*, notifications, plugin device uploads) and the
+# 1 turns on the legacy launcher device routes (/rest/public/sync/*, notifications, plugin device uploads) and the
 # MQTT broker. The MDMesh agent never uses them; 0 or empty answers them with 404.
 legacy.device.api=0
 
@@ -51,7 +52,7 @@ plugin.devicelog.persistence.config.class=com.hmdm.plugins.devicelog.persistence
 # MQTT notification server local URI
 mqtt.server.uri=localhost:31000
 
-# MQTT authentication for more security (supported by Headwind MDM launcher v5.05 and above)
+# MQTT authentication for more security (supported by legacy launcher v5.05 and above)
 mqtt.auth=true
 
 # Delaying MQTT messages in milliseconds to avoid congestion

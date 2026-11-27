@@ -51,6 +51,10 @@ updates:
       # don't run against a database. 3.6.1+ still comes through, to be checked against a real database first.
       - dependency-name: "org.mybatis:mybatis"
         versions: ["[3.6,3.6.1)"]
+      # license-maven-plugin 2.8+ needs Maven 3.9; native installs build with the distro's Maven, which is 3.8.7 on
+      # Debian 12 and Ubuntu 24.04. Lifted when install-native.sh supports neither.
+      - dependency-name: "org.codehaus.mojo:license-maven-plugin"
+        versions: ["[2.8,)"]
   - package-ecosystem: npm
     directory: "/web"
     schedule: { interval: weekly, day: monday }
@@ -127,8 +131,9 @@ updates:
     schedule: { interval: weekly, day: monday }
     groups:
       compose-images: { patterns: ["*"] }
-    # Scans docker-compose*.yml. Our own ghcr.io/.../mdmesh-* images use ${VAR:-latest} tags and are skipped;
-    # cloudflared is :latest (nothing to bump).
+    # Scans docker-compose*.yml. Our own ghcr.io/.../mdmesh-* images use ${VAR:-latest} tags and are skipped.
+    # postgres and cloudflared are tag@sha256:<index digest>: a bump moves tag and digest together (a same-tag rebuild
+    # too), and a tag suffix (-trixie) only moves to the same suffix. T0's edge job checks every pin.
     ignore:
       # Postgres stays on 14.x: a new major cannot open an existing 14 data directory (dump/restore or
       # pg_upgrade). Move it only in a planned database migration.

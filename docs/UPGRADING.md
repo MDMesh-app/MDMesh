@@ -19,7 +19,7 @@ updater on, the edge must also stay up)
 `docker compose logs supervisor` (native: `journalctl -u mdmesh-supervisor`).
 
 If the update on offer skips over a release that fixed security issues (say this server runs 0.5.0, 0.5.1 fixed one,
-and 0.5.2 is on offer), the console says so in amber: the sidebar and Overview cards say the update "includes security
+and 0.6.0 is on offer), the console says so in amber: the sidebar and Overview cards say the update "includes security
 fixes from 0.5.1 that this server is missing", the Settings list marks Updates "Security fixes", and Settings →
 Updates names the releases and links their notes. The list is the signed manifest's `securityReleases` (every release
 whose changelog has a Security section), read only from a manifest that verified; the supervisor reports the skipped
@@ -71,7 +71,10 @@ already has `--update` can be ahead of the newest release: over an install, `--u
 older code. Wait for the next release and run it then, or pass `--allow-downgrade` to go to the release now. A clone
 still on a release branch (`release/vX.Y.Z`, squash-merged into the release) is not ahead: `--update` moves it on.
 
-setup.sh takes no backup, so dump the database first ([command](OPERATIONS.md#backups-and-restore)). Don't use
+From 0.6.0, setup.sh dumps the database to `backups/` in the clone before it moves the install to another version, and
+stops before it changes the install when it can't, with the clone left on the new release
+([where the dumps go, what to do then, and how to restore one](OPERATIONS.md#backups-and-restore)).
+The update to 0.6.0 is the first that does: it is 0.6.0's setup.sh that runs it. Don't use
 `docker compose up -d --build` alone: only setup.sh updates `CURRENT_VERSION` and the image tags from the
 checkout's release tag. Without a release tag, it keeps the old values and warns.
 
@@ -260,13 +263,21 @@ don't get Clear PIN lockout (the console disables it for a device on an older ag
 older agents). It also works with a 0.4.0 server, which sends none of these and ignores the attempt id: an
 enrollment there works as before, it just can't be resumed.
 
+Agent 0.6.0 speaks protocol 1.12: after a long offline period it sends up to 500 kept events in a check-in and
+sends again the ones the server didn't take, and it reports how many a full buffer dropped. It also works with a 0.5.x
+server, which takes the first 100 of a check-in's events: the agent then sends at most 100 at a time
+([VERSIONING](../proto/VERSIONING.md)).
+
 Downgrading the agent below 0.5.1 and upgrading again can bring back agent state removed meanwhile, such as a kiosk
 exited or credentials cleared while the older agent ran.
 
 ## Version notes
 
-### Unreleased
+### v0.6.0
 
+- **From source, setup.sh backs up the database before an update** (this one included), to `backups/` in the clone. It
+  needs free space there of at least the database's size, and stops before it changes the install when it can't take
+  the dump; run it again once fixed, or `git checkout -` to go back ([Backups and restore](OPERATIONS.md#backups-and-restore)).
 - **The database update deletes the history of deleted devices.** Before, deleting a device left its commands, state,
   events and locations behind, and a device added later with the same number showed them. On its first start the
   server deletes those rows (no screen showed them), then links each history table to its device, so deleting a device
@@ -276,6 +287,8 @@ exited or credentials cleared while the older agent ran.
   Measured on a 6-core test server with 5 million events and 1 million locations (1.3 GB, 9% of it from deleted
   devices): 2.4 seconds, on top of the usual start. Expect longer on slow disks. The server answers once it is done,
   and agents retry their check-ins meanwhile.
+- **The database update adds `device_state.reportedImeis`**, filled once from each device's last check-in, so the
+  device search finds the IMEIs agents report, also for a device that hasn't checked in since the update.
 - **Quick start rolls an update back when the new server isn't healthy within 180 seconds.** With a very large
   history (tens of GB) or very slow storage, this first start could take longer, and the update would be rolled back
   each time. Take a backup first. To give it longer, add `HEALTH_TIMEOUT=900` (seconds, at least 30) to `.env` in
@@ -286,11 +299,13 @@ exited or credentials cleared while the older agent ran.
   updates on (`AUTO_UPDATE=1`), do this as soon as you can: until then the old supervisor may apply the release
   itself, with its 180-second limit.
 - **The unused two-factor setting is removed.** MDMesh has no second sign-in step, so an organization whose settings
-  had two-factor sign-in on (a database carried over from Headwind MDM, or edited by hand) couldn't sign in at all.
+  had two-factor sign-in on (a database carried over from the upstream project, or edited by hand) couldn't sign in at all.
   On its first start the server drops the setting. Those accounts then sign in with their password alone (no
   authenticator code is asked for), and get API tokens again. Two-factor sign-in for each user is planned for a later
-  release. **Roll back**
-  restores the old database, setting included, so such an organization can't sign in again until it updates again.
+  release. If an organization had it on, have its users change their passwords after the update: the password alone
+  now signs in. API tokens issued before the setting was turned on work again until they expire (24 hours after
+  they were issued, by default); changing a user's password ends that user's tokens at once. **Roll back** restores the old database,
+  setting included, so such an organization can't sign in again until it updates again.
 - **Going back to 0.5.1 without a restore** (`--allow-downgrade`, or a native install's WAR swapped back) works: 0.5.1
   starts on the new database unchanged. It keeps the links, so in 0.5.1 too, deleting a device deletes its history and
   renaming one carries it. A check-in or command that races a delete gets a server error in 0.5.1 (this release
@@ -299,6 +314,27 @@ exited or credentials cleared while the older agent ran.
   a newer one. Update the server, then roll out its agent from **Settings → Agent rollout**. After a rollback, a
   rollout of the newer agent stops: cancel it, or update the server again. A server whose release isn't published
   (a development build), or has no agent in its manifest, gets the latest release's agent.
+- **Kiosk devices need agent 0.6.0** (security fix,
+  [GHSA-m47r-3wjg-qx79](https://github.com/MDMesh-app/MDMesh/security/advisories/GHSA-m47r-3wjg-qx79)). Once the
+  server is updated, roll it out from **Settings → Agent rollout**. Nothing to configure. A device updated while in
+  kiosk returns to its kiosk by itself within seconds; if a launcher-grid device may not be showing its kiosk after the
+  update, exit kiosk and enter it again from the console.
+- **In kiosk, the device protects its kiosk.** It answers app permission requests itself, and the kiosk apps can't be
+  stopped, cleared or uninstalled, the device reset, or apps from unknown sources installed, from the device until
+  kiosk mode ends ([what changes](KIOSK.md#while-a-device-is-in-kiosk)). Devices already in kiosk get this at the
+  update. On Android 12 or later devices set up without letting the admin grant sensor permissions, the agent leaves
+  requests for camera, microphone, location, physical activity and body sensors to Android, and denies the kiosk's apps
+  the background ones (location and body sensors) they don't already have, unless an app permission rule covers them.
+  This case is untested on hardware.
+- **Factory reset: Allow waits for kiosk to end.** A configuration applied in kiosk reports it as deferred, so such a
+  device shows **In sync (some settings deferred)**. The result shown refreshes with the next configuration change, not
+  when a device enters or leaves kiosk by itself. The console's Wipe still works.
+- **Don't go back to an older agent.** Agent downgrades aren't supported. On a device that has been in kiosk under
+  0.6.0, an older agent (0.5.1 or earlier) leaves the protection in place, through its own kiosk exit and after it: the
+  device keeps granting permissions itself, no app can be force-stopped or cleared from Settings, the kiosk apps can't
+  be uninstalled (`app.uninstall` fails), installs from unknown sources stay blocked, and factory reset stays blocked
+  unless the configuration sets Factory reset to Allow. Updating to 0.6.0 or later again lifts it, at boot or right
+  after the update, once the device is out of kiosk.
 - **Existing installs keep their hosting mode.** Cloudflare Tunnel and own-domain installs, quick start or from
   source, keep their mode and the `.env` an installer wrote through the update. Answers files and `MDMESH_MODE=1` or
   `2` mean what they meant before; `3` (or `proxy`) is the new mode. Native is unchanged.
@@ -334,8 +370,20 @@ exited or credentials cleared while the older agent ran.
   ```
 
   (`up -d` recreates the edge with the directory mounted; updates read both files, so they keep it.)
+- **API: `applications` of a configuration.** `GET /configurations/{id}` and the lists now answer `null` where they
+  answered an always empty `[]` (`GET /configurations/applications/{id}` has the apps, as before). In a
+  `PUT /configurations` that updates one, `applications` left out or `null` keeps the stored apps; before, leaving it
+  out removed them all and `null` was refused. Send `[]` to remove them.
 - **A rollback below 0.6.0** of an install you moved to the proxy mode is refused by the updater: move it back first
   ([how](#changing-the-hosting-mode)).
+- **PostgreSQL and cloudflared run exact images.** Both compose files name them by tag and digest:
+  `postgres:14.25-trixie` (the same PostgreSQL 14 and Debian release that `postgres:14` is) and `cloudflared`
+  2026.11.2. From source, `./setup.sh --update` pulls them and restarts the database for a few seconds; the data is
+  not touched. A quick start keeps the compose file it was set up with: one from before 0.6.0 keeps `postgres:14` and
+  `cloudflared:latest`, and one from 0.6.0 on keeps its pinned cloudflared until you change that line. Cloudflare
+  supports cloudflared releases up to a year old, so at least once a year copy the `cloudflared` and `postgres`
+  `image:` lines from the release's `docker-compose.release.yml` (on GitHub, at the release's tag) into
+  `docker-compose.yml`, then run `docker compose up -d`. Native installs use neither image.
 
 ### v0.6.0 for forks
 
@@ -357,6 +405,10 @@ For forks with their own server code: `Settings.twoFactor`, `User.twoFactor`, `U
 `AuthFilter.twoFactorNeeded` are gone, so code that used them no longer compiles. There is no replacement until
 two-factor sign-in is built.
 
+`Configuration.getApplications()` is null, not an empty list, on a configuration read from the database or saved
+without the list. `ConfigurationDAO` now drops the permission rules for apps a configuration doesn't install, whoever
+saves it.
+
 ### v0.6.0 for forks that change the console
 
 New text in core console files should be a react-intl message; `npm test` fails on most text that isn't
@@ -364,6 +416,9 @@ New text in core console files should be a react-intl message; `npm test` fails 
 this release: make it a message ([web/README.md](../web/README.md#translatable-text)), or raise that file's count in
 `web/src/i18n/literals-baseline.json`. If you removed core text, it fails with "fewer literals": run
 `npm run i18n:baseline` in `web/`. Extensions in `web/src/extensions/` are not checked.
+
+`Configuration.applications` is typed `ConfigApp[] | null`: the server answers null where it answered an empty list
+(read the apps with `getConfigurationApps`). Code that checks it only against `undefined` must also handle `null`.
 
 A test that ends with a `stubApi` call still unanswered now fails, and `stubApi`'s answers arrive a moment later: wait
 with `findBy…` or `settled()` (in `web/src/test/console.tsx`), not `act(async () => {})`.
@@ -421,13 +476,13 @@ with `findBy…` or `settled()` (in `web/src/test/console.tsx`), not `act(async 
   rollback, and prune the old logs. The access logs of Tomcat and of a reverse proxy also record the enrollment QR's
   key, which is part of its URL (`/rest/public/qr/<key>`) and fetches the QR with the Wi-Fi password in it: prune
   those too.
-- **With `LEGACY_DEVICE_API=1`, keep Headwind launcher devices and MDMesh agent devices in separate
+- **With `LEGACY_DEVICE_API=1`, keep legacy launcher devices and MDMesh agent devices in separate
   configurations.** The launcher's routes no longer serve a configuration that an agent device uses, or that an
   agent enrollment code can still enroll devices into, nor create launcher devices in it: the launcher gets the error
   `error.configuration.agent.managed`, and the server log says which configuration. A code enrolls into the
   configuration it names or, if it names none, into the default configuration for new devices (**Settings**), which
   then counts too. A configuration named by its QR code key counts the same way, and the server no longer makes its
-  Headwind QR code. The routes answer requests for an agent device with the launcher's device-not-found error. To fix
+  legacy launcher QR code. The routes answer requests for an agent device with the launcher's device-not-found error. To fix
   a launcher device that gets the error, move it to a configuration no agent device or enrollment code uses. With
   `LEGACY_DEVICE_API` off (the default), nothing changes.
 - With `LEGACY_DEVICE_API=1`, the launcher's sync now works for a configuration without a kiosk exit PIN. Before, it
@@ -878,7 +933,7 @@ rollout**, to one device first.
 - **A kiosk app that keeps stopping** leaves the device in kiosk on an "App closed" screen with an **Open again**
   button. Before, kiosk ended.
 - **Apps page:** saving app assignments no longer changes other configurations' settings. With `LEGACY_DEVICE_API=1`,
-  removing a Headwind content app no longer turns kiosk off.
+  removing a legacy launcher content app no longer turns kiosk off.
 
 ### v0.3.4
 
@@ -900,20 +955,20 @@ kiosk PINs.
 - **Lock volume buttons (kiosk)** (new, off by default; needs agent 0.3.4, and older agents ignore it) blocks volume
   changes in kiosk. Android mutes a locked device, so **Ring** is silent on it.
 - **Lock hardware buttons** blocks only the power menu.
-- **Headwind QR routes:** `/rest/public/qr/*` returns 404 unless `LEGACY_DEVICE_API=1`; the console doesn't use
+- **Legacy launcher QR routes:** `/rest/public/qr/*` returns 404 unless `LEGACY_DEVICE_API=1`; the console doesn't use
   them. The three installer-created configurations get a new QR key on first start. With `LEGACY_DEVICE_API=1`, the
-  Headwind QR codes printed for them before stop working.
+  legacy launcher QR codes printed for them before stop working.
 - **Kiosk PINs:** new installs give each installer-created configuration a random 8-digit exit PIN, shown in the
   configuration editor. Existing PINs are kept. The console flags any still set to the old default `12345678`;
   change it, since anyone who knows the default can leave kiosk.
 - **Observer role:** loses the push and messaging send permissions and device-description editing.
-- **`SECURE_ENROLLMENT=1`** still makes `/files/*` require the Headwind launcher's signature, which also blocks the
+- **`SECURE_ENROLLMENT=1`** still makes `/files/*` require the legacy launcher's signature, which also blocks the
   agent's APK and app downloads. With `LEGACY_DEVICE_API` off, the server now warns about it at startup. Set it to
   `0` unless you need launcher-signed downloads.
 
 ### v0.3.3
 
-- The Headwind launcher's device routes (`/rest/public/sync/*`, notifications, plugin device uploads, usage stats)
+- The legacy launcher's device routes (`/rest/public/sync/*`, notifications, plugin device uploads, usage stats)
   return 404 unless `LEGACY_DEVICE_API=1`.
 - App installs now carry the APK's SHA-256, and current agents refuse an install without one. Hosted APKs are hashed
   automatically. For a Library app with an external URL, add the hash with **Add checksum**, or **SHA-256 checksum**

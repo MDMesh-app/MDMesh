@@ -60,9 +60,7 @@ Heads-up
 - Your own edge rules load only from files nobody but their owner can change (`site.d`'s owner's or root's,
   `chmod 644`, not a link); the edge leaves any other out at start, saying why in its log.
 - New devices and rollouts get the agent of the release the server runs, never a newer one: update the server first,
-  then roll out its agent from Settings → Agent rollout, which says so while a newer release waits. Only a server whose
-  release isn't published (a development build, say), or whose release has no agent in its manifest, offers the latest
-  release's agent.
+  then roll out its agent from Settings → Agent rollout.
 
 Security
 - Kiosk mode: while a device is in kiosk mode, agent 0.6.0 answers app permission requests itself and protects the
@@ -98,99 +96,54 @@ New
 - The quick start asks one plain question, how your phones will reach MDMesh; `--tunnel`, `--domain` and `--proxy` answer it.
 - Your own edge rules: Caddy imports `site.d/*.caddy` from the install directory, and updates never touch it.
 - A quick start that stopped part way (a failed pull, a slow first start) can be finished: run it again with
-  `MDMESH_DIR=<its directory>`, and it carries on with the same `.env` (past a seeded database too, with a new
-  temporary admin password).
-- Arm64: the server, web and supervisor images are built for linux/amd64 and linux/arm64, so the quick start and
-  one-click updates run on Arm64 hosts such as Oracle Ampere (#205, thanks @sgofferj). On any other architecture,
-  or on Arm64 with an `MDMESH_VERSION` that has no Arm64 images, the quick start stops and says why before it pulls
-  anything.
-- Updates: a newer release this server can't install (no images for its platform, images under another owner, or
-  images not pinned by digest) is shown as such, with the reason and what to do, and with any security fixes it
-  leaves missing. It is no longer offered as an update that then fails, or retried automatically.
-- Console extensions: a menu item (`MenuItem`, as in a list's row actions) can set `movesFocus: true` when its
-  `onSelect` moves focus itself, so the menu leaves focus there rather than returning it to its trigger.
+  `MDMESH_DIR=<its directory>`, and it carries on with the same `.env`.
+- Arm64: the server, web and supervisor images are built for linux/arm64 too, so the quick start and one-click updates
+  run on hosts such as Oracle Ampere (#205, thanks @sgofferj). Elsewhere, the quick start stops before pulling anything.
+- Updates: a newer release this server can't install is shown as such, with the reason, what to do and any security
+  fixes it leaves missing, instead of being offered as an update that then fails.
+- Console extensions: menu items take `movesFocus` ([EXTENDING.md](https://github.com/MDMesh-app/MDMesh/blob/main/web/EXTENDING.md#listrowaction)).
 
 Fixes
-- Password-recovery emails name the product MDMesh when no `rebranding.name` is set, and the API's own title says
-  MDMesh; both named the upstream product. `/rest/public/logo` answers 404 when no `rebranding.logo` is set, instead of
-  redirecting to an upstream logo.
-- Devices search finds IMEIs reported by current agents, in either SIM slot and by part of the number, also for devices
-  that haven't checked in since the update. When a search matches more devices than one request returns (1,000 in the
-  console), the best matches are now kept rather than the weakest; a reported IMEI counts like one set by an administrator.
-- Enrollment keeps its agent through a restart with GitHub down: the updater keeps the signed manifest and agent of
-  each release it has run, and checks both again before it serves them. When it has no agent to give new devices
-  (GitHub didn't answer yet, or the release's manifest doesn't verify), the Enroll page says so on Docker installs
-  instead of showing a QR code that can't work, and a native install stops publishing an agent newer than its server.
-- A rollout started before a server update still downloads its own agent, also after the updater restarts. A rollout
-  of an agent newer than the server (after a rollback) stops: the updater refuses it, and Settings → Agent rollout
-  says so.
-- Agent rollout: a device already on a newer agent counts as updated and is no longer sent the older APK, which it
-  refused, so the rollout never finished. Versions now compare as numbers (0.10.0 is newer than 0.9.0).
-- Deleting a device, or a customer, now deletes the device's commands, state, events and locations too, and renaming
-  a device keeps them. Before, a device added later with the same number showed them as its own. A check-in or command
-  that races the delete is answered as for an unknown device, not with a server error.
-- The API refuses to change the number of a device enrolled with the agent (`error.device.number.agent`): the agent
-  signs in with that number and could not check in again. Other devices are renamed as before.
-- API: saving a configuration as `GET /configurations/{id}` answers it, or without `applications`, keeps its apps and
-  its main app. Before, it removed them. An empty list still removes them
-  ([UPGRADING.md](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v060)). Duplicating a
-  configuration keeps its "Enroll over mobile data" setting.
-- Bulk delete deletes nothing when one of the devices is out of the user's reach. Otherwise each device is deleted on
-  its own, and when some can't be, the console keeps those selected to delete again. Before, a failure partway left
-  some deleted and still answered OK.
-- Bulk configuration and group changes apply to every selected device or to none, and a configuration change must
-  name one. Taking devices out of a group the user may not use is refused, as putting them in one already was.
-- Console: the location map's path is easy to see on any map, in both themes, with arrows and a key. Activity says
-  which command ran and how it went ("Lock: done", not "Command 1234:done"), and labels kiosk exit and return.
-- Console: an action shows in one place: a configuration card's "…" holds only Delete, and the device page's "…"
-  holds Ring, Reboot and All actions. After you delete a configuration, a library app, a user or a role, keyboard
-  focus moves to the next card or row instead of to the top of the page.
-- The quick start, or `./setup.sh` in a new clone, run in a second directory no longer takes over an install that
-  already exists elsewhere on the machine (both use the Docker project `mdmesh`): it stops before changing anything,
-  names that install's directory and says how to update it. Over the data volumes of an install whose containers are
-  gone, it stops too, instead of starting with a database password that can't work.
-- The quick start and `./setup.sh` fail, showing the edge's last log lines, when the edge (Caddy) doesn't stay up;
-  before, they reported MDMesh up. `./setup.sh` still runs its database repairs first.
-- A `caddy reload` through `docker compose exec` keeps the edge's trusted peers (before, in tunnel mode, every client
-  then counted as one address for the sign-in limits) and, behind your own proxy, its HTTPS origin.
-- An update (or Roll back) counts as healthy only when the edge stays up too, not just the server: an edge the new
-  release can't start, say over a rule in `site.d`, is rolled back instead of leaving the console unreachable.
-- Events: a device that was offline for a while no longer loses all but 100 of the events it kept. The server update
-  alone fixes it for devices on older agents. When an agent's buffer of 500 fills, the device's events say how many
-  older ones it dropped.
-- Agent: check-ins wait 30 seconds for a busy server's answer instead of 10. On Android 7 and 8, an app download from
-  an HTTPS address no longer follows a redirect to HTTP (Android 9 and later already refused it).
-- Native: an update names the release the host runs as the one it updates from, not the release the clone is already
-  on (it read "0.5.1 → 0.5.1" on a host still running 0.5.0). Answering "no" to the installer's question no longer
-  wipes the previous run's log, and when the clone is ahead of the install it says the install is unchanged and how to
-  finish the update.
-- An organization whose settings had two-factor sign-in on (a database carried over from the upstream project, or
-  edited by hand) couldn't sign in at all: MDMesh has no second sign-in step, so the setting is removed (Upgrading,
-  above). Two-factor sign-in for each user is planned. The settings and user answers no longer include `twoFactor`;
-  a request that still sends it is accepted, and the field ignored.
-- Agent: a device that lost its stored configuration (damaged storage) says so and is sent it again, kiosk included.
-  Before, it showed as in sync for good and no longer applied it after a restart.
-- Enrollment and check-ins: a reported Android release, agent version, power mode or hardware id that the server
-  can't store (too long, or with a control character) is ignored, instead of failing every check-in or enrollment.
-  A device whose reported state the database refuses still gets its commands (the server logs why), and one whose
-  check-in fails while storing it is no longer shown as Online.
+- With no rebranding set, password-recovery emails and the API's title say MDMesh, and `/rest/public/logo` answers
+  404 instead of pointing to an upstream logo.
+- Devices search finds IMEIs reported by current agents (either SIM slot, part of the number), and keeps the best
+  matches when more devices match than one request returns.
+- Enrollment keeps its agent through a restart with GitHub down: the updater keeps each release's signed manifest and
+  agent. When it has none to give, the Enroll page says so instead of showing a QR code that can't work.
+- Agent rollout: a rollout started before a server update still downloads its agent; a device already on a newer agent
+  counts as updated; versions compare as numbers (0.10.0 is newer than 0.9.0); an agent newer than the server stops.
+- Deleting a device or a customer deletes the device's commands, state, events and locations too. Before, a device
+  added later with the same number showed them as its own.
+- The API refuses to change the number of a device enrolled with the agent (`error.device.number.agent`), which would
+  stop its check-ins.
+- API: saving a configuration as `GET` answers it, or without `applications`, keeps its apps and main app instead of
+  removing them ([UPGRADING.md](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v060)). A duplicate keeps "Enroll over mobile data".
+- Bulk delete and bulk configuration or group changes apply to every selected device or to none, instead of failing
+  part way while answering OK. Taking devices out of a group the user may not use is refused.
+- Console: a clearer location path, with arrows and a key; Activity names the command and its result ("Lock: done");
+  each action shows in one place; after a delete, focus moves to the next card or row.
+- The quick start, or `./setup.sh` in a new clone, stops instead of taking over an install elsewhere on the machine,
+  or starting over the data volumes of one whose containers are gone.
+- The edge (Caddy) must stay up: the quick start and `./setup.sh` fail when it doesn't, and an update that breaks it
+  rolls back. `caddy reload` keeps the trusted peers and, behind your own proxy, the HTTPS origin.
+- Events: a device that was offline no longer loses all but 100 of the events it kept (the server update alone fixes
+  it). A full agent buffer says how many events it dropped.
+- Agent: check-ins wait 30 seconds for a busy server instead of 10. On Android 7 and 8, an HTTPS app download no
+  longer follows a redirect to HTTP.
+- Native: an update names the release the host runs, answering "no" keeps the previous log, and a clone ahead of the
+  install says how to finish the update.
+- Organizations with the upstream two-factor setting on can sign in again (Upgrading, above). The API no longer
+  returns `twoFactor`, and ignores it in requests.
+- Agent: a device that lost its stored configuration says so and is sent it again, instead of showing in sync for good.
+- Check-ins and enrollment ignore a reported value the server can't store instead of failing, and a device whose
+  state the database refuses still gets its commands.
 
 Under the hood
-- Licences: the server WAR, the console and the agent APK each carry LICENSE, NOTICE and a list of the third-party
-  components they bundle, with their licences (the console at `/licenses/`). In `/usr/share/doc/mdmesh/`, the server
-  image carries all three and the supervisor image LICENSE and NOTICE. Each release attaches a package list for every
-  image, and NOTICE says where the source of the GPL software in the images and the agent is, with a written offer
-  for it. CI refuses a component under a licence outside `docs/licenses/allowed.txt`, or one offered under several
-  with no recorded choice ([policy](https://github.com/MDMesh-app/MDMesh/blob/main/docs/licenses/policy.md)).
-  The server no longer ships SpotBugs' annotations (LGPL-2.1), which nothing used at runtime.
-- Every file kept from the upstream project that MDMesh changed now says so, and CI checks it
-  ([policy](https://github.com/MDMesh-app/MDMesh/blob/main/docs/licenses/policy.md#files-kept-from-upstream)).
-- Console: the groundwork for translations. New console text is written as react-intl messages (English stays in
-  the code), and a test fails on most new untranslated text in core files; existing text moves over area by area. No
-  other language ships yet ([web/README.md](https://github.com/MDMesh-app/MDMesh/blob/main/web/README.md#translatable-text)).
-- Agent protocol 1.12 (additive): the check-in response's `eventsAccepted`, the check-in request's `protocolVersion`
-  (now always sent), and the `eventsDropped` event
-  ([VERSIONING](https://github.com/MDMesh-app/MDMesh/blob/main/proto/VERSIONING.md)).
+- Licences: the server, console and agent carry LICENSE, NOTICE (with the written offer for GPL source) and their
+  third-party licences; CI refuses a licence outside the allowed list and checks that changed upstream files say so
+  ([policy](https://github.com/MDMesh-app/MDMesh/blob/main/docs/licenses/policy.md)).
+- Console: groundwork for translations; no other language ships yet ([web/README.md](https://github.com/MDMesh-app/MDMesh/blob/main/web/README.md#translatable-text)).
+- Agent protocol 1.12 (additive) ([VERSIONING](https://github.com/MDMesh-app/MDMesh/blob/main/proto/VERSIONING.md)).
 
 ## v0.5.1 — 2026-11-20
 

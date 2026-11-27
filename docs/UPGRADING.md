@@ -19,7 +19,7 @@ updater on, the edge must also stay up)
 `docker compose logs supervisor` (native: `journalctl -u mdmesh-supervisor`).
 
 If the update on offer skips over a release that fixed security issues (say this server runs 0.5.0, 0.5.1 fixed one,
-and 0.5.2 is on offer), the console says so in amber: the sidebar and Overview cards say the update "includes security
+and 0.6.0 is on offer), the console says so in amber: the sidebar and Overview cards say the update "includes security
 fixes from 0.5.1 that this server is missing", the Settings list marks Updates "Security fixes", and Settings →
 Updates names the releases and links their notes. The list is the signed manifest's `securityReleases` (every release
 whose changelog has a Security section), read only from a manifest that verified; the supervisor reports the skipped

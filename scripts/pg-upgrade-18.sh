@@ -76,7 +76,10 @@ envval() {
 }
 
 
-PROJECT=$(docker compose config 2>/dev/null | sed -n 's/^name: //p' | head -n1)
+# The project name as compose resolves it (a compose that doesn't print it: COMPOSE_PROJECT_NAME). A configuration that
+# doesn't load stops here, with compose's own words: no name is guessed, as the volumes are found by it.
+CONFIG=$(docker compose config 2>&1) || die "docker compose can't load this install's configuration: $(printf '%s\n' "$CONFIG" | tail -n 5)"
+PROJECT=$(printf '%s\n' "$CONFIG" | sed -n 's/^name: //p' | head -n1); CONFIG=
 PROJECT=${PROJECT:-$(envval COMPOSE_PROJECT_NAME mdmesh)}
 OLD_VOL="${PROJECT}_pgdata"; NEW_VOL="${PROJECT}_pgdata18"
 DB_USER=$(envval DB_USER mdmesh); DB_NAME=$(envval DB_NAME mdmesh)

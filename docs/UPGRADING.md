@@ -189,12 +189,15 @@ with `scripts/pg-upgrade-18.sh`. Run it in the install directory, as the user wh
 4. restores it into PostgreSQL 18 in a new volume (`pgdata18`) and gives the database role the same password;
 5. counts the rows of every table on both sides, and stops if any count differs (`pgdata18` is then removed and
    `docker compose start` starts the install on 14 as before), then marks `pgdata18` as moved;
-6. on a quick start, moves the compose file's postgres service to `postgres:18` on `pgdata18` (the original is kept in
+6. on a quick start, moves the compose file's postgres service to `postgres:18` on `pgdata18`, with the release's
+   check that keeps PostgreSQL 18 from starting on an unfinished or out-of-date `pgdata18` (the original is kept in
    `./pg-upgrade-18/`), then starts the stack.
 
 It never changes or removes the PostgreSQL 14 volume. Run it again and it says there is nothing to move. If it stops
 part way (an error, Ctrl-C, the machine going down), `pgdata18` has no mark: the postgres container won't start on it,
-and running the script again starts the move over from the 14 volume.
+and running the script again starts the move over from the 14 volume. It removes a `pgdata18` only when that is its
+own unfinished or out-of-date move. Next to any other `pgdata18` with data in it, or when Docker can't tell it what
+the volumes hold, it stops and changes nothing.
 
 **Quick-start installs** keep running PostgreSQL 14 after the 0.7.0 update: updates never touch the database
 container. Move it when you can be offline for a few minutes:
@@ -205,8 +208,10 @@ curl -fsSLO https://raw.githubusercontent.com/MDMesh-app/MDMesh/refs/tags/v0.7.0
 bash pg-upgrade-18.sh
 ```
 
-**From-source installs:** `./setup.sh --update` to 0.7.0 stops before building, with the command to run. Run
-`scripts/pg-upgrade-18.sh`, then `./setup.sh` again. If the stack was started some other way (`docker compose up -d`),
+**From-source installs:** `./setup.sh --update` to 0.7.0 stops with the command to run, before it backs up, writes
+or starts anything. Run `scripts/pg-upgrade-18.sh`, then `./setup.sh` again: its backup before the update is then
+taken from the PostgreSQL 18 database. (Running the script first, before any `./setup.sh`, works as well.) If the
+stack was started some other way (`docker compose up -d`),
 the postgres container refuses to start next to the PostgreSQL 14 volume and logs why, and the server waits for it:
 it never starts on an empty database.
 
@@ -330,7 +335,13 @@ exited or credentials cleared while the older agent ran.
 
 - **Docker installs move to PostgreSQL 18, once, by hand.** PostgreSQL 14 is end of life. New installs start on 18;
   an existing one keeps running on 14 until you move it with `scripts/pg-upgrade-18.sh` (a few minutes offline).
-  From source, `./setup.sh --update` stops before building until you have. See [PostgreSQL 18](#postgresql-18).
+  From source, `./setup.sh --update` stops before it changes anything until you have. See
+  [PostgreSQL 18](#postgresql-18).
+- **Quick starts: the `postgres` image line is no longer copied by hand.** The v0.6.0 note below says to copy the
+  `cloudflared` and `postgres` `image:` lines from the release's `docker-compose.release.yml` once a year. From 0.7.0
+  that file's postgres line is PostgreSQL 18, which does not start on a PostgreSQL 14 volume: copy the `cloudflared`
+  line only. `scripts/pg-upgrade-18.sh` writes the postgres line when it moves the database; once it has, a later
+  release's `postgres:18.x` line can be copied again.
 
 ### v0.6.0
 
@@ -442,7 +453,8 @@ exited or credentials cleared while the older agent ran.
   `cloudflared:latest`, and one from 0.6.0 on keeps its pinned cloudflared until you change that line. Cloudflare
   supports cloudflared releases up to a year old, so at least once a year copy the `cloudflared` and `postgres`
   `image:` lines from the release's `docker-compose.release.yml` (on GitHub, at the release's tag) into
-  `docker-compose.yml`, then run `docker compose up -d`. Native installs use neither image.
+  `docker-compose.yml`, then run `docker compose up -d`. (From 0.7.0, the `cloudflared` line only: see
+  [Unreleased](#unreleased) above.) Native installs use neither image.
 
 ### v0.6.0 for forks
 

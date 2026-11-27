@@ -17,7 +17,8 @@ cooperating planes plus shared protocol and docs.
 ├── install/                                           # Native installer/uninstaller, shared shell libs (lib/), seed SQL, email templates,
 │                                                      #   options.json (the installers' answers contract)
 ├── release/                                           # Release tooling: manifest build/sign/verify, APK checksum, minisign.pub
-├── scripts/                                           # Dev + CI helpers: Agent v1 e2e, dev seed, edge check, supervisor smoke, release manifest check, shots/, readme/
+├── scripts/                                           # Dev + CI helpers: Agent v1 e2e, dev seed, edge check, supervisor smoke, release manifest check, shots/, readme/;
+│                                                      #   and, for operators, pg-upgrade-18.sh (a Docker install's one-time PostgreSQL 14 → 18 move)
 ├── tests/native/                                      # T2 rig: native install/upgrade in throwaway systemd containers
 ├── tests/installer-answers/                           # T0: install/options.json against the installers (dry runs only)
 ├── docs/adr/                                          # Architecture Decision Records (one-way-door choices)

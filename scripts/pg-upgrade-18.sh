@@ -238,15 +238,21 @@ fi
 # What to do after a failure that left the old database and the compose file as they were. While the stack's postgres
 # container is still the old one, `start` (not `up`) starts the stopped containers as they were: on a from-source
 # install the compose file already runs 18, so `up -d` would recreate postgres from it, and its guard would refuse to
-# start next to the old data.
-PG_CTR=$(docker compose ps -aq postgres 2>/dev/null | head -n1)
-if [ -n "$PG_CTR" ] && [ "$(docker inspect -f '{{.Config.Image}}' "$PG_CTR" 2>/dev/null)" = "$OLD_IMAGE" ]; then
-  AS_IT_WAS="docker compose start starts the stack again as it was, on PostgreSQL ${OLD_VER}"
-elif [ "$EDIT_COMPOSE" = 1 ]; then
-  AS_IT_WAS="docker compose up -d starts the stack again on PostgreSQL ${OLD_VER}"
-else
-  AS_IT_WAS="the stack stays stopped, as this compose file runs PostgreSQL 18, which won't start next to the ${OLD_VER} data. Fix the cause and run this again, or check out the release you ran before and run ./setup.sh to run on ${OLD_VER} meanwhile"
-fi
+# start next to the old data. The old one by its major version: its image is postgres:14 or, from 0.6.0, pinned
+# (postgres:14.25-trixie@sha256:…).
+PG_CTR=$(docker compose ps -aq postgres 2>/dev/null | head -n1) || PG_CTR=
+PG_CTR_IMAGE=
+[ -z "$PG_CTR" ] || PG_CTR_IMAGE=$(docker inspect -f '{{.Config.Image}}' "$PG_CTR" 2>/dev/null) || PG_CTR_IMAGE=
+case "$PG_CTR_IMAGE" in
+  "$OLD_IMAGE"|"$OLD_IMAGE"[.@]*)
+    AS_IT_WAS="docker compose start starts the stack again as it was, on PostgreSQL ${OLD_VER}" ;;
+  *)
+    if [ "$EDIT_COMPOSE" = 1 ]; then
+      AS_IT_WAS="docker compose up -d starts the stack again on PostgreSQL ${OLD_VER}"
+    else
+      AS_IT_WAS="the stack stays stopped, as this compose file runs PostgreSQL 18, which won't start next to the ${OLD_VER} data. Fix the cause and run this again, or check out the release you ran before and run ./setup.sh to run on ${OLD_VER} meanwhile"
+    fi ;;
+esac
 
 say "Pulling ${OLD_IMAGE} and ${NEW_IMAGE}"
 { docker pull -q "$OLD_IMAGE" && docker pull -q "$NEW_IMAGE"; } >/dev/null || die "docker pull failed (above): nothing was changed"

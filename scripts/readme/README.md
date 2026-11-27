@@ -27,10 +27,10 @@ time (`SOURCE_DATE_EPOCH`), and capture serves it on a fixed port, so the same c
 
 ## Automatic updates
 
-After each release, the release workflow's `readme` job regenerates the images from `main` and, if they changed,
-opens a PR "README images for vX.Y.Z" from `readme/vX.Y.Z`; it never pushes to `main`. It needs the repository
-setting "Allow GitHub Actions to create and approve pull requests". The PR is opened with the workflow token, so
-CI doesn't run on it until a maintainer closes and reopens it.
+After each release, the release workflow regenerates the images from `main` (`readme-images`, read-only) and, if they
+changed, opens a PR "README images for vX.Y.Z" from `readme/vX.Y.Z` (`readme-pr`); it never pushes to `main`. It
+needs the repository setting "Allow GitHub Actions to create and approve pull requests". The PR is opened with the
+workflow token, so CI doesn't run on it until a maintainer closes and reopens it.
 
 ## What it makes
 

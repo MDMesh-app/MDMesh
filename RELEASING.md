@@ -70,6 +70,10 @@
 7. **Verify the published release** ([below](#verifying-a-published-release)): asset SHA-256 against the
    manifest, the minisign signature, the APK's signing certificate, its versionCode, `quickstart.sh`, and the GHCR
    images.
+8. **Review and merge the README images PR** ("README images for vX.Y.Z"), which the workflow's `readme` job opens
+   when the images changed ([scripts/readme](scripts/readme/README.md#automatic-updates)). Close and reopen it to run
+   CI. The job runs after the Release is out, so its failure doesn't touch the release: "Re-run failed jobs" re-runs
+   only `readme`.
 
 ### Writing the notes
 

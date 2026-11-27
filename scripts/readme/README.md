@@ -15,12 +15,22 @@ One-time setup:
 ```bash
 (cd web && npm ci)                                   # the build, and the IBM Plex fonts the images use
 (cd scripts/readme && npm install && npx playwright install chromium)
-python3 -m venv scripts/readme/.venv && scripts/readme/.venv/bin/pip install fonttools
+python3 -m venv scripts/readme/.venv && scripts/readme/.venv/bin/pip install -r scripts/readme/requirements.txt
 ```
 
 Python with [fontTools](https://github.com/fonttools/fonttools) is a dev dependency of the SVG step only: it turns
 the text into outlines, because GitHub shows README SVGs through `<img>`, where web fonts can't load. `generate.sh`
 uses `scripts/readme/.venv` when it exists, otherwise `$PYTHON` or `python3`.
+
+The output is byte-for-byte reproducible: `generate.sh` runs the console in UTC on a fixed clock, the commit's
+time (`SOURCE_DATE_EPOCH`), and capture serves it on a fixed port, so the same commit gives the same files.
+
+## Automatic updates
+
+After each release, the release workflow's `readme` job regenerates the images from `main` and, if they changed,
+opens a PR "README images for vX.Y.Z" from `readme/vX.Y.Z`; it never pushes to `main`. It needs the repository
+setting "Allow GitHub Actions to create and approve pull requests". The PR is opened with the workflow token, so
+CI doesn't run on it until a maintainer closes and reopens it.
 
 ## What it makes
 
@@ -36,9 +46,9 @@ The steps, in `generate.sh`:
 
 1. **`capture.mjs`** shoots the console at 2x: the Overview screen and seven cards, each clipped to its DOM box
    (`.cache/shots/`). The configuration-editor crops come from real clicks on Default's Security settings.
-   The sample versions are README-only (`versions.mjs`): server 0.5.0 with a signed 0.5.1 available, agents on
-   0.5.0 (build 500). The shared fixtures keep their own versions for the parity tests, and a shot page that still
-   shows one of them fails the capture.
+   The sample versions are README-only (`versions.mjs`), from the git tags: the newest release is available, signed,
+   and the server and agents run the one before. The shared fixtures keep their own versions for the parity tests,
+   and a shot page that still shows one of them fails the capture.
 2. **`compose.mjs`** lays out the hero and the bento in HTML and encodes them as WebP. It also renders the two "How it
    works" parts, the console panel and the phone, tilted toward each other with CSS 3D, and measures where the line
    attaches (`.cache/parts/`).

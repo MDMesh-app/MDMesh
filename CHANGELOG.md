@@ -9,7 +9,7 @@ Unreleased.
 
 ## Unreleased
 
-## v0.6.0 — YYYY-MM-DD
+## v0.6.0 — 2026-11-26
 
 Upgrading
 - From source, `./setup.sh --update` now backs up the database to `backups/` in the clone before it changes the
@@ -71,7 +71,7 @@ Security
   agent on every kiosk device once the server is updated (Settings → Agent rollout). A device updated while in kiosk
   applies the change at once, with no server contact, and returns to its kiosk by itself within seconds; a one-app
   kiosk starts its app afresh. If a launcher-grid device may not be showing its kiosk after the update, exit kiosk and
-  enter it again from the console ([UPGRADING.md](docs/UPGRADING.md#unreleased)).
+  enter it again from the console ([UPGRADING.md](docs/UPGRADING.md#v060)).
 - Devices in kiosk mode, those already in it when the agent updates included, change without leaving kiosk:
   - Apps get the permissions they ask for (camera, microphone, location and the rest) without Android asking the
     person at the device. App permission rules set to Deny still win. On Android 12 or later devices set up

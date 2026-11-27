@@ -9,7 +9,7 @@ Unreleased.
 
 ## Unreleased
 
-## v0.6.0 — 2026-11-26
+## v0.6.0 — 2026-11-27
 
 Upgrading
 - From-source Docker installs: `./setup.sh --update` now backs up the database to `backups/` in the clone before it

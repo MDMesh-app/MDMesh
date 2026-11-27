@@ -569,7 +569,7 @@ jobs:
           branch=readme/$REF_NAME
           if [ -n "$(git ls-remote --heads origin "$branch")" ]; then
             pr=$(gh pr list --head "$branch" --state open --json url --jq '.[0].url')
-            echo "::error::Branch $branch already exists${pr:+ with an open PR, $pr}. Close any PR for it and delete the branch, then re-run this job: it builds the images again."
+            echo "::error::Branch $branch already exists${pr:+ with an open PR, $pr}. Close any PR for it and delete the branch, then re-run this job: it opens the PR with the images this run built."
             exit 1
           fi
           git config user.name 'github-actions[bot]'

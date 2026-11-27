@@ -280,10 +280,11 @@ jobs:
     env:
       PGU_PREFIX: pgu-${{ github.run_id }}-${{ github.run_attempt }}
       PGU_KEEP: "1"
-      TMPDIR: ${{ runner.temp }}/pg-upgrade-work
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Run tests/pg-upgrade
+        env:
+          TMPDIR: ${{ runner.temp }}/pg-upgrade-work
         run: |
           mkdir -p "$TMPDIR"
           tests/pg-upgrade/run.sh

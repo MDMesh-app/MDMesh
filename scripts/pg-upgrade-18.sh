@@ -15,7 +15,7 @@
 #      as moved (MARKER below). pgdata18 without that mark next to 14 data is an unfinished move, and with a mark from
 #      before 14 ran again (going back) an out-of-date one: the postgres container refuses to start on either,
 #      --check reports it, and a run of this script starts the move over;
-#   6. a compose file from before 0.6.0 (a quick start: postgres:14 on pgdata) gets its postgres service moved to
+#   6. a compose file from before 0.7.0 (a quick start: postgres:14 on pgdata) gets its postgres service moved to
 #      postgres:18 on pgdata18 — the original is kept as ./pg-upgrade-18/docker-compose.yml.pg14;
 #   7. starts the stack again (`docker compose up -d`). A from-source install (./setup.sh is there) is left stopped:
 #      re-run ./setup.sh, which builds and starts it.
@@ -101,7 +101,7 @@ if vol_exists "$NEW_VOL"; then
 fi
 MOVED=0; [ "$STATE" = 0 ] && MOVED=1
 
-# The compose file: from 0.6.0 on it already runs postgres:18 on pgdata18; a quick start's older copy needs its postgres
+# The compose file: from 0.7.0 on it already runs postgres:18 on pgdata18; a quick start's older copy needs its postgres
 # service moved, which only works on the lines as we shipped them.
 # The postgres image line of a major, as we shipped it: by tag (postgres:14) or pinned (postgres:14.25-trixie@sha256:…).
 image_re() { printf '^    image: postgres:%s([.][0-9]+-[a-z]+)?(@sha256:[0-9a-f]+)?$' "$1"; }
@@ -111,10 +111,10 @@ compose_on_18() {
 compose_check_old() { # OLD_VER: dies unless docker-compose.yml has the lines edit_compose changes, once each
   local l
   [ "$(grep -cE "$(image_re "$1")" docker-compose.yml)" = 1 ] \
-    || die "docker-compose.yml doesn't have the postgres lines this script knows (\"image: postgres:$1\" once): nothing was changed. Take the postgres service from the docker-compose.release.yml of a 0.6.0 or later release (or edit it by hand as there), then run this again."
+    || die "docker-compose.yml doesn't have the postgres lines this script knows (\"image: postgres:$1\" once): nothing was changed. Take the postgres service from the docker-compose.release.yml of a 0.7.0 or later release (or edit it by hand as there), then run this again."
   for l in '      - pgdata:/var/lib/postgresql/data' '  pgdata:'; do
     [ "$(grep -cxF -- "$l" docker-compose.yml)" = 1 ] \
-      || die "docker-compose.yml doesn't have the postgres lines this script knows (\"${l#"${l%%[! ]*}"}\" once): nothing was changed. Take the postgres service from the docker-compose.release.yml of a 0.6.0 or later release (or edit it by hand as there), then run this again."
+      || die "docker-compose.yml doesn't have the postgres lines this script knows (\"${l#"${l%%[! ]*}"}\" once): nothing was changed. Take the postgres service from the docker-compose.release.yml of a 0.7.0 or later release (or edit it by hand as there), then run this again."
   done
 }
 edit_compose() { # OLD_VER
@@ -158,7 +158,7 @@ if [ "$MOVED" = 1 ]; then
     exit 0
   fi
   # A run that stopped between marking pgdata18 and editing the compose file: finish the edit.
-  [ -n "$OLD_VER" ] || die "${NEW_VOL} holds the moved database, but docker-compose.yml doesn't run postgres:18 on pgdata18: edit its postgres service as in a 0.6.0 or later release's docker-compose.release.yml, then docker compose up -d."
+  [ -n "$OLD_VER" ] || die "${NEW_VOL} holds the moved database, but docker-compose.yml doesn't run postgres:18 on pgdata18: edit its postgres service as in a 0.7.0 or later release's docker-compose.release.yml, then docker compose up -d."
   ok "${NEW_VOL} holds the moved database; docker-compose.yml still runs PostgreSQL ${OLD_VER}: moving it now"
   compose_check_old "$OLD_VER"
   [ -w . ] || die "can't write in $(pwd) (the compose backup goes there): run as the install's owner"

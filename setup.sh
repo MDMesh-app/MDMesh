@@ -708,7 +708,7 @@ setenv VITE_AGENT_CHECKSUM "$VITE_AGENT_CHECKSUM"
 setenv VITE_AGENT_APK_URL "$VITE_AGENT_APK_URL"
 export VITE_AGENT_PACKAGE VITE_AGENT_CHECKSUM VITE_AGENT_APK_URL
 
-# An install from before 0.6.0 keeps its database in PostgreSQL 14 (volume pgdata); this compose file runs 18 (pgdata18),
+# An install from before 0.7.0 keeps its database in PostgreSQL 14 (volume pgdata); this compose file runs 18 (pgdata18),
 # whose entrypoint refuses to start next to it. Say how to move it before building anything. A docker that can't answer
 # (no volume to inspect) passes: the entrypoint still refuses.
 _pg_rc=0; bash scripts/pg-upgrade-18.sh --check >/dev/null 2>&1 || _pg_rc=$?

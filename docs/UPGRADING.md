@@ -179,7 +179,7 @@ to its old mode first. The updater refuses one too while `TRUSTED_PROXIES` still
 
 ## PostgreSQL 18
 
-From 0.6.0 the Docker stack runs PostgreSQL 18 (PostgreSQL 14, which earlier releases ran, reached its end of life in
+From 0.7.0 the Docker stack runs PostgreSQL 18 (PostgreSQL 14, which earlier releases ran, reached its end of life in
 November 2026). A new major version can't open an older one's data, so an existing install moves its database once,
 with `scripts/pg-upgrade-18.sh`. Run it in the install directory, as the user who runs `docker compose` there. It:
 
@@ -196,16 +196,16 @@ It never changes or removes the PostgreSQL 14 volume. Run it again and it says t
 part way (an error, Ctrl-C, the machine going down), `pgdata18` has no mark: the postgres container won't start on it,
 and running the script again starts the move over from the 14 volume.
 
-**Quick-start installs** keep running PostgreSQL 14 after the 0.6.0 update: updates never touch the database
+**Quick-start installs** keep running PostgreSQL 14 after the 0.7.0 update: updates never touch the database
 container. Move it when you can be offline for a few minutes:
 
 ```bash
 cd /path/to/install     # the directory with .env and docker-compose.yml
-curl -fsSLO https://raw.githubusercontent.com/MDMesh-app/MDMesh/refs/tags/v0.6.0/scripts/pg-upgrade-18.sh
+curl -fsSLO https://raw.githubusercontent.com/MDMesh-app/MDMesh/refs/tags/v0.7.0/scripts/pg-upgrade-18.sh
 bash pg-upgrade-18.sh
 ```
 
-**From-source installs:** `./setup.sh --update` to 0.6.0 stops before building, with the command to run. Run
+**From-source installs:** `./setup.sh --update` to 0.7.0 stops before building, with the command to run. Run
 `scripts/pg-upgrade-18.sh`, then `./setup.sh` again. If the stack was started some other way (`docker compose up -d`),
 the postgres container refuses to start next to the PostgreSQL 14 volume and logs why, and the server waits for it:
 it never starts on an empty database.

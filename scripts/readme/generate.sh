@@ -15,7 +15,9 @@ PY=${PYTHON:-python3}
   exit 1
 }
 # The console's clock starts at the commit's time, so the same commit gives the same bytes.
-export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git log -1 --format=%ct)}"
+export SHOTS_EPOCH="${SHOTS_EPOCH:-$(git log -1 --format=%ct)}"
+# docs/readme holds only this script's output: start empty, so an image it no longer makes doesn't stay behind.
+rm -f ../../docs/readme/*
 node capture.mjs        # console crops, 2x, light + dark   -> .cache/shots/
 node compose.mjs        # hero, features, how-it-works parts -> docs/readme/*.webp, .cache/parts/
 "$PY" svg/build.py      # banner, how-it-works, architecture -> docs/readme/*.svg

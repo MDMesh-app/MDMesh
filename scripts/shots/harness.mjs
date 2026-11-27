@@ -11,10 +11,10 @@ import { configurationsFixtures } from './fixtures.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const DIST = path.resolve(__dirname, '../../web/dist');
-// SOURCE_DATE_EPOCH (whole seconds) fixes the start of the clock: the fixtures are built around it and every page's
-// clock starts there, so a rerun gives the same shots. Unset, both use the current time.
-const EPOCH = process.env.SOURCE_DATE_EPOCH;
-if (EPOCH !== undefined && !/^\d+$/.test(EPOCH)) throw new Error(`SOURCE_DATE_EPOCH must be whole seconds (got '${EPOCH}')`);
+// SHOTS_EPOCH (whole seconds; scripts/readme/generate.sh sets it) fixes the start of the clock: the fixtures are
+// built around it and every page's clock starts there, so a rerun gives the same shots. Unset, both use the current time.
+const EPOCH = process.env.SHOTS_EPOCH;
+if (EPOCH !== undefined && !/^\d+$/.test(EPOCH)) throw new Error(`SHOTS_EPOCH must be whole seconds (got '${EPOCH}')`);
 const NOW = EPOCH === undefined ? undefined : Number(EPOCH) * 1000;
 export const fx = buildFixtures(NOW);
 const fxOverview = buildOverviewFixtures(NOW); // v2 overview fixtures

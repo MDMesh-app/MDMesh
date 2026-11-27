@@ -14,9 +14,11 @@
 #      stack stays stopped on 14: `docker compose start` starts it again as it was); only then does it mark pgdata18
 #      as moved (MARKER below). pgdata18 without that mark next to 14 data is an unfinished move, and with a mark from
 #      before 14 ran again (going back) an out-of-date one: the postgres container refuses to start on either,
-#      --check reports it, and a run of this script starts the move over;
+#      --check reports it, and a run of this script starts the move over. It removes a pgdata18 only when it knows it
+#      as its own (IN_PROGRESS or MARKER below, or one this run made or found empty): next to anything else it stops;
 #   6. a compose file from before 0.7.0 (a quick start: postgres:14 on pgdata) gets its postgres service moved to
-#      postgres:18 on pgdata18 — the original is kept as ./pg-upgrade-18/docker-compose.yml.pg14;
+#      postgres:18 on pgdata18, with the release's check that keeps 18 from starting on an unfinished or out-of-date
+#      pgdata18 — the original is kept as ./pg-upgrade-18/docker-compose.yml.pg14;
 #   7. starts the stack again (`docker compose up -d`). A from-source install (./setup.sh is there) is left stopped:
 #      re-run ./setup.sh, which builds and starts it.
 # The PostgreSQL 14 volume is never changed or removed: going back is putting the old compose file back (or checking
@@ -25,7 +27,8 @@
 #
 # Run it in the install directory (the one with .env and docker-compose.yml), as the user who runs docker compose there.
 # Usage: scripts/pg-upgrade-18.sh [-y]       -y: don't ask before stopping the stack
-#        scripts/pg-upgrade-18.sh --check    exit 10 when this install still has to move (setup.sh asks), else 0
+#        scripts/pg-upgrade-18.sh --check    exit 10 when this install still has to move (setup.sh asks), 0 when it
+#                                            doesn't; anything else: it could not tell (the reason is printed)
 set -euo pipefail
 
 # The same image line as docker-compose.release.yml's postgres service (Dependabot doesn't bump it here: keep them equal).
@@ -36,6 +39,9 @@ WORKDIR=pg-upgrade-18
 # the old volume since (a rollback), the mark no longer matches and pgdata18 is out of date. docker-compose*.yml's
 # postgres guard reads it too.
 MARKER=.mdmesh-moved-from-pg14
+# Next to it while a move is under way, from the moment this script has the volume until MARKER is written: a pgdata18
+# with it and no MARKER is this script's own unfinished move, which a later run may remove and start over.
+IN_PROGRESS=.mdmesh-move-in-progress
 YES=0; CHECK=0
 for a in "$@"; do
   case "$a" in
@@ -75,31 +81,51 @@ PROJECT=${PROJECT:-$(envval COMPOSE_PROJECT_NAME mdmesh)}
 OLD_VOL="${PROJECT}_pgdata"; NEW_VOL="${PROJECT}_pgdata18"
 DB_USER=$(envval DB_USER mdmesh); DB_NAME=$(envval DB_NAME mdmesh)
 
-vol_exists() { docker volume inspect "$1" >/dev/null 2>&1; }
+# What the volumes hold is read here, before anything is decided. A docker that fails at it stops the script: an error
+# taken for "no such volume" or "no mark" would have the move restore into, or remove, a volume that is in use.
+# vol_exists VOLUME: whether Docker has it.
+vol_exists() {
+  local l
+  l=$(docker volume ls -q --filter "name=$1") || die "could not list Docker's volumes (above): nothing was changed."
+  printf '%s\n' "$l" | grep -qxF -- "$1"
+}
 # vol_pgver VOLUME PATH: the major version of the data directory at PATH in VOLUME, or nothing.
 vol_pgver() {
-  docker run --rm --network none -v "$1:/v:ro" --entrypoint sh "$NEW_IMAGE" -c "cat /v/$2/PG_VERSION 2>/dev/null || true" \
-    | tr -dc '0-9'
+  local v
+  v=$(docker run --rm --network none -v "$1:/v:ro" --entrypoint sh "$NEW_IMAGE" -c "cat /v/$2/PG_VERSION 2>/dev/null || true") \
+    || die "could not read the volume $1 (above): nothing was changed."
+  printf '%s' "$v" | tr -dc '0-9'
 }
-
-# moved_state: exit 0 when pgdata18 holds a finished move of the old volume as it is now (or the old volume is gone),
-# 1 when pgdata18 has no mark (an unfinished move), 2 when PostgreSQL ran on the old volume after the move (a rollback).
-moved_state() {
-  local o=()
+# new_state: what pgdata18 is, in one word that the container itself prints:
+#   moved       marked, and the old volume is as it was moved (or holds no database any more)
+#   outdated    marked, but PostgreSQL ran on the old volume after the move (going back)
+#   unfinished  this script's own unfinished move (IN_PROGRESS, no mark)
+#   empty       nothing in it (compose made it for a postgres container that then refused to start)
+#   other       anything else: not this script's work
+new_state() {
+  local o=() s
   if vol_exists "$OLD_VOL"; then o=(-v "${OLD_VOL}:/o:ro"); fi
-  docker run --rm --network none -v "${NEW_VOL}:/n:ro" ${o[@]+"${o[@]}"} --entrypoint sh "$NEW_IMAGE" -c '
-    [ -e "/n/$1" ] || exit 1
-    [ -s /o/PG_VERSION ] || exit 0
-    grep -qx "pg_control=$(sha256sum /o/global/pg_control | cut -c1-64)" "/n/$1" || exit 2' sh "$MARKER"
+  s=$(docker run --rm --network none -v "${NEW_VOL}:/n:ro" ${o[@]+"${o[@]}"} --entrypoint sh "$NEW_IMAGE" -c '
+    if [ -e "/n/$1" ]; then
+      [ -s /o/PG_VERSION ] || { echo moved; exit 0; }
+      sum=$(sha256sum /o/global/pg_control | cut -c1-64); [ "${#sum}" = 64 ] || exit 1
+      if grep -qx "pg_control=$sum" "/n/$1"; then echo moved; else echo outdated; fi
+    elif [ -e "/n/$2" ]; then echo unfinished
+    elif [ -z "$(ls -A /n)" ]; then echo empty
+    else echo other; fi' sh "$MARKER" "$IN_PROGRESS") || s=
+  case "$s" in
+    moved|outdated|unfinished|empty|other) printf '%s' "$s" ;;
+    *) die "could not tell what the volume ${NEW_VOL} holds (above): nothing was changed." ;;
+  esac
 }
 
-OLD_VER=; NEW_VER=; STATE=1
-if vol_exists "$OLD_VOL"; then OLD_VER=$(vol_pgver "$OLD_VOL" .); fi
+OLD_VER=; NEW_VER=; STATE=absent
+if vol_exists "$OLD_VOL"; then OLD_VER=$(vol_pgver "$OLD_VOL" .) || exit 1; fi
 if vol_exists "$NEW_VOL"; then
-  NEW_VER=$(vol_pgver "$NEW_VOL" 18/docker)
-  STATE=0; moved_state || STATE=$?
+  NEW_VER=$(vol_pgver "$NEW_VOL" 18/docker) || exit 1
+  STATE=$(new_state) || exit 1
 fi
-MOVED=0; [ "$STATE" = 0 ] && MOVED=1
+MOVED=0; [ "$STATE" = moved ] && MOVED=1
 
 # The compose file: from 0.7.0 on it already runs postgres:18 on pgdata18; a quick start's older copy needs its postgres
 # service moved, which only works on the lines as we shipped them.
@@ -174,21 +200,25 @@ fi
 [ -n "$OLD_VER" ] || die "no PostgreSQL data in volume ${OLD_VOL}: nothing to move (a new install starts on 18 by itself)."
 [ "$OLD_VER" -lt 18 ] || die "${OLD_VOL} holds PostgreSQL ${OLD_VER} data, not an older version: not moving it."
 OLD_IMAGE="postgres:${OLD_VER}"
-# pgdata18 next to the old data without a matching mark is started over below, from the untouched old volume:
-# - no mark: a run of this script that stopped part way (the postgres container refuses to start on it, so nothing
+# pgdata18 next to the old data is removed and the move started over, from the untouched old volume, only when it is
+# this script's own:
+# - unfinished: a run of this script that stopped part way (the postgres container refuses to start on it, so nothing
 #   was written to it since);
-# - a mark from before PostgreSQL ran on the old volume again (going back to 14): the move is out of date, and what was
-#   written on 18 before going back is dropped, as going back says.
+# - outdated: a finished move from before PostgreSQL ran on the old volume again (going back to 14); what was written
+#   on 18 before going back is dropped, as going back says.
+# An empty one is used as it is. Next to anything else the script stops: it removes no data it didn't put there.
 REDO=0
-if [ "$STATE" = 2 ]; then
-  REDO=1
-  ok "${OLD_VOL}: PostgreSQL ${OLD_VER}, which ran again after the move to 18; ${NEW_VOL}: out of date, removed and moved again (what was written on 18 before going back is not kept)"
-elif [ -n "$NEW_VER" ]; then
-  REDO=1
-  ok "${OLD_VOL}: PostgreSQL ${OLD_VER}; ${NEW_VOL}: an unfinished move, which is removed and done again"
-else
-  ok "${OLD_VOL}: PostgreSQL ${OLD_VER}; ${NEW_VOL}: $(vol_exists "$NEW_VOL" && echo 'empty' || echo 'not created yet')"
-fi
+case "$STATE" in
+  outdated)
+    REDO=1
+    ok "${OLD_VOL}: PostgreSQL ${OLD_VER}, which ran again after the move to 18; ${NEW_VOL}: out of date, removed and moved again (what was written on 18 before going back is not kept)" ;;
+  unfinished)
+    REDO=1
+    ok "${OLD_VOL}: PostgreSQL ${OLD_VER}; ${NEW_VOL}: an unfinished move, which is removed and done again" ;;
+  empty)  ok "${OLD_VOL}: PostgreSQL ${OLD_VER}; ${NEW_VOL}: empty" ;;
+  absent) ok "${OLD_VOL}: PostgreSQL ${OLD_VER}; ${NEW_VOL}: not created yet" ;;
+  *) die "${NEW_VOL} holds ${NEW_VER:+a PostgreSQL ${NEW_VER} database, }data this script did not put there, next to the PostgreSQL ${OLD_VER} database in ${OLD_VOL}: not touching either, and nothing was changed. If ${NEW_VOL} is not the database you run, remove it yourself (docker volume rm ${NEW_VOL}), then run this again." ;;
+esac
 
 # The compose file, checked now, before anything stops.
 EDIT_COMPOSE=0
@@ -219,8 +249,15 @@ say "Pulling ${OLD_IMAGE} and ${NEW_IMAGE}"
 { docker pull -q "$OLD_IMAGE" && docker pull -q "$NEW_IMAGE"; } >/dev/null || die "docker pull failed (above): nothing was changed"
 
 if [ "$YES" != 1 ]; then
-  printf '\nThis stops the whole stack (devices and the console are offline meanwhile: a few minutes for a small\ndatabase), copies the database to PostgreSQL 18 and starts it again. The PostgreSQL %s volume is left as it is.%s\nContinue? [y/N] ' "$OLD_VER" \
-    "$([ "$STATE" = 2 ] && printf '\nThe out-of-date %s is replaced: what was written on PostgreSQL 18 before going back is not kept.' "$NEW_VOL")"
+  # What a start-over deletes is said before it is asked.
+  gone=
+  case "$STATE" in
+    outdated)   gone="
+The out-of-date ${NEW_VOL} is deleted and made again: what was written on PostgreSQL 18 before going back is not kept." ;;
+    unfinished) gone="
+The unfinished ${NEW_VOL} that an earlier run of this script left is deleted and made again." ;;
+  esac
+  printf '\nThis stops the whole stack (devices and the console are offline meanwhile: a few minutes for a small\ndatabase), copies the database to PostgreSQL 18 and starts it again. The PostgreSQL %s volume is left as it is.%s\nContinue? [y/N] ' "$OLD_VER" "$gone"
   read -r ans || ans=
   case "$ans" in y|Y|yes|YES|o|O|oui) ;; *) echo "Nothing was changed."; exit 1 ;; esac
 fi
@@ -300,11 +337,17 @@ ok "dump: $DUMP ($(du -h "$DUMP" | cut -f1)), $(printf '%s\n' "$OLD_COUNTS" | gr
 say "Creating PostgreSQL 18 in ${NEW_VOL}"
 if [ "$REDO" = 1 ]; then
   drop_new || die "could not remove ${NEW_VOL} to start the move over (a running container uses it: docker ps --filter volume=${NEW_VOL}). ${AS_IT_WAS}."
+  STATE=absent
 fi
+if [ "$STATE" = absent ]; then
+  # Made here, so that it is this run's own: one that appeared meanwhile is someone else's.
+  ! vol_exists "$NEW_VOL" || die "the volume ${NEW_VOL} was made by something else while this ran: not touching it. The PostgreSQL ${OLD_VER} database and the compose file are unchanged: ${AS_IT_WAS}."
+  docker volume create \
+    --label "com.docker.compose.project=${PROJECT}" --label com.docker.compose.volume=pgdata18 \
+    --label "com.docker.compose.version=$(docker compose version --short 2>/dev/null || echo 2)" "$NEW_VOL" >/dev/null
+fi
+# This run's own from here on (cleanup and fail_new may remove it): it made the volume just now, or found it empty.
 NEW_OURS=1
-vol_exists "$NEW_VOL" || docker volume create \
-  --label "com.docker.compose.project=${PROJECT}" --label com.docker.compose.volume=pgdata18 \
-  --label "com.docker.compose.version=$(docker compose version --short 2>/dev/null || echo 2)" "$NEW_VOL" >/dev/null
 fail_new() {
   local gone="was removed"
   docker stop -t 60 "$C_NEW" >/dev/null 2>&1 || true; docker rm "$C_NEW" >/dev/null 2>&1 || true
@@ -312,6 +355,8 @@ fail_new() {
   NEW_OURS=0
   die "$1 ${NEW_VOL} ${gone}; the PostgreSQL ${OLD_VER} database and the compose file are unchanged: ${AS_IT_WAS}. The dump is kept: $DUMP"
 }
+docker run --rm --network none -v "${NEW_VOL}:/v" --entrypoint sh "$NEW_IMAGE" -c ': > "/v/$1"' sh "$IN_PROGRESS" \
+  || fail_new "could not write to ${NEW_VOL} (above)."
 # A throwaway password, in a file only this user reads (not on the command line): the role gets its own password back
 # from the old database right after the restore.
 printf 'POSTGRES_USER=%s\nPOSTGRES_DB=%s\nPOSTGRES_PASSWORD=%s\n' "$DB_USER" "$DB_NAME" "$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')" > "$ENVF"
@@ -350,7 +395,7 @@ docker stop -t 60 "$C_NEW" >/dev/null || fail_new "PostgreSQL 18 did not stop cl
 docker rm "$C_NEW" >/dev/null
 # The mark goes last, once the database is complete and checked (see MARKER).
 docker run --rm --network none -v "${NEW_VOL}:/v" --entrypoint sh "$NEW_IMAGE" \
-  -c "printf 'moved from PostgreSQL %s, %s\npg_control=%s\n' \"\$1\" \"\$2\" \"\$3\" > /v/$MARKER" sh "$OLD_VER" "$STAMP" "$OLD_CONTROL" \
+  -c "printf 'moved from PostgreSQL %s, %s\npg_control=%s\n' \"\$1\" \"\$2\" \"\$3\" > /v/$MARKER && rm -f /v/$IN_PROGRESS" sh "$OLD_VER" "$STAMP" "$OLD_CONTROL" \
   || fail_new "could not mark ${NEW_VOL} as moved (above)."
 DONE=1
 

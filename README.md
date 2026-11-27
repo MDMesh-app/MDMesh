@@ -38,7 +38,7 @@ APK.
 - **Updates are signed, and on quick-start installs a failed update rolls back.** The updater only offers releases
   whose signature verifies. You apply an update with one click. The updater backs up the database first and rolls
   back by itself if the new version fails its health check. From source, `./setup.sh --update` backs up the database
-  too.
+  before it moves to a new release.
 - **Older agents keep working after a server update.** The agent is a Device Owner app written in Kotlin. The server
   only sends it commands it reports it supports, and the agent protocol (`/agent/v1`) only ever adds fields. A test
   in CI checks this.
@@ -80,15 +80,15 @@ APK.
   The device page shows the location history on a map, for the last hour, 24 hours, 7 days or all of it.
 - **Staged agent rollouts:** a new agent version goes to a set of canary devices first. You promote it to the other
   devices once the canaries have updated.
-- **Users and audit:** roles and per-account access limit each console user to chosen devices and configurations.
-  Failed sign-ins are limited per address and per account. The audit log records sign-ins, changes and the commands
-  sent to devices, with who did it and from where.
+- **Users and audit:** roles set what each console user can do, and per-account access limits them to chosen devices
+  and configurations. Failed sign-ins are limited per address and per account. The audit log records sign-ins,
+  changes and the commands sent to devices, with who did it and from where.
 - **Extending:** forks add console pages, tabs and sections in `web/src/extensions/` and server plugins in
   `plugins/fork/`, without editing core files ([EXTENDING](web/EXTENDING.md)).
 
 ## ■ Quick start
 
-On a Linux host (x86_64 or Arm64) with Docker, Docker Compose v2, `curl`, `openssl` 3.0+ (or an older
+On a Linux host (x86_64, or Arm64 from 0.6.0) with Docker, Docker Compose v2, `curl`, `openssl` 3.0+ (or an older
 `openssl` and `minisign`), and a domain. It asks how your phones will reach MDMesh: through a Cloudflare Tunnel (no
 ports to open), on your own domain (ports 80 and 443 reach the host), or behind the nginx, Apache, Caddy or Traefik you
 already run ([which one is for me?](DEPLOY.md#which-install-is-for-me)):

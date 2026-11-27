@@ -163,8 +163,19 @@ describes the code layout.
 - Done: the web console, the Device Owner agent, kiosk mode, app installs and permissions, location, signed updates
   with backup and rollback, staged agent rollouts, users and roles, extensions for forks, and installs behind your own
   proxy or on Arm64.
-- Next: remote control of a device's screen (view and input) over WebRTC, with a self-hosted TURN server.
-- Later: support for device makers' management APIs (Samsung Knox, Zebra) through the agent's capability layer.
+- In progress:
+  - Translations: the console's text is moving to translatable messages, with Russian and French first
+    ([how it works](web/README.md#translatable-text)).
+  - Sync status per setting: which settings each device applied, and which need a newer agent.
+  - App access: required, hidden and suspended apps, and an Ask, Grant or Deny policy for app permissions.
+  - Private DNS ([#184](https://github.com/MDMesh-app/MDMesh/pull/184)) and system update policies
+    ([#161](https://github.com/MDMesh-app/MDMesh/pull/161)).
+  - Device names: marketing names next to model codes ([#154](https://github.com/MDMesh-app/MDMesh/issues/154)),
+    naming at enrollment ([#186](https://github.com/MDMesh-app/MDMesh/issues/186)), and one record for a phone
+    that re-enrolls after a reset ([#197](https://github.com/MDMesh-app/MDMesh/issues/197)).
+  - Recovery: a command to reset the admin password, and a console that stays reachable during an update.
+- Later: remote control of a device's screen over WebRTC with a self-hosted TURN server, and device makers'
+  management APIs (Samsung Knox, Zebra) through the agent's capability layer.
 
 Requests and plans are in the [open issues](https://github.com/MDMesh-app/MDMesh/issues).
 

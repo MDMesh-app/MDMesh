@@ -9,6 +9,17 @@ Unreleased.
 
 ## Unreleased
 
+New
+- Enrollment: a QR code can name system apps for the agent to hide during setup, such as an OEM's own setup pages
+  (`com.mdmesh.HIDE_PACKAGES` in the admin extras bundle), and the setup wizard then finishes with no tap after the
+  Wi-Fi step. Hidden apps stay installed. Needs this release's agent
+  ([agent README](https://github.com/MDMesh-app/MDMesh/blob/main/agent-android/README.md#real-provisioning-production)).
+
+Fixes
+- Kiosk: a configuration's kiosk no longer covers a setup wizard that hasn't finished, which left setup unrecorded
+  and brought the wizard back at every boot. The device shows the kiosk as deferred until the wizard finishes, then
+  enters it by itself and reports it entered. Needs this release's agent.
+
 ## v0.6.0 — 2026-11-27
 
 Upgrading

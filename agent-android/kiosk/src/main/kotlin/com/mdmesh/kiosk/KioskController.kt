@@ -26,6 +26,9 @@ sealed interface KioskResult {
      * Device Owner, or the running SDK is below the required level.
      */
     data object Unsupported : KioskResult
+
+    /** Deliberately not done now, for the reason in [reason] — e.g. entry waits for the setup wizard to finish. */
+    data class Deferred(val reason: String) : KioskResult
 }
 
 /**

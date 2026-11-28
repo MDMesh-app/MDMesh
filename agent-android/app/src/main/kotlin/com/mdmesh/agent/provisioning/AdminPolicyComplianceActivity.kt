@@ -2,12 +2,18 @@ package com.mdmesh.agent.provisioning
 
 import android.app.Activity
 import android.app.admin.DevicePolicyManager
+import android.content.Context
+import android.content.pm.PackageManager
 import android.os.Bundle
+import android.util.Log
 import android.os.PersistableBundle
+import com.mdmesh.agent.MdmApplication
 import com.mdmesh.agent.admin.AdminReceiver
 import com.mdmesh.agent.service.CheckInService
 import com.mdmesh.core.action.ResetPasswordTokenStore
 import com.mdmesh.core.config.ServerConfigStore
+import com.mdmesh.core.kiosk.EnrollmentHiddenApps
+import com.mdmesh.core.kiosk.SetupWizardRestart
 import com.mdmesh.core.location.LocationPermissions
 import com.mdmesh.core.store.AgentDataStores
 import com.mdmesh.core.sync.CheckInWorker
@@ -15,6 +21,7 @@ import com.mdmesh.policy.PolicyManager
 import com.mdmesh.policy.wifi.DpmHandle
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -62,9 +69,51 @@ class AdminPolicyComplianceActivity : Activity() {
             CheckInService.start(ctx)
         }
 
+        hideEnrollmentApps(ctx)
+
         // TODO: enforce mandatory baseline policy here before returning RESULT_OK.
         setResult(RESULT_OK)
         finish()
+    }
+
+    /**
+     * Before RESULT_OK, so the setup wizard has not yet reached the pages these apps add ([EnrollmentHiddenApps]).
+     * Device-Owner status can lag this activity (see [applyBaselinePolicy]), so what could not be hidden is retried
+     * for a few seconds in the background: the wizard still has Google's own pages to show first.
+     */
+    private fun hideEnrollmentApps(ctx: Context) {
+        val packages = EnrollmentHiddenApps.parse(extrasString(EnrollmentHiddenApps.EXTRA), ctx.packageName)
+        if (packages.isEmpty()) return
+        val dpm = ctx.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        val admin = AdminReceiver.componentName(ctx)
+        val hide = { p: String -> dpm.setApplicationHidden(admin, p, true); dpm.isApplicationHidden(admin, p) }
+        val userSetup = (application as MdmApplication).userSetup
+        // Before anything is hidden: the setup wizard may crash over a hidden app's pages, and must not leave a dialog.
+        val quiet = { userSetup.quietUntilComplete(admin) }
+        quiet()
+        // Then started fresh, it ends on its short path, without the hidden app's pages or a tap (SetupWizardRestart).
+        val restart = SetupWizardRestart(ctx, userSetup)
+        restart.wizard()?.let { wizard ->
+            CoroutineScope(Dispatchers.IO).launch { restart.untilComplete(wizard) }
+        }
+        // One QR serves several brands, so some of its apps are not on this device: they are left out, and logged as
+        // such. Hidden ones still count as installed (MATCH_UNINSTALLED_PACKAGES).
+        val (here, absent) = packages.partition {
+            runCatching { packageManager.getPackageInfo(it, PackageManager.MATCH_UNINSTALLED_PACKAGES) }.isSuccess
+        }
+        val missed = EnrollmentHiddenApps.hideAll(here, hide)
+        Log.i(TAG, "hid ${here.size - missed.size} of ${here.size} apps at enrollment; not on this device: $absent")
+        if (missed.isEmpty()) return
+        CoroutineScope(Dispatchers.IO).launch {
+            var left = missed
+            repeat(HIDE_RETRIES) {
+                delay(HIDE_RETRY_MS)
+                quiet()
+                left = EnrollmentHiddenApps.hideAll(left, hide)
+                if (left.isEmpty()) return@launch
+            }
+            Log.w(TAG, "not hidden at enrollment (refused): $left")
+        }
     }
 
     /** Benign Device-Owner baseline: auto-grant runtime permissions to managed apps so they
@@ -111,4 +160,10 @@ class AdminPolicyComplianceActivity : Activity() {
         intent.getParcelableExtra<PersistableBundle>(
             DevicePolicyManager.EXTRA_PROVISIONING_ADMIN_EXTRAS_BUNDLE,
         )?.getString(key)
+
+    private companion object {
+        const val TAG = "AdminPolicyCompliance"
+        const val HIDE_RETRIES = 10
+        const val HIDE_RETRY_MS = 1_000L
+    }
 }

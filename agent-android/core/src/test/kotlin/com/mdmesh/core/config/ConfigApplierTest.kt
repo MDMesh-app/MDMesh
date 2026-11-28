@@ -4,6 +4,7 @@ import android.content.ComponentName
 import com.mdmesh.core.kiosk.ConfiguredSafeModeSetting
 import com.mdmesh.core.kiosk.KioskApplier
 import com.mdmesh.core.kiosk.KioskHomeSwitch
+import com.mdmesh.core.kiosk.UserSetup
 import com.mdmesh.core.store.ConfigStateStore
 import com.mdmesh.core.store.InMemoryConfigStateStore
 import com.mdmesh.core.store.InMemoryKioskStateStore
@@ -351,6 +352,45 @@ class ConfigApplierTest {
         val r = applier(fixedToggles(), kiosk(FakeController(KioskResult.Unsupported)), {}, store)
             .apply(ConfigApplyPayload(revision = "k9", kiosk = KioskApplyPayload()))
         assertEquals(ConfigOutcome.UNSUPPORTED, r.outcomes["kiosk"]); assertEquals("k9", store.revision())
+    }
+
+    @Test fun `a kiosk waits for the setup wizard, and the saved document enters it once setup is done`() = runTest {
+        // QR provisioning: config.apply arrives while the setup wizard still has pages to show. The document must
+        // persist, so the re-apply armed for the end of setup (and the boot re-apply) has something to replay.
+        val setup = object : UserSetup {
+            var complete = false
+            var armed = 0
+            override fun isComplete() = complete
+            override fun reapplyWhenComplete() { armed++ }
+        }
+        val c = FakeController(); val kstore = InMemoryKioskStateStore(); val store = InMemoryConfigStateStore()
+        val a = ConfigApplier(fixedToggles(), kiosk(c, kstore), {}, store, setPowerMode = {}, userSetup = setup)
+        val r = a.apply(ConfigApplyPayload(revision = "s1", kiosk = KioskApplyPayload(pinPackage = "com.a")))
+        assertEquals(ConfigOutcome.deferred(UserSetup.INCOMPLETE), r.outcomes["kiosk"])
+        assertTrue(ConfigApplier.succeeded(r))
+        assertEquals("s1", store.revision())
+        assertEquals("nothing entered or claimed over the wizard", 0, c.enters)
+        assertNull(kstore.load())
+        assertEquals(1, setup.armed)
+
+        setup.complete = true
+        assertEquals(ConfigOutcome.APPLIED, a.reapplyPersisted()?.outcomes?.get("kiosk"))
+        assertEquals(1, c.enters)
+        assertEquals("com.a", kstore.load()?.pinPackage)
+    }
+
+    @Test fun `a kiosk-off document still exits while the setup wizard is unfinished`() = runTest {
+        val setup = object : UserSetup {
+            override fun isComplete() = false
+            override fun reapplyWhenComplete() = Unit
+        }
+        val c = FakeController(); val kstore = InMemoryKioskStateStore(); val store = InMemoryConfigStateStore()
+        kstore.save(KioskApplyPayload(pinPackage = "com.a"))
+        store.save(ConfigApplyPayload(revision = "on", kiosk = KioskApplyPayload(pinPackage = "com.a")))
+        val r = ConfigApplier(fixedToggles(), kiosk(c, kstore), {}, store, setPowerMode = {}, userSetup = setup)
+            .apply(ConfigApplyPayload(revision = "off"))
+        assertEquals(ConfigOutcome.APPLIED, r.outcomes["kiosk"])
+        assertEquals(1, c.exits)
     }
 
     @Test fun `reapplyPersisted replays the stored document`() = runTest {

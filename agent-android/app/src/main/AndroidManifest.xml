@@ -194,6 +194,16 @@
             </intent-filter>
         </receiver>
 
+        <!-- Local, offline API (Wi-Fi) for the pinned kiosk app; see README "Local API". Exported with no
+             permission on purpose: every call is authorized in code, from the calling package the platform
+             verified against the calling UID (Device Owner + single-app kiosk pinning the caller + caller
+             installed by this agent). Adds no permission. -->
+        <provider
+            android:name=".localapi.LocalApiProvider"
+            android:authorities="${applicationId}.localapi"
+            android:exported="true"
+            tools:ignore="ExportedContentProvider" />
+
         <!-- WorkManager is initialized on-demand via Hilt (MdmApplication is a
              Configuration.Provider), so disable the default auto-initializer. -->
         <provider

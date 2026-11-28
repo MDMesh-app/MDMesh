@@ -9,6 +9,12 @@ Unreleased.
 
 ## Unreleased
 
+New
+- Kiosk: the app of a one-app kiosk can join, forget and list Wi-Fi networks through the agent, with no server
+  contact, so a device whose network changed can be reconnected from the app itself (#144). Only the app the kiosk
+  pins, installed by MDMesh, may use it. Needs this release's agent
+  ([Local API](https://github.com/MDMesh-app/MDMesh/blob/main/agent-android/README.md#local-api-offline-wi-fi-for-the-pinned-kiosk-app)).
+
 ## v0.6.0 — 2026-11-27
 
 Upgrading

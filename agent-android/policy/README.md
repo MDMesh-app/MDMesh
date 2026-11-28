@@ -20,6 +20,9 @@ an interface here; feature code never touches DPM directly.
   `capabilities.policy` in the `CapabilityMatrix`.
 - `UserRestrictions` — pure capability-key -> `DISALLOW_*` key mapping, kept free of Android types
   so the decision is unit-testable on the JVM. Strategies only apply the returned set.
+- `wifi/WifiNetworks.kt` — not a policy (no capability key): the saved-network surface of `WifiManager`
+  (`WifiNetworks`, `AndroidWifiNetworks`) behind the agent's local API, which saves and joins networks for the
+  pinned kiosk app. `WifiKeys` builds the `WifiConfiguration`.
 
 ## Worked example: Wi-Fi (`wifi/`)
 

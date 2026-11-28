@@ -34,7 +34,7 @@ junit = "4.13.2"
 androidxJunit = "1.2.1"
 androidxTestRunner = "1.6.2"
 # Robolectric: dialog behaviour on the real framework code, API 24-35, on the JVM (no screenshots)
-robolectric = "4.18"
+robolectric = "4.18.1"
 androidxTestCore = "1.6.1"
 # Google's Accessibility Test Framework: the ATF checks on every screen, under Robolectric (test only)
 accessibilityTestFramework = "4.1.1"

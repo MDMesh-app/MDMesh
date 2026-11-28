@@ -20,6 +20,31 @@ class KioskApplierTest {
     private val home = ComponentName("com.mdmesh.agent", "com.mdmesh.agent.KioskHomeAlias")
     private fun setting(value: Boolean?) = object : SafeModeSetting { override fun current() = value }
 
+    @Test fun `entering kiosk hides the other launchers, except the kiosk's own apps`() = runTest {
+        val h = LaunchersHome()
+        KioskApplier(FakeController(KioskResult.Ok), InMemoryKioskStateStore(), h, home) { false }
+            .enter(KioskApplyPayload(mode = "single", pinPackage = "com.a", allowedPackages = listOf("com.b")))
+        assertEquals(listOf("claim:true", "hide-except:[com.a, com.b]", "launcher"), h.log)
+    }
+    @Test fun `a failed entry hides nothing`() = runTest {
+        val h = LaunchersHome()
+        KioskApplier(FakeController(KioskResult.Failed("dpm")), InMemoryKioskStateStore(), h, home) { false }
+            .enter(KioskApplyPayload(mode = "single", pinPackage = "com.a"))
+        assertFalse(h.log.any { it.startsWith("hide") })
+    }
+    @Test fun `leaving kiosk restores the other launchers before handing HOME back`() = runTest {
+        val h = LaunchersHome(); val store = InMemoryKioskStateStore()
+        store.save(KioskApplyPayload(mode = "single", pinPackage = "com.a"))
+        KioskApplier(FakeController(KioskResult.Ok), store, h, home) { true }.exit()
+        assertEquals(listOf("restore", "claim:false", "oem"), h.log)
+    }
+    @Test fun `leaving kiosk while the agent keeps HOME leaves the launchers hidden`() = runTest {
+        val h = LaunchersHome(); val store = InMemoryKioskStateStore()
+        store.save(KioskApplyPayload(mode = "single", pinPackage = "com.a"))
+        KioskApplier(FakeController(KioskResult.Ok), store, h, home) { true }.exit(handBackHome = false)
+        assertFalse("restore" in h.log)
+    }
+
     @Test fun `enter ok persists payload and shows launcher`() = runTest {
         val c = FakeController(KioskResult.Ok); val h = FakeHome(); val store = InMemoryKioskStateStore()
         val r = KioskApplier(c, store, h, home) { false }

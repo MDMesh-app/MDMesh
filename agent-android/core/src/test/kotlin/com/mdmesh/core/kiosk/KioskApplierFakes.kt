@@ -61,6 +61,16 @@ internal class FakeHome : KioskHomeSwitch {
     override fun relaunchCleared(pkg: String) { log += "cleared:$pkg" }
 }
 
+/** Also records the other launchers being hidden and restored. */
+internal class LaunchersHome : KioskHomeSwitch {
+    val log = mutableListOf<String>()
+    override fun setClaimEnabled(enabled: Boolean) { log += "claim:$enabled" }
+    override fun showLauncher() { log += "launcher" }
+    override fun showOemHome() { log += "oem" }
+    override fun hideOtherLaunchers(keep: Collection<String>) { log += "hide-except:${keep.sorted()}" }
+    override fun restoreOtherLaunchers() { log += "restore" }
+}
+
 internal class MemJournal : ExitJournal {
     var saved: ExitJournal.Pending? = null
     override fun pending() = saved

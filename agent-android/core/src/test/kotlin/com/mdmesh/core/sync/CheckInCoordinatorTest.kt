@@ -789,4 +789,31 @@ class CheckInCoordinatorTest {
         // What the wake channel reads when that success arrives (Credentials.changes): the recovered secret.
         assertEquals("sek-live", identity.secret())
     }
+
+    private fun cmd(id: String, type: String) =
+        CommandEnvelope(commandId = id, issuedAt = "2026-01-01T00:00:00Z", type = type)
+
+    @Test fun `a batch holding config_apply runs its app installs last, and everything else in order`() {
+        // Enrollment sends app.install then config.apply: the kiosk must not wait for a large download.
+        val batch = listOf(
+            cmd("1", "app.install"), cmd("2", "device.lock"), cmd("3", "config.apply"), cmd("4", "app.install"),
+        )
+        assertEquals(listOf("2", "3", "1", "4"), runOrder(batch).map { it.commandId })
+    }
+
+    @Test fun `a batch's installs name their packages, and the rest of the batch names none`() {
+        val install = CommandEnvelope(
+            commandId = "1", issuedAt = "2026-01-01T00:00:00Z", type = "app.install",
+            payload = kotlinx.serialization.json.buildJsonObject {
+                put("packageName", kotlinx.serialization.json.JsonPrimitive("com.a"))
+            },
+        )
+        val batch = listOf(install, cmd("2", "config.apply"), cmd("3", "app.install"))
+        assertEquals(listOf("com.a"), installPackages(batch))
+    }
+
+    @Test fun `a batch without config_apply runs in the server's order`() {
+        val batch = listOf(cmd("1", "app.install"), cmd("2", "device.lock"), cmd("3", "app.install"))
+        assertEquals(listOf("1", "2", "3"), runOrder(batch).map { it.commandId })
+    }
 }

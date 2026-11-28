@@ -8,6 +8,7 @@ import android.os.SystemClock
 import android.os.UserManager
 import android.util.Log
 import com.mdmesh.agent.BuildConfig
+import com.mdmesh.agent.MainActivity
 import com.mdmesh.agent.admin.AdminReceiver
 import com.mdmesh.core.capability.CapabilityCollector
 import com.mdmesh.core.capability.CapabilitySource
@@ -373,7 +374,12 @@ object AgentModule {
     ): KioskApplier {
         val home = kioskHomeAlias(context)
         return KioskApplier(
-            kiosk, store, AndroidKioskHomeSwitch(context, home), home,
+            kiosk, store,
+            AndroidKioskHomeSwitch(
+                context, home, AdminReceiver.componentName(context),
+                ownApp = ComponentName(context, MainActivity::class.java),
+            ),
+            home,
             safeMode = ConfiguredSafeModeSetting(configStore),
             journal = SharedPrefsExitJournal(context),
             // An exit cut off midway is never finished while the configuration says kiosk on.

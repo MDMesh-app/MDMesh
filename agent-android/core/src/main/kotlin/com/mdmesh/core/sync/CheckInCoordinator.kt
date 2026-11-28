@@ -4,6 +4,7 @@ import com.mdmesh.core.capability.CapabilitySource
 import com.mdmesh.core.command.CommandDispatcher
 import com.mdmesh.core.di.IoDispatcher
 import com.mdmesh.core.install.InstallIntegrityPolicy
+import com.mdmesh.core.install.PendingInstalls
 import com.mdmesh.core.net.MdmApi
 import com.mdmesh.core.state.DeviceStateSource
 import com.mdmesh.core.store.DeviceIdentity
@@ -11,6 +12,8 @@ import com.mdmesh.core.telemetry.EventLog
 import com.mdmesh.core.telemetry.EventSink
 import com.mdmesh.core.telemetry.TelemetrySource
 import com.mdmesh.proto.AgentCheckInRequest
+import com.mdmesh.proto.CommandEnvelope
+import com.mdmesh.proto.DeviceAction
 import com.mdmesh.proto.EventType
 import androidx.annotation.VisibleForTesting
 import com.mdmesh.policy.factoryreset.FactoryResetWipeHold
@@ -22,6 +25,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -69,6 +74,8 @@ class CheckInCoordinator @Inject constructor(
      * check-in.
      */
     private val wipeHold: FactoryResetWipeHold = FactoryResetWipeHold(),
+    /** The batch's app installs, while it runs: the kiosk launcher waits for a pinned app that is among them. */
+    private val pendingInstalls: PendingInstalls = PendingInstalls(),
 ) {
 
     @VisibleForTesting
@@ -261,13 +268,19 @@ class CheckInCoordinator @Inject constructor(
         // Before this batch runs: its installs are judged by what this server guarantees.
         installIntegrity.update(data.installIntegrity)
 
-        for (command in data.commands) {
-            val result = dispatcher.dispatch(command)
-            // Saved one by one: a later command can end the process (an agent self-update does), and the results
-            // before it must still reach the server.
-            pending.add(listOf(result))
-            // Record each command outcome as a timeline event (flushed next cycle).
-            eventSink.record(EventType.COMMAND_RESULT, "${result.commandId}:${result.status}")
+        val installing = installPackages(data.commands)
+        pendingInstalls.add(installing)
+        try {
+            for (command in runOrder(data.commands)) {
+                val result = dispatcher.dispatch(command)
+                // Saved one by one: a later command can end the process (an agent self-update does), and the results
+                // before it must still reach the server.
+                pending.add(listOf(result))
+                // Record each command outcome as a timeline event (flushed next cycle).
+                eventSink.record(EventType.COMMAND_RESULT, "${result.commandId}:${result.status}")
+            }
+        } finally {
+            pendingInstalls.remove(installing)
         }
         return data.commands.isNotEmpty()
     }
@@ -282,6 +295,26 @@ enum class CheckInOutcome {
     /** It handed the request over, but no check-in ran for it (that cycle failed, was cancelled or hit its cap). */
     NOT_SERVED,
 }
+
+/**
+ * The order a check-in's commands run in: the server's, except that a batch holding `config.apply` runs its
+ * `app.install`s last. Commands run one at a time, and enrollment sends the kiosk's app before the configuration
+ * that pins it, so the kiosk waited for the whole download — the better part of a minute for a large app, on the
+ * phone's own launcher. The kiosk launcher waits for a pinned app that is not installed yet, so the order between
+ * them does not matter for correctness.
+ */
+internal fun runOrder(commands: List<CommandEnvelope>): List<CommandEnvelope> {
+    if (commands.none { it.type == DeviceAction.CONFIG_APPLY }) return commands
+    val (installs, rest) = commands.partition { it.type == APP_INSTALL }
+    return rest + installs
+}
+
+/** The packages [commands]' `app.install`s name; one without a readable `packageName` is left out. */
+internal fun installPackages(commands: List<CommandEnvelope>): List<String> = commands
+    .filter { it.type == APP_INSTALL }
+    .mapNotNull { (it.payload?.get("packageName") as? JsonPrimitive)?.contentOrNull }
+
+private const val APP_INSTALL = "app.install"
 
 /** A check-in was rejected by the server. Lets the worker retry with backoff. */
 class CheckInException(message: String) : Exception(message)

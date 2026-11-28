@@ -32,6 +32,7 @@ import com.mdmesh.agent.ui.KioskRenderer
 import com.mdmesh.agent.ui.Placement
 import com.mdmesh.agent.ui.KioskScreen
 import com.mdmesh.agent.ui.MdmDialog
+import com.mdmesh.core.install.PendingInstalls
 import com.mdmesh.core.kiosk.KioskApplier
 import com.mdmesh.core.kiosk.KioskBackgroundImageStore
 import com.mdmesh.core.store.KioskStateStore
@@ -82,6 +83,7 @@ class KioskLauncherActivity : ComponentActivity() {
     @Inject lateinit var holdStore: HoldStore
     @Inject lateinit var backgroundImages: KioskBackgroundImageStore
     @Inject lateinit var pinGate: ExitPinGate
+    @Inject lateinit var pendingInstalls: PendingInstalls
 
     /** Last applied non-null kiosk state, so [onResume] can recover a bounced single-app pin. */
     private var active: KioskApplyPayload? = null
@@ -157,6 +159,11 @@ class KioskLauncherActivity : ComponentActivity() {
             renderer.setBackdrop(bitmap, info)
         }
         render(KioskScreen.Idle)
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                pendingInstalls.packages.collect { onPendingInstallsChanged() }
+            }
+        }
         // React to kiosk.enter/kiosk.exit live: those run in the check-in service, not here, so we
         // observe the persisted state and re-render (enter → grid/pin, exit → unpin + idle) without
         // waiting for the user to touch the screen.
@@ -258,8 +265,9 @@ class KioskLauncherActivity : ComponentActivity() {
         if (p.mode != "single") return
         when {
             returns.held -> hold(p)
-            // Not installed (or disabled): nothing was opened, so nothing closed or crashed; the grid says why.
-            !pinnedLaunchable(p) -> showGrid(p)
+            // Not launchable: nothing was opened, so nothing closed or crashed. Not installed yet, it waits on the
+            // splash; disabled or without a launcher entry, the grid says why (launchPinned).
+            !pinnedLaunchable(p) -> launchPinned(p)
             // The app wasn't open (it was missing, and is back): open it, without counting a return.
             screen !is KioskScreen.Splash -> launchPinned(p)
             else -> when (returns.onReturned()) {
@@ -268,6 +276,9 @@ class KioskLauncherActivity : ComponentActivity() {
             }
         }
     }
+
+    /** [pkg] is installed, launchable or not. */
+    private fun isInstalled(pkg: String): Boolean = runCatching { packageManager.getPackageInfo(pkg, 0) }.isSuccess
 
     /** The single-app kiosk's app is installed and enabled (PackageManager has a launch intent for it). */
     private fun pinnedLaunchable(p: KioskApplyPayload): Boolean =
@@ -365,7 +376,11 @@ class KioskLauncherActivity : ComponentActivity() {
         // Resolved here, not in the background: the app opens in the same step that decided to open it.
         val intent = pkg?.let(::launchIntentFor)
         if (pkg == null || intent == null) {
-            return showGrid(p) // unknown package → fall back to the grid
+            // On its way: enrollment installs the kiosk's app after the kiosk starts (CheckInCoordinator's
+            // runOrder), so it waits on the splash while its install is pending, and packageChanges opens it when
+            // it lands. Missing, or installed but not launchable: the grid says so.
+            val onItsWay = pkg != null && pkg in pendingInstalls && !isInstalled(pkg)
+            return if (onItsWay) awaitPinned(p, checkNotNull(pkg)) else showGrid(p)
         }
         val splash = KioskScreen.Splash(palette(p), exitFor(p), pkg, apps.cachedLabel(pkg))
         render(splash)
@@ -373,6 +388,25 @@ class KioskLauncherActivity : ComponentActivity() {
         if (splash.appName == null) {
             load { apps.label(pkg)?.let { name -> if (screen == splash) render(splash.copy(appName = name)) } }
         }
+        return LauncherScreen.PINNED_APP
+    }
+
+    /**
+     * The pinned app's install started or ended while it isn't installed: the splash waits for it, the grid says it's
+     * missing ([launchPinned]).
+     */
+    private fun onPendingInstallsChanged() {
+        val p = active ?: return
+        val pkg = p.pinPackage?.takeIf { p.mode == "single" && !isInstalled(it) } ?: return
+        val pending = pkg in pendingInstalls
+        val waitingInVain = screen is KioskScreen.Splash && !pending
+        val missingButComing = pending && (screen as? KioskScreen.Grid)?.missingApp == pkg
+        if (waitingInVain || missingButComing) launchPinned(p)
+    }
+
+    /** The splash, while the pinned app [pkg] is not installed yet ([launchPinned]). */
+    private fun awaitPinned(p: KioskApplyPayload, pkg: String): LauncherScreen {
+        render(KioskScreen.Splash(palette(p), exitFor(p), pkg, apps.cachedLabel(pkg)))
         return LauncherScreen.PINNED_APP
     }
 

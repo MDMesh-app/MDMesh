@@ -40,6 +40,7 @@ import com.mdmesh.core.command.handlers.KioskClearPinLockoutHandler
 import com.mdmesh.core.command.handlers.KioskEnterHandler
 import com.mdmesh.core.command.handlers.KioskExitHandler
 import com.mdmesh.core.kiosk.AndroidKioskHomeSwitch
+import com.mdmesh.core.kiosk.AndroidUserSetup
 import com.mdmesh.core.kiosk.ConfiguredSafeModeSetting
 import com.mdmesh.core.kiosk.KioskApplier
 import com.mdmesh.core.kiosk.KioskBackgroundPrefetchWorker
@@ -362,6 +363,12 @@ object AgentModule {
     private fun kioskHomeAlias(context: Context): ComponentName =
         ComponentName(context.packageName, "com.mdmesh.agent.KioskHomeAlias")
 
+    /** One instance: the kiosk's wait for the setup wizard and its resumption at app start share one observer. */
+    @Provides
+    @Singleton
+    fun provideUserSetup(@ApplicationContext context: Context, configStore: ConfigStateStore): AndroidUserSetup =
+        AndroidUserSetup(context, configStore)
+
     @Provides
     @Singleton
     fun provideKioskApplier(
@@ -388,7 +395,8 @@ object AgentModule {
     }
 
     @Provides @IntoSet
-    fun provideKioskEnterHandler(applier: KioskApplier): CommandHandler = KioskEnterHandler(applier)
+    fun provideKioskEnterHandler(applier: KioskApplier, userSetup: AndroidUserSetup): CommandHandler =
+        KioskEnterHandler(applier, userSetup)
 
     @Provides @IntoSet
     fun provideKioskExitHandler(applier: KioskApplier): CommandHandler = KioskExitHandler(applier)
@@ -486,8 +494,9 @@ object AgentModule {
         power: PowerModeStore,
         appPermissions: AppRuntimePermissions,
         grantLock: PermissionGrantLock,
+        userSetup: AndroidUserSetup,
     ): ConfigApplier = ConfigApplier(registry::togglePolicies, kiosk, location::set, store,
-        setPowerMode = power::set, appPermissions = appPermissions, grantLock = grantLock)
+        setPowerMode = power::set, appPermissions = appPermissions, grantLock = grantLock, userSetup = userSetup)
 
     /** The one lock for both writers of per-app grant states: the configuration's rules and the kiosk guard. */
     @Provides

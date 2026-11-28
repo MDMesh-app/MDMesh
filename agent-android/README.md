@@ -128,3 +128,28 @@ manager, then re-run the enrollment loop.
 Production enrollment is via QR / NFC / zero-touch using the
 `GET_PROVISIONING_MODE` + `ADMIN_POLICY_COMPLIANCE` activities (already wired). The
 ADB loop above is for the dev inner loop only.
+
+After `ADMIN_POLICY_COMPLIANCE` returns, the setup wizard goes on to its remaining pages (navigation mode, the
+OEM's own), and the device enrolls meanwhile. A configuration's kiosk waits for those pages: covering an unfinished
+wizard would leave setup unrecorded, and the wizard would come back at every boot. `config.apply` reports the kiosk
+as `deferred` until then and enters it as soon as the wizard finishes; an ad-hoc `kiosk.enter` sent meanwhile fails
+with the same reason. See `UserSetup`.
+
+Pages an OEM adds can be skipped instead. The QR's admin extras bundle may name system apps to hide, comma-separated,
+under `com.mdmesh.HIDE_PACKAGES`; the agent hides them in `ADMIN_POLICY_COMPLIANCE`, before the wizard reaches their
+pages. On a Lenovo tablet, `com.tblenovo.setup,com.aura.oobe.lenovo` removes the navigation-mode and "setup complete"
+pages and the app promoter shown after setup. Hidden apps are not uninstalled, and
+`setApplicationHidden(admin, pkg, false)` brings one back. See `EnrollmentHiddenApps`.
+
+Hiding an OEM's setup app can make the setup wizard crash when it next loads that app's part of its script. Closed,
+the wizard restarts on its short provisioned path and finishes, skipping the remaining pages, Google's included. So
+that no "has stopped" dialog waits for the person enrolling, the agent sets `DISALLOW_SYSTEM_ERROR_DIALOGS` before
+it hides anything and lifts it as soon as setup completes (`AndroidUserSetup.quietUntilComplete`). Each crash only
+closes the wizard's top page, though, and it reopens its history back to the QR scanner. So the agent then restarts
+the wizard from scratch, opening its entry in a new task that replaces its own, which sends it down its short path to
+its exit, repeated a few times while setup is not complete (`SetupWizardRestart`). Never by hiding the wizard's
+package: Android then treats it as uninstalled and deletes the Wi-Fi networks it saved, the setup Wi-Fi included.
+
+A test enrollment can be followed over adb from its first minute: `com.mdmesh.ENABLE_ADB` set to `"true"` in the QR's
+admin extras has the agent turn USB debugging on as it takes over (`EnrollmentDebugging`). The computer's key still has
+to be accepted on the device, and debugging stays on afterwards, so never put it in a production QR.

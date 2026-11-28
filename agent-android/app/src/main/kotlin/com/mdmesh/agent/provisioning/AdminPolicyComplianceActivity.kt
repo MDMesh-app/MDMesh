@@ -3,6 +3,7 @@ package com.mdmesh.agent.provisioning
 import android.app.Activity
 import android.app.admin.DevicePolicyManager
 import android.content.Context
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.util.Log
 import android.os.PersistableBundle
@@ -95,8 +96,13 @@ class AdminPolicyComplianceActivity : Activity() {
         restart.wizard()?.let { wizard ->
             CoroutineScope(Dispatchers.IO).launch { restart.untilComplete(wizard) }
         }
-        val missed = EnrollmentHiddenApps.hideAll(packages, hide)
-        Log.i(TAG, "hid ${packages.size - missed.size} of ${packages.size} apps at enrollment")
+        // One QR serves several brands, so some of its apps are not on this device: they are left out, and logged as
+        // such. Hidden ones still count as installed (MATCH_UNINSTALLED_PACKAGES).
+        val (here, absent) = packages.partition {
+            runCatching { packageManager.getPackageInfo(it, PackageManager.MATCH_UNINSTALLED_PACKAGES) }.isSuccess
+        }
+        val missed = EnrollmentHiddenApps.hideAll(here, hide)
+        Log.i(TAG, "hid ${here.size - missed.size} of ${here.size} apps at enrollment; not on this device: $absent")
         if (missed.isEmpty()) return
         CoroutineScope(Dispatchers.IO).launch {
             var left = missed
@@ -106,7 +112,7 @@ class AdminPolicyComplianceActivity : Activity() {
                 left = EnrollmentHiddenApps.hideAll(left, hide)
                 if (left.isEmpty()) return@launch
             }
-            Log.w(TAG, "not hidden at enrollment (not installed, or refused): $left")
+            Log.w(TAG, "not hidden at enrollment (refused): $left")
         }
     }
 

@@ -9,6 +9,10 @@ Unreleased.
 
 ## Unreleased
 
+Fixes
+- Agent: an app install logs its progress in logcat (download size and time, and whether it installed, was skipped
+  or failed), so a slow install can be told from a stuck one on the device. Needs this release's agent.
+
 ## v0.6.0 — 2026-11-27
 
 Upgrading

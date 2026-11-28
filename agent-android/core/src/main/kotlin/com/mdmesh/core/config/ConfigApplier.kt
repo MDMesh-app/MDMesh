@@ -1,6 +1,7 @@
 package com.mdmesh.core.config
 
 import com.mdmesh.core.kiosk.KioskApplier
+import com.mdmesh.core.kiosk.UserSetup
 import com.mdmesh.core.store.ConfigStateStore
 import com.mdmesh.core.store.configuredKiosk
 import com.mdmesh.kiosk.KioskResult
@@ -41,6 +42,7 @@ import kotlinx.coroutines.sync.withLock
  *   never unsupported, so the document is not saved and the server re-sends it; it is never applied or released.
  * @param setPowerMode sets the live-connection mode for the `connectivity` section (1.5), as `device.powerMode` does.
  *   Only called with a mode this agent knows; another one is reported unsupported.
+ * @param userSetup the setup wizard, which a kiosk waits for ([UserSetup]). The default is for tests only.
  */
 // Coordinator for independently releasable desired-state sections; each collaborator is one section's device side.
 @Suppress("TooManyFunctions", "LongParameterList")
@@ -53,6 +55,7 @@ class ConfigApplier(
     private val appPermissions: AppRuntimePermissions = UnsupportedAppRuntimePermissions,
     /** Shared with the kiosk guard, the other writer of grant states ([PermissionGrantLock]). */
     private val grantLock: PermissionGrantLock = PermissionGrantLock(),
+    private val userSetup: UserSetup = UserSetup.Complete,
 ) {
     private val mutex = Mutex()
 
@@ -358,6 +361,11 @@ class ConfigApplier(
         // manually-kiosked device.
         val desiredKiosk = doc.kiosk
         val r = when {
+            // Not over an unfinished setup wizard, which would resume at every boot (UserSetup). Deferred, so this
+            // document is still saved, and the re-apply armed here replays it when the wizard finishes. A device
+            // already in kiosk stays in it: nothing is exited.
+            desiredKiosk != null && !userSetup.isComplete() ->
+                KioskResult.Deferred(UserSetup.INCOMPLETE).also { userSetup.reapplyWhenComplete() }
             desiredKiosk != null -> kiosk.enter(desiredKiosk)
             previousConfigHadKiosk && kiosk.isPersisted() -> kiosk.exit()
             else -> return null
@@ -366,6 +374,7 @@ class ConfigApplier(
             KioskResult.Ok -> ConfigOutcome.APPLIED
             KioskResult.Unsupported -> ConfigOutcome.UNSUPPORTED
             is KioskResult.Failed -> ConfigOutcome.failed(r.reason)
+            is KioskResult.Deferred -> ConfigOutcome.deferred(r.reason)
         }
     }
 

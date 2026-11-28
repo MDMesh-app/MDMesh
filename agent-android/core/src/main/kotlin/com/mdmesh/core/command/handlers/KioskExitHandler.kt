@@ -18,5 +18,6 @@ class KioskExitHandler(private val applier: KioskApplier) : CommandHandler {
         KioskResult.Ok -> CommandResults.done(command)
         KioskResult.Unsupported -> CommandResults.unsupported(command, "kiosk unsupported on this device")
         is KioskResult.Failed -> CommandResults.failed(command, r.reason)
+        is KioskResult.Deferred -> CommandResults.failed(command, r.reason) // exit never waits
     }
 }

@@ -128,3 +128,9 @@ manager, then re-run the enrollment loop.
 Production enrollment is via QR / NFC / zero-touch using the
 `GET_PROVISIONING_MODE` + `ADMIN_POLICY_COMPLIANCE` activities (already wired). The
 ADB loop above is for the dev inner loop only.
+
+After `ADMIN_POLICY_COMPLIANCE` returns, the setup wizard goes on to its remaining pages (navigation mode, the
+OEM's own), and the device enrolls meanwhile. A configuration's kiosk waits for those pages: covering an unfinished
+wizard would leave setup unrecorded, and the wizard would come back at every boot. `config.apply` reports the kiosk
+as `deferred` until then and enters it as soon as the wizard finishes; an ad-hoc `kiosk.enter` sent meanwhile fails
+with the same reason. See `UserSetup`.

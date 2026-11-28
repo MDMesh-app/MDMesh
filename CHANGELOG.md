@@ -9,6 +9,11 @@ Unreleased.
 
 ## Unreleased
 
+Fixes
+- Kiosk: a configuration's kiosk no longer covers a setup wizard that hasn't finished, which left setup unrecorded
+  and brought the wizard back at every boot. The device shows the kiosk as deferred until the wizard finishes, then
+  enters it by itself and reports it entered. Needs this release's agent.
+
 ## v0.6.0 — 2026-11-27
 
 Upgrading

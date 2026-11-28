@@ -54,7 +54,7 @@
         <mybatis.version>3.5.19</mybatis.version>
         <mybatis.guice.version>3.18</mybatis.guice.version>
 
-        <postgresql.version>42.7.14</postgresql.version>
+        <postgresql.version>42.7.15</postgresql.version>
         <liquibase.version>4.33.0</liquibase.version>
 
         <junit.version>4.13.2</junit.version>
@@ -154,7 +154,7 @@
         <dependency>
             <groupId>io.swagger</groupId>
             <artifactId>swagger-jersey2-jaxrs</artifactId>
-            <version>1.6.16</version>
+            <version>1.6.17</version>
         </dependency>
 
         <!-- https://mvnrepository.com/artifact/com.fasterxml.jackson.core/jackson-databind -->

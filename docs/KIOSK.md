@@ -102,6 +102,13 @@ The apps can be managed again, and **Factory reset** follows the configuration a
 its agent updates to 0.6.0 gets all of this at once. An agent update while in kiosk briefly takes the device out of
 lock task; from 0.6.0 it returns to the kiosk by itself within seconds.
 
+### Wi-Fi from the kiosk app
+
+In a one-app kiosk, the app can join, forget and list the device's Wi-Fi networks through the agent, with no server
+contact, so a device whose network changed can be reconnected from the app itself. Only the app the kiosk pins, and
+only when MDMesh installed it, may do this. For app developers:
+[agent-android/README.md, Local API](../agent-android/README.md#local-api-offline-wi-fi-for-the-pinned-kiosk-app).
+
 ## Leaving kiosk mode
 
 ### On the device, with the exit PIN

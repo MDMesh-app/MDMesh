@@ -35,6 +35,8 @@ import com.mdmesh.core.command.handlers.DeviceWipeHandler
 import com.mdmesh.core.command.handlers.DpmWipeTarget
 import com.mdmesh.core.config.ConfigApplier
 import com.mdmesh.core.location.LocationModeStore
+import com.mdmesh.core.localapi.AndroidLocalApiPlatform
+import com.mdmesh.core.localapi.LocalApi
 import com.mdmesh.core.power.PowerModeStore
 import com.mdmesh.core.command.handlers.KioskClearPinLockoutHandler
 import com.mdmesh.core.command.handlers.KioskEnterHandler
@@ -93,6 +95,7 @@ import com.mdmesh.policy.PermissionGrantLock
 import com.mdmesh.policy.factoryreset.FactoryResetPolicy
 import com.mdmesh.policy.factoryreset.FactoryResetWipeHold
 import com.mdmesh.policy.factoryreset.SharedPrefsWipeHoldStore
+import com.mdmesh.policy.wifi.AndroidWifiNetworks
 import com.mdmesh.policy.wifi.AndroidWifiRadio
 import com.mdmesh.policy.wifi.DpmHandle
 import com.mdmesh.policy.wifi.SharedPrefsWifiRadioOffState
@@ -502,4 +505,20 @@ object AgentModule {
     @Provides
     @IntoSet
     fun provideConfigApplyHandler(applier: ConfigApplier): CommandHandler = ConfigApplyHandler(applier)
+
+    // --- Local, offline API for the pinned kiosk app (LocalApiProvider) ---
+
+    @Provides
+    @Singleton
+    fun provideLocalApi(
+        @ApplicationContext context: Context,
+        handle: DpmHandle,
+        kiosk: KioskStateStore,
+        events: EventSink,
+    ): LocalApi = LocalApi(
+        platform = AndroidLocalApiPlatform(context, handle, kiosk),
+        radio = AndroidWifiRadio.from(context),
+        networks = AndroidWifiNetworks.from(context),
+        events = events,
+    )
 }

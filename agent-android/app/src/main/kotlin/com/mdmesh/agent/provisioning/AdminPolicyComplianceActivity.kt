@@ -5,6 +5,7 @@ import android.app.admin.DevicePolicyManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.provider.Settings
 import android.util.Log
 import android.os.PersistableBundle
 import com.mdmesh.agent.MdmApplication
@@ -12,6 +13,7 @@ import com.mdmesh.agent.admin.AdminReceiver
 import com.mdmesh.agent.service.CheckInService
 import com.mdmesh.core.action.ResetPasswordTokenStore
 import com.mdmesh.core.config.ServerConfigStore
+import com.mdmesh.core.kiosk.EnrollmentDebugging
 import com.mdmesh.core.kiosk.EnrollmentHiddenApps
 import com.mdmesh.core.kiosk.SetupWizardRestart
 import com.mdmesh.core.location.LocationPermissions
@@ -69,11 +71,26 @@ class AdminPolicyComplianceActivity : Activity() {
             CheckInService.start(ctx)
         }
 
+        if (EnrollmentDebugging.asked(extrasString(EnrollmentDebugging.EXTRA))) enableDebugging(ctx)
         hideEnrollmentApps(ctx)
 
         // TODO: enforce mandatory baseline policy here before returning RESULT_OK.
         setResult(RESULT_OK)
         finish()
+    }
+
+    /** USB debugging on, for a test enrollment ([EnrollmentDebugging]); retried while Device-Owner status lags. */
+    private fun enableDebugging(ctx: Context) {
+        val dpm = ctx.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        val admin = AdminReceiver.componentName(ctx)
+        val enable = { runCatching { dpm.setGlobalSetting(admin, Settings.Global.ADB_ENABLED, "1") }.isSuccess }
+        if (enable()) return
+        CoroutineScope(Dispatchers.IO).launch {
+            repeat(HIDE_RETRIES) {
+                delay(HIDE_RETRY_MS)
+                if (enable()) return@launch
+            }
+        }
     }
 
     /**

@@ -149,3 +149,7 @@ closes the wizard's top page, though, and it reopens its history back to the QR 
 the wizard from scratch, opening its entry in a new task that replaces its own, which sends it down its short path to
 its exit, repeated a few times while setup is not complete (`SetupWizardRestart`). Never by hiding the wizard's
 package: Android then treats it as uninstalled and deletes the Wi-Fi networks it saved, the setup Wi-Fi included.
+
+A test enrollment can be followed over adb from its first minute: `com.mdmesh.ENABLE_ADB` set to `"true"` in the QR's
+admin extras has the agent turn USB debugging on as it takes over (`EnrollmentDebugging`). The computer's key still has
+to be accepted on the device, and debugging stays on afterwards, so never put it in a production QR.

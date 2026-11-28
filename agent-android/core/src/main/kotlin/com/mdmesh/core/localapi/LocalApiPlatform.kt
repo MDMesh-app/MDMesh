@@ -18,6 +18,13 @@ interface LocalApiPlatform {
 
     /** [packageName]'s installer of record; null when unknown, not installed or not visible. */
     fun installerOf(packageName: String): String?
+
+    /**
+     * Reboot the device as its Device Owner (`DevicePolicyManager.reboot`). Throws what that throws, an
+     * IllegalStateException during a phone call among them. A reboot that goes ahead may never return: Android blocks
+     * the caller until the device goes down.
+     */
+    fun reboot()
 }
 
 /**
@@ -48,4 +55,6 @@ class AndroidLocalApiPlatform(
             packages.getInstallerPackageName(packageName)
         }
     }.getOrNull()
+
+    override fun reboot() = handle.dpm.reboot(handle.admin)
 }

@@ -14,6 +14,9 @@ New
   contact, so a device whose network changed can be reconnected from the app itself (#144). Only the app the kiosk
   pins, installed by MDMesh, may use it. Needs this release's agent
   ([Local API](https://github.com/MDMesh-app/MDMesh/blob/main/agent-android/README.md#local-api-offline-wi-fi-for-the-pinned-kiosk-app)).
+- Kiosk: the same app can reboot the device through the agent, as the console's Reboot does, so a kiosk can offer
+  its own Restart button. Android refuses during a phone call. Needs this release's agent
+  ([Local API](https://github.com/MDMesh-app/MDMesh/blob/main/agent-android/README.md#local-api-offline-wi-fi-for-the-pinned-kiosk-app)).
 
 ## v0.6.0 — 2026-11-27
 

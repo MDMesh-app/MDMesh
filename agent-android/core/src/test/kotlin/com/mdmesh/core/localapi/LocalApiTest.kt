@@ -1,6 +1,7 @@
 package com.mdmesh.core.localapi
 
 import com.mdmesh.core.localapi.LocalApi.Companion.DESCRIBE
+import com.mdmesh.core.localapi.LocalApi.Companion.DEVICE_REBOOT
 import com.mdmesh.core.localapi.LocalApi.Companion.WIFI_CONNECT
 import com.mdmesh.core.localapi.LocalApi.Companion.WIFI_DISCONNECT
 import com.mdmesh.core.localapi.LocalApi.Companion.WIFI_FORGET
@@ -19,6 +20,9 @@ import com.mdmesh.policy.wifi.WifiSecurity
 import com.mdmesh.proto.KioskApplyPayload
 import com.mdmesh.proto.TelemetryEventDto
 import kotlinx.coroutines.runBlocking
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -85,10 +89,25 @@ class LocalApiTest {
         var kiosk: KioskApplyPayload? = KioskApplyPayload(mode = "single", pinPackage = APP),
         var installer: String? = AGENT,
     ) : LocalApiPlatform {
+        /** Asked from the reboot's own thread, so counted atomically. */
+        val reboots = AtomicInteger()
+        var rebootThrows: Throwable? = null
+
+        /** Set, the reboot blocks until it opens, as Android's does when it goes ahead. */
+        var rebootBlocksUntil: CountDownLatch? = null
+
+        @Volatile var rebootReturned = false
+
         override val ownPackage = AGENT
         override fun isDeviceOwner() = deviceOwner
         override suspend fun kiosk() = kiosk
         override fun installerOf(packageName: String) = installer
+        override fun reboot() {
+            reboots.incrementAndGet()
+            rebootThrows?.let { throw it }
+            rebootBlocksUntil?.await(10, TimeUnit.SECONDS)
+            rebootReturned = true
+        }
     }
 
     private class RecordingEvents : EventSink {
@@ -125,6 +144,7 @@ class LocalApiTest {
         assertNull(f[LocalApiKeys.REASON])
         val all = listOf(
             DESCRIBE, WIFI_CONNECT, WIFI_SAVED, WIFI_FORGET, WIFI_SET_AUTO_JOIN, WIFI_DISCONNECT, WIFI_SET_RADIO,
+            DEVICE_REBOOT,
         )
         assertEquals(all, f[LocalApiKeys.METHODS])
     }
@@ -157,6 +177,10 @@ class LocalApiTest {
         val connect = call(WIFI_CONNECT, SSID to HOME, PASSWORD to SECRET, SECURITY to "psk", caller = caller)
         assertCode(LocalApiCode.UNAUTHORIZED, connect)
         assertTrue("an unauthorized call must not reach WifiManager: ${wifi.calls}", wifi.calls.isEmpty())
+        val reboot = call(DEVICE_REBOOT, caller = caller)
+        assertCode(LocalApiCode.UNAUTHORIZED, reboot)
+        assertEquals(reason, reboot.fields()[LocalApiKeys.REASON])
+        assertEquals("an unauthorized caller must not reboot the device", 0, platform.reboots.get())
     }
 
     @Test fun `the pinned app installed by the agent is authorized`() {
@@ -355,6 +379,51 @@ class LocalApiTest {
         assertCode(LocalApiCode.REFUSED, call(WIFI_SET_RADIO, ENABLED to false))
     }
 
+    // --- device.reboot ---
+
+    @Test fun `reboot asks Android to reboot the device`() {
+        val r = call(DEVICE_REBOOT)
+        assertCode(LocalApiCode.OK, r)
+        assertEquals(1, platform.reboots.get())
+        assertTrue("a reboot touches no Wi-Fi: ${wifi.calls}", wifi.calls.isEmpty())
+    }
+
+    @Test fun `a reboot that goes ahead is OK once the refusal window has passed`() {
+        // Android blocks the caller of a reboot that goes ahead until the device is down: the reply cannot wait for it.
+        val gate = CountDownLatch(1)
+        platform.rebootBlocksUntil = gate
+        val api = LocalApi(platform, wifi, wifi, events, rebootRefusalWindowMs = 50)
+        try {
+            val r = runBlocking { api.call(DEVICE_REBOOT, APP, LocalApiArgs()) }
+            assertCode(LocalApiCode.OK, r)
+            assertEquals(1, platform.reboots.get())
+            assertFalse("the reply waited for the reboot to return", platform.rebootReturned)
+            // The lock is free again: the blocked reboot does not hold up the next call.
+            assertCode(LocalApiCode.OK, runBlocking { api.call(WIFI_SAVED, APP, LocalApiArgs()) })
+        } finally {
+            gate.countDown()
+        }
+    }
+
+    @Test fun `a reboot Android refuses during a phone call is refused`() {
+        platform.rebootThrows = IllegalStateException("Cannot be called with ongoing call on the device")
+        val r = call(DEVICE_REBOOT)
+        assertCode(LocalApiCode.REFUSED, r)
+        assertFalse(r.ok)
+    }
+
+    @Test fun `any other reboot failure is an error naming its class, never its message`() {
+        platform.rebootThrows = SecurityException("admin $SECRET")
+        val r = call(DEVICE_REBOOT)
+        assertCode(LocalApiCode.ERROR, r)
+        assertEquals("device.reboot failed: SecurityException", r.message)
+    }
+
+    @Test fun `reboot ignores every extra`() {
+        assertCode(LocalApiCode.OK, call(DEVICE_REBOOT, ENABLED to false, SSID to HOME))
+        assertEquals(1, platform.reboots.get())
+    }
+
     // --- failures, secrets, audit ---
 
     @Test fun `a device without Wi-Fi answers unsupported`() {
@@ -405,13 +474,17 @@ class LocalApiTest {
         call(WIFI_SAVED)
         call(DESCRIBE)
         call(WIFI_SET_RADIO, ENABLED to true)
+        call(DEVICE_REBOOT)
         platform.deviceOwner = false
         call(WIFI_FORGET, SSID to HOME)
+        call(DEVICE_REBOOT)
         assertEquals(
             listOf(
                 LocalApi.EVENT_TYPE to "wifi.connect OK",
                 LocalApi.EVENT_TYPE to "wifi.setRadio OK",
+                LocalApi.EVENT_TYPE to "device.reboot OK",
                 LocalApi.EVENT_TYPE to "wifi.forget UNAUTHORIZED",
+                LocalApi.EVENT_TYPE to "device.reboot UNAUTHORIZED",
             ),
             events.recorded,
         )

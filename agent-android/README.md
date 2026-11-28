@@ -133,7 +133,8 @@ ADB loop above is for the dev inner loop only.
 
 Since Android 10 an ordinary app cannot add, enable, disable or remove saved Wi-Fi networks, or switch the radio.
 A kiosk tablet needs exactly that when it has no network at all, so the server cannot be involved: the agent, as
-Device Owner, does it locally for the app it pins.
+Device Owner, does it locally for the app it pins. The same app may also reboot the device (`device.reboot`), which
+only a Device Owner or the system can do, so a kiosk can offer a Restart button of its own.
 
 It is an exported content provider that implements only `call`:
 
@@ -166,6 +167,7 @@ Every reply has `ok: Boolean`, `code: String`, `message: String` (never the pass
 | `wifi.setAutoJoin` | `ssid`, `enabled: Boolean` | `enableNetwork(id, true)`, or `disableNetwork(id)` and leave it if Wi-Fi is on it. Credentials stay. | — |
 | `wifi.disconnect` | — | `disconnect()`. | — |
 | `wifi.setRadio` | `enabled: Boolean` | `setWifiEnabled(enabled)`. | — |
+| `device.reboot` | — | `DevicePolicyManager.reboot()`, as the console's `device.reboot` command does. Android refuses at once or goes ahead without returning, so the reply waits up to 0.5 s for a refusal and otherwise answers `OK`, before the shutdown stops the agent: the device goes down a second or two later. Android refuses during a phone call, and only one registered with Telecom; a VoIP call is the app's to check before it asks. | — |
 
 | Code | Meaning |
 |------|---------|
@@ -173,7 +175,7 @@ Every reply has `ok: Boolean`, `code: String`, `message: String` (never the pass
 | `BAD_REQUEST` | A missing or mistyped extra, an SSID over 32 bytes, a password that cannot fit the security. |
 | `UNAUTHORIZED` | See `reason` below. |
 | `NOT_FOUND` | No saved network has that SSID. |
-| `REFUSED` | `WifiManager` returned false or -1. |
+| `REFUSED` | `WifiManager` returned false or -1, or Android refused to reboot (during a phone call). |
 | `UNSUPPORTED` | Unknown method, SAE below Android 10, or no Wi-Fi on the device. |
 | `ERROR` | Something threw; the message names only the exception class. |
 
@@ -194,8 +196,8 @@ to the agent (`ACCESS_WIFI_STATE`, `CHANGE_WIFI_STATE` and `ACCESS_FINE_LOCATION
 installer lookup needs no package visibility, since an app calling the provider is visible to the agent.
 
 Logcat (tag `LocalApi`) shows only the method and the code. Changes (`wifi.connect`, `forget`, `setAutoJoin`,
-`disconnect`, `setRadio`) are also recorded in the event log as `localApi` `<method> <code>` and reach the server on
-the next check-in.
+`disconnect`, `setRadio`, `device.reboot`) are also recorded in the event log as `localApi` `<method> <code>` and
+reach the server on the next check-in.
 
 ### Caveats
 

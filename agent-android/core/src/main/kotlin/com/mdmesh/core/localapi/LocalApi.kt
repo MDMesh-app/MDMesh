@@ -8,8 +8,9 @@ import kotlinx.coroutines.sync.withLock
 
 /**
  * The agent's local, offline API: what the pinned kiosk app may ask the Device Owner to do for it, with no server
- * involved. Today that is Wi-Fi. Since Android 10 an ordinary app cannot add, enable, disable or remove saved networks
- * or switch the radio, and a kiosk tablet needs exactly that when it has no network at all.
+ * involved. Today that is Wi-Fi, and rebooting the device ([DEVICE_REBOOT]). Since Android 10 an ordinary app cannot
+ * add, enable, disable or remove saved networks or switch the radio, and a kiosk tablet needs exactly that when it has
+ * no network at all. Only a Device Owner (or the system) may reboot the device.
  *
  * Android-free: the content provider in `:app` copies the call's Bundle into [LocalApiArgs] and [LocalApiReply.fields]
  * back into a Bundle, so every decision here runs as a plain JVM test.
@@ -27,12 +28,15 @@ class LocalApi(
     radio: WifiRadio?,
     networks: WifiNetworks?,
     private val events: EventSink,
+    /** How long [DEVICE_REBOOT] waits for Android to refuse before it answers OK ([RebootBridge]). */
+    rebootRefusalWindowMs: Long = REBOOT_REFUSAL_WINDOW_MS,
 ) {
     /** Null on a device without Wi-Fi: every `wifi.*` method is then [LocalApiCode.UNSUPPORTED]. */
     private val wifi: WifiBridge? = if (radio != null && networks != null) WifiBridge(radio, networks) else null
+    private val reboot = RebootBridge(platform, rebootRefusalWindowMs)
     private val mutex = Mutex()
 
-    /** Why a caller may not use the `wifi.*` methods; [reason] is the reply's `reason`. */
+    /** Why a caller may not use the methods; [reason] is the reply's `reason`. */
     enum class Denial(val reason: String, val message: String) {
         NOT_DEVICE_OWNER("not_device_owner", "the agent is not Device Owner"),
         NO_KIOSK("no_kiosk", "no single-app kiosk is active"),
@@ -54,6 +58,7 @@ class LocalApi(
     private suspend fun route(method: String, caller: String?, args: LocalApiArgs): LocalApiReply = when (method) {
         DESCRIBE -> describe(denial(caller))
         !in METHODS -> LocalApiReply.unsupported("unknown method")
+        DEVICE_REBOOT -> denial(caller)?.let(::unauthorized) ?: reboot.reboot()
         else -> denial(caller)?.let(::unauthorized) ?: wifiCall(method, args)
     }
 
@@ -70,7 +75,7 @@ class LocalApi(
         }
     }
 
-    /** Why [caller] may not use the `wifi.*` methods, or null when it may. */
+    /** Why [caller] may not use the methods, or null when it may. */
     private suspend fun denial(caller: String?): Denial? {
         val kiosk = platform.kiosk()
         return when {
@@ -108,13 +113,25 @@ class LocalApi(
         const val WIFI_DISCONNECT = "wifi.disconnect"
         const val WIFI_SET_RADIO = "wifi.setRadio"
 
+        /** Reboot the device. Takes no extras. */
+        const val DEVICE_REBOOT = "device.reboot"
+
+        /**
+         * Android refuses a reboot at once, in a local binder round trip; one that goes ahead never returns. The reply
+         * has to beat the shutdown, which kills every app: on an Android 14 emulator that began 1.4 s after the call.
+         */
+        const val REBOOT_REFUSAL_WINDOW_MS = 500L
+
         /** Every method, as `describe` lists them. */
         val METHODS: List<String> = listOf(
             DESCRIBE, WIFI_CONNECT, WIFI_SAVED, WIFI_FORGET, WIFI_SET_AUTO_JOIN, WIFI_DISCONNECT, WIFI_SET_RADIO,
+            DEVICE_REBOOT,
         )
 
         /** The methods that change something, recorded in the event log as `localApi` `<method> <code>`. */
-        val AUDITED: Set<String> = setOf(WIFI_CONNECT, WIFI_FORGET, WIFI_SET_AUTO_JOIN, WIFI_DISCONNECT, WIFI_SET_RADIO)
+        val AUDITED: Set<String> = setOf(
+            WIFI_CONNECT, WIFI_FORGET, WIFI_SET_AUTO_JOIN, WIFI_DISCONNECT, WIFI_SET_RADIO, DEVICE_REBOOT,
+        )
 
         const val EVENT_TYPE = "localApi"
 

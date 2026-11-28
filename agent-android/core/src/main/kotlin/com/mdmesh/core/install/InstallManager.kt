@@ -176,6 +176,8 @@ class InstallManager @Inject constructor(
         // Every file we download, recorded as soon as it is named, so it is released even when this is cancelled
         // between the download and the line that would have kept it. Never a caller-provided APK.
         val downloaded: MutableList<File> = Collections.synchronizedList(mutableListOf())
+        val started = System.currentTimeMillis()
+        Log.i(TAG, "install ${req.packageName}: fetching ${parts.size} part(s)")
         try {
             for (part in parts) {
                 val file = runCatching { obtainPart(part, downloaded) }
@@ -190,8 +192,13 @@ class InstallManager @Inject constructor(
             }
 
             // 3. Create + write EVERY part into ONE session + commit, awaiting the broadcast result.
+            val bytes = fetched.sumOf { it.length() }
+            val fetchMs = System.currentTimeMillis() - started
+            Log.i(TAG, "install ${req.packageName}: fetched $bytes bytes in $fetchMs ms, committing")
             val outcome = runCatching { commitInstall(req.packageName, fetched) }
                 .getOrElse { return InstallOutcome.Failure(null, "install session error: ${it.message}") }
+            val totalMs = System.currentTimeMillis() - started
+            Log.i(TAG, "install ${req.packageName}: ${logName(outcome)} after $totalMs ms")
 
             // 4. Optionally launch the app on success.
             if (outcome is InstallOutcome.Success && req.runAfterInstall) {
@@ -374,6 +381,13 @@ class InstallManager @Inject constructor(
         PackageInstaller.STATUS_FAILURE_STORAGE -> "FAILURE_STORAGE"
         PackageInstaller.STATUS_FAILURE_INCOMPATIBLE -> "FAILURE_INCOMPATIBLE"
         else -> "STATUS_$status"
+    }
+
+    /** Named here, not by class: a release build renames the classes. No reason: it can carry the APK's URL. */
+    private fun logName(outcome: InstallOutcome): String = when (outcome) {
+        InstallOutcome.Success -> "installed"
+        is InstallOutcome.Skipped -> "skipped"
+        is InstallOutcome.Failure -> "failed"
     }
 
     private companion object {
